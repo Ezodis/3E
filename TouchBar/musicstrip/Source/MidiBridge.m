@@ -450,7 +450,7 @@ static void CleanMenu(NSMenu *menu) {
     }
     for(NSMenuItem *item in menu.itemArray.copy) {
         NSString *title=item.title.lowercaseString;
-        if(item.action==NSSelectorFromString(@"setKeyCommands:") || [title containsString:@"key command"] || [title containsString:@"keyboard shortcut"] || [title hasPrefix:@"customize controls"]) { [menu removeItem:item]; continue; }
+        if(item.action==NSSelectorFromString(@"setKeyCommands:") || [title containsString:@"key command"] || [title containsString:@"keyboard shortcut"]) { [menu removeItem:item]; continue; }
         if([item.title hasPrefix:@"MIDI Touchbar (v."] || [item.title hasPrefix:@"3£ (v."])
             item.title=[NSString stringWithFormat:@"3£ (v. %@)",StripReleaseVersion];
         else if([item.title containsString:@"MIDI Touchbar"]) item.title=[item.title stringByReplacingOccurrencesOfString:@"MIDI Touchbar" withString:@"3£"];
@@ -519,21 +519,17 @@ static void Open(id self, SEL sel, NSTouchBar *bar, id identifier) {
         [octavesButton setAccessibilityLabel:@"Visible piano octaves: swipe right to increase or left to decrease; tapping does nothing"];
         [octavesButton.widthAnchor constraintEqualToConstant:44].active=YES;
         octaves.view=octavesButton; octaves.visibilityPriority=NSTouchBarItemPriorityHigh;
-        NSMutableArray *configItems=[NSMutableArray new];
-        for(NSInteger i=0;i<2;i++) {
-            NSString *configID=i ? @"local.musicstrip.piano.channel" : @"local.musicstrip.piano.gesture";
-            NSCustomTouchBarItem *config=[[NSCustomTouchBarItem alloc] initWithIdentifier:configID];
-            PianoConfigButton *button=[[PianoConfigButton alloc] initWithFrame:NSMakeRect(0,0,44,30)];
-            button.octaveControl=YES; button.channelControl=i==1;
-            button.font=[NSFont systemFontOfSize:i ? 10 : 8 weight:NSFontWeightMedium];
-            button.imagePosition=i ? NSNoImage : NSImageAbove;
-            [button.widthAnchor constraintEqualToConstant:44].active=YES;
-            if(i) { pianoChannelButton=button; button.image=nil; } else pianoModeButton=button;
-            config.view=button; config.visibilityPriority=NSTouchBarItemPriorityHigh; [configItems addObject:config];
-        }
+        pianoChannelButton=nil;
+        NSCustomTouchBarItem *config=[[NSCustomTouchBarItem alloc] initWithIdentifier:@"local.musicstrip.piano.gesture"];
+        pianoModeButton=[[PianoConfigButton alloc] initWithFrame:NSMakeRect(0,0,44,30)];
+        pianoModeButton.octaveControl=YES;
+        pianoModeButton.font=[NSFont systemFontOfSize:8 weight:NSFontWeightMedium];
+        pianoModeButton.imagePosition=NSImageAbove;
+        [pianoModeButton.widthAnchor constraintEqualToConstant:44].active=YES;
+        config.view=pianoModeButton; config.visibilityPriority=NSTouchBarItemPriorityHigh;
         UpdatePianoConfigControls();
-        outer.templateItems=[NSSet setWithArray:@[close,expandedPianoItem,configItems[0],configItems[1],octaves]];
-        outer.defaultItemIdentifiers=@[CloseID,expandedPianoItem.identifier,@"local.musicstrip.piano.gesture",@"local.musicstrip.piano.channel",OctavesID];
+        outer.templateItems=[NSSet setWithArray:@[close,expandedPianoItem,config,octaves]];
+        outer.defaultItemIdentifiers=@[CloseID,expandedPianoItem.identifier,@"local.musicstrip.piano.gesture",OctavesID];
         outer.principalItemIdentifier=expandedPianoItem.identifier;
         navigationButton=nil;
     }
@@ -620,7 +616,7 @@ static void ExpandPiano(NSView *piano) {
     if (available<=64) return;
     normalPianoView=piano; expandedPianoView=piano; expandedPianoItem=item; pianoNormalFrame=piano.frame;
     pianoNormalOctaves=[[piano valueForKey:@"numOctaves"] integerValue];
-    pianoFullWidth=available-32-44-44-44-40;
+    pianoFullWidth=available-32-44-44-32;
     pianoHugging=[piano contentHuggingPriorityForOrientation:NSLayoutConstraintOrientationHorizontal];
     pianoResistance=[piano contentCompressionResistancePriorityForOrientation:NSLayoutConstraintOrientationHorizontal];
     NSMutableArray *widths=[NSMutableArray array];
@@ -1016,11 +1012,8 @@ static void TestPianoExpansionCase(NSTouchBar *bar,NSTouchBar *saved,id savedIde
             [pianoModeButton beginAt:NSMakePoint(22,15) identity:NSUUID.UUID]; [pianoModeButton finishAt:NSMakePoint(22,15)];
             NSCAssert([[expandedPianoView valueForKey:@"type"] integerValue]==(before+1)%3,@"Actual gesture button must cycle the native modes");
         }
-        [pianoChannelButton beginAt:NSMakePoint(22,15) identity:NSUUID.UUID]; [pianoChannelButton finishAt:NSMakePoint(22,15)];
-        NSCAssert([[expandedPianoView valueForKey:@"channelNumber"] integerValue]==[channel integerValue]%16+1,@"Channel cycle affects the expanded piano");
-        [pianoChannelButton beginAt:NSMakePoint(30,15) identity:NSUUID.UUID]; [pianoChannelButton moveAt:NSMakePoint(10,15)]; [pianoChannelButton finishAt:NSMakePoint(10,15)];
-        NSCAssert([[expandedPianoView valueForKey:@"channelNumber"] isEqual:channel],@"Channel swipe can go back");
-        for(NSView *control in @[pianoModeButton,pianoChannelButton,octavesButton]) {
+        NSCAssert(!pianoChannelButton && ![presentation.itemIdentifiers containsObject:@"local.musicstrip.piano.channel"],@"MIDI channel belongs in Customize Controls, not the expanded piano");
+        for(NSView *control in @[pianoModeButton,octavesButton]) {
             NSRect frame=[control convertRect:control.bounds toView:nil];
             NSCAssert(control.window && frame.origin.x>=0 && NSMaxX(frame)<=control.window.contentView.bounds.size.width,@"All expanded settings controls must be visible");
         }
@@ -1364,6 +1357,11 @@ static void Command(NSString *command) {
             InstallNativeCustomizationHooks();
             originalMakeItem=method_setImplementation(class_getInstanceMethod(cls,NSSelectorFromString(@"touchBar:makeItemForIdentifier:")),(IMP)MakeIndependentPiano);
             originalPianoTouched=method_setImplementation(class_getInstanceMethod(cls,NSSelectorFromString(@"pianoTouched:")),(IMP)ConfigureIndependentPiano);
+            originalPianoAlertModal=method_setImplementation(class_getInstanceMethod(NSAlert.class,@selector(runModal)),(IMP)PianoSettingsAlertModal);
+            for(NSString *name in @[NSWindowDidBecomeKeyNotification,NSWindowDidUpdateNotification])
+                [NSNotificationCenter.defaultCenter addObserverForName:name object:nil queue:NSOperationQueue.mainQueue usingBlock:^(NSNotification *note) {
+                    HidePianoGestureSetting(((NSWindow *)note.object).contentView);
+                }];
             originalExitCustomization=method_setImplementation(class_getInstanceMethod(cls,NSSelectorFromString(@"exitCustomization")),(IMP)ExitCustomization);
             method_setImplementation(class_getInstanceMethod(cls,NSSelectorFromString(@"customizeTouchbar:")),(IMP)SafeCustomizeTouchbar);
             ExtendPianoPalette(NSApp.delegate);

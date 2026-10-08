@@ -1,5 +1,5 @@
 // Check this app's public releases, never the vendor engine's old XML feed.
-static NSString *const StripReleaseVersion=@"3.0.0";
+static NSString *const StripReleaseVersion=@"3.0.1";
 static NSString *const StripReleasesAPI=@"https://api.github.com/repos/Ezodis/3E/releases?per_page=100";
 static NSString *const StripReleasesPage=@"https://github.com/Ezodis/3E/releases";
 static BOOL stripUpdateChecking;

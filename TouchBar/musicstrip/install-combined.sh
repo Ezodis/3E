@@ -13,7 +13,11 @@ zsh musicstrip/install-record.sh
 mkdir -p "$strip_app/Contents/Frameworks"
 cp build/musicstrip/ThreeEGestureEngine.dylib "$strip_app/Contents/Frameworks/"
 cp build/musicstrip/MusicStripCombinedMain "$strip_app/Contents/MacOS/MusicStrip"
-/usr/libexec/PlistBuddy -c 'Add ThreeEIncludesTouchTab bool true' "$strip_app/Contents/Info.plist"
+if /usr/libexec/PlistBuddy -c 'Print ThreeEIncludesTouchTab' "$strip_app/Contents/Info.plist" >/dev/null 2>&1; then
+  /usr/libexec/PlistBuddy -c 'Set ThreeEIncludesTouchTab true' "$strip_app/Contents/Info.plist"
+else
+  /usr/libexec/PlistBuddy -c 'Add ThreeEIncludesTouchTab bool true' "$strip_app/Contents/Info.plist"
+fi
 /usr/libexec/PlistBuddy -c 'Set LSMinimumSystemVersion 12.0' "$strip_app/Contents/Info.plist"
 codesign --force --sign "${STRIP_SIGNING_IDENTITY:-EDA0E1C9F0DD46BE3437CD2733933E31D3A8623D}" --timestamp=none "$strip_app"
 codesign --verify --deep --strict "$strip_app"

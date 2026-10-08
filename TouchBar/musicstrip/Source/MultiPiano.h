@@ -190,10 +190,47 @@ static id MakeIndependentPiano(id delegate,SEL selector,NSTouchBar *bar,NSString
     SizePianoItem(item,bar);
     return item;
 }
+static BOOL editingNativePianoSettings;
+static IMP originalPianoAlertModal;
+static void CollectPianoSettingsViews(NSView *view,NSMutableArray *views) {
+    if(!view) return;
+    [views addObject:view];
+    for(NSView *child in view.subviews) CollectPianoSettingsViews(child,views);
+}
+static BOOL HidePianoGestureSetting(NSView *root) {
+    NSMutableArray<NSView *> *views=[NSMutableArray new]; CollectPianoSettingsViews(root,views);
+    BOOL found=NO;
+    for(NSView *view in views) if([view isKindOfClass:NSPopUpButton.class]) {
+        NSPopUpButton *popup=(id)view;
+        BOOL gesture=NO;
+        for(NSString *title in popup.itemTitles) if([title.lowercaseString containsString:@"glissando"]) gesture=YES;
+        if(!gesture) continue;
+        found=YES; if(!popup.hidden) popup.hidden=YES;
+        NSRect field=[popup convertRect:popup.bounds toView:root];
+        for(NSView *label in views) if([label isKindOfClass:NSTextField.class] && [[[(NSTextField *)label stringValue] lowercaseString] isEqual:@"type:"]) {
+            NSRect rect=[label convertRect:label.bounds toView:root];
+            if(NSMaxX(rect)<=NSMinX(field)+4 && NSMinY(rect)<NSMaxY(field) && NSMaxY(rect)>NSMinY(field) && !label.hidden) label.hidden=YES;
+        }
+    }
+    return found;
+}
+static NSModalResponse PianoSettingsAlertModal(NSAlert *alert,SEL selector) {
+    HidePianoGestureSetting(alert.accessoryView);
+    return ((NSModalResponse(*)(id,SEL))originalPianoAlertModal)(alert,selector);
+}
 static void ConfigureIndependentPiano(id delegate,SEL selector,NSView *piano) {
     StripPianoInstance *instance=objc_getAssociatedObject(piano,&pianoInstanceKey);
     if(!instance || ![[delegate valueForKey:@"editCCs"] boolValue]) {
-        ((void(*)(id,SEL,id))originalPianoTouched)(delegate,selector,piano); return;
+        BOOL editing=[[delegate valueForKey:@"editCCs"] boolValue];
+        editingNativePianoSettings=editing;
+        @try {
+            ((void(*)(id,SEL,id))originalPianoTouched)(delegate,selector,piano);
+            if(editing) {
+                NSViewController *controller=[delegate valueForKey:@"settingsViewController"];
+                HidePianoGestureSetting(controller.view);
+            }
+        } @finally { editingNativePianoSettings=NO; }
+        return;
     }
     // Same Customize Controls workflow, independently saved per piano/preset.
     NSAlert *alert=[NSAlert new]; alert.messageText=@"Piano MIDI Settings";
@@ -206,7 +243,7 @@ static void ConfigureIndependentPiano(id delegate,SEL selector,NSView *piano) {
     for(NSInteger row=0;row<3;row++) {
         NSTextField *label=[NSTextField labelWithString:titles[row]]; label.frame=NSMakeRect(0,70-row*32,140,24); [form addSubview:label];
         NSPopUpButton *menu=[[NSPopUpButton alloc] initWithFrame:NSMakeRect(150,70-row*32,100,26)];
-        NSInteger first=row==2 ? 0 : 1, last=row==0 ? 16 : row==1 ? 4 : 8;
+        NSInteger first=row==2 ? 0 : 1, last=row==0 ? 16 : row==1 ? 10 : 9;
         for(NSInteger value=first;value<=last;value++) [menu addItemWithTitle:[@(value) stringValue]];
         [menu selectItemWithTitle:[[piano valueForKey:keys[row]] stringValue]];
         [form addSubview:menu]; [menus addObject:menu];
