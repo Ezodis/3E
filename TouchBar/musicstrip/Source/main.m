@@ -282,6 +282,10 @@ static OSStatus SendSpotifyCommand(pid_t pid, int command) {
 #import "AppsTrayHelper.h"
 
 @interface AppDelegate : NSObject <NSApplicationDelegate>
+#ifdef STRIP_COMBINED_TOUCHTAB
+@property NSTimer *gestureTimer;
+@property NSString *gestureState;
+#endif
 @property NSCustomTouchBarItem *item;
 @property NSTask *appsTask;
 @property NSPipe *appsInput;
@@ -330,6 +334,8 @@ static OSStatus SendSpotifyCommand(pid_t pid, int command) {
 - (void)openMidi;
 @end
 
+#import "TouchTabIntegration.h"
+
 @implementation AppDelegate
 - (void)applicationDidFinishLaunching:(NSNotification *)notification {
     if (!LoadInterfaces()) {
@@ -344,6 +350,11 @@ static OSStatus SendSpotifyCommand(pid_t pid, int command) {
     // re-display it on every launch when the TCC decision is still settling;
     // use a silent check and let the swipe path report the actual state.
     AccessibilityTrusted(NO);
+#ifdef STRIP_COMBINED_TOUCHTAB
+    [self refreshTouchTab];
+    __weak AppDelegate *gestureSelf=self;
+    self.gestureTimer=[NSTimer scheduledTimerWithTimeInterval:1 repeats:YES block:^(NSTimer *timer) { [gestureSelf refreshTouchTab]; }];
+#endif
     self.playbackBook = [PlaybackBook new];
     self.musicView = [[MusicView alloc] initWithFrame:NSMakeRect(0, 0, 70, 30)];
     self.musicView.translatesAutoresizingMaskIntoConstraints = NO;
@@ -460,6 +471,21 @@ static OSStatus SendSpotifyCommand(pid_t pid, int command) {
     @try { [self.midiInput.fileHandleForWriting writeData:[[command stringByAppendingString:@"\n"] dataUsingEncoding:NSUTF8StringEncoding]]; }
     @catch (NSException *e) { NSLog(@"MIDI connection closed: %@", e); }
 }
+#ifdef STRIP_COMBINED_TOUCHTAB
+- (void)refreshTouchTab {
+    NSString *state=StripRefreshGestures();
+    if(![state isEqual:self.gestureState]) {
+        self.gestureState=state;
+        [NSUserDefaults.standardUserDefaults setObject:@{@"state":state,@"pid":@(getpid()),@"updated":@(NSDate.date.timeIntervalSince1970)} forKey:@"TouchTabRuntimeState"];
+        NSLog(@"3£ combined trackpad state: %@ (host PID %d)",state,getpid());
+    }
+    if(self.midiReady) [self sendMidi:[@"TOUCHTAB_STATE " stringByAppendingString:state]];
+}
+- (void)toggleTouchTab {
+    [NSUserDefaults.standardUserDefaults setBool:!StripGesturesEnabled() forKey:@"TouchTabGesturesEnabled"];
+    [self refreshTouchTab];
+}
+#endif
 - (void)startMidi {
     if (self.midiTask.running || self.midiStarting) return;
     NSString *helper = [NSBundle.mainBundle.bundlePath stringByAppendingPathComponent:@"Contents/Helpers/MIDI Touchbar.app"];
@@ -475,6 +501,9 @@ static OSStatus SendSpotifyCommand(pid_t pid, int command) {
     self.midiTask = [NSTask new];
     self.midiTask.executableURL = [NSURL fileURLWithPath:executable];
     NSMutableDictionary *environment = [NSProcessInfo.processInfo.environment mutableCopy];
+#ifdef STRIP_COMBINED_TOUCHTAB
+    environment[@"STRIP_COMBINED_TOUCHTAB"]=@"1";
+#endif
     environment[@"DYLD_INSERT_LIBRARIES"] = [helper stringByAppendingPathComponent:@"Contents/Frameworks/MusicStripMidiBridge.dylib"];
     self.midiTask.environment = environment;
     self.midiTask.standardInput = self.midiInput;
@@ -499,7 +528,14 @@ static OSStatus SendSpotifyCommand(pid_t pid, int command) {
                 }
                 if ([line isEqualToString:@"READY"]) {
                     self.midiReady = YES;
+#ifdef STRIP_COMBINED_TOUCHTAB
+                    [self refreshTouchTab];
+#endif
                     if (self.midiRequested) { self.midiRequested = NO; [self sendMidi:@"SHOW"]; }
+#ifdef STRIP_COMBINED_TOUCHTAB
+                } else if ([line isEqualToString:@"TOUCHTAB_TOGGLE"]) {
+                    [self toggleTouchTab];
+#endif
                 } else if ([line isEqualToString:@"VISIBLE"]) {
                     self.midiVisible=YES;
                     if(self.appsVisible || self.appsRequested) [self sendMidi:@"HIDE"];
@@ -751,6 +787,10 @@ static OSStatus SendSpotifyCommand(pid_t pid, int command) {
     return NO;
 }
 - (void)applicationWillTerminate:(NSNotification *)notification {
+#ifdef STRIP_COMBINED_TOUCHTAB
+    [self.gestureTimer invalidate]; StripStopGestures();
+    [NSUserDefaults.standardUserDefaults removeObjectForKey:@"TouchTabRuntimeState"];
+#endif
     [self.dockPanel close:nil];
     [self.dockLauncher.holdTimer invalidate];
     if (SetPresence && self.item) SetPresence(ItemID, NO);

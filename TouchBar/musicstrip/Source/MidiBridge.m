@@ -434,7 +434,20 @@ static NSImage *BrandMenuIcon(void) {
     [text drawAtPoint:NSMakePoint((27-size.width)/2,(18-size.height)/2) withAttributes:attributes];
     [image unlockFocus]; image.template=YES; image.name=@"Strip3£"; return image;
 }
+static NSString *combinedGestureState=@"permission";
 static void CleanMenu(NSMenu *menu) {
+    NSStatusItem *statusItem=[(id)NSApp.delegate valueForKey:@"theItem"];
+    if([NSProcessInfo.processInfo.environment[@"STRIP_COMBINED_TOUCHTAB"] isEqual:@"1"] && menu==statusItem.menu) {
+        NSMenuItem *toggle=nil;
+        for(NSMenuItem *item in menu.itemArray) if([item.identifier isEqual:@"local.musicstrip.touchTabToggle"]) toggle=item;
+        if(!toggle) {
+            toggle=[[NSMenuItem alloc] initWithTitle:@"TouchTab Gestures" action:NSSelectorFromString(@"toggleTouchTab:") keyEquivalent:@""];
+            toggle.target=NSClassFromString(@"MusicStripMidiBridge"); toggle.identifier=@"local.musicstrip.touchTabToggle";
+            [menu insertItem:toggle atIndex:MIN(2,menu.numberOfItems)];
+        }
+        toggle.state=[combinedGestureState isEqual:@"on"] ? NSControlStateValueOn : NSControlStateValueOff;
+        toggle.title=[combinedGestureState isEqual:@"permission"] ? @"TouchTab Gestures — Enable 3£ Accessibility" : [combinedGestureState isEqual:@"unavailable"] ? @"TouchTab Gestures — Unavailable" : @"TouchTab Gestures";
+    }
     for(NSMenuItem *item in menu.itemArray.copy) {
         NSString *title=item.title.lowercaseString;
         if(item.action==NSSelectorFromString(@"setKeyCommands:") || [title containsString:@"key command"] || [title containsString:@"keyboard shortcut"] || [title hasPrefix:@"customize controls"]) { [menu removeItem:item]; continue; }
@@ -459,6 +472,7 @@ static NSArray *MenuTitles(NSMenu *menu) {
 
 @interface MusicStripMidiBridge : NSObject
 + (void)closeMidi:(id)sender;
++ (void)toggleTouchTab:(id)sender;
 @end
 static void SuppressTray(id cls, SEL sel, id item) { Report("TRAY_SUPPRESSED\n"); }
 static void Open(id self, SEL sel, NSTouchBar *bar, id identifier) {
@@ -1108,7 +1122,10 @@ static void TestPianoPhysicalHold(BOOL up) {
 static void Command(NSString *command) {
     id delegate = NSApp.delegate;
     @try {
-        if ([command isEqualToString:@"PIANO_INSTANCES_TEST"]) {
+        if ([command hasPrefix:@"TOUCHTAB_STATE "]) {
+            combinedGestureState=[command substringFromIndex:15];
+            ApplyBranding();
+        } else if ([command isEqualToString:@"PIANO_INSTANCES_TEST"]) {
             TestIndependentPianos();
         } else if ([command isEqualToString:@"PIANO_NATIVE_ADD_TEST"]) {
             TestNativePianoAddition();
@@ -1317,6 +1334,7 @@ static void Command(NSString *command) {
     } @catch (NSException *e) { Report("BRIDGE_ERROR\n"); NSLog(@"MusicStrip MIDI bridge: %@", e); }
 }
 @implementation MusicStripMidiBridge
++ (void)toggleTouchTab:(id)sender { Report("TOUCHTAB_TOGGLE\n"); }
 + (void)closeMidi:(id)sender { if(pianoExpanded) CollapsePiano(); else Command(@"HIDE"); }
 + (void)load {
 #ifdef STRIP3_RECORD_TESTING

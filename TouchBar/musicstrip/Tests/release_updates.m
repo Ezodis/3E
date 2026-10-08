@@ -2,6 +2,13 @@
 #import <objc/runtime.h>
 #import "../Source/ReleaseUpdates.h"
 int main(void) { @autoreleasepool {
+    if(StripCombinedRelease()) {
+        NSDictionary *combined=@{@"tag_name":@"combined-v3.0.0",@"assets":@[@{@"name":@"3E-Combined.zip",@"browser_download_url":@"https://github.com/Ezodis/3E/releases/download/combined-v3.0.0/3E-Combined.zip"}]};
+        NSCAssert([StripValidRelease(combined)[@"version"] isEqual:@"3.0.0"],@"Combined app accepts only its own update");
+        NSCAssert(!StripValidRelease(@{@"tag_name":@"touchbar-v3.0.0",@"assets":combined[@"assets"]}),@"Never replace combined app with TouchBar-only");
+        NSCAssert(!StripValidRelease(@{@"tag_name":@"touchtab-v3.0.0",@"assets":combined[@"assets"]}),@"Never replace combined app with TouchTab-only");
+        puts("Passed combined-specific update selection."); return 0;
+    }
     NSMutableDictionary *release=[@{@"tag_name":@"touchbar-v2.7.2",@"draft":@NO,@"prerelease":@NO,@"assets":@[@{@"name":@"TouchBar.zip",@"browser_download_url":@"https://github.com/Ezodis/3E/releases/download/touchbar-v2.7.2/TouchBar.zip"}]} mutableCopy];
     NSCAssert([StripValidRelease(release)[@"version"] isEqual:@"2.7.2"],@"Valid current repository asset");
     release[@"draft"]=@YES; NSCAssert(!StripValidRelease(release),@"Ignore drafts"); release[@"draft"]=@NO;

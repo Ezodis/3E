@@ -58,6 +58,8 @@ The engine presents a system-modal Touch Bar, which AppKit's normal customizatio
 
 ## Build and additive installation
 
+For the integrated edition, use `zsh musicstrip/Source/build.sh --combined`; the ordinary build remains TouchBar-only. The combined app embeds the shared TouchTab Swift gesture module in its main process, adds a **TouchTab Gestures** menu toggle through the existing MIDI-helper pipe, and preserves the original MIDI engine. On the development Mac, quit 3£ and run `zsh musicstrip/install-combined.sh` for an in-place installation. The main executable is rebuilt from the maintained original source with narrowly scoped gesture lifecycle/pipe hooks; the working app-picker helper, piano engine, resources, MIDI mappings and user settings are retained. Root README describes the separate combined/standalone update feeds and permissions.
+
 Requires macOS/Xcode command-line tools. The original engine is already vendored as a bundle dependency; no download from Documents/Downloads is required to build.
 
 ```sh

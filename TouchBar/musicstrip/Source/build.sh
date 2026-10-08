@@ -4,6 +4,25 @@ cd "${0:A:h}"
 strip_repo="${PWD:h:h}"
 strip_identity="${STRIP_SIGNING_IDENTITY:-EDA0E1C9F0DD46BE3437CD2733933E31D3A8623D}"
 mkdir -p "$strip_repo/build/musicstrip"
+strip_combined=NO
+if [[ "${1:-}" == --combined || "${1:-}" == --combined-main-only ]]; then
+  strip_combined=YES
+  xcrun swiftc -emit-library -O -target "$(uname -m)-apple-macosx12.0" -module-name ThreeEGestureEngine \
+    "$strip_repo/../TouchTab/Touch-Tab/AppSwitcher.swift" \
+    "$strip_repo/../TouchTab/Touch-Tab/SwipeManager.swift" \
+    "$strip_repo/../TouchTab/CombinedModule.swift" \
+    -o "$strip_repo/build/musicstrip/ThreeEGestureEngine.dylib"
+  codesign --force --sign - "$strip_repo/build/musicstrip/ThreeEGestureEngine.dylib"
+fi
+strip_main_flags=()
+strip_minimum=11.0
+if [[ "$strip_combined" == YES ]]; then strip_main_flags=(-DSTRIP_COMBINED_TOUCHTAB=1); strip_minimum=12.0; fi
+if [[ "${1:-}" == --combined-main-only ]]; then
+  xcrun clang -fobjc-arc -Wall -Wextra -Wno-unused-parameter -O2 \
+    -mmacosx-version-min=12.0 "${strip_main_flags[@]}" -framework AppKit -framework Carbon \
+    -framework ApplicationServices -framework QuartzCore main.m -o "$strip_repo/build/musicstrip/MusicStripCombinedMain"
+  exit 0
+fi
 if [[ "${1:-}" == --bridge-only ]]; then
   xcrun clang -dynamiclib -fobjc-arc -Wall -Wextra -Wno-unused-parameter -O2 \
     -mmacosx-version-min=11.0 -framework AppKit -framework CoreMIDI MidiBridge.m \
@@ -16,11 +35,17 @@ trap '[[ "$strip_stage" == /tmp/strip3-build.* ]] && /bin/rm -r -- "$strip_stage
 strip_app="$strip_stage/Strip3£.app"
 ditto --norsrc --noextattr "$strip_repo/recovered/Strip3£.app" "$strip_app"
 cp Info.plist "$strip_app/Contents/Info.plist"
+if [[ "$strip_combined" == YES ]]; then
+  mkdir -p "$strip_app/Contents/Frameworks"
+  cp "$strip_repo/build/musicstrip/ThreeEGestureEngine.dylib" "$strip_app/Contents/Frameworks/"
+  /usr/libexec/PlistBuddy -c 'Add ThreeEIncludesTouchTab bool true' "$strip_app/Contents/Info.plist"
+  /usr/libexec/PlistBuddy -c 'Set LSMinimumSystemVersion 12.0' "$strip_app/Contents/Info.plist"
+fi
 ditto --norsrc --noextattr Resources "$strip_app/Contents/Resources"
 mkdir -p "$strip_app/Contents/Resources/Ableton/_3E"
 cp "$strip_repo/musicstrip/Ableton/_3E/"*.py "$strip_app/Contents/Resources/Ableton/_3E/"
 xcrun clang -fobjc-arc -Wall -Wextra -Wno-unused-parameter -O2 \
-  -mmacosx-version-min=11.0 -framework AppKit -framework Carbon \
+  -mmacosx-version-min="$strip_minimum" "${strip_main_flags[@]}" -framework AppKit -framework Carbon \
   -framework ApplicationServices -framework QuartzCore main.m -o "$strip_app/Contents/MacOS/MusicStrip"
 strip_apps_helper="$strip_app/Contents/Helpers/MusicStrip Apps.app"
 cp "$strip_app/Contents/MacOS/MusicStrip" "$strip_apps_helper/Contents/MacOS/MusicStripApps"

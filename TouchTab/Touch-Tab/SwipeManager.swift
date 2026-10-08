@@ -96,6 +96,8 @@ class SwipeManager {
     static func stop() {
         if startTime != nil { endGesture() }
         startTime = nil
+        forceClickActive = false
+        pinchFired = false
         clearEventState()
         if let monitor = pressureEventMonitor {
             NSEvent.removeMonitor(monitor)
@@ -121,7 +123,9 @@ class SwipeManager {
     }
 
     private static func touchEventHandler(_ nsEvent: NSEvent) {
-        let touches = nsEvent.allTouches()
+        // Trackpad only: four simultaneous Touch Bar piano notes must not
+        // become an app-switch gesture when this engine is embedded in 3£.
+        let touches = Set(nsEvent.allTouches().filter { $0.type == .indirect })
 
         // Sometimes there are empty touch events that we have to skip. There are no empty touch events if Mission Control or App Expose use 3-finger swipes though.
         if touches.isEmpty {
