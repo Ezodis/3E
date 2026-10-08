@@ -49,6 +49,8 @@ Each added piano is a separate instance of the original native `pianoView`, with
 - Gesture mode: tap to cycle **GLISS** (slide across notes), **HOLD** (No Glissando: keep the original note), and **BEND** (continuous native pitchbend). Swipe left/right for previous/next. An icon and label show the active mode.
 - Octave count: swipe left/right to show fewer/more octaves.
 
+Piano-only presets with two or three keyboards use a cached shared row with two-point inter-piano gaps. Width comes from the measured native Touch Bar host, with equal pixel-aligned piano frames prepared before presentation. A periodic sizing refresh does not install late equal-width constraints on this row. Mixed-control presets and the native customization palette retain their original item workflow. Native regression tests switch away and back six times and check immediate widths, refresh stability, gap size, and MIDI notes.
+
 Expanded gesture mode and octave count share one gapless, rounded 88-point item. The gesture symbol is above its GLISS/HOLD/BEND label, and the octave number is above a small keyboard-span symbol (no OCT text). Each 44-point half retains independent touch tracking; channel settings remain in Customize Controls.
 
 Both piano side arrows keep compact fixed 14-point areas regardless of octave count. Keys fill the space immediately between those edges instead of shrinking the arrows. Dense keyboards proportionally scale native key shapes and gutters, preventing fixed pixel gaps from consuming narrow keys. Holds tolerate finger drift within the edge and cancel when it leaves, without triggering notes.

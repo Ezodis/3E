@@ -46,6 +46,7 @@ static void SizePianoItem(NSCustomTouchBarItem *item,NSTouchBar *bar) {
         if(minimum.constant!=target) { minimum.constant=target; changed=YES; }
     }
     NSLayoutConstraint *width=objc_getAssociatedObject(item.view,&pianoCompactWidthKey);
+    if(bar==customizationBar) item.view.translatesAutoresizingMaskIntoConstraints=NO;
     if(count<2) { width.active=NO; return; } // Keep the existing single-piano presentation.
     if(!width) {
         changed=YES;
@@ -67,6 +68,10 @@ static void SizePianoItem(NSCustomTouchBarItem *item,NSTouchBar *bar) {
     if(changed) [item.view invalidateIntrinsicContentSize];
 }
 static void SizePianos(NSTouchBar *bar) {
+    NSCustomTouchBarItem *row=objc_getAssociatedObject(bar,&compactPianoRowKey);
+    if(row && bar!=customizationBar && row.view.window) {
+        [row.view layoutSubtreeIfNeeded]; return;
+    }
     NSMutableArray<NSView *> *views=[NSMutableArray new];
     for(NSString *identifier in bar.itemIdentifiers) if(IsPianoSlot(identifier)) {
         NSCustomTouchBarItem *item=(NSCustomTouchBarItem *)[bar itemForIdentifier:identifier];
@@ -102,6 +107,56 @@ static void SizePianos(NSTouchBar *bar) {
     [NSLayoutConstraint activateConstraints:equal];
     objc_setAssociatedObject(bar,&pianoEqualWidthsKey,equal,OBJC_ASSOCIATION_RETAIN_NONATOMIC);
     [common layoutSubtreeIfNeeded];
+}
+@interface StripCompactPianoRow : NSView
+@property NSArray<NSView *> *pianos;
+@property NSLayoutConstraint *rowWidth;
+@end
+@implementation StripCompactPianoRow
+- (NSSize)intrinsicContentSize { return NSMakeSize(180,30); }
+- (void)layout {
+    [super layout];
+    CGFloat host=self.window.contentView.bounds.size.width;
+    if(isfinite(host) && host>200 && host<2048) {
+        lastMidiHostWidth=host;
+        CGFloat target=MAX(180,host-32-88-16);
+        if(fabs(self.rowWidth.constant-target)>.1) self.rowWidth.constant=target;
+    }
+    CGFloat gap=2,usable=MAX(0,NSWidth(self.bounds)-gap*(self.pianos.count-1));
+    CGFloat scale=self.window.backingScaleFactor ?: 2;
+    for(NSUInteger i=0;i<self.pianos.count;i++) {
+        CGFloat left=round((usable*i/self.pianos.count+i*gap)*scale)/scale;
+        CGFloat right=round((usable*(i+1)/self.pianos.count+i*gap)*scale)/scale;
+        NSRect frame=NSMakeRect(left,0,right-left,30);
+        if(!NSEqualRects(self.pianos[i].frame,frame)) self.pianos[i].frame=frame;
+    }
+}
+@end
+static NSCustomTouchBarItem *CompactPianoRow(NSTouchBar *bar) {
+    NSCustomTouchBarItem *item=objc_getAssociatedObject(bar,&compactPianoRowKey);
+    if(!item) {
+        item=[[NSCustomTouchBarItem alloc] initWithIdentifier:LayoutID];
+        StripCompactPianoRow *row=[[StripCompactPianoRow alloc] initWithFrame:NSMakeRect(0,0,852,30)]; item.view=row;
+        row.rowWidth=[row.widthAnchor constraintEqualToConstant:MAX(180,(lastMidiHostWidth ?: 828)-32-88-16)];
+        row.rowWidth.active=YES;
+        [item.view setContentHuggingPriority:1 forOrientation:NSLayoutConstraintOrientationHorizontal];
+        [item.view setContentCompressionResistancePriority:1 forOrientation:NSLayoutConstraintOrientationHorizontal];
+        objc_setAssociatedObject(bar,&compactPianoRowKey,item,OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    }
+    SuspendPianoSizing(bar);
+    NSMutableArray *views=[NSMutableArray new];
+    for(NSString *identifier in bar.itemIdentifiers) {
+        NSView *view=((NSCustomTouchBarItem *)[bar itemForIdentifier:identifier]).view;
+        NSLayoutConstraint *width=objc_getAssociatedObject(view,&pianoCompactWidthKey); width.active=NO;
+        view.translatesAutoresizingMaskIntoConstraints=YES; view.autoresizingMask=NSViewNotSizable;
+        if(view.superview!=item.view) [item.view addSubview:view];
+        [views addObject:view];
+    }
+    StripCompactPianoRow *row=(id)item.view; row.pianos=views;
+    row.rowWidth.constant=MAX(180,(lastMidiHostWidth ?: 828)-32-88-16);
+    [row setFrameSize:NSMakeSize(row.rowWidth.constant,30)];
+    row.needsLayout=YES; [row layoutSubtreeIfNeeded];
+    return item;
 }
 static NSArray *PianoGeometry(NSTouchBar *bar) {
     NSMutableArray *geometry=[NSMutableArray new];

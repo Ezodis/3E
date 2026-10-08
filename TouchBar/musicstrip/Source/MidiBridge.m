@@ -65,6 +65,9 @@ static void UpdateActivePianoSizing(void);
 static void SuspendPianoSizing(NSTouchBar *bar);
 static NSInteger PianoCount(NSTouchBar *bar);
 static void SizePianos(NSTouchBar *bar);
+static NSCustomTouchBarItem *CompactPianoRow(NSTouchBar *bar);
+static char compactPianoRowKey;
+static CGFloat lastMidiHostWidth;
 static void TransferPianoInstance(NSView *source,NSView *replacement);
 static void SaveExpandedPianoSettings(void);
 static void CycleExpandedPianoSetting(BOOL channel,NSInteger direction);
@@ -525,6 +528,8 @@ static NSArray *MenuTitles(NSMenu *menu) {
 @end
 static void SuppressTray(id cls, SEL sel, id item) { Report("TRAY_SUPPRESSED\n"); }
 static void Open(id self, SEL sel, NSTouchBar *bar, id identifier) {
+    CGFloat host=closeButton.window.contentView.bounds.size.width;
+    if(isfinite(host) && host>200 && host<2048) lastMidiHostWidth=host;
     if (!rebuildingPresentation) ResetPianoExpansion();
     normalLayoutBar=bar; normalIdentifier=identifier;
     // Keep the original configurable bar intact inside a seamless group.
@@ -543,11 +548,13 @@ static void Open(id self, SEL sel, NSTouchBar *bar, id identifier) {
     if(!pianoExpanded) SizePianos(bar);
     // Alert-style groups let the client choose spacing rather than inserting
     // standard button-sized gutters between neighboring keyboards.
-    NSGroupTouchBarItem *layout = multiplePianos
-        ? [NSGroupTouchBarItem alertStyleGroupItemWithIdentifier:LayoutID]
-        : [[NSGroupTouchBarItem alloc] initWithIdentifier:LayoutID];
-    layout.groupTouchBar=bar;
-    layout.prefersEqualWidths=multiplePianos && (NSUInteger)PianoCount(bar)==bar.itemIdentifiers.count;
+    BOOL pianoOnly=multiplePianos && (NSUInteger)PianoCount(bar)==bar.itemIdentifiers.count;
+    NSTouchBarItem *layout;
+    if(pianoOnly) layout=CompactPianoRow(bar);
+    else {
+        NSGroupTouchBarItem *group=multiplePianos ? [NSGroupTouchBarItem alertStyleGroupItemWithIdentifier:LayoutID] : [[NSGroupTouchBarItem alloc] initWithIdentifier:LayoutID];
+        group.groupTouchBar=bar; layout=group;
+    }
     navigationButton=[[MidiNavigationButton alloc] initWithFrame:NSMakeRect(0,0,44,30)];
     [navigationButton.widthAnchor constraintEqualToConstant:44].active=YES;
     recordController=[StripRecordController new];
@@ -556,6 +563,7 @@ static void Open(id self, SEL sel, NSTouchBar *bar, id identifier) {
     JoinRecordNavigation(recordController,navigationButton,preset,presets);
     outer.templateItems = [NSSet setWithArray:@[close, layout, recordController.item]];
     outer.defaultItemIdentifiers = multiplePianos ? @[CloseID,LayoutID,RecordID] : @[CloseID, LayoutID, NSTouchBarItemIdentifierFlexibleSpace, RecordID];
+    if(pianoOnly) outer.principalItemIdentifier=LayoutID;
     if (pianoExpanded) {
         recordController.button.joinedEdge=0;
         recordController.item.collapsedRepresentation=recordController.button;
@@ -601,6 +609,8 @@ static void Open(id self, SEL sel, NSTouchBar *bar, id identifier) {
     [NSAnimationContext runAnimationGroup:^(NSAnimationContext *context) {
         context.duration=0; context.allowsImplicitAnimation=NO;
         ((void (*)(id, SEL, id, id))originalOpen)(self, sel, outer, identifier);
+        CGFloat host=closeButton.window.contentView.bounds.size.width;
+        if(isfinite(host) && host>200 && host<2048) lastMidiHostWidth=host;
         UpdateActivePianoSizing();
     } completionHandler:nil];
     RemoveCycleKey(self);
@@ -874,8 +884,8 @@ static NSInteger CycleKeyCount(id delegate, NSEventModifierFlags flags) {
 #import "MultiPiano.h"
 static void UpdateActivePianoSizing(void) {
     if(!presentation || pianoExpanded || customizationBar) return;
-    NSGroupTouchBarItem *layout=(NSGroupTouchBarItem *)[presentation itemForIdentifier:LayoutID];
-    NSTouchBar *bar=layout.groupTouchBar;
+    NSTouchBarItem *layout=[presentation itemForIdentifier:LayoutID];
+    NSTouchBar *bar=[layout isKindOfClass:NSGroupTouchBarItem.class] ? [(NSGroupTouchBarItem *)layout groupTouchBar] : normalLayoutBar;
     if(!bar) return;
     SizePianos(bar);
     NSInteger count=0; for(NSString *identifier in bar.itemIdentifiers) if(IsPianoSlot(identifier)) count++;
@@ -1025,6 +1035,21 @@ static void TestNativeFlexiblePianos(NSInteger count) {
                 NSCAssert([view[@"attached"] boolValue] && fabs([view[@"width"] doubleValue]-width)<1 && position.origin.y>=0 && NSMaxX(position)<=[view[@"windowWidth"] doubleValue],@"Actual native Touch Bar must display all three keyboards at equal widths without clipping or hidden containers");
             }
             NSCAssert(width*count>480,@"Native keyboards must expand beyond the old fixed 480-point total");
+            CGFloat previousEnd=0;
+            for(NSDictionary *entry in geometry) {
+                NSRect rect=NSRectFromString(entry[@"position"]);
+                if(previousEnd) NSCAssert(fabs(NSMinX(rect)-previousEnd-2)<.1,@"Pianos use only a two-point inter-item gap");
+                previousEnd=NSMaxX(rect);
+            }
+            for(NSInteger switchIndex=0;switchIndex<6;switchIndex++) {
+                Open(delegate,NSSelectorFromString(@"openTouchbar:fromIdentifier:"),saved,savedIdentifier);
+                Open(delegate,NSSelectorFromString(@"openTouchbar:fromIdentifier:"),bar,savedIdentifier);
+                NSArray *reopened=PianoGeometry(bar);
+                for(NSUInteger i=0;i<geometry.count;i++) NSCAssert(fabs([geometry[i][@"width"] doubleValue]-[reopened[i][@"width"] doubleValue])<.1,@"Returning to a multi-piano preset must start at its final width");
+                UpdateActivePianoSizing();
+                NSArray *refreshed=PianoGeometry(bar);
+                for(NSUInteger i=0;i<geometry.count;i++) NSCAssert(fabs([refreshed[i][@"width"] doubleValue]-[reopened[i][@"width"] doubleValue])<.1,@"Sizing refresh must never stretch a visible piano row");
+            }
             for(NSString *identifier in bar.itemIdentifiers)
                 TestPianoNotesView(((NSCustomTouchBarItem *)[bar itemForIdentifier:identifier]).view);
             NSData *json=[NSJSONSerialization dataWithJSONObject:geometry options:0 error:nil];
