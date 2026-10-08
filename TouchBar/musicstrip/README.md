@@ -1,5 +1,7 @@
 # 3£ — original app source and Ableton Record
 
+The Apps launcher is a flat, glyph-free 14-point swipe extension beside the macOS Control Strip arrow: swipe left to open apps, right to close. It draws no separate bezel, dots, X or divider; taps still toggle and holds still open desktops. The macOS-owned arrow and its system-imposed boundary are not modified. The adjoining music control keeps its existing gestures.
+
 ## Recovery and preservation
 
 `Source/main.m`, the existing MIDI customization bridge, all seven supporting headers, `Info.plist`, icon generator and resources were recovered from the original iCloud project at `Documents/Codex/2026-10-01/i-l/outputs/MusicStrip/Source`. The 84,361-byte main source matches the restored local iCloud file. This is not the earlier incomplete reconstruction.

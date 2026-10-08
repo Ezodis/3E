@@ -28,25 +28,37 @@ static NSString *const DockFoldersID = @"local.musicstrip.dock.folders";
 - (NSSize)intrinsicContentSize { return NSMakeSize(40,30); }
 - (void)updateIcon { self.image=nil; }
 - (void)drawRect:(NSRect)rect {
-    [super drawRect:rect];
-    [NSColor.whiteColor setFill];
-    CGFloat x=floor((NSWidth(self.bounds)-6)/2);
-    if(self.panelOpen) {
-        NSBezierPath *close=[NSBezierPath bezierPath]; close.lineWidth=1.8;close.lineCapStyle=NSLineCapStyleRound;
-        [close moveToPoint:NSMakePoint(x,8)];[close lineToPoint:NSMakePoint(x+6,22)];
-        [close moveToPoint:NSMakePoint(x+6,8)];[close lineToPoint:NSMakePoint(x,22)];
-        [NSColor.whiteColor setStroke];[close stroke];return;
-    }
-    for(NSInteger row=0;row<3;row++) {
-        [[NSBezierPath bezierPathWithRoundedRect:NSMakeRect(x,5+row*7,6,5) xRadius:1 yRadius:1] fill];
-    }
+    // Flat extension beside the macOS chevron: no independent bezel, glyph,
+    // divider or state-dependent X. The system arrow itself remains untouched.
+    [[NSColor colorWithWhite:self.highlighted ? .28 : .20 alpha:1] setFill];
+    NSRectFill(NSIntersectionRect(self.bounds,rect));
+}
+- (void)moveAt:(NSPoint)point {
+    [super moveAt:point];
+    if(self.tracking && fabs(point.x-self.startX)>=8) { [self.holdTimer invalidate]; self.holdTimer=nil; }
 }
 - (void)finishAt:(NSPoint)point {
     [self.holdTimer invalidate]; self.holdTimer=nil;
     if (!self.tracking) return;
-    BOOL tap=!self.didHold && !self.cancelled && fabs(point.x-self.startX)<12 && NSPointInRect(point,self.bounds);
+    CGFloat dx=point.x-self.startX;
+    BOOL swipe=!self.didHold && !self.cancelled && fabs(dx)>=8;
+    BOOL tap=!self.didHold && !self.cancelled && !swipe && NSPointInRect(point,self.bounds);
     self.tracking=NO; self.touchIdentity=nil; [self highlight:NO];
-    if(tap && self.performCommand) self.performCommand(2);
+    if(self.performCommand && (swipe || tap)) self.performCommand(swipe ? (dx<0 ? 5 : 4) : 2);
+}
+- (void)touchesMovedWithEvent:(NSEvent *)event {
+    // The 14-point edge is intentionally narrow. Follow its original finger
+    // beyond the view so a swipe does not disappear into the music button.
+    for(NSTouch *touch in [event touchesMatchingPhase:NSTouchPhaseTouching inView:nil])
+        if([touch.identity isEqual:self.touchIdentity]) [self moveAt:[touch locationInView:self]];
+}
+- (void)touchesEndedWithEvent:(NSEvent *)event {
+    for(NSTouch *touch in [event touchesMatchingPhase:NSTouchPhaseEnded inView:nil])
+        if([touch.identity isEqual:self.touchIdentity]) [self finishAt:[touch locationInView:self]];
+}
+- (void)fireHold {
+    if(fabs(self.endX-self.startX)>=8) return;
+    [super fireHold];
 }
 @end
 
@@ -61,7 +73,7 @@ static NSString *const DockFoldersID = @"local.musicstrip.dock.folders";
 - (void)layout {
     [super layout];
     self.apps.frame=NSMakeRect(0,0,14,30);
-    self.music.frame=NSMakeRect(16,0,54,30);
+    self.music.frame=NSMakeRect(14,0,56,30);
 }
 @end
 

@@ -366,11 +366,11 @@ static OSStatus SendSpotifyCommand(pid_t pid, int command) {
     };
     self.musicView.performHold = ^{ [weakSelf openMidi]; };
     self.dockPanel=[DockPanel new];
-    self.dockPanel.willShow=^{ [weakSelf sendMidi:@"HIDE"]; weakSelf.midiRequested=NO; weakSelf.dockLauncher.panelOpen=YES; weakSelf.dockLauncher.needsDisplay=YES; [weakSelf.dockLauncher setAccessibilityLabel:@"Close apps: tap to close the Touch Bar picker; hold for desktops"]; };
+    self.dockPanel.willShow=^{ [weakSelf sendMidi:@"HIDE"]; weakSelf.midiRequested=NO; weakSelf.dockLauncher.panelOpen=YES; weakSelf.dockLauncher.needsDisplay=YES; [weakSelf.dockLauncher setAccessibilityLabel:@"Apps beside Control Strip arrow: swipe left to open, right to close; tap to toggle; hold for desktops"]; };
     self.item=[[NSCustomTouchBarItem alloc] initWithIdentifier:ItemID];
     self.dockLauncher=[[DockLauncher alloc] initWithFrame:NSMakeRect(0,0,40,30)];
-    self.dockLauncher.performCommand=^(int command){ [weakSelf sendApps:@"TAP"]; };
-    [self.dockLauncher setAccessibilityLabel:@"Apps: tap for running apps; hold for Touch Bar desktops"];
+    self.dockLauncher.performCommand=^(int command){ [weakSelf appsLauncherCommand:command]; };
+    [self.dockLauncher setAccessibilityLabel:@"Apps beside Control Strip arrow: swipe left to open, right to close; tap to toggle; hold for desktops"];
     self.dockLauncher.performHold=^{ [weakSelf openDesktops]; };
     LauncherPairView *pair=[[LauncherPairView alloc] initWithFrame:NSMakeRect(0,0,70,30)];
     pair.apps=self.dockLauncher; pair.music=self.musicView;
@@ -410,6 +410,13 @@ static OSStatus SendSpotifyCommand(pid_t pid, int command) {
     [self suppressNativeMediaTray];
     [self refresh];
     [self startMidi];
+}
+- (void)appsLauncherCommand:(int)command {
+    if(command==5) {
+        self.appsRequested=YES; self.midiRequested=NO;
+        [self sendMidi:@"HIDE"]; [self sendApps:@"SHOW"];
+    } else if(command==4) [self sendApps:@"HIDE"];
+    else [self sendApps:@"TAP"];
 }
 - (void)sendApps:(NSString *)command {
     if([command isEqualToString:@"TAP"]) {
@@ -456,7 +463,7 @@ static OSStatus SendSpotifyCommand(pid_t pid, int command) {
         NSString *identifier=weakSelf.appsOverlayTrayItem ? AppsTrayID : ItemID;
         SetPresence(identifier,YES);
         weakSelf.dockLauncher.panelOpen=NO; weakSelf.dockLauncher.needsDisplay=YES;
-        [weakSelf.dockLauncher setAccessibilityLabel:@"Apps: tap for running apps; hold for Touch Bar desktops"];
+        [weakSelf.dockLauncher setAccessibilityLabel:@"Apps beside Control Strip arrow: swipe left to open, right to close; tap to toggle; hold for desktops"];
         if(weakSelf.midiRequested && weakSelf.midiReady) { weakSelf.midiRequested=NO; [weakSelf sendMidi:@"SHOW"]; }
     };
 }
@@ -849,14 +856,20 @@ int main(int argc, const char *argv[]) {
         if (argc > 1 && strcmp(argv[1], "--self-test") == 0) {
             __block NSInteger dockTaps=0,dockHolds=0;
             DockLauncher *launcher=[[DockLauncher alloc] initWithFrame:NSMakeRect(0,0,40,30)];
-            launcher.performCommand=^(int command){ dockTaps++; };
+            __block NSInteger dockOpens=0,dockCloses=0;
+            launcher.performCommand=^(int command){ if(command==5) dockOpens++; else if(command==4) dockCloses++; else dockTaps++; };
             launcher.performHold=^{ dockHolds++; };
             [launcher beginAt:NSMakePoint(20,15) identity:nil]; [launcher finishAt:NSMakePoint(20,15)];
             NSCAssert(dockTaps==1 && dockHolds==0,@"Apps tap opens only the app panel");
             [launcher beginAt:NSMakePoint(20,15) identity:nil]; [launcher fireHold]; [launcher fireHold]; [launcher finishAt:NSMakePoint(20,15)];
             NSCAssert(dockTaps==1 && dockHolds==1,@"Desktop picker hold must run once without opening apps afterward");
             [launcher beginAt:NSMakePoint(20,15) identity:nil]; [launcher moveAt:NSMakePoint(35,15)]; [launcher fireHold]; [launcher finishAt:NSMakePoint(35,15)];
-            NSCAssert(dockTaps==1 && dockHolds==1,@"Dragged apps button must not trigger a tap or hold");
+            NSCAssert(dockTaps==1 && dockHolds==1 && dockCloses==1,@"Right swipe closes without a tap or hold");
+            launcher.frame=NSMakeRect(0,0,14,30);
+            [launcher beginAt:NSMakePoint(7,15) identity:nil]; [launcher moveAt:NSMakePoint(-8,15)]; [launcher fireHold]; [launcher finishAt:NSMakePoint(-8,15)];
+            NSCAssert(dockOpens==1 && dockTaps==1 && dockHolds==1,@"Left swipe can finish beyond the narrow launcher");
+            [launcher beginAt:NSMakePoint(7,15) identity:nil]; [launcher moveAt:NSMakePoint(22,15)]; launcher.cancelled=YES; [launcher finishAt:NSMakePoint(22,15)];
+            NSCAssert(dockCloses==1,@"Cancelled swipes do not close apps");
             DockPanel *centerPanel=[DockPanel new];
             NSScrubber *centerScrubber=[[NSScrubber alloc] initWithFrame:NSMakeRect(0,0,660,30)];
             centerScrubber.dataSource=centerPanel; centerScrubber.scrubberLayout=[CenteredAppsLayout new];
@@ -955,6 +968,24 @@ int main(int argc, const char *argv[]) {
         }
         AppDelegate *delegate = [AppDelegate new];
         app.delegate = delegate;
+        if(argc>1 && strcmp(argv[1],"--apps-edge-smoke-test")==0) {
+            dispatch_after(dispatch_time(DISPATCH_TIME_NOW,1*NSEC_PER_SEC),dispatch_get_main_queue(),^{
+                DockLauncher *launcher=delegate.dockLauncher;
+                for(NSInteger i=0;i<2;i++) {
+                    [launcher beginAt:NSMakePoint(7,15) identity:nil];
+                    [launcher moveAt:NSMakePoint(-8,15)]; [launcher finishAt:NSMakePoint(-8,15)];
+                    NSCAssert(delegate.dockPanel.visible && delegate.appsVisible,@"Left edge swipes keep the native apps panel open");
+                }
+                NSCAssert(NSWidth(launcher.frame)==14 && NSMinX(delegate.musicView.frame)==14,@"Invisible extension has no app/music gap");
+            });
+            dispatch_after(dispatch_time(DISPATCH_TIME_NOW,2*NSEC_PER_SEC),dispatch_get_main_queue(),^{
+                DockLauncher *launcher=delegate.dockLauncher;
+                [launcher beginAt:NSMakePoint(7,15) identity:nil];
+                [launcher moveAt:NSMakePoint(22,15)]; [launcher finishAt:NSMakePoint(22,15)];
+                NSCAssert(!delegate.dockPanel.visible && !delegate.appsVisible,@"Right edge swipe closes the native apps panel");
+                puts("NATIVE_APPS_EXTENSION_REPEATED_LEFT_OPEN_RIGHT_CLOSE_PASSED"); [NSApp terminate:nil];
+            });
+        }
         if(argc>1 && strcmp(argv[1],"--apps-swipe-smoke-test")==0) {
             dispatch_after(dispatch_time(DISPATCH_TIME_NOW,9*NSEC_PER_SEC),dispatch_get_main_queue(),^{ [delegate sendApps:@"TAP"]; [delegate.dockPanel activateEntry:delegate.dockPanel.runningApps[0]]; });
             dispatch_after(dispatch_time(DISPATCH_TIME_NOW,12*NSEC_PER_SEC),dispatch_get_main_queue(),^{
