@@ -215,6 +215,7 @@ static NSString *const NavigationID = @"local.musicstrip.midi.navigation";
 @property CGFloat startY;
 @property CGFloat endY;
 @property BOOL octaveControl;
+@property NSString *stackedCaption;
 @property NSInteger joinedEdge; // 1 = left half, 2 = right half; 0 = native bezel.
 @property CGFloat presetHue;
 @property BOOL recordLit;
@@ -247,6 +248,33 @@ static MidiNavigationButton *octavesButton;
 }
 - (NSSize)intrinsicContentSize { return NSMakeSize(44,30); }
 - (void)drawRect:(NSRect)dirtyRect {
+    if(self.stackedCaption) {
+        [NSGraphicsContext saveGraphicsState];
+        [NSBezierPath clipRect:NSIntersectionRect(self.bounds,dirtyRect)];
+        NSRect whole=NSMakeRect(self.joinedEdge==2 ? -44 : 0,1,88,28);
+        [[NSBezierPath bezierPathWithRoundedRect:whole xRadius:7 yRadius:7] addClip];
+        [[[NSGradient alloc] initWithStartingColor:[NSColor colorWithWhite:.24 alpha:1] endingColor:[NSColor colorWithWhite:.13 alpha:1]] drawInRect:self.bounds angle:90];
+        if(self.highlighted) { [[NSColor colorWithWhite:1 alpha:.12] setFill]; NSRectFill(self.bounds); }
+        if(self.joinedEdge==2) { [[NSColor colorWithWhite:1 alpha:.20] setFill]; NSRectFill(NSMakeRect(0,5,.5,20)); }
+        if(self.image) {
+            NSImage *glyph=[NSImage imageWithSize:NSMakeSize(18,13) flipped:NO drawingHandler:^BOOL(NSRect rect) {
+                NSSize size=self.image.size;
+                CGFloat scale=MIN(18/MAX(1,size.width),13/MAX(1,size.height));
+                NSSize fitted=NSMakeSize(size.width*scale,size.height*scale);
+                [self.image drawInRect:NSMakeRect((18-fitted.width)/2,(13-fitted.height)/2,fitted.width,fitted.height)];
+                [NSColor.whiteColor setFill]; NSRectFillUsingOperation(rect,NSCompositingOperationSourceIn); return YES;
+            }];
+            [glyph drawInRect:NSMakeRect(13,14,18,13)];
+        } else {
+            NSDictionary *top=@{NSFontAttributeName:[NSFont monospacedDigitSystemFontOfSize:14 weight:NSFontWeightSemibold],NSForegroundColorAttributeName:NSColor.whiteColor};
+            NSSize size=[self.title sizeWithAttributes:top];
+            [self.title drawAtPoint:NSMakePoint((44-size.width)/2,11) withAttributes:top];
+        }
+        NSDictionary *bottom=@{NSFontAttributeName:[NSFont systemFontOfSize:8 weight:NSFontWeightSemibold],NSForegroundColorAttributeName:[NSColor colorWithWhite:.90 alpha:1]};
+        NSSize size=[self.stackedCaption sizeWithAttributes:bottom];
+        [self.stackedCaption drawAtPoint:NSMakePoint((44-size.width)/2,2) withAttributes:bottom];
+        [NSGraphicsContext restoreGraphicsState]; return;
+    }
     if(!self.joinedEdge) { [super drawRect:dirtyRect]; return; }
     [NSGraphicsContext saveGraphicsState];
     NSRect whole=NSMakeRect(self.joinedEdge==2 ? -44 : 0,1,88,28);
@@ -373,7 +401,9 @@ static PianoConfigButton *pianoModeButton,*pianoChannelButton;
 static void UpdatePianoConfigControls(void) {
     NSInteger mode=[[expandedPianoView valueForKey:@"type"] integerValue]; mode=MIN(2,MAX(0,mode));
     pianoModeButton.title=@[@"GLISS",@"HOLD",@"BEND"][mode];
+    pianoModeButton.stackedCaption=pianoModeButton.title;
     pianoModeButton.image=[NSImage imageWithSystemSymbolName:@[@"pianokeys",@"hand.raised.fill",@"waveform"][mode] accessibilityDescription:nil];
+    pianoModeButton.needsDisplay=YES;
     [pianoModeButton setAccessibilityLabel:[NSString stringWithFormat:@"Piano gesture: %@. Tap to cycle, swipe left or right to change.",@[@"Glissando",@"No Glissando",@"Pitchbend"][mode]]];
     pianoChannelButton.title=[NSString stringWithFormat:@"Ch %@",[expandedPianoView valueForKey:@"channelNumber"]];
     [pianoChannelButton setAccessibilityLabel:[NSString stringWithFormat:@"MIDI channel %@. Tap or swipe to change this piano only.",[expandedPianoView valueForKey:@"channelNumber"]]];
@@ -515,26 +545,40 @@ static void Open(id self, SEL sel, NSTouchBar *bar, id identifier) {
     if (pianoExpanded) {
         recordController.button.joinedEdge=0;
         recordController.item.collapsedRepresentation=recordController.button;
-        NSCustomTouchBarItem *octaves=[[NSCustomTouchBarItem alloc] initWithIdentifier:OctavesID];
+        NSCustomTouchBarItem *options=[[NSCustomTouchBarItem alloc] initWithIdentifier:OctavesID];
         octavesButton=[[MidiNavigationButton alloc] initWithFrame:NSMakeRect(0,0,44,30)];
         octavesButton.octaveControl=YES;
+        octavesButton.stackedCaption=@"OCT"; octavesButton.joinedEdge=2;
         octavesButton.image=nil; octavesButton.imagePosition=NSNoImage;
         octavesButton.title=[[expandedPianoView valueForKey:@"numOctaves"] stringValue];
         octavesButton.font=[NSFont monospacedDigitSystemFontOfSize:14 weight:NSFontWeightMedium];
         [octavesButton setAccessibilityLabel:@"Visible piano octaves: swipe right to increase or left to decrease; tapping does nothing"];
         [octavesButton.widthAnchor constraintEqualToConstant:44].active=YES;
-        octaves.view=octavesButton; octaves.visibilityPriority=NSTouchBarItemPriorityHigh;
         pianoChannelButton=nil;
-        NSCustomTouchBarItem *config=[[NSCustomTouchBarItem alloc] initWithIdentifier:@"local.musicstrip.piano.gesture"];
         pianoModeButton=[[PianoConfigButton alloc] initWithFrame:NSMakeRect(0,0,44,30)];
         pianoModeButton.octaveControl=YES;
+        pianoModeButton.joinedEdge=1;
         pianoModeButton.font=[NSFont systemFontOfSize:8 weight:NSFontWeightMedium];
         pianoModeButton.imagePosition=NSImageAbove;
         [pianoModeButton.widthAnchor constraintEqualToConstant:44].active=YES;
-        config.view=pianoModeButton; config.visibilityPriority=NSTouchBarItemPriorityHigh;
+        NSView *joined=[[StripJoinedMidiControl alloc] initWithFrame:NSMakeRect(0,0,88,30)];
+        joined.translatesAutoresizingMaskIntoConstraints=NO;
+        [joined setContentHuggingPriority:NSLayoutPriorityRequired forOrientation:NSLayoutConstraintOrientationHorizontal];
+        [joined setContentCompressionResistancePriority:NSLayoutPriorityRequired forOrientation:NSLayoutConstraintOrientationHorizontal];
+        pianoModeButton.translatesAutoresizingMaskIntoConstraints=NO; octavesButton.translatesAutoresizingMaskIntoConstraints=NO;
+        [joined addSubview:pianoModeButton]; [joined addSubview:octavesButton];
+        [NSLayoutConstraint activateConstraints:@[
+            [joined.widthAnchor constraintEqualToConstant:88], [joined.heightAnchor constraintEqualToConstant:30],
+            [pianoModeButton.leadingAnchor constraintEqualToAnchor:joined.leadingAnchor],
+            [pianoModeButton.topAnchor constraintEqualToAnchor:joined.topAnchor], [pianoModeButton.heightAnchor constraintEqualToConstant:30],
+            [octavesButton.leadingAnchor constraintEqualToAnchor:pianoModeButton.trailingAnchor],
+            [octavesButton.topAnchor constraintEqualToAnchor:joined.topAnchor], [octavesButton.heightAnchor constraintEqualToConstant:30],
+            [octavesButton.trailingAnchor constraintEqualToAnchor:joined.trailingAnchor]
+        ]];
+        options.view=joined; options.visibilityPriority=NSTouchBarItemPriorityHigh;
         UpdatePianoConfigControls();
-        outer.templateItems=[NSSet setWithArray:@[close,expandedPianoItem,config,octaves]];
-        outer.defaultItemIdentifiers=@[CloseID,expandedPianoItem.identifier,@"local.musicstrip.piano.gesture",OctavesID];
+        outer.templateItems=[NSSet setWithArray:@[close,expandedPianoItem,options]];
+        outer.defaultItemIdentifiers=@[CloseID,expandedPianoItem.identifier,OctavesID];
         outer.principalItemIdentifier=expandedPianoItem.identifier;
         navigationButton=nil;
     }
@@ -621,7 +665,7 @@ static void ExpandPiano(NSView *piano) {
     if (available<=64) return;
     normalPianoView=piano; expandedPianoView=piano; expandedPianoItem=item; pianoNormalFrame=piano.frame;
     pianoNormalOctaves=[[piano valueForKey:@"numOctaves"] integerValue];
-    pianoFullWidth=available-32-44-44-32;
+    pianoFullWidth=available-32-88-24;
     pianoHugging=[piano contentHuggingPriorityForOrientation:NSLayoutConstraintOrientationHorizontal];
     pianoResistance=[piano contentCompressionResistancePriorityForOrientation:NSLayoutConstraintOrientationHorizontal];
     NSMutableArray *widths=[NSMutableArray array];
@@ -1017,6 +1061,8 @@ static void TestPianoExpansionCase(NSTouchBar *bar,NSTouchBar *saved,id savedIde
             NSCAssert([[expandedPianoView valueForKey:@"type"] integerValue]==(before+1)%3,@"Actual gesture button must cycle the native modes");
         }
         NSCAssert(!pianoChannelButton && ![presentation.itemIdentifiers containsObject:@"local.musicstrip.piano.channel"],@"MIDI channel belongs in Customize Controls, not the expanded piano");
+        NSCAssert(pianoModeButton.superview==octavesButton.superview && fabs(NSMaxX(pianoModeButton.frame)-NSMinX(octavesButton.frame))<.1,@"Mode and octaves must be one gapless joined item");
+        NSCAssert([pianoModeButton.stackedCaption isEqual:pianoModeButton.title] && [octavesButton.stackedCaption isEqual:@"OCT"],@"Piano options use clear stacked labels");
         for(NSView *control in @[pianoModeButton,octavesButton]) {
             NSRect frame=[control convertRect:control.bounds toView:nil];
             NSCAssert(control.window && frame.origin.x>=0 && NSMaxX(frame)<=control.window.contentView.bounds.size.width,@"All expanded settings controls must be visible");
