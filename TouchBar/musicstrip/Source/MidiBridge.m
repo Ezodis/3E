@@ -63,6 +63,8 @@ static void ResetPianoExpansion(void);
 static void CancelPianoHold(NSView *piano);
 static void UpdateActivePianoSizing(void);
 static void SuspendPianoSizing(NSTouchBar *bar);
+static NSInteger PianoCount(NSTouchBar *bar);
+static void SizePianos(NSTouchBar *bar);
 static void TransferPianoInstance(NSView *source,NSView *replacement);
 static void SaveExpandedPianoSettings(void);
 static void CycleExpandedPianoSetting(BOOL channel,NSInteger direction);
@@ -97,7 +99,7 @@ static void SetPianoStartNote(NSView *piano,NSInteger note) {
 // Keep the original key shapes, touch regions, note engine and appearance.
 // At a half-octave position, rotate the generated keyboard window by six notes.
 static void StabilizePianoEdges(NSView *piano) {
-    CGFloat width=piano.bounds.size.width,edge=MIN(18,width/4);
+    CGFloat width=piano.bounds.size.width,edge=MIN(14,width/4);
     if(width<=0) return;
     NSInteger octaves=[[piano valueForKey:@"numOctaves"] integerValue];
     if(octaves>0 && (width-2*edge)/(octaves*7)<10) {
@@ -474,8 +476,15 @@ static void Open(id self, SEL sel, NSTouchBar *bar, id identifier) {
     [closeButton.widthAnchor constraintEqualToConstant:32].active = YES;
     close.view = closeButton;
     close.visibilityPriority = NSTouchBarItemPriorityHigh;
-    NSGroupTouchBarItem *layout = [[NSGroupTouchBarItem alloc] initWithIdentifier:LayoutID];
+    BOOL multiplePianos=!pianoExpanded && PianoCount(bar)>1;
+    if(!pianoExpanded) SizePianos(bar);
+    // Alert-style groups let the client choose spacing rather than inserting
+    // standard button-sized gutters between neighboring keyboards.
+    NSGroupTouchBarItem *layout = multiplePianos
+        ? [NSGroupTouchBarItem alertStyleGroupItemWithIdentifier:LayoutID]
+        : [[NSGroupTouchBarItem alloc] initWithIdentifier:LayoutID];
     layout.groupTouchBar=bar;
+    layout.prefersEqualWidths=multiplePianos && (NSUInteger)PianoCount(bar)==bar.itemIdentifiers.count;
     navigationButton=[[MidiNavigationButton alloc] initWithFrame:NSMakeRect(0,0,44,30)];
     [navigationButton.widthAnchor constraintEqualToConstant:44].active=YES;
     recordController=[StripRecordController new];
@@ -483,7 +492,7 @@ static void Open(id self, SEL sel, NSTouchBar *bar, id identifier) {
     NSUInteger presets=[[(id)NSApp.delegate valueForKey:@"allUserTouchbars"] count];
     JoinRecordNavigation(recordController,navigationButton,preset,presets);
     outer.templateItems = [NSSet setWithArray:@[close, layout, recordController.item]];
-    outer.defaultItemIdentifiers = @[CloseID, LayoutID, NSTouchBarItemIdentifierFlexibleSpace, RecordID];
+    outer.defaultItemIdentifiers = multiplePianos ? @[CloseID,LayoutID,RecordID] : @[CloseID, LayoutID, NSTouchBarItemIdentifierFlexibleSpace, RecordID];
     if (pianoExpanded) {
         recordController.button.joinedEdge=0;
         recordController.item.collapsedRepresentation=recordController.button;
@@ -516,7 +525,11 @@ static void Open(id self, SEL sel, NSTouchBar *bar, id identifier) {
     }
     presentationSerial++;
     presentation = outer;
-    ((void (*)(id, SEL, id, id))originalOpen)(self, sel, outer, identifier);
+    [NSAnimationContext runAnimationGroup:^(NSAnimationContext *context) {
+        context.duration=0; context.allowsImplicitAnimation=NO;
+        ((void (*)(id, SEL, id, id))originalOpen)(self, sel, outer, identifier);
+        UpdateActivePianoSizing();
+    } completionHandler:nil];
     RemoveCycleKey(self);
     Report("VISIBLE\n");
 }
@@ -928,9 +941,12 @@ static void TestNativeFlexiblePianos(NSInteger count) {
     bar.customizationIdentifier=[@"local.musicstrip.flex-test." stringByAppendingString:NSUUID.UUID.UUIDString];
     Close(delegate,NSSelectorFromString(@"closeTouchbar:"),presentation);
     Open(delegate,NSSelectorFromString(@"openTouchbar:fromIdentifier:"),bar,savedIdentifier);
+    NSArray *firstItems=presentation.defaultItemIdentifiers.copy;
+    NSCAssert(![firstItems containsObject:NSTouchBarItemIdentifierFlexibleSpace],@"Multi-piano presentation must start without a spacer, not remove it on the later refresh");
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW,700*NSEC_PER_MSEC),dispatch_get_main_queue(),^{
         @try {
             UpdateActivePianoSizing();
+            NSCAssert([firstItems isEqual:presentation.defaultItemIdentifiers],@"Refreshing must not rebuild the visible multi-piano row");
             NSArray *geometry=PianoGeometry(bar); CGFloat width=[geometry.firstObject[@"width"] doubleValue];
             for(NSDictionary *view in geometry) {
                 NSRect position=NSRectFromString(view[@"position"]);
@@ -1106,7 +1122,7 @@ static void Command(NSString *command) {
                     NSBitmapImageRep *rep=[NSBitmapImageRep imageRepWithData:preview.TIFFRepresentation];
                     [[rep representationUsingType:NSBitmapImageFileTypePNG properties:@{}] writeToFile:@"/tmp/3pounds-dense-piano.png" atomically:YES];
                 }
-                NSCAssert(fabs(left.size.width-18)<.1 && fabs(right.size.width-18)<.1 && fabs(NSMaxX(right)-width.doubleValue)<.1,@"Dense piano arrows must stay fixed and visible");
+                NSCAssert(fabs(left.size.width-14)<.1 && fabs(right.size.width-14)<.1 && fabs(NSMaxX(right)-width.doubleValue)<.1,@"Compact piano arrows must stay fixed and visible");
                 for(NSNumber *side in @[@NO,@YES]) {
                     PianoTestTouch *touch=[PianoTestTouch new]; touch.identity=NSUUID.UUID;
                     NSRect edge=side.boolValue ? right : left;

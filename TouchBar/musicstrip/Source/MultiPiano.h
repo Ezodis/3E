@@ -15,6 +15,11 @@ static char pianoNativeMinimumKey;
 static BOOL IsPianoSlot(NSString *identifier) {
     return [@[NativePianoID,SecondPianoID,ThirdPianoID] containsObject:identifier];
 }
+static NSInteger PianoCount(NSTouchBar *bar) {
+    NSInteger count=0;
+    for(NSString *identifier in bar.itemIdentifiers) if(IsPianoSlot(identifier)) count++;
+    return count;
+}
 static void SuspendPianoSizing(NSTouchBar *bar) {
     NSArray *equal=objc_getAssociatedObject(bar,&pianoEqualWidthsKey);
     [NSLayoutConstraint deactivateConstraints:equal ?: @[]];
@@ -22,7 +27,7 @@ static void SuspendPianoSizing(NSTouchBar *bar) {
 }
 static void SizePianoItem(NSCustomTouchBarItem *item,NSTouchBar *bar) {
     if(!IsPianoSlot(item.identifier) || ![item.view isKindOfClass:NSClassFromString(@"pianoView")]) return;
-    NSInteger count=0; for(NSString *identifier in bar.itemIdentifiers) if(IsPianoSlot(identifier)) count++;
+    NSInteger count=PianoCount(bar);
     if(bar==customizationBar) count=MIN(3,MAX(2,count+1)); // Leave room for the next dropped piano.
     NSArray *minimums=objc_getAssociatedObject(item.view,&pianoNativeMinimumKey);
     if(!minimums) {
@@ -34,10 +39,16 @@ static void SizePianoItem(NSCustomTouchBarItem *item,NSTouchBar *bar) {
     }
     // The original piano enforces a 400-point minimum. Three such minima
     // cannot fit; retain that minimum only for the unchanged single piano.
-    for(NSArray *saved in minimums) ((NSLayoutConstraint *)saved[0]).constant=count<2 ? [saved[1] doubleValue] : 60;
+    BOOL changed=NO;
+    for(NSArray *saved in minimums) {
+        NSLayoutConstraint *minimum=saved[0];
+        CGFloat target=count<2 ? [saved[1] doubleValue] : 60;
+        if(minimum.constant!=target) { minimum.constant=target; changed=YES; }
+    }
     NSLayoutConstraint *width=objc_getAssociatedObject(item.view,&pianoCompactWidthKey);
     if(count<2) { width.active=NO; return; } // Keep the existing single-piano presentation.
     if(!width) {
+        changed=YES;
         item.view.translatesAutoresizingMaskIntoConstraints=NO;
         width=[item.view.widthAnchor constraintEqualToConstant:480.0/count];
         width.identifier=@"3£ independent piano width";
@@ -46,13 +57,14 @@ static void SizePianoItem(NSCustomTouchBarItem *item,NSTouchBar *bar) {
     CGFloat target=bar==customizationBar ? 360.0/count : 80;
     NSLayoutPriority priority=bar==customizationBar ? NSLayoutPriorityRequired : 1;
     if(width.constant!=target || width.priority!=priority) {
+        changed=YES;
         width.active=NO; width.constant=target; width.priority=priority;
     }
-    width.active=YES;
+    if(!width.active) { width.active=YES; changed=YES; }
     [item.view setContentHuggingPriority:1 forOrientation:NSLayoutConstraintOrientationHorizontal];
     [item.view setContentCompressionResistancePriority:1 forOrientation:NSLayoutConstraintOrientationHorizontal];
     item.visibilityPriority=NSTouchBarItemPriorityHigh;
-    [item.view invalidateIntrinsicContentSize];
+    if(changed) [item.view invalidateIntrinsicContentSize];
 }
 static void SizePianos(NSTouchBar *bar) {
     NSMutableArray<NSView *> *views=[NSMutableArray new];
@@ -89,6 +101,7 @@ static void SizePianos(NSTouchBar *bar) {
     }
     [NSLayoutConstraint activateConstraints:equal];
     objc_setAssociatedObject(bar,&pianoEqualWidthsKey,equal,OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    [common layoutSubtreeIfNeeded];
 }
 static NSArray *PianoGeometry(NSTouchBar *bar) {
     NSMutableArray *geometry=[NSMutableArray new];

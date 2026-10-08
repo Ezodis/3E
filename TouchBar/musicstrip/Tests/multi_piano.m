@@ -23,6 +23,9 @@ static void TestFlexiblePianoWidths(NSInteger count) {
     }
     [previous.trailingAnchor constraintEqualToAnchor:host.contentView.trailingAnchor].active=YES;
     bar.templateItems=[NSSet setWithArray:items]; SizePianos(bar);
+    NSArray *firstConstraints=objc_getAssociatedObject(bar,&pianoEqualWidthsKey);
+    for(NSInteger pass=0;pass<20;pass++) SizePianos(bar);
+    NSCAssert(firstConstraints==objc_getAssociatedObject(bar,&pianoEqualWidthsKey),@"Repeated refreshes must retain the exact equal-width constraints instead of rebuilding the visible layout");
     for(NSNumber *available in @[@600,@900]) {
         [host setContentSize:NSMakeSize(available.doubleValue,30)]; [host.contentView layoutSubtreeIfNeeded];
         for(NSView *view in views) NSCAssert(fabs(view.bounds.size.width-available.doubleValue/count)<.1,@"Two or three keyboards must divide all available width equally, including after resizing");

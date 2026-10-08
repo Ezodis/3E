@@ -78,6 +78,8 @@ The installer updates only the injected MIDI bridge, required framework links/si
 
 ## Verification
 
+Multi-piano presentation is prepared before opening: the flexible spacer is omitted from the initial outer row, equal sizing is applied synchronously without implicit animation, and unchanged width constraints are retained across refreshes. Multi-piano groups use AppKit's compact alert-style grouping. Arrow regions are fixed at 14 points on each side (formerly 18), reclaiming 8 points per piano for keys while preserving arrow taps/holds. Native tests cover two/three-piano row stability and dense arrow hit regions through ten octaves; perceived switching smoothness still requires a physical finger test.
+
 ```sh
 python3 musicstrip/Tests/test_record.py
 xcrun clang -fobjc-arc -O0 -Wno-unused-parameter -framework AppKit -framework CoreMIDI \

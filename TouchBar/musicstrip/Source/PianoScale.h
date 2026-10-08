@@ -34,7 +34,7 @@ static void DrawPianoScale(NSView *piano,SEL selector,NSRect dirty) {
     // only the reserved edges with legible, compact fixed-size chevrons.
     [NSGraphicsContext saveGraphicsState];
     [NSBezierPath clipRect:NSIntersectionRect(piano.bounds,dirty)];
-    CGFloat edge=MIN(18,piano.bounds.size.width/4);
+    CGFloat edge=MIN(14,piano.bounds.size.width/4);
     for(NSInteger side=0;side<2;side++) {
         CGFloat x=side ? NSMaxX(piano.bounds)-edge : NSMinX(piano.bounds);
         [NSColor.blackColor setFill]; NSRectFill(NSMakeRect(x,0,edge,piano.bounds.size.height));
