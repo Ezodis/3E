@@ -29,14 +29,29 @@ static BOOL ScaleKeyIsPressed(NSView *piano,id key) {
     return NO;
 }
 static void DrawPianoScale(NSView *piano,SEL selector,NSRect dirty) {
-    ((void(*)(id,SEL,NSRect))originalPianoDraw)(piano,selector,dirty);
-    // The vendor also sizes its drawn chevrons by octave density. Redraw
-    // only the reserved edges with legible, compact fixed-size chevrons.
+    // Native drawRect computes a second pair of arrows directly from octave
+    // count, ignoring upKey/downKey. They can land on playable end keys.
+    // Render the existing native key paths/pressed state without those arrows.
+    [piano viewWillDraw];
+    [NSGraphicsContext saveGraphicsState];
+    NSRect keyboard=piano.bounds;
+    keyboard.origin.x+=PianoEdgeRect(piano,NO).size.width;
+    keyboard.size.width-=2*PianoEdgeRect(piano,NO).size.width;
+    [NSBezierPath clipRect:NSIntersectionRect(keyboard,dirty)];
+    [NSColor.blackColor setFill]; NSRectFill(keyboard);
+    for(id key in [piano valueForKey:@"pianoKeys"]) {
+        NSBezierPath *path=[key valueForKey:@"drawPath"];
+        BOOL black=[@[@1,@3,@6,@8,@10] containsObject:@(([[key valueForKey:@"pitch"] integerValue]%12+12)%12)];
+        [(ScaleKeyIsPressed(piano,key) ? NSColor.redColor : black ? NSColor.blackColor : NSColor.whiteColor) setFill];
+        [path fill]; [NSColor.blackColor setStroke]; [path stroke];
+    }
+    [NSGraphicsContext restoreGraphicsState];
+    // The sole arrows occupy the same fixed regions used by touch handling.
     [NSGraphicsContext saveGraphicsState];
     [NSBezierPath clipRect:NSIntersectionRect(piano.bounds,dirty)];
     CGFloat edge=MIN(14,piano.bounds.size.width/4);
     for(NSInteger side=0;side<2;side++) {
-        CGFloat x=side ? NSMaxX(piano.bounds)-edge : NSMinX(piano.bounds);
+        CGFloat x=PianoEdgeRect(piano,side!=0).origin.x;
         [NSColor.blackColor setFill]; NSRectFill(NSMakeRect(x,0,edge,piano.bounds.size.height));
         CGFloat midY=NSMidY(piano.bounds),center=x+edge/2;
         NSBezierPath *arrow=[NSBezierPath bezierPath];

@@ -89,6 +89,11 @@ static IMP originalPianoBegan, originalPianoMoved, originalPianoEnded, originalP
 static char halfOctaveKey,halfGeometryKey;
 static BOOL PianoHalf(NSView *piano) { return [objc_getAssociatedObject(piano,&halfOctaveKey) boolValue]; }
 static NSInteger PianoStartNote(NSView *piano) { return [[piano valueForKey:@"startOctave"] integerValue]*12+(PianoHalf(piano) ? 6 : 0); }
+static NSRect PianoEdgeRect(NSView *piano,BOOL right) {
+    NSRect bounds=piano.bounds;
+    CGFloat edge=MIN(14,bounds.size.width/4);
+    return NSMakeRect(right ? NSMaxX(bounds)-edge : NSMinX(bounds),NSMinY(bounds),edge,bounds.size.height);
+}
 static void SetPianoStartNote(NSView *piano,NSInteger note) {
     NSInteger octaves=[[piano valueForKey:@"numOctaves"] integerValue];
     note=MIN(MAX(0,note),MAX(0,(10-octaves)*12));
@@ -721,12 +726,11 @@ static void PianoBegan(NSView *piano,SEL selector,NSEvent *event) {
     NSSet<NSTouch *> *touches=[event touchesMatchingPhase:NSTouchPhaseBegan inView:piano];
     NSTouch *touch=touches.count==1 ? touches.anyObject : nil;
     NSPoint point=touch ? [touch locationInView:piano] : NSZeroPoint;
-    NSBezierPath *up=[piano valueForKey:@"upKey"], *down=[piano valueForKey:@"downKey"];
-    // Fixed-width edges remain usable even when many octaves compress keys.
-    BOOL region=(up && NSPointInRect(point,up.bounds)) || (down && NSPointInRect(point,down.bounds));
+    // Hit-test the exact regions we draw, independent of cached native paths.
+    BOOL forward=NSPointInRect(point,PianoEdgeRect(piano,YES));
+    BOOL region=forward || NSPointInRect(point,PianoEdgeRect(piano,NO));
     if(touch && touch.type==NSTouchTypeDirect && region && ![[piano valueForKey:@"activeKeys"] count]) {
         NSInteger note=PianoStartNote(piano);
-        BOOL forward=up && NSPointInRect(point,up.bounds);
         BeginPianoHold(piano,touch.identity,point,note/12);
         [pianoHolds objectForKey:piano].direction=forward ? 1 : -1;
         Report("PIANO_ARROW_HOLD_ARMED\n");
@@ -739,7 +743,7 @@ static void PianoMoved(NSView *piano,SEL selector,NSEvent *event) {
     for(NSTouch *touch in [event touchesMatchingPhase:NSTouchPhaseTouching inView:piano]) {
         if(hold && [touch.identity isEqual:hold.identity]) {
             NSPoint point=[touch locationInView:piano];
-            NSRect edge=[[piano valueForKey:hold.direction>0 ? @"upKey" : @"downKey"] bounds];
+            NSRect edge=PianoEdgeRect(piano,hold.direction>0);
             if(!NSPointInRect(point,NSInsetRect(edge,-4,-4))) { hold.cancelled=YES; [hold.timer invalidate];hold.timer=nil; }
         }
     }
@@ -1112,6 +1116,43 @@ static void TestPianoPhysicalHold(BOOL up) {
         Report("PIANO_PHYSICAL_HOLD_FINISHED\n");
     });
 }
+static void TestPianoEndKeys(void) {
+    NSUInteger saved=liveScaleMask; liveScaleMask=0;
+    @try {
+        for(NSNumber *count in @[@1,@2,@10]) for(NSNumber *width in @[@284,@800]) {
+            NSView *piano=((id(*)(id,SEL,int,int))objc_msgSend)([NSClassFromString(@"pianoView") alloc],NSSelectorFromString(@"initWithOctaves:andTransposition:"),count.intValue,0);
+            piano.frame=NSMakeRect(0,0,width.doubleValue,30); [piano viewWillDraw];
+            PianoTestOutput *output=[PianoTestOutput new]; [piano setValue:output forKey:@"pianoDelegate"]; [piano setValue:@1 forKey:@"kind"];
+            id last=nil;
+            for(id key in [piano valueForKey:@"pianoKeys"]) if([[key valueForKey:@"pitch"] integerValue]==count.integerValue*12-1) last=key;
+            NSCAssert(last,@"Last B must exist");
+            NSBezierPath *path=[last valueForKey:@"drawPath"];
+            PianoTestTouch *touch=[PianoTestTouch new]; touch.identity=NSUUID.UUID;
+            touch.point=NSMakePoint(NSMidX(path.bounds),5);
+            PianoTestEvent *event=[PianoTestEvent new]; event.touch=touch; event.phase=NSTouchPhaseBegan;
+            PianoBegan(piano,@selector(touchesBeganWithEvent:),(id)event);
+            NSCAssert(ScaleKeyIsPressed(piano,last) && ![pianoHolds objectForKey:piano],@"Last key plays a note, not an arrow action");
+            NSBitmapImageRep *rep=[[NSBitmapImageRep alloc] initWithBitmapDataPlanes:NULL pixelsWide:width.integerValue pixelsHigh:30 bitsPerSample:8 samplesPerPixel:4 hasAlpha:YES isPlanar:NO colorSpaceName:NSDeviceRGBColorSpace bytesPerRow:0 bitsPerPixel:0];
+            [NSGraphicsContext saveGraphicsState]; [NSGraphicsContext setCurrentContext:[NSGraphicsContext graphicsContextWithBitmapImageRep:rep]];
+            [piano drawRect:piano.bounds]; [NSGraphicsContext restoreGraphicsState];
+            for(NSInteger y=4;y<27;y++) for(NSInteger x=ceil(NSMinX(path.bounds)+2);x<floor(NSMaxX(path.bounds)-2);x++) {
+                if(![path containsPoint:NSMakePoint(x,y)]) continue;
+                NSColor *pixel=[[rep colorAtX:x y:y] colorUsingColorSpace:NSColorSpace.sRGBColorSpace];
+                NSCAssert(pixel.greenComponent<.2 && pixel.blueComponent<.2,@"Pressed end key must not acquire a white native arrow");
+            }
+            if(count.intValue==1 && width.intValue==800) [[rep representationUsingType:NSBitmapImageFileTypePNG properties:@{}] writeToFile:@"/tmp/3e-last-key-pressed.png" atomically:YES];
+            event.phase=NSTouchPhaseEnded; PianoEnded(piano,@selector(touchesEndedWithEvent:),(id)event);
+            NSCAssert(output.notes.count==2 && [output.notes.lastObject[1] integerValue]==0,@"End key must release normally");
+            // A stale native arrow path must not override the visible edge.
+            [piano setValue:[NSBezierPath bezierPathWithRect:NSMakeRect(40,0,4,4)] forKey:@"upKey"];
+            touch.point=NSMakePoint(NSMidX(PianoEdgeRect(piano,YES)),25); event.phase=NSTouchPhaseBegan;
+            PianoBegan(piano,@selector(touchesBeganWithEvent:),(id)event);
+            NSCAssert([pianoHolds objectForKey:piano].direction==1 && ![[piano valueForKey:@"activeKeys"] count],@"Visible right edge must arm expansion despite stale native paths");
+            CancelPianoHold(piano);
+        }
+        Report("PIANO_END_KEYS_NO_GHOST_ARROWS_AND_RIGHT_EDGE_PASSED\n");
+    } @finally { liveScaleMask=saved; }
+}
 static void Command(NSString *command) {
     id delegate = NSApp.delegate;
     @try {
@@ -1122,6 +1163,8 @@ static void Command(NSString *command) {
             TestIndependentPianos();
         } else if ([command isEqualToString:@"PIANO_NATIVE_ADD_TEST"]) {
             TestNativePianoAddition();
+        } else if ([command isEqualToString:@"PIANO_END_KEYS_TEST"]) {
+            TestPianoEndKeys();
         } else if ([command isEqualToString:@"PIANO_DENSE_ARROW_TEST"]) {
             for(NSNumber *count in @[@2,@6,@10]) for(NSNumber *width in @[@160,@284,@540,@800]) {
                 NSView *view=((id(*)(id,SEL,int,int))objc_msgSend)([NSClassFromString(@"pianoView") alloc],NSSelectorFromString(@"initWithOctaves:andTransposition:"),count.intValue,0);
