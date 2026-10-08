@@ -133,12 +133,15 @@ static void SaveExpandedPianoSettings(void) {
     settings[@"channel"]=[expandedPianoView valueForKey:@"channelNumber"];
     settings[@"octaves"]=[expandedPianoView valueForKey:@"numOctaves"];
     settings[@"startOctave"]=[expandedPianoView valueForKey:@"startOctave"];
+    settings[@"type"]=PianoModeName([[expandedPianoView valueForKey:@"type"] integerValue]);
     SaveInstanceSettings(normalLayoutBar,identifier,settings);
 }
 static void ApplyInstanceSettings(NSView *piano,NSDictionary *settings) {
     [piano setValue:settings[@"channel"] ?: @1 forKey:@"channelNumber"];
     [piano setValue:settings[@"octaves"] ?: @2 forKey:@"numOctaves"];
     [piano setValue:settings[@"startOctave"] ?: @4 forKey:@"startOctave"];
+    NSInteger mode=[@[@"glissando",@"noglissando",@"pitchbend"] indexOfObject:settings[@"type"] ?: @"glissando"];
+    if(mode!=NSNotFound) [piano setValue:@(mode) forKey:@"type"];
     [piano setValue:@(-1) forKey:@"lastWidth"];
     piano.needsDisplay=YES;
 }

@@ -65,6 +65,8 @@ static void UpdateActivePianoSizing(void);
 static void SuspendPianoSizing(NSTouchBar *bar);
 static void TransferPianoInstance(NSView *source,NSView *replacement);
 static void SaveExpandedPianoSettings(void);
+static void CycleExpandedPianoSetting(BOOL channel,NSInteger direction);
+static NSString *PianoModeName(NSInteger mode) { return @[@"glissando",@"noglissando",@"pitchbend"][MIN(2,MAX(0,mode))]; }
 @class PianoArrowHold;
 static NSMapTable<NSView *,PianoArrowHold *> *pianoHolds;
 static BOOL pianoExpanded, rebuildingPresentation;
@@ -301,6 +303,29 @@ static MidiNavigationButton *octavesButton;
 - (void)dealloc { [self.holdTimer invalidate]; }
 @end
 static void UpdateNavigationColor(void);
+@interface PianoConfigButton : MidiNavigationButton
+@property BOOL channelControl;
+@end
+@implementation PianoConfigButton
+- (void)step:(NSInteger)direction {
+    if(!self.tracking || self.cancelled || self.didStep) return;
+    self.didStep=YES; [self highlight:NO];
+    CycleExpandedPianoSetting(self.channelControl,direction);
+}
+- (void)finishAt:(NSPoint)point {
+    if(self.tracking && !self.cancelled && !self.didStep && NSPointInRect(point,self.bounds) && hypot(point.x-self.startX,point.y-self.startY)<8) [self step:1];
+    [super finishAt:point];
+}
+@end
+static PianoConfigButton *pianoModeButton,*pianoChannelButton;
+static void UpdatePianoConfigControls(void) {
+    NSInteger mode=[[expandedPianoView valueForKey:@"type"] integerValue]; mode=MIN(2,MAX(0,mode));
+    pianoModeButton.title=@[@"GLISS",@"HOLD",@"BEND"][mode];
+    pianoModeButton.image=[NSImage imageWithSystemSymbolName:@[@"pianokeys",@"hand.raised.fill",@"waveform"][mode] accessibilityDescription:nil];
+    [pianoModeButton setAccessibilityLabel:[NSString stringWithFormat:@"Piano gesture: %@. Tap to cycle, swipe left or right to change.",@[@"Glissando",@"No Glissando",@"Pitchbend"][mode]]];
+    pianoChannelButton.title=[NSString stringWithFormat:@"Ch %@",[expandedPianoView valueForKey:@"channelNumber"]];
+    [pianoChannelButton setAccessibilityLabel:[NSString stringWithFormat:@"MIDI channel %@. Tap or swipe to change this piano only.",[expandedPianoView valueForKey:@"channelNumber"]]];
+}
 #import "AbletonRecord.h"
 @interface StripJoinedMidiControl : NSView
 @end
@@ -365,7 +390,7 @@ static NSImage *BrandMenuIcon(void) {
 static void CleanMenu(NSMenu *menu) {
     for(NSMenuItem *item in menu.itemArray.copy) {
         NSString *title=item.title.lowercaseString;
-        if(item.action==NSSelectorFromString(@"setKeyCommands:") || [title containsString:@"key command"] || [title containsString:@"keyboard shortcut"]) { [menu removeItem:item]; continue; }
+        if(item.action==NSSelectorFromString(@"setKeyCommands:") || [title containsString:@"key command"] || [title containsString:@"keyboard shortcut"] || [title hasPrefix:@"customize controls"]) { [menu removeItem:item]; continue; }
         if([item.title hasPrefix:@"MIDI Touchbar (v."] || [item.title hasPrefix:@"3£ (v."])
             item.title=[NSString stringWithFormat:@"3£ (v. %@)",StripReleaseVersion];
         else if([item.title containsString:@"MIDI Touchbar"]) item.title=[item.title stringByReplacingOccurrencesOfString:@"MIDI Touchbar" withString:@"3£"];
@@ -426,8 +451,21 @@ static void Open(id self, SEL sel, NSTouchBar *bar, id identifier) {
         [octavesButton setAccessibilityLabel:@"Visible piano octaves: swipe right to increase or left to decrease; tapping does nothing"];
         [octavesButton.widthAnchor constraintEqualToConstant:44].active=YES;
         octaves.view=octavesButton; octaves.visibilityPriority=NSTouchBarItemPriorityHigh;
-        outer.templateItems=[NSSet setWithArray:@[close,expandedPianoItem,octaves,recordController.item]];
-        outer.defaultItemIdentifiers=@[CloseID,expandedPianoItem.identifier,RecordID,OctavesID];
+        NSMutableArray *configItems=[NSMutableArray new];
+        for(NSInteger i=0;i<2;i++) {
+            NSString *configID=i ? @"local.musicstrip.piano.channel" : @"local.musicstrip.piano.gesture";
+            NSCustomTouchBarItem *config=[[NSCustomTouchBarItem alloc] initWithIdentifier:configID];
+            PianoConfigButton *button=[[PianoConfigButton alloc] initWithFrame:NSMakeRect(0,0,44,30)];
+            button.octaveControl=YES; button.channelControl=i==1;
+            button.font=[NSFont systemFontOfSize:i ? 10 : 8 weight:NSFontWeightMedium];
+            button.imagePosition=i ? NSNoImage : NSImageAbove;
+            [button.widthAnchor constraintEqualToConstant:44].active=YES;
+            if(i) { pianoChannelButton=button; button.image=nil; } else pianoModeButton=button;
+            config.view=button; config.visibilityPriority=NSTouchBarItemPriorityHigh; [configItems addObject:config];
+        }
+        UpdatePianoConfigControls();
+        outer.templateItems=[NSSet setWithArray:@[close,expandedPianoItem,configItems[0],configItems[1],octaves]];
+        outer.defaultItemIdentifiers=@[CloseID,expandedPianoItem.identifier,@"local.musicstrip.piano.gesture",@"local.musicstrip.piano.channel",OctavesID];
         outer.principalItemIdentifier=expandedPianoItem.identifier;
         navigationButton=nil;
     }
@@ -470,6 +508,7 @@ static void ResetPianoExpansion(void) {
     }
     normalPianoView=nil; expandedPianoContainer=nil;
     [octavesButton cancelGesture]; octavesButton=nil;
+    [pianoModeButton cancelGesture]; [pianoChannelButton cancelGesture]; pianoModeButton=nil; pianoChannelButton=nil;
     pianoExpanded=NO; expandedPianoItem=nil; expandedPianoView=nil; pianoWidthConstraints=nil;
 }
 static void ReopenPresentation(void) {
@@ -509,7 +548,7 @@ static void ExpandPiano(NSView *piano) {
     if (available<=64) return;
     normalPianoView=piano; expandedPianoView=piano; expandedPianoItem=item; pianoNormalFrame=piano.frame;
     pianoNormalOctaves=[[piano valueForKey:@"numOctaves"] integerValue];
-    pianoFullWidth=available-32-44-44-32;
+    pianoFullWidth=available-32-44-44-44-40;
     pianoHugging=[piano contentHuggingPriorityForOrientation:NSLayoutConstraintOrientationHorizontal];
     pianoResistance=[piano contentCompressionResistancePriorityForOrientation:NSLayoutConstraintOrientationHorizontal];
     NSMutableArray *widths=[NSMutableArray array];
@@ -565,6 +604,14 @@ static void CollapsePiano(void) {
     if(!pianoExpanded || [[expandedPianoView valueForKey:@"activeKeys"] count]) return;
     ResetPianoExpansion(); ReopenPresentation();
     Report("PIANO_RESTORED\n");
+}
+static void CycleExpandedPianoSetting(BOOL channel,NSInteger direction) {
+    if(!pianoExpanded || !expandedPianoView || [[expandedPianoView valueForKey:@"activeKeys"] count]) return;
+    NSString *key=channel ? @"channelNumber" : @"type";
+    NSInteger value=[[expandedPianoView valueForKey:key] integerValue];
+    value=channel ? (value-1+direction+16)%16+1 : (value+direction+3)%3;
+    [expandedPianoView setValue:@(value) forKey:key];
+    SaveExpandedPianoSettings(); UpdatePianoConfigControls();
 }
 @interface PianoArrowHold : NSObject
 @property (weak) NSView *piano;
@@ -726,12 +773,13 @@ static void UpdateActivePianoSizing(void) {
 @end
 @interface PianoTestOutput : NSObject
 @property NSMutableArray *notes;
+@property NSMutableArray *bends;
 @property NSInteger expectedChannel;
 @end
 @implementation PianoTestOutput
-- (instancetype)init { if((self=[super init])) self.notes=[NSMutableArray array]; return self; }
+- (instancetype)init { if((self=[super init])) { self.notes=[NSMutableArray array]; self.bends=[NSMutableArray array]; } return self; }
 - (void)sendNoteOn:(int)note withVelocity:(int)velocity channel:(int)channel { NSCAssert(!self.expectedChannel || channel==self.expectedChannel,@"Piano must send its own MIDI channel"); [self.notes addObject:@[@(note),@(velocity)]]; }
-- (void)sendPitchBend:(unsigned short)value channel:(int)channel {}
+- (void)sendPitchBend:(unsigned short)value channel:(int)channel { [self.bends addObject:@(value)]; }
 - (void)pianoTouched:(id)sender {}
 - (void)sendOSCMessageWithAddressPattern:(id)address andValues:(id)values { NSCAssert(NO,@"Note test must not send OSC"); }
 @end
@@ -888,13 +936,28 @@ static void TestPianoExpansionCase(NSTouchBar *bar,NSTouchBar *saved,id savedIde
         NSCAssert(piano.window && piano.bounds.size.width>compactWidth*2 && expandedRect.origin.x>=0 && NSMaxX(expandedRect)<=piano.window.contentView.bounds.size.width,@"The selected piano must actually expand visibly without clipping");
         event.phase=NSTouchPhaseEnded; PianoEnded(piano,@selector(touchesEndedWithEvent:),(NSEvent *)event);
         NSCAssert(PianoStartNote(piano)==start,@"Hold release must not transpose");
-        ChangeOctaves(1);
-        NSCAssert([[expandedPianoView valueForKey:@"numOctaves"] integerValue]==count+1 && [[expandedPianoView valueForKey:@"channelNumber"] isEqual:channel],@"Expanded octave changes keep this piano's channel");
+        NSCAssert(![presentation.itemIdentifiers containsObject:RecordID],@"Expanded piano must not contain Record");
+        for(NSInteger modeStep=0;modeStep<3;modeStep++) {
+            NSInteger before=[[expandedPianoView valueForKey:@"type"] integerValue];
+            [pianoModeButton beginAt:NSMakePoint(22,15) identity:NSUUID.UUID]; [pianoModeButton finishAt:NSMakePoint(22,15)];
+            NSCAssert([[expandedPianoView valueForKey:@"type"] integerValue]==(before+1)%3,@"Actual gesture button must cycle the native modes");
+        }
+        [pianoChannelButton beginAt:NSMakePoint(22,15) identity:NSUUID.UUID]; [pianoChannelButton finishAt:NSMakePoint(22,15)];
+        NSCAssert([[expandedPianoView valueForKey:@"channelNumber"] integerValue]==[channel integerValue]%16+1,@"Channel cycle affects the expanded piano");
+        [pianoChannelButton beginAt:NSMakePoint(30,15) identity:NSUUID.UUID]; [pianoChannelButton moveAt:NSMakePoint(10,15)]; [pianoChannelButton finishAt:NSMakePoint(10,15)];
+        NSCAssert([[expandedPianoView valueForKey:@"channelNumber"] isEqual:channel],@"Channel swipe can go back");
+        for(NSView *control in @[pianoModeButton,pianoChannelButton,octavesButton]) {
+            NSRect frame=[control convertRect:control.bounds toView:nil];
+            NSCAssert(control.window && frame.origin.x>=0 && NSMaxX(frame)<=control.window.contentView.bounds.size.width,@"All expanded settings controls must be visible");
+        }
+        NSInteger octaveDirection=count<10-[[expandedPianoView valueForKey:@"startOctave"] integerValue] ? 1 : -1;
+        ChangeOctaves(octaveDirection);
+        NSCAssert([[expandedPianoView valueForKey:@"numOctaves"] integerValue]==count+octaveDirection && [[expandedPianoView valueForKey:@"channelNumber"] isEqual:channel],@"Expanded octave changes keep this piano's channel");
         NSCAssert(objc_getAssociatedObject(expandedPianoView,&pianoInstanceKey)==objc_getAssociatedObject(piano,&pianoInstanceKey),@"Replacement must retain independent settings identity");
         TestPianoNotesView(expandedPianoView);
         for(NSArray *other in others) NSCAssert([[other[0] valueForKey:@"numOctaves"] isEqual:other[1]] && [[other[0] valueForKey:@"channelNumber"] isEqual:other[2]],@"Do not change other pianos");
         CollapsePiano();
-        NSCAssert([[InstanceSettings(bar,identifier) objectForKey:@"octaves"] integerValue]==count+1,@"Persist only the touched slot's octave count");
+        NSCAssert([[InstanceSettings(bar,identifier) objectForKey:@"octaves"] integerValue]==count+octaveDirection,@"Persist only the touched slot's octave count");
         dispatch_after(dispatch_time(DISPATCH_TIME_NOW,600*NSEC_PER_MSEC),dispatch_get_main_queue(),^{
             UpdateActivePianoSizing();
             NSArray *geometry=PianoGeometry(bar); CGFloat width=[geometry.firstObject[@"width"] doubleValue];
@@ -986,6 +1049,22 @@ static void Command(NSString *command) {
             TestIndependentPianos();
         } else if ([command isEqualToString:@"PIANO_NATIVE_ADD_TEST"]) {
             TestNativePianoAddition();
+        } else if ([command isEqualToString:@"PIANO_TYPE_MAP_TEST"]) {
+            for(NSString *name in @[@"glissando",@"noglissando",@"pitchbend"]) {
+                NSView *view=((id(*)(id,SEL,int,int))objc_msgSend)([NSClassFromString(@"pianoView") alloc],NSSelectorFromString(@"initWithOctaves:andTransposition:"),2,4);
+                view.frame=NSMakeRect(0,0,600,30); [view viewWillDraw];
+                NSInteger mode=[@[@"glissando",@"noglissando",@"pitchbend"] indexOfObject:name];
+                [view setValue:@(mode) forKey:@"type"]; [view setValue:@1 forKey:@"kind"];
+                PianoTestOutput *output=[PianoTestOutput new]; [view setValue:output forKey:@"pianoDelegate"];
+                PianoTestTouch *touch=[PianoTestTouch new]; touch.identity=NSUUID.UUID; touch.point=NSMakePoint(100,5);
+                PianoTestEvent *event=[PianoTestEvent new]; event.touch=touch; event.phase=NSTouchPhaseBegan;
+                PianoBegan(view,@selector(touchesBeganWithEvent:),(id)event);
+                event.phase=NSTouchPhaseMoved; touch.point=NSMakePoint(180,5); PianoMoved(view,@selector(touchesMovedWithEvent:),(id)event);
+                NSInteger movedNotes=output.notes.count,movedBends=output.bends.count;
+                event.phase=NSTouchPhaseEnded; PianoEnded(view,@selector(touchesEndedWithEvent:),(id)event);
+                NSCAssert(mode==0 ? movedNotes>1 : mode==1 ? movedNotes==1 && movedBends==0 : movedBends>0,@"Native gesture modes must really glide, hold, or pitchbend");
+                Report([[NSString stringWithFormat:@"NATIVE_PIANO_TYPE %@=%ld notes=%ld bends=%ld PASSED\n",name,(long)mode,(long)movedNotes,(long)movedBends] UTF8String]);
+            }
         } else if ([command isEqualToString:@"PIANO_ALL_SIDE_HOLDS_TEST"]) {
             TestAllPianoExpansion();
         } else if ([command isEqualToString:@"UPDATE_SOURCE_TEST"]) {
