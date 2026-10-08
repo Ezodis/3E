@@ -15,6 +15,11 @@ static char pianoNativeMinimumKey;
 static BOOL IsPianoSlot(NSString *identifier) {
     return [@[NativePianoID,SecondPianoID,ThirdPianoID] containsObject:identifier];
 }
+static void SuspendPianoSizing(NSTouchBar *bar) {
+    NSArray *equal=objc_getAssociatedObject(bar,&pianoEqualWidthsKey);
+    [NSLayoutConstraint deactivateConstraints:equal ?: @[]];
+    objc_setAssociatedObject(bar,&pianoEqualWidthsKey,nil,OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+}
 static void SizePianoItem(NSCustomTouchBarItem *item,NSTouchBar *bar) {
     if(!IsPianoSlot(item.identifier) || ![item.view isKindOfClass:NSClassFromString(@"pianoView")]) return;
     NSInteger count=0; for(NSString *identifier in bar.itemIdentifiers) if(IsPianoSlot(identifier)) count++;
@@ -99,6 +104,9 @@ static NSArray *PianoGeometry(NSTouchBar *bar) {
 @end
 @implementation StripPianoInstance
 @end
+static void TransferPianoInstance(NSView *source,NSView *replacement) {
+    objc_setAssociatedObject(replacement,&pianoInstanceKey,objc_getAssociatedObject(source,&pianoInstanceKey),OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+}
 
 static NSString *PianoPrefsKey(NSTouchBar *bar) {
     return [@"ControllerConfig: " stringByAppendingString:[bar.customizationIdentifier stringByReplacingOccurrencesOfString:@"." withString:@"·"] ?: @""];
@@ -117,6 +125,15 @@ static void SaveInstanceSettings(NSTouchBar *bar,NSString *identifier,NSDictiona
     NSMutableDictionary *prefs=[[NSUserDefaults.standardUserDefaults dictionaryForKey:PianoPrefsKey(bar)] mutableCopy] ?: [NSMutableDictionary new];
     prefs[key]=settings;
     [NSUserDefaults.standardUserDefaults setObject:prefs forKey:PianoPrefsKey(bar)];
+}
+static void SaveExpandedPianoSettings(void) {
+    if(!normalLayoutBar || !expandedPianoView || !expandedPianoItem) return;
+    NSString *identifier=expandedPianoItem.identifier;
+    NSMutableDictionary *settings=[InstanceSettings(normalLayoutBar,identifier) mutableCopy];
+    settings[@"channel"]=[expandedPianoView valueForKey:@"channelNumber"];
+    settings[@"octaves"]=[expandedPianoView valueForKey:@"numOctaves"];
+    settings[@"startOctave"]=[expandedPianoView valueForKey:@"startOctave"];
+    SaveInstanceSettings(normalLayoutBar,identifier,settings);
 }
 static void ApplyInstanceSettings(NSView *piano,NSDictionary *settings) {
     [piano setValue:settings[@"channel"] ?: @1 forKey:@"channelNumber"];

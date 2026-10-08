@@ -62,6 +62,9 @@ static void CollapsePiano(void);
 static void ResetPianoExpansion(void);
 static void CancelPianoHold(NSView *piano);
 static void UpdateActivePianoSizing(void);
+static void SuspendPianoSizing(NSTouchBar *bar);
+static void TransferPianoInstance(NSView *source,NSView *replacement);
+static void SaveExpandedPianoSettings(void);
 @class PianoArrowHold;
 static NSMapTable<NSView *,PianoArrowHold *> *pianoHolds;
 static BOOL pianoExpanded, rebuildingPresentation;
@@ -449,12 +452,11 @@ static void ResetPianoExpansion(void) {
     if (expandedPianoView) {
         NSInteger startNote=PianoStartNote(expandedPianoView);
         pianoFullWidthConstraint.active=NO; pianoFullWidthConstraint=nil;
-        NSInteger count=[[expandedPianoView valueForKey:@"numOctaves"] integerValue];
-        if(count!=pianoNormalOctaves) {
+        SaveExpandedPianoSettings();
+        [expandedPianoView removeFromSuperview];
+        if(expandedPianoView!=normalPianoView) {
             normalPianoView=expandedPianoView;
-            [normalPianoView removeFromSuperview];
-            pianoWidthConstraints=@[[normalPianoView.widthAnchor constraintEqualToConstant:pianoNormalFrame.size.width]];
-            pianoNormalOctaves=count;
+            pianoWidthConstraints=nil; // Old constraints belong to the replaced view.
         }
         expandedPianoItem.view=normalPianoView;
         [NSLayoutConstraint activateConstraints:pianoWidthConstraints ?: @[]];
@@ -499,14 +501,14 @@ static void ExpandPiano(NSView *piano) {
     NSCustomTouchBarItem *item=PianoItemForView(piano);
     if (!item) return;
     // Touch Bar content width reflects the real available region, including
-    // the system's collapsed Control Strip. Leave only the fixed left control
-    // and standard item margins; do not assume a particular Mac's width.
+    // the system's collapsed Control Strip. Reserve the close, Record and
+    // octave-count controls plus item margins so AppKit won't hide the piano.
     CGFloat available=piano.window.contentView.bounds.size.width;
     if (available<=0) available=closeButton.window.contentView.bounds.size.width;
     if (available<=64) return;
     normalPianoView=piano; expandedPianoView=piano; expandedPianoItem=item; pianoNormalFrame=piano.frame;
     pianoNormalOctaves=[[piano valueForKey:@"numOctaves"] integerValue];
-    pianoFullWidth=available-32-44-32;
+    pianoFullWidth=available-32-44-44-32;
     pianoHugging=[piano contentHuggingPriorityForOrientation:NSLayoutConstraintOrientationHorizontal];
     pianoResistance=[piano contentCompressionResistancePriorityForOrientation:NSLayoutConstraintOrientationHorizontal];
     NSMutableArray *widths=[NSMutableArray array];
@@ -514,6 +516,7 @@ static void ExpandPiano(NSView *piano) {
         if(constraint.active && constraint.firstItem==piano && constraint.firstAttribute==NSLayoutAttributeWidth && !constraint.secondItem) [widths addObject:constraint];
     }
     pianoWidthConstraints=widths;
+    SuspendPianoSizing(normalLayoutBar);
     [NSLayoutConstraint deactivateConstraints:widths];
     [piano setContentHuggingPriority:1 forOrientation:NSLayoutConstraintOrientationHorizontal];
     [piano setContentCompressionResistancePriority:1 forOrientation:NSLayoutConstraintOrientationHorizontal];
@@ -541,6 +544,7 @@ static void ChangeOctaves(NSInteger direction) {
         for(NSString *key in @[@"channelNumber",@"type",@"kind",@"oscAddress",@"minValue",@"maxValue",@"pianoDelegate"]) [replacement setValue:[source valueForKey:key] forKey:key];
         SetPianoStartNote(replacement,startNote);
         replacement.identifier=source.identifier;
+        TransferPianoInstance(source,replacement);
         replacement.allowedTouchTypes=NSTouchTypeMaskDirect;
         replacement.wantsLayer=YES;
         replacement.translatesAutoresizingMaskIntoConstraints=NO;
@@ -852,6 +856,63 @@ static void TestNativeFlexiblePianos(NSInteger count) {
         }
     });
 }
+static void TestPianoExpansionCase(NSTouchBar *bar,NSTouchBar *saved,id savedIdentifier,NSInteger index) {
+    if(index==6) {
+        Close(NSApp.delegate,NSSelectorFromString(@"closeTouchbar:"),presentation);
+        Open(NSApp.delegate,NSSelectorFromString(@"openTouchbar:fromIdentifier:"),saved,savedIdentifier);
+        [NSUserDefaults.standardUserDefaults removeObjectForKey:PianoPrefsKey(bar)];
+        Report("ALL_THREE_PIANOS_BOTH_SIDE_HOLDS_AND_OCTAVES_PASSED\n"); return;
+    }
+    NSString *identifier=@[NativePianoID,SecondPianoID,ThirdPianoID][index/2];
+    NSCustomTouchBarItem *item=(id)[bar itemForIdentifier:identifier];
+    NSView *piano=item.view;
+    NSMutableArray *others=[NSMutableArray new];
+    for(NSString *slot in bar.itemIdentifiers) if(![slot isEqual:identifier]) {
+        NSView *view=((NSCustomTouchBarItem *)[bar itemForIdentifier:slot]).view;
+        [others addObject:@[view,[view valueForKey:@"numOctaves"],[view valueForKey:@"channelNumber"]]];
+    }
+    [piano viewWillDraw];
+    NSBezierPath *arrow=[piano valueForKey:index%2 ? @"upKey" : @"downKey"];
+    PianoTestTouch *touch=[PianoTestTouch new]; touch.identity=NSUUID.UUID;
+    touch.point=NSMakePoint(NSMidX(arrow.bounds),NSMidY(arrow.bounds));
+    PianoTestEvent *event=[PianoTestEvent new]; event.touch=touch; event.phase=NSTouchPhaseBegan;
+    CGFloat compactWidth=piano.bounds.size.width;
+    NSInteger start=PianoStartNote(piano),count=[[piano valueForKey:@"numOctaves"] integerValue];
+    id channel=[piano valueForKey:@"channelNumber"];
+    PianoBegan(piano,@selector(touchesBeganWithEvent:),(NSEvent *)event);
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW,900*NSEC_PER_MSEC),dispatch_get_main_queue(),^{
+        NSCAssert(pianoExpanded && expandedPianoItem==item && expandedPianoView==piano,@"Each side's timed hold must expand the touched piano, not the first one");
+        NSRect expandedRect=[piano convertRect:piano.bounds toView:nil];
+        Report([[NSString stringWithFormat:@"EXPANDED_GEOMETRY compact=%g expanded=%@ window=%g attached=%d container=%g full=%g\n",compactWidth,NSStringFromRect(expandedRect),piano.window.contentView.bounds.size.width,piano.window!=nil,expandedPianoContainer.bounds.size.width,pianoFullWidth] UTF8String]);
+        NSCAssert(piano.window && piano.bounds.size.width>compactWidth*2 && expandedRect.origin.x>=0 && NSMaxX(expandedRect)<=piano.window.contentView.bounds.size.width,@"The selected piano must actually expand visibly without clipping");
+        event.phase=NSTouchPhaseEnded; PianoEnded(piano,@selector(touchesEndedWithEvent:),(NSEvent *)event);
+        NSCAssert(PianoStartNote(piano)==start,@"Hold release must not transpose");
+        ChangeOctaves(1);
+        NSCAssert([[expandedPianoView valueForKey:@"numOctaves"] integerValue]==count+1 && [[expandedPianoView valueForKey:@"channelNumber"] isEqual:channel],@"Expanded octave changes keep this piano's channel");
+        NSCAssert(objc_getAssociatedObject(expandedPianoView,&pianoInstanceKey)==objc_getAssociatedObject(piano,&pianoInstanceKey),@"Replacement must retain independent settings identity");
+        TestPianoNotesView(expandedPianoView);
+        for(NSArray *other in others) NSCAssert([[other[0] valueForKey:@"numOctaves"] isEqual:other[1]] && [[other[0] valueForKey:@"channelNumber"] isEqual:other[2]],@"Do not change other pianos");
+        CollapsePiano();
+        NSCAssert([[InstanceSettings(bar,identifier) objectForKey:@"octaves"] integerValue]==count+1,@"Persist only the touched slot's octave count");
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW,600*NSEC_PER_MSEC),dispatch_get_main_queue(),^{
+            UpdateActivePianoSizing();
+            NSArray *geometry=PianoGeometry(bar); CGFloat width=[geometry.firstObject[@"width"] doubleValue];
+            for(NSDictionary *view in geometry) NSCAssert([view[@"attached"] boolValue] && fabs([view[@"width"] doubleValue]-width)<1,@"Collapse must restore three equal visible keyboards");
+            Report([[NSString stringWithFormat:@"PIANO_%ld_%@_HOLD_PASSED\n",(long)(index/2+1),index%2 ? @"RIGHT" : @"LEFT"] UTF8String]);
+            TestPianoExpansionCase(bar,saved,savedIdentifier,index+1);
+        });
+    });
+}
+static void TestAllPianoExpansion(void) {
+    NSCAssert(normalLayoutBar && !pianoExpanded,@"Show normal MIDI before testing");
+    NSTouchBar *saved=normalLayoutBar; id identifier=normalIdentifier;
+    NSTouchBar *bar=[NSTouchBar new]; bar.delegate=(id)NSApp.delegate;
+    bar.customizationIdentifier=[@"local.musicstrip.expand-test." stringByAppendingString:NSUUID.UUID.UUIDString];
+    bar.defaultItemIdentifiers=@[NativePianoID,SecondPianoID,ThirdPianoID];
+    Close(NSApp.delegate,NSSelectorFromString(@"closeTouchbar:"),presentation);
+    Open(NSApp.delegate,NSSelectorFromString(@"openTouchbar:fromIdentifier:"),bar,identifier);
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW,700*NSEC_PER_MSEC),dispatch_get_main_queue(),^{ UpdateActivePianoSizing(); TestPianoExpansionCase(bar,saved,identifier,0); });
+}
 static void TestNativeScaleDrawing(void) {
     NSUInteger saved=liveScaleMask;
     NSView *piano=((id(*)(id,SEL,int,int))objc_msgSend)([NSClassFromString(@"pianoView") alloc],NSSelectorFromString(@"initWithOctaves:andTransposition:"),2,4);
@@ -924,6 +985,8 @@ static void Command(NSString *command) {
             TestIndependentPianos();
         } else if ([command isEqualToString:@"PIANO_NATIVE_ADD_TEST"]) {
             TestNativePianoAddition();
+        } else if ([command isEqualToString:@"PIANO_ALL_SIDE_HOLDS_TEST"]) {
+            TestAllPianoExpansion();
         } else if ([command isEqualToString:@"UPDATE_SOURCE_TEST"]) {
             Class cls=[NSApp.delegate class];
             NSCAssert(method_getImplementation(class_getInstanceMethod(cls,NSSelectorFromString(@"checkForUpdate:")))==(IMP)StripUpdateMenu,@"Manual update hook");
