@@ -87,6 +87,8 @@ The installer updates only the injected MIDI bridge, required framework links/si
 
 ## Verification
 
+In 3.0.9 the actual `showTouchbar:` preset-switch path is intercepted: it no longer empties the live root or copies identifiers into the presentation shell. A stable outer group swaps the selected original preset content; close/navigation/record controls are retained. A permanent flexible spacer absorbs unused space instead of stretching controls, and the outer group is not a principal item. Two/three-piano content uses a uniquely identified compact row (not the outer group's identifier). Native regressions exercise `receivedGlobalKeyFrom:key:` and assert presentation identity, serial, fixed control widths, unchanged piano widths and two-point gaps. Finger-perceived smoothness still needs physical verification.
+
 Multi-piano presentation is prepared before opening: the flexible spacer is omitted from the initial outer row, equal sizing is applied synchronously without implicit animation, and unchanged width constraints are retained across refreshes. Multi-piano groups use AppKit's compact alert-style grouping. Arrow regions are fixed at 14 points on each side (formerly 18), reclaiming 8 points per piano for keys while preserving arrow taps/holds. Native tests cover two/three-piano row stability and dense arrow hit regions through ten octaves; perceived switching smoothness still requires a physical finger test.
 
 ```sh

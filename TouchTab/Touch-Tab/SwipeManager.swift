@@ -55,7 +55,9 @@ class SwipeManager {
 
     static func start() {
         if eventTap != nil {
-            debugPrint("SwipeManager is already started")
+            // The combined host retries when macOS disables the tap. An
+            // existing disabled tap must be re-enabled, not treated as running.
+            CGEvent.tapEnable(tap: eventTap!, enable: true)
             return
         }
         debugPrint("SwipeManager start")

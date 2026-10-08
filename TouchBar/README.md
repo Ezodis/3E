@@ -6,10 +6,10 @@ The canonical installed app remains `/Applications/Strip3£.app`. Its visible MI
 
 `Strip3/`, `strip3-rebuild/`, `legacy-source/` and `record-companion/` are superseded reconstruction/test work. They are **not** the source of the current installed app and must not replace it. The original recovery is preserved in commit `355f072`; ongoing work uses `musicstrip/`.
 
-This public repository contains only the Touch Bar project. The Instagram/Facebook service remains in the separate private `Ezodis/instagram-grill-bot` repository. Private mixed-project history has not been copied here.
+This public repository contains TouchBar and TouchTab in separate folders, plus the combined single-app edition. The Instagram/Facebook service remains in the separate private `Ezodis/instagram-grill-bot` repository. Private mixed-project history has not been copied here.
 
 ## Releases and updates
 
 Official releases: https://github.com/Ezodis/3E/releases — use `touchbar-v…` releases / `TouchBar.zip`, not TouchTab assets.
 
-Both **Check for Update…** and **Check for Update on launch** use this repository's latest stable release, not the Instagram repository or the MIDI engine vendor's old feed. Downloading an update requires confirmation; checks never replace the running app or interrupt Ableton. The release archive contains the canonical `Strip3£.app`, including its MIDI engine and Ableton `_3E` script.
+Both **Check for Update…** and **Check for Update on launch** select this repository's latest stable release for the installed edition (`touchbar-v…` or `combined-v…`), not the Instagram repository or the MIDI engine vendor's old feed. Downloading an update requires confirmation; checks never replace the running app or interrupt Ableton. The release archive contains the canonical `Strip3£.app`, including its MIDI engine and Ableton `_3E` script.

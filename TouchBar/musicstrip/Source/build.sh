@@ -7,24 +7,27 @@ mkdir -p "$strip_repo/build/musicstrip"
 strip_combined=NO
 if [[ "${1:-}" == --combined || "${1:-}" == --combined-main-only ]]; then
   strip_combined=YES
-  xcrun swiftc -emit-library -O -target "$(uname -m)-apple-macosx12.0" -module-name ThreeEGestureEngine \
+  for strip_arch in arm64 x86_64; do
+  xcrun swiftc -emit-library -O -target "$strip_arch-apple-macosx12.0" -module-name ThreeEGestureEngine \
     "$strip_repo/../TouchTab/Touch-Tab/AppSwitcher.swift" \
     "$strip_repo/../TouchTab/Touch-Tab/SwipeManager.swift" \
     "$strip_repo/../TouchTab/CombinedModule.swift" \
-    -o "$strip_repo/build/musicstrip/ThreeEGestureEngine.dylib"
+    -o "$strip_repo/build/musicstrip/ThreeEGestureEngine-$strip_arch.dylib"
+  done
+  xcrun lipo -create "$strip_repo/build/musicstrip/ThreeEGestureEngine-arm64.dylib" "$strip_repo/build/musicstrip/ThreeEGestureEngine-x86_64.dylib" -output "$strip_repo/build/musicstrip/ThreeEGestureEngine.dylib"
   codesign --force --sign - "$strip_repo/build/musicstrip/ThreeEGestureEngine.dylib"
 fi
 strip_main_flags=()
 strip_minimum=11.0
 if [[ "$strip_combined" == YES ]]; then strip_main_flags=(-DSTRIP_COMBINED_TOUCHTAB=1); strip_minimum=12.0; fi
 if [[ "${1:-}" == --combined-main-only ]]; then
-  xcrun clang -fobjc-arc -Wall -Wextra -Wno-unused-parameter -O2 \
+  xcrun clang -arch arm64 -arch x86_64 -fobjc-arc -Wall -Wextra -Wno-unused-parameter -O2 \
     -mmacosx-version-min=12.0 "${strip_main_flags[@]}" -framework AppKit -framework Carbon \
     -framework ApplicationServices -framework QuartzCore main.m -o "$strip_repo/build/musicstrip/MusicStripCombinedMain"
   exit 0
 fi
 if [[ "${1:-}" == --bridge-only ]]; then
-  xcrun clang -dynamiclib -fobjc-arc -Wall -Wextra -Wno-unused-parameter -O2 \
+  xcrun clang -arch arm64 -arch x86_64 -dynamiclib -fobjc-arc -Wall -Wextra -Wno-unused-parameter -O2 \
     -mmacosx-version-min=11.0 -framework AppKit -framework CoreMIDI MidiBridge.m \
     -o "$strip_repo/build/musicstrip/MusicStripMidiBridge.dylib"
   codesign --force --sign - "$strip_repo/build/musicstrip/MusicStripMidiBridge.dylib"
@@ -44,7 +47,7 @@ fi
 ditto --norsrc --noextattr Resources "$strip_app/Contents/Resources"
 mkdir -p "$strip_app/Contents/Resources/Ableton/_3E"
 cp "$strip_repo/musicstrip/Ableton/_3E/"*.py "$strip_app/Contents/Resources/Ableton/_3E/"
-xcrun clang -fobjc-arc -Wall -Wextra -Wno-unused-parameter -O2 \
+xcrun clang -arch arm64 -arch x86_64 -fobjc-arc -Wall -Wextra -Wno-unused-parameter -O2 \
   -mmacosx-version-min="$strip_minimum" "${strip_main_flags[@]}" -framework AppKit -framework Carbon \
   -framework ApplicationServices -framework QuartzCore main.m -o "$strip_app/Contents/MacOS/MusicStrip"
 strip_apps_helper="$strip_app/Contents/Helpers/MusicStrip Apps.app"
@@ -54,7 +57,7 @@ strip_framework="$strip_midi/Contents/Frameworks/SnoizeMIDI.framework"
 [[ -e "$strip_framework/Versions/Current" ]] || ln -s A "$strip_framework/Versions/Current"
 [[ -e "$strip_framework/SnoizeMIDI" ]] || ln -s Versions/Current/SnoizeMIDI "$strip_framework/SnoizeMIDI"
 [[ -e "$strip_framework/Resources" ]] || ln -s Versions/Current/Resources "$strip_framework/Resources"
-xcrun clang -dynamiclib -fobjc-arc -Wall -Wextra -Wno-unused-parameter -O2 \
+xcrun clang -arch arm64 -arch x86_64 -dynamiclib -fobjc-arc -Wall -Wextra -Wno-unused-parameter -O2 \
   -mmacosx-version-min=11.0 -framework AppKit -framework CoreMIDI MidiBridge.m \
   -o "$strip_midi/Contents/Frameworks/MusicStripMidiBridge.dylib"
 xattr -cr "$strip_app"

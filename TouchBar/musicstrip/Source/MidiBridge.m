@@ -49,7 +49,7 @@ static void QuitMusicStripParent(void) {
         });
     }
 }
-static IMP originalOpen, originalClose, originalPresetHandler, originalChangeMode;
+static IMP originalOpen, originalClose, originalPresetHandler, originalChangeMode, originalShow;
 static NSTouchBar *presentation;
 static NSButton *closeButton;
 static NSString *const CloseID = @"local.musicstrip.midi.close";
@@ -68,6 +68,14 @@ static void SizePianos(NSTouchBar *bar);
 static NSCustomTouchBarItem *CompactPianoRow(NSTouchBar *bar);
 static char compactPianoRowKey;
 static CGFloat lastMidiHostWidth;
+static NSTouchBar *NormalPresetContent(NSTouchBar *bar) {
+    if(PianoCount(bar)<2 || (NSUInteger)PianoCount(bar)!=bar.itemIdentifiers.count) return bar;
+    NSTouchBar *content=[NSTouchBar new];
+    NSCustomTouchBarItem *row=CompactPianoRow(bar);
+    content.templateItems=[NSSet setWithObject:row]; content.defaultItemIdentifiers=@[row.identifier];
+    content.principalItemIdentifier=row.identifier;
+    return content;
+}
 static void TransferPianoInstance(NSView *source,NSView *replacement);
 static void SaveExpandedPianoSettings(void);
 static void CycleExpandedPianoSetting(BOOL channel,NSInteger direction);
@@ -493,18 +501,21 @@ static void CleanMenu(NSMenu *menu) {
         NSMenuItem *toggle=nil;
         for(NSMenuItem *item in menu.itemArray) if([item.identifier isEqual:@"local.musicstrip.touchTabToggle"]) toggle=item;
         if(!toggle) {
-            toggle=[[NSMenuItem alloc] initWithTitle:@"TouchTab Gestures" action:NSSelectorFromString(@"toggleTouchTab:") keyEquivalent:@""];
+            toggle=[[NSMenuItem alloc] initWithTitle:@"Touch Tab" action:NSSelectorFromString(@"toggleTouchTab:") keyEquivalent:@""];
             toggle.target=NSClassFromString(@"MusicStripMidiBridge"); toggle.identifier=@"local.musicstrip.touchTabToggle";
             [menu insertItem:toggle atIndex:MIN(2,menu.numberOfItems)];
         }
         toggle.state=[combinedGestureState isEqual:@"on"] ? NSControlStateValueOn : NSControlStateValueOff;
-        toggle.title=[combinedGestureState isEqual:@"permission"] ? @"TouchTab Gestures — Enable 3£ Accessibility" : [combinedGestureState isEqual:@"unavailable"] ? @"TouchTab Gestures — Unavailable" : @"TouchTab Gestures";
+        toggle.title=@"Touch Tab";
+        toggle.toolTip=[combinedGestureState isEqual:@"permission"] ? @"Accessibility approval is required for the main 3£ app" : [combinedGestureState isEqual:@"unavailable"] ? @"Trackpad gesture listener unavailable" : @"Toggle trackpad gestures";
     }
     for(NSMenuItem *item in menu.itemArray.copy) {
         NSString *title=item.title.lowercaseString;
         if(item.action==NSSelectorFromString(@"setKeyCommands:") || [title containsString:@"key command"] || [title containsString:@"keyboard shortcut"]) { [menu removeItem:item]; continue; }
         if([item.title hasPrefix:@"MIDI Touchbar (v."] || [item.title hasPrefix:@"3£ (v."])
             item.title=[NSString stringWithFormat:@"3£ (v. %@)",StripReleaseVersion];
+        else if([title hasPrefix:@"hide "] && ([title containsString:@"3£"] || [title containsString:@"midi touchbar"])) item.title=@"Hide Touch Bar Midi";
+        else if([title hasPrefix:@"show "] && ([title containsString:@"3£"] || [title containsString:@"midi touchbar"])) item.title=@"Show Touch Bar Midi";
         else if([item.title containsString:@"MIDI Touchbar"]) item.title=[item.title stringByReplacingOccurrencesOfString:@"MIDI Touchbar" withString:@"3£"];
         else if([item.title containsString:@"Strip3£"]) item.title=[item.title stringByReplacingOccurrencesOfString:@"Strip3£" withString:@"3£"];
         item.keyEquivalent=@""; item.keyEquivalentModifierMask=0;
@@ -532,6 +543,18 @@ static void Open(id self, SEL sel, NSTouchBar *bar, id identifier) {
     if(isfinite(host) && host>200 && host<2048) lastMidiHostWidth=host;
     if (!rebuildingPresentation) ResetPianoExpansion();
     normalLayoutBar=bar; normalIdentifier=identifier;
+    NSGroupTouchBarItem *existing=(id)[presentation itemForIdentifier:LayoutID];
+    if(!pianoExpanded && [existing isKindOfClass:NSGroupTouchBarItem.class] && recordController && !recordController.activeMenuBar) {
+        [NSAnimationContext runAnimationGroup:^(NSAnimationContext *context) {
+            context.duration=0; context.allowsImplicitAnimation=NO;
+            SizePianos(bar);
+            existing.groupTouchBar=NormalPresetContent(bar);
+            [self setValue:presentation forKey:@"currentRootTouchbar"];
+            [self setValue:@YES forKey:@"touchbarShown"];
+            UpdateNavigationColor();
+        } completionHandler:nil];
+        Report("PRESET_CONTENT_REUSED\n"); return;
+    }
     // Keep the original configurable bar intact inside a seamless group.
     // The fixed outer row guarantees that saved presets cannot hide the X.
     NSTouchBar *outer = [NSTouchBar new];
@@ -544,17 +567,12 @@ static void Open(id self, SEL sel, NSTouchBar *bar, id identifier) {
     [closeButton.widthAnchor constraintEqualToConstant:32].active = YES;
     close.view = closeButton;
     close.visibilityPriority = NSTouchBarItemPriorityHigh;
-    BOOL multiplePianos=!pianoExpanded && PianoCount(bar)>1;
     if(!pianoExpanded) SizePianos(bar);
     // Alert-style groups let the client choose spacing rather than inserting
     // standard button-sized gutters between neighboring keyboards.
-    BOOL pianoOnly=multiplePianos && (NSUInteger)PianoCount(bar)==bar.itemIdentifiers.count;
-    NSTouchBarItem *layout;
-    if(pianoOnly) layout=CompactPianoRow(bar);
-    else {
-        NSGroupTouchBarItem *group=multiplePianos ? [NSGroupTouchBarItem alertStyleGroupItemWithIdentifier:LayoutID] : [[NSGroupTouchBarItem alloc] initWithIdentifier:LayoutID];
-        group.groupTouchBar=bar; layout=group;
-    }
+    NSGroupTouchBarItem *layout=[[NSGroupTouchBarItem alloc] initWithIdentifier:LayoutID];
+    layout.prefersEqualWidths=NO;
+    layout.groupTouchBar=pianoExpanded ? bar : NormalPresetContent(bar);
     navigationButton=[[MidiNavigationButton alloc] initWithFrame:NSMakeRect(0,0,44,30)];
     [navigationButton.widthAnchor constraintEqualToConstant:44].active=YES;
     recordController=[StripRecordController new];
@@ -562,8 +580,10 @@ static void Open(id self, SEL sel, NSTouchBar *bar, id identifier) {
     NSUInteger presets=[[(id)NSApp.delegate valueForKey:@"allUserTouchbars"] count];
     JoinRecordNavigation(recordController,navigationButton,preset,presets);
     outer.templateItems = [NSSet setWithArray:@[close, layout, recordController.item]];
-    outer.defaultItemIdentifiers = multiplePianos ? @[CloseID,LayoutID,RecordID] : @[CloseID, LayoutID, NSTouchBarItemIdentifierFlexibleSpace, RecordID];
-    if(pianoOnly) outer.principalItemIdentifier=LayoutID;
+    // Surplus width belongs to the spacer, never to pads/transport buttons.
+    // Piano-only rows explicitly claim their usable width; keep the same
+    // identifiers for every normal preset so the outer controls never move.
+    outer.defaultItemIdentifiers = @[CloseID,LayoutID,NSTouchBarItemIdentifierFlexibleSpace,RecordID];
     if (pianoExpanded) {
         recordController.button.joinedEdge=0;
         recordController.item.collapsedRepresentation=recordController.button;
@@ -835,6 +855,17 @@ static void PresetKey(id self,SEL selector,id sender,id key) {
     if(pianoExpanded) { CollapsePiano(); if(pianoExpanded) return; }
     ((void(*)(id,SEL,id,id))originalPresetHandler)(self,selector,sender,key);
 }
+static void ShowPreset(id self,SEL selector,NSTouchBar *bar) {
+    if([[self valueForKey:@"editTouchBar"] boolValue] || [[self valueForKey:@"editCCs"] boolValue]) {
+        ((void(*)(id,SEL,id))originalShow)(self,selector,bar);
+        return;
+    }
+    // The vendor showTouchbar: empties the live root before copying the next
+    // preset identifiers. That bypasses openTouchbar: and exposes an empty,
+    // then partially fitted row. Keep its selected preset/model but replace
+    // only the stable outer group's content, without clearing the live root.
+    Open(self,NSSelectorFromString(@"openTouchbar:fromIdentifier:"),bar,nil);
+}
 static void Close(id self, SEL sel, id bar) {
     ((void (*)(id, SEL, id))originalClose)(self, sel, recordController.activeMenuBar ?: presentation ?: bar);
     RemoveCycleKey(self);
@@ -884,13 +915,8 @@ static NSInteger CycleKeyCount(id delegate, NSEventModifierFlags flags) {
 #import "MultiPiano.h"
 static void UpdateActivePianoSizing(void) {
     if(!presentation || pianoExpanded || customizationBar) return;
-    NSTouchBarItem *layout=[presentation itemForIdentifier:LayoutID];
-    NSTouchBar *bar=[layout isKindOfClass:NSGroupTouchBarItem.class] ? [(NSGroupTouchBarItem *)layout groupTouchBar] : normalLayoutBar;
-    if(!bar) return;
-    SizePianos(bar);
-    NSInteger count=0; for(NSString *identifier in bar.itemIdentifiers) if(IsPianoSlot(identifier)) count++;
-    NSArray *ids=count>1 ? @[CloseID,LayoutID,RecordID] : @[CloseID,LayoutID,NSTouchBarItemIdentifierFlexibleSpace,RecordID];
-    if(![presentation.defaultItemIdentifiers isEqual:ids]) presentation.defaultItemIdentifiers=ids;
+    // Normal presets retain the same outer host/items. No post-presentation
+    // constraint installation or FlexibleSpace insertion/removal.
 }
 @interface PianoTestTouch : NSObject
 @property NSPoint point;
@@ -1018,18 +1044,24 @@ static void TestNativeFlexiblePianos(NSInteger count) {
     NSCAssert(!customizationBar && normalLayoutBar && !pianoExpanded,@"Show the normal MIDI bar before the native sizing test");
     id delegate=NSApp.delegate;
     NSTouchBar *saved=normalLayoutBar; id savedIdentifier=normalIdentifier;
+    NSArray *savedBars=[[delegate valueForKey:@"allUserTouchbars"] copy];
+    NSNumber *savedPreset=[delegate valueForKey:@"userTouchbarNumber"];
     NSTouchBar *bar=[NSTouchBar new]; bar.delegate=(id<NSTouchBarDelegate>)delegate;
     bar.defaultItemIdentifiers=[@[NativePianoID,SecondPianoID,ThirdPianoID] subarrayWithRange:NSMakeRange(0,count)];
     bar.customizationIdentifier=[@"local.musicstrip.flex-test." stringByAppendingString:NSUUID.UUID.UUIDString];
+    [delegate setValue:[savedBars arrayByAddingObject:bar].mutableCopy forKey:@"allUserTouchbars"];
     Close(delegate,NSSelectorFromString(@"closeTouchbar:"),presentation);
     Open(delegate,NSSelectorFromString(@"openTouchbar:fromIdentifier:"),bar,savedIdentifier);
+    NSTouchBar *stablePresentation=presentation;
+    NSUInteger stableSerial=presentationSerial;
     NSArray *firstItems=presentation.defaultItemIdentifiers.copy;
-    NSCAssert(![firstItems containsObject:NSTouchBarItemIdentifierFlexibleSpace],@"Multi-piano presentation must start without a spacer, not remove it on the later refresh");
+    NSCAssert([firstItems containsObject:NSTouchBarItemIdentifierFlexibleSpace],@"A permanent spacer protects fixed controls from expansion");
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW,700*NSEC_PER_MSEC),dispatch_get_main_queue(),^{
         @try {
             UpdateActivePianoSizing();
             NSCAssert([firstItems isEqual:presentation.defaultItemIdentifiers],@"Refreshing must not rebuild the visible multi-piano row");
             NSArray *geometry=PianoGeometry(bar); CGFloat width=[geometry.firstObject[@"width"] doubleValue];
+            NSCAssert(fabs(closeButton.bounds.size.width-32)<=1 && fabs(navigationButton.bounds.size.width-44)<.1 && fabs(recordController.button.bounds.size.width-44)<.1,@"Fixed controls retain widths (allow AppKit's half-point close-button alignment)");
             for(NSDictionary *view in geometry) {
                 NSRect position=NSRectFromString(view[@"position"]);
                 NSCAssert([view[@"attached"] boolValue] && fabs([view[@"width"] doubleValue]-width)<1 && position.origin.y>=0 && NSMaxX(position)<=[view[@"windowWidth"] doubleValue],@"Actual native Touch Bar must display all three keyboards at equal widths without clipping or hidden containers");
@@ -1042,8 +1074,10 @@ static void TestNativeFlexiblePianos(NSInteger count) {
                 previousEnd=NSMaxX(rect);
             }
             for(NSInteger switchIndex=0;switchIndex<6;switchIndex++) {
-                Open(delegate,NSSelectorFromString(@"openTouchbar:fromIdentifier:"),saved,savedIdentifier);
-                Open(delegate,NSSelectorFromString(@"openTouchbar:fromIdentifier:"),bar,savedIdentifier);
+                ((void(*)(id,SEL,id,id))objc_msgSend)(delegate,NSSelectorFromString(@"receivedGlobalKeyFrom:key:"),nil,savedPreset);
+                ((void(*)(id,SEL,id,id))objc_msgSend)(delegate,NSSelectorFromString(@"receivedGlobalKeyFrom:key:"),nil,@(savedBars.count));
+                NSCAssert(presentation==stablePresentation && presentationSerial==stableSerial && normalLayoutBar==bar,@"Real preset handler must swap content without rebuilding the outer bar");
+                NSCAssert(fabs(closeButton.bounds.size.width-32)<=1 && fabs(navigationButton.bounds.size.width-44)<.1 && fabs(recordController.button.bounds.size.width-44)<.1,@"Switching cannot stretch fixed outer controls");
                 NSArray *reopened=PianoGeometry(bar);
                 for(NSUInteger i=0;i<geometry.count;i++) NSCAssert(fabs([geometry[i][@"width"] doubleValue]-[reopened[i][@"width"] doubleValue])<.1,@"Returning to a multi-piano preset must start at its final width");
                 UpdateActivePianoSizing();
@@ -1055,6 +1089,8 @@ static void TestNativeFlexiblePianos(NSInteger count) {
             NSData *json=[NSJSONSerialization dataWithJSONObject:geometry options:0 error:nil];
             Report([[NSString stringWithFormat:@"NATIVE_FLEX_%ld_PIANOS_PASSED %@\n",(long)count,[[NSString alloc] initWithData:json encoding:NSUTF8StringEncoding]] UTF8String]);
         } @finally {
+            [delegate setValue:savedBars.mutableCopy forKey:@"allUserTouchbars"];
+            [delegate setValue:savedPreset forKey:@"userTouchbarNumber"];
             Close(delegate,NSSelectorFromString(@"closeTouchbar:"),presentation);
             Open(delegate,NSSelectorFromString(@"openTouchbar:fromIdentifier:"),saved,savedIdentifier);
             NSString *key=[@"NSTouchBarConfig: " stringByAppendingString:[bar.customizationIdentifier stringByReplacingOccurrencesOfString:@"." withString:@"·"]];
@@ -1357,7 +1393,7 @@ static void Command(NSString *command) {
             [piano drawRect:piano.bounds];
             for(NSTextField *label in [piano valueForKey:@"textFields"]) [label.stringValue drawInRect:label.frame withAttributes:@{NSFontAttributeName:label.font ?: [NSFont systemFontOfSize:10],NSForegroundColorAttributeName:label.textColor ?: NSColor.blackColor}];
             [NSGraphicsContext restoreGraphicsState];
-            NSString *path=[NSString stringWithFormat:@"/Users/3du/Documents/Codex/2026-10-01/i-l/work/musicstrip/integration/piano-%@-v031.png",[command substringFromIndex:14].lowercaseString];
+            NSString *path=[NSTemporaryDirectory() stringByAppendingPathComponent:[NSString stringWithFormat:@"3e-piano-%@.png",[command substringFromIndex:14].lowercaseString]];
             [[rep representationUsingType:NSBitmapImageFileTypePNG properties:@{}] writeToFile:path atomically:YES];
             Report("PIANO_CAPTURED\n");
         } else if ([command isEqualToString:@"PIANO_TEST_NOTES"]) {
@@ -1513,6 +1549,7 @@ static void Command(NSString *command) {
             originalPianoEnded=method_setImplementation(class_getInstanceMethod(pianoClass,@selector(touchesEndedWithEvent:)),(IMP)PianoEnded);
             originalPianoCancelled=method_setImplementation(class_getInstanceMethod(pianoClass,@selector(touchesCancelledWithEvent:)),(IMP)PianoCancelled);
             originalOpen = method_setImplementation(open, (IMP)Open);
+            originalShow = method_setImplementation(class_getInstanceMethod(cls,NSSelectorFromString(@"showTouchbar:")),(IMP)ShowPreset);
             originalClose = method_setImplementation(close, (IMP)Close);
             dispatch_async(dispatch_get_main_queue(), ^{
                 ApplyBranding();

@@ -135,7 +135,7 @@ static void SizePianos(NSTouchBar *bar) {
 static NSCustomTouchBarItem *CompactPianoRow(NSTouchBar *bar) {
     NSCustomTouchBarItem *item=objc_getAssociatedObject(bar,&compactPianoRowKey);
     if(!item) {
-        item=[[NSCustomTouchBarItem alloc] initWithIdentifier:LayoutID];
+        item=[[NSCustomTouchBarItem alloc] initWithIdentifier:@"local.musicstrip.midi.piano-row"];
         StripCompactPianoRow *row=[[StripCompactPianoRow alloc] initWithFrame:NSMakeRect(0,0,852,30)]; item.view=row;
         row.rowWidth=[row.widthAnchor constraintEqualToConstant:MAX(180,(lastMidiHostWidth ?: 828)-32-88-16)];
         row.rowWidth.active=YES;
