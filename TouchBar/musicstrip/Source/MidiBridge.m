@@ -216,6 +216,7 @@ static NSString *const NavigationID = @"local.musicstrip.midi.navigation";
 @property CGFloat endY;
 @property BOOL octaveControl;
 @property NSString *stackedCaption;
+@property BOOL octaveSpanSymbol;
 @property NSInteger joinedEdge; // 1 = left half, 2 = right half; 0 = native bezel.
 @property CGFloat presetHue;
 @property BOOL recordLit;
@@ -271,8 +272,21 @@ static MidiNavigationButton *octavesButton;
             [self.title drawAtPoint:NSMakePoint((44-size.width)/2,11) withAttributes:top];
         }
         NSDictionary *bottom=@{NSFontAttributeName:[NSFont systemFontOfSize:8 weight:NSFontWeightSemibold],NSForegroundColorAttributeName:[NSColor colorWithWhite:.90 alpha:1]};
-        NSSize size=[self.stackedCaption sizeWithAttributes:bottom];
-        [self.stackedCaption drawAtPoint:NSMakePoint((44-size.width)/2,2) withAttributes:bottom];
+        if(self.octaveSpanSymbol) {
+            // A miniature keyboard enclosed by span markers, without text.
+            NSBezierPath *span=[NSBezierPath bezierPath];
+            [span moveToPoint:NSMakePoint(11,3)]; [span lineToPoint:NSMakePoint(11,9)];
+            [span moveToPoint:NSMakePoint(33,3)]; [span lineToPoint:NSMakePoint(33,9)];
+            [span appendBezierPathWithRect:NSMakeRect(14,3,16,6)];
+            for(NSInteger i=1;i<7;i++) {
+                CGFloat x=14+i*16.0/7;
+                [span moveToPoint:NSMakePoint(x,3)]; [span lineToPoint:NSMakePoint(x,9)];
+            }
+            span.lineWidth=.65; [[NSColor colorWithWhite:.90 alpha:1] setStroke]; [span stroke];
+        } else {
+            NSSize size=[self.stackedCaption sizeWithAttributes:bottom];
+            [self.stackedCaption drawAtPoint:NSMakePoint((44-size.width)/2,2) withAttributes:bottom];
+        }
         [NSGraphicsContext restoreGraphicsState]; return;
     }
     if(!self.joinedEdge) { [super drawRect:dirtyRect]; return; }
@@ -548,7 +562,7 @@ static void Open(id self, SEL sel, NSTouchBar *bar, id identifier) {
         NSCustomTouchBarItem *options=[[NSCustomTouchBarItem alloc] initWithIdentifier:OctavesID];
         octavesButton=[[MidiNavigationButton alloc] initWithFrame:NSMakeRect(0,0,44,30)];
         octavesButton.octaveControl=YES;
-        octavesButton.stackedCaption=@"OCT"; octavesButton.joinedEdge=2;
+        octavesButton.stackedCaption=@""; octavesButton.octaveSpanSymbol=YES; octavesButton.joinedEdge=2;
         octavesButton.image=nil; octavesButton.imagePosition=NSNoImage;
         octavesButton.title=[[expandedPianoView valueForKey:@"numOctaves"] stringValue];
         octavesButton.font=[NSFont monospacedDigitSystemFontOfSize:14 weight:NSFontWeightMedium];
@@ -1062,7 +1076,7 @@ static void TestPianoExpansionCase(NSTouchBar *bar,NSTouchBar *saved,id savedIde
         }
         NSCAssert(!pianoChannelButton && ![presentation.itemIdentifiers containsObject:@"local.musicstrip.piano.channel"],@"MIDI channel belongs in Customize Controls, not the expanded piano");
         NSCAssert(pianoModeButton.superview==octavesButton.superview && fabs(NSMaxX(pianoModeButton.frame)-NSMinX(octavesButton.frame))<.1,@"Mode and octaves must be one gapless joined item");
-        NSCAssert([pianoModeButton.stackedCaption isEqual:pianoModeButton.title] && [octavesButton.stackedCaption isEqual:@"OCT"],@"Piano options use clear stacked labels");
+        NSCAssert([pianoModeButton.stackedCaption isEqual:pianoModeButton.title] && octavesButton.octaveSpanSymbol && octavesButton.stackedCaption.length==0,@"Piano options use a stacked mode label and a text-free octave symbol");
         for(NSView *control in @[pianoModeButton,octavesButton]) {
             NSRect frame=[control convertRect:control.bounds toView:nil];
             NSCAssert(control.window && frame.origin.x>=0 && NSMaxX(frame)<=control.window.contentView.bounds.size.width,@"All expanded settings controls must be visible");
