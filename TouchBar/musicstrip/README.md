@@ -1,6 +1,6 @@
 # 3£ — original app source and Ableton Record
 
-The Apps launcher is a flat, glyph-free 14-point swipe extension beside the macOS Control Strip arrow: swipe left to open apps, right to close. It draws no separate bezel, dots, X or divider; taps still toggle and holds still open desktops. The macOS-owned arrow and its system-imposed boundary are not modified. The adjoining music control keeps its existing gestures.
+The Apps launcher is a glyph-free 14-point swipe extension beside the macOS Control Strip arrow: swipe left to open apps, right to close. Its leftmost eight points fade from the native arrow's dark edge into the flat control background, softening the seam without painting outside our view. It draws no separate bezel, dots, X or divider; taps still toggle and holds still open desktops. The macOS-owned arrow and its system-imposed boundary are not modified. The adjoining music control keeps its existing gestures.
 
 ## Recovery and preservation
 

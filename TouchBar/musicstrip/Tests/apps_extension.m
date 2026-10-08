@@ -28,8 +28,15 @@ int main(void) { @autoreleasepool {
         [pixels addObject:[NSData dataWithBytes:rep.bitmapData length:rep.bytesPerRow*rep.pixelsHigh]];
         for(NSInteger y=0;y<30;y++) for(NSInteger x=0;x<14;x++) {
             NSColor *color=[[rep colorAtX:x y:y] colorUsingColorSpace:NSColorSpace.sRGBColorSpace];
-            NSCAssert(fabs(color.redComponent-.20)<.02 && fabs(color.greenComponent-.20)<.02,@"Extension has no dots, X, border or divider");
+            NSCAssert(color.redComponent>=.07 && color.redComponent<=.22 && fabs(color.redComponent-color.greenComponent)<.01,@"Extension has only a neutral fade, no dots, X or bright border");
         }
+        CGFloat previous=0;
+        for(NSInteger x=0;x<14;x++) {
+            CGFloat value=[[[rep colorAtX:x y:15] colorUsingColorSpace:NSColorSpace.sRGBColorSpace] redComponent];
+            NSCAssert(value>=previous-.005 && (x==0 || value-previous<.035),@"Arrow-side fade is monotonic with no hard internal seam"); previous=value;
+        }
+        NSCAssert([[[rep colorAtX:0 y:15] colorUsingColorSpace:NSColorSpace.sRGBColorSpace] redComponent]<.11 && previous>.18,@"Fade blends a dark native edge into the control background");
+        if(!open.boolValue) [[rep representationUsingType:NSBitmapImageFileTypePNG properties:@{}] writeToFile:@"/tmp/3e-apps-extension-fade.png" atomically:YES];
     }
     NSCAssert([pixels[0] isEqual:pixels[1]],@"Invisible extension remains visually identical when open");
     LauncherPairView *pair=[[LauncherPairView alloc] initWithFrame:NSMakeRect(0,0,70,30)]; pair.apps=launcher; pair.music=[[MusicView alloc] initWithFrame:NSZeroRect]; [pair layout];

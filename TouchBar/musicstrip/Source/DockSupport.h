@@ -30,8 +30,19 @@ static NSString *const DockFoldersID = @"local.musicstrip.dock.folders";
 - (void)drawRect:(NSRect)rect {
     // Flat extension beside the macOS chevron: no independent bezel, glyph,
     // divider or state-dependent X. The system arrow itself remains untouched.
-    [[NSColor colorWithWhite:self.highlighted ? .28 : .20 alpha:1] setFill];
-    NSRectFill(NSIntersectionRect(self.bounds,rect));
+    [NSGraphicsContext saveGraphicsState];
+    [NSBezierPath clipRect:NSIntersectionRect(self.bounds,rect)];
+    CGFloat level=self.highlighted ? .28 : .20;
+    [[NSColor colorWithWhite:level alpha:1] setFill]; NSRectFill(self.bounds);
+    // Feather the native arrow's dark right edge into our flat extension.
+    // Only paint inside our view; never overlap or intercept the system arrow.
+    CGFloat fade=MIN(8,NSWidth(self.bounds));
+    NSGradient *blend=[[NSGradient alloc] initWithColorsAndLocations:
+        [NSColor colorWithWhite:.08 alpha:1],0.0,
+        [NSColor colorWithWhite:level*.76 alpha:1],0.40,
+        [NSColor colorWithWhite:level alpha:1],1.0,nil];
+    [blend drawInRect:NSMakeRect(NSMinX(self.bounds),NSMinY(self.bounds),fade,NSHeight(self.bounds)) angle:0];
+    [NSGraphicsContext restoreGraphicsState];
 }
 - (void)moveAt:(NSPoint)point {
     [super moveAt:point];
