@@ -53,8 +53,11 @@ static void DrawPianoScale(NSView *piano,SEL selector,NSRect dirty) {
         BOOL black=[@[@1,@3,@6,@8,@10] containsObject:@(([[key valueForKey:@"pitch"] integerValue]%12+12)%12)];
         [NSGraphicsContext saveGraphicsState];
         if(!black) [whiteMask addClip];
-        // Opaque color gives white and black keys the same visible accent.
-        NSColor *accent=[NSColor colorWithSRGBRed:.25 green:.78 blue:.90 alpha:1.0];
+        // One cyan color family, with a strong light/dark split so the
+        // original white/black key pattern remains readable in the scale.
+        NSColor *accent=black
+            ? [NSColor colorWithSRGBRed:.08 green:.40 blue:.47 alpha:1.0]
+            : [NSColor colorWithSRGBRed:.52 green:.86 blue:.93 alpha:1.0];
         [accent setFill];
         [path fill];
         [NSGraphicsContext restoreGraphicsState];
