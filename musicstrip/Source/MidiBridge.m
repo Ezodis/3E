@@ -96,8 +96,53 @@ static void SetPianoStartNote(NSView *piano,NSInteger note) {
 }
 // Keep the original key shapes, touch regions, note engine and appearance.
 // At a half-octave position, rotate the generated keyboard window by six notes.
+static void StabilizePianoEdges(NSView *piano) {
+    CGFloat width=piano.bounds.size.width,edge=MIN(18,width/4);
+    if(width<=0) return;
+    NSInteger octaves=[[piano valueForKey:@"numOctaves"] integerValue];
+    if(octaves>0 && (width-2*edge)/(octaves*7)<10) {
+        // Native fixed pixel gutters dominate very narrow keys. Generate the
+        // same native shapes at a readable density, then scale the geometry
+        // together so gutters shrink proportionally instead of eating keys.
+        NSInteger start=[[piano valueForKey:@"startOctave"] integerValue];
+        NSView *sample=((id(*)(id,SEL,int,int))objc_msgSend)([NSClassFromString(@"pianoView") alloc],NSSelectorFromString(@"initWithOctaves:andTransposition:"),(int)octaves,(int)start);
+        sample.frame=NSMakeRect(0,0,octaves*7*14+2*edge,30);
+        ((void(*)(id,SEL))originalPianoLayout)(sample,@selector(viewWillDraw));
+        for(NSString *name in @[@"pianoKeys",@"upKey",@"downKey"]) [piano setValue:[sample valueForKey:name] forKey:name];
+        NSArray *labels=[piano valueForKey:@"textFields"],*sampleLabels=[sample valueForKey:@"textFields"];
+        for(NSUInteger i=0;i<MIN(labels.count,sampleLabels.count);i++) ((NSView *)labels[i]).frame=((NSView *)sampleLabels[i]).frame;
+    }
+    NSArray *keys=[piano valueForKey:@"pianoKeys"];
+    CGFloat left=CGFLOAT_MAX,right=-CGFLOAT_MAX;
+    for(id key in keys) {
+        NSRect rect=[[key valueForKey:@"drawPath"] bounds];
+        left=MIN(left,NSMinX(rect)); right=MAX(right,NSMaxX(rect));
+    }
+    if(right>left) {
+        CGFloat scale=(width-2*edge)/(right-left);
+        NSAffineTransform *transform=[NSAffineTransform transform];
+        transform.transformStruct=(NSAffineTransformStruct){scale,0,0,1,edge-left*scale,0};
+        for(id key in keys) for(NSString *name in @[@"drawPath",@"touchPath"]) {
+            NSBezierPath *path=[[key valueForKey:name] copy]; [path transformUsingAffineTransform:transform]; [key setValue:path forKey:name];
+        }
+        for(NSTextField *label in [piano valueForKey:@"textFields"]) {
+            NSRect rect=label.frame; rect.origin.x=edge+(rect.origin.x-left)*scale;
+            rect.size.width*=scale; label.frame=rect;
+        }
+    }
+    for(NSString *name in @[@"downKey",@"upKey"]) {
+        NSBezierPath *path=[[piano valueForKey:name] copy]; NSRect rect=path.bounds;
+        if(rect.size.width<=0) continue;
+        CGFloat scale=edge/rect.size.width,target=[name isEqual:@"upKey"] ? width-edge : 0;
+        NSAffineTransform *transform=[NSAffineTransform transform];
+        transform.transformStruct=(NSAffineTransformStruct){scale,0,0,1,target-rect.origin.x*scale,0};
+        [path transformUsingAffineTransform:transform]; [piano setValue:path forKey:name];
+    }
+}
 static void PianoLayout(NSView *piano,SEL selector) {
+    BOOL rebuilt=[[piano valueForKey:@"lastWidth"] doubleValue]!=piano.bounds.size.width;
     ((void(*)(id,SEL))originalPianoLayout)(piano,selector);
+    if(rebuilt) StabilizePianoEdges(piano);
     if(!PianoHalf(piano)) return;
     NSArray *keys=[piano valueForKey:@"pianoKeys"];
     NSMutableDictionary *templates=[NSMutableDictionary dictionary];
@@ -654,13 +699,11 @@ static void PianoBegan(NSView *piano,SEL selector,NSEvent *event) {
     NSTouch *touch=touches.count==1 ? touches.anyObject : nil;
     NSPoint point=touch ? [touch locationInView:piano] : NSZeroPoint;
     NSBezierPath *up=[piano valueForKey:@"upKey"], *down=[piano valueForKey:@"downKey"];
-    // The visible chevrons are thin paths. Use their full touch regions and
-    // also accept a confirmed octave change from the original touch handler.
-    BOOL region=(up && NSPointInRect(point,NSInsetRect(up.bounds,-6,-4))) ||
-                (down && NSPointInRect(point,NSInsetRect(down.bounds,-6,-4)));
+    // Fixed-width edges remain usable even when many octaves compress keys.
+    BOOL region=(up && NSPointInRect(point,up.bounds)) || (down && NSPointInRect(point,down.bounds));
     if(touch && touch.type==NSTouchTypeDirect && region && ![[piano valueForKey:@"activeKeys"] count]) {
         NSInteger note=PianoStartNote(piano);
-        BOOL forward=up && NSPointInRect(point,NSInsetRect(up.bounds,-6,-4));
+        BOOL forward=up && NSPointInRect(point,up.bounds);
         BeginPianoHold(piano,touch.identity,point,note/12);
         [pianoHolds objectForKey:piano].direction=forward ? 1 : -1;
         Report("PIANO_ARROW_HOLD_ARMED\n");
@@ -673,7 +716,8 @@ static void PianoMoved(NSView *piano,SEL selector,NSEvent *event) {
     for(NSTouch *touch in [event touchesMatchingPhase:NSTouchPhaseTouching inView:piano]) {
         if(hold && [touch.identity isEqual:hold.identity]) {
             NSPoint point=[touch locationInView:piano];
-            if(hypot(point.x-hold.point.x,point.y-hold.point.y)>=12) { hold.cancelled=YES; [hold.timer invalidate];hold.timer=nil; }
+            NSRect edge=[[piano valueForKey:hold.direction>0 ? @"upKey" : @"downKey"] bounds];
+            if(!NSPointInRect(point,NSInsetRect(edge,-4,-4))) { hold.cancelled=YES; [hold.timer invalidate];hold.timer=nil; }
         }
     }
     if(!hold) ((void(*)(id,SEL,id))originalPianoMoved)(piano,selector,event);
@@ -973,6 +1017,9 @@ static void TestAllPianoExpansion(void) {
     NSTouchBar *bar=[NSTouchBar new]; bar.delegate=(id)NSApp.delegate;
     bar.customizationIdentifier=[@"local.musicstrip.expand-test." stringByAppendingString:NSUUID.UUID.UUIDString];
     bar.defaultItemIdentifiers=@[NativePianoID,SecondPianoID,ThirdPianoID];
+    // Exercise the narrowest multi-piano layout at the maximum octave count.
+    for(NSString *slot in @[SecondPianoID,ThirdPianoID])
+        SaveInstanceSettings(bar,slot,@{@"channel":[slot isEqual:SecondPianoID] ? @2 : @3,@"kind":@"note",@"type":@"glissando",@"octaves":@10,@"startOctave":@0});
     Close(NSApp.delegate,NSSelectorFromString(@"closeTouchbar:"),presentation);
     Open(NSApp.delegate,NSSelectorFromString(@"openTouchbar:fromIdentifier:"),bar,identifier);
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW,700*NSEC_PER_MSEC),dispatch_get_main_queue(),^{ UpdateActivePianoSizing(); TestPianoExpansionCase(bar,saved,identifier,0); });
@@ -1049,6 +1096,30 @@ static void Command(NSString *command) {
             TestIndependentPianos();
         } else if ([command isEqualToString:@"PIANO_NATIVE_ADD_TEST"]) {
             TestNativePianoAddition();
+        } else if ([command isEqualToString:@"PIANO_DENSE_ARROW_TEST"]) {
+            for(NSNumber *count in @[@2,@6,@10]) for(NSNumber *width in @[@160,@284,@540,@800]) {
+                NSView *view=((id(*)(id,SEL,int,int))objc_msgSend)([NSClassFromString(@"pianoView") alloc],NSSelectorFromString(@"initWithOctaves:andTransposition:"),count.intValue,0);
+                view.frame=NSMakeRect(0,0,width.doubleValue,30); [view viewWillDraw];
+                NSRect left=[[view valueForKey:@"downKey"] bounds],right=[[view valueForKey:@"upKey"] bounds];
+                if(count.intValue==10 && width.intValue==284) {
+                    NSImage *preview=[[NSImage alloc] initWithSize:view.bounds.size]; [preview lockFocus]; [view drawRect:view.bounds]; [preview unlockFocus];
+                    NSBitmapImageRep *rep=[NSBitmapImageRep imageRepWithData:preview.TIFFRepresentation];
+                    [[rep representationUsingType:NSBitmapImageFileTypePNG properties:@{}] writeToFile:@"/tmp/3pounds-dense-piano.png" atomically:YES];
+                }
+                NSCAssert(fabs(left.size.width-18)<.1 && fabs(right.size.width-18)<.1 && fabs(NSMaxX(right)-width.doubleValue)<.1,@"Dense piano arrows must stay fixed and visible");
+                for(NSNumber *side in @[@NO,@YES]) {
+                    PianoTestTouch *touch=[PianoTestTouch new]; touch.identity=NSUUID.UUID;
+                    NSRect edge=side.boolValue ? right : left;
+                    touch.point=NSMakePoint(NSMidX(edge),15);
+                    PianoTestEvent *event=[PianoTestEvent new]; event.touch=touch; event.phase=NSTouchPhaseBegan;
+                    PianoBegan(view,@selector(touchesBeganWithEvent:),(id)event);
+                    NSCAssert([pianoHolds objectForKey:view]!=nil && ![[view valueForKey:@"activeKeys"] count],@"Either dense edge must arm a hold without playing a note");
+                    touch.point=NSMakePoint(touch.point.x+(side.boolValue ? 8 : -8),touch.point.y); event.phase=NSTouchPhaseMoved; PianoMoved(view,@selector(touchesMovedWithEvent:),(id)event);
+                    NSCAssert(![pianoHolds objectForKey:view].cancelled,@"Natural finger drift within the edge must not lose the hold");
+                    CancelPianoHold(view);
+                }
+                Report([[NSString stringWithFormat:@"DENSE_ARROW octaves=%@ width=%@ left=%@ right=%@\n",count,width,NSStringFromRect([[view valueForKey:@"downKey"] bounds]),NSStringFromRect([[view valueForKey:@"upKey"] bounds])] UTF8String]);
+            }
         } else if ([command isEqualToString:@"PIANO_TYPE_MAP_TEST"]) {
             for(NSString *name in @[@"glissando",@"noglissando",@"pitchbend"]) {
                 NSView *view=((id(*)(id,SEL,int,int))objc_msgSend)([NSClassFromString(@"pianoView") alloc],NSSelectorFromString(@"initWithOctaves:andTransposition:"),2,4);

@@ -30,6 +30,23 @@ static BOOL ScaleKeyIsPressed(NSView *piano,id key) {
 }
 static void DrawPianoScale(NSView *piano,SEL selector,NSRect dirty) {
     ((void(*)(id,SEL,NSRect))originalPianoDraw)(piano,selector,dirty);
+    // The vendor also sizes its drawn chevrons by octave density. Redraw
+    // only the reserved edges with legible, compact fixed-size chevrons.
+    [NSGraphicsContext saveGraphicsState];
+    [NSBezierPath clipRect:NSIntersectionRect(piano.bounds,dirty)];
+    CGFloat edge=MIN(18,piano.bounds.size.width/4);
+    for(NSInteger side=0;side<2;side++) {
+        CGFloat x=side ? NSMaxX(piano.bounds)-edge : NSMinX(piano.bounds);
+        [NSColor.blackColor setFill]; NSRectFill(NSMakeRect(x,0,edge,piano.bounds.size.height));
+        CGFloat midY=NSMidY(piano.bounds),center=x+edge/2;
+        NSBezierPath *arrow=[NSBezierPath bezierPath];
+        [arrow moveToPoint:NSMakePoint(center+(side ? -3 : 3),midY-8)];
+        [arrow lineToPoint:NSMakePoint(center+(side ? 3 : -3),midY)];
+        [arrow lineToPoint:NSMakePoint(center+(side ? -3 : 3),midY+8)];
+        arrow.lineWidth=2; arrow.lineCapStyle=NSLineCapStyleRound;
+        [NSColor.whiteColor setStroke]; [arrow stroke];
+    }
+    [NSGraphicsContext restoreGraphicsState];
     if(!scalePianos) scalePianos=[NSHashTable weakObjectsHashTable];
     [scalePianos addObject:piano];
     if(!liveScaleMask) return;
