@@ -58,7 +58,7 @@ static NSString *const DockFoldersID = @"local.musicstrip.dock.folders";
     if(self.performCommand && (swipe || tap)) self.performCommand(swipe ? (dx<0 ? 5 : 4) : 2);
 }
 - (void)touchesMovedWithEvent:(NSEvent *)event {
-    // The 14-point edge is intentionally narrow. Follow its original finger
+    // The narrow edge follows its original finger
     // beyond the view so a swipe does not disappear into the music button.
     for(NSTouch *touch in [event touchesMatchingPhase:NSTouchPhaseTouching inView:nil])
         if([touch.identity isEqual:self.touchIdentity]) [self moveAt:[touch locationInView:self]];
@@ -79,12 +79,14 @@ static NSString *const DockFoldersID = @"local.musicstrip.dock.folders";
 @property DockLauncher *apps;
 @property MusicView *music;
 @end
+static const CGFloat AppsExtensionWidth=18;
 @implementation LauncherPairView
 - (NSSize)intrinsicContentSize { return NSMakeSize(70,30); }
 - (void)layout {
     [super layout];
-    self.apps.frame=NSMakeRect(0,0,14,30);
-    self.music.frame=NSMakeRect(14,0,56,30);
+    self.apps.frame=NSMakeRect(0,0,AppsExtensionWidth,30);
+    self.music.joinedLauncherSurface=YES;
+    self.music.frame=NSMakeRect(AppsExtensionWidth,0,70-AppsExtensionWidth,30);
 }
 @end
 

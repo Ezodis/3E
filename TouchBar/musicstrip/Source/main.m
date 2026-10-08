@@ -140,6 +140,7 @@ static OSStatus SendSpotifyCommand(pid_t pid, int command) {
 @property NSImage *artwork;
 @property NSInteger nextAction;
 @property BOOL stopAction;
+@property BOOL joinedLauncherSurface;
 @property BOOL tracking;
 @property CGFloat startX;
 @property CGFloat endX;
@@ -175,6 +176,29 @@ static OSStatus SendSpotifyCommand(pid_t pid, int command) {
     return self;
 }
 - (NSSize)intrinsicContentSize { return NSMakeSize(70, 30); }
+- (void)drawRect:(NSRect)dirty {
+    if(!self.joinedLauncherSurface) { [super drawRect:dirty]; return; }
+    [NSGraphicsContext saveGraphicsState];
+    [NSBezierPath clipRect:NSIntersectionRect(self.bounds,dirty)];
+    [[NSColor colorWithWhite:.20 alpha:1] setFill]; NSRectFill(self.bounds);
+    if(self.highlighted) { [[NSColor colorWithWhite:1 alpha:.08] setFill]; NSRectFill(self.bounds); }
+    // Same background as the app extension: no native left bezel/divider.
+    // Move the artwork/action pair slightly left within the combined surface.
+    NSImage *glyph=self.image;
+    if(glyph.template) {
+        NSImage *source=glyph;
+        glyph=[NSImage imageWithSize:source.size flipped:NO drawingHandler:^BOOL(NSRect rect) {
+            [source drawInRect:rect]; [NSColor.whiteColor setFill];
+            NSRectFillUsingOperation(rect,NSCompositingOperationSourceIn); return YES;
+        }];
+    }
+    NSSize size=glyph.size;
+    CGFloat scale=MIN(1,MIN(34/MAX(1,size.width),20/MAX(1,size.height)));
+    NSSize fitted=NSMakeSize(size.width*scale,size.height*scale);
+    [glyph drawInRect:NSMakeRect((NSWidth(self.bounds)-fitted.width)/2-5,(NSHeight(self.bounds)-fitted.height)/2,fitted.width,fitted.height)
+        fromRect:NSZeroRect operation:NSCompositingOperationSourceOver fraction:1 respectFlipped:YES hints:nil];
+    [NSGraphicsContext restoreGraphicsState];
+}
 - (BOOL)acceptsFirstResponder { return YES; }
 - (NSView *)hitTest:(NSPoint)point {
     return NSPointInRect([self convertPoint:point fromView:self.superview], self.bounds) ? self : nil;
@@ -976,7 +1000,7 @@ int main(int argc, const char *argv[]) {
                     [launcher moveAt:NSMakePoint(-8,15)]; [launcher finishAt:NSMakePoint(-8,15)];
                     NSCAssert(delegate.dockPanel.visible && delegate.appsVisible,@"Left edge swipes keep the native apps panel open");
                 }
-                NSCAssert(NSWidth(launcher.frame)==14 && NSMinX(delegate.musicView.frame)==14,@"Invisible extension has no app/music gap");
+                NSCAssert(NSWidth(launcher.frame)==AppsExtensionWidth && NSMinX(delegate.musicView.frame)==AppsExtensionWidth && delegate.musicView.joinedLauncherSurface,@"Wider invisible extension shares the media surface without a bezel");
             });
             dispatch_after(dispatch_time(DISPATCH_TIME_NOW,2*NSEC_PER_SEC),dispatch_get_main_queue(),^{
                 DockLauncher *launcher=delegate.dockLauncher;
@@ -1148,7 +1172,7 @@ int main(int argc, const char *argv[]) {
             dispatch_after(dispatch_time(DISPATCH_TIME_NOW,17*NSEC_PER_SEC),dispatch_get_main_queue(),^{
                 NSLog(@"Dock snapshot: %@",delegate.appsStatus);
                 NSCAssert(delegate.appsVisible && [delegate.appsStatus[@"visible"] boolValue],@"Apps button presents native overlay");
-                NSCAssert([delegate.appsStatus[@"buttonWidth"] doubleValue]==14 && delegate.musicView.frame.size.width==54,@"Both launchers fit the native tray slot");
+                NSCAssert([delegate.appsStatus[@"buttonWidth"] doubleValue]==AppsExtensionWidth && delegate.musicView.frame.size.width==70-AppsExtensionWidth,@"Both launchers fit the native tray slot");
                 NSCAssert(([delegate.appsStatus[@"layout"] isEqual:@[DockAppsID]]),@"Centered apps; close through the persistent launcher");
                 [delegate openMidi];
             });
