@@ -65,6 +65,27 @@ The engine presents a system-modal Touch Bar, which AppKit's normal customizatio
 
 ## Build and additive installation
 
+### Customize Controls (3.0.10)
+
+Opening the original editor retains the actual selected MIDI preset instead of
+presenting the empty modal wrapper. Physical touches select controls again;
+each of the three piano identifiers uses the same editor and its own saved
+MIDI channel. Piano mode, octave count and starting octave are hidden here and
+remain controlled by the expanded piano. Applying other piano settings preserves
+those values and refreshes the live preset without resizing the outer buttons.
+
+The header shows the current preset number and a **Bars** up/down selector
+(1–9, the original engine's available presets). Reducing the count hides presets
+from cycling without deleting their layouts or mappings; increasing restores
+them. The count is saved across launches.
+
+Isolated engine diagnostics: `SHOW`, `CONTROLS_TEST`, `CONTROLS_APPLY_TEST`.
+These check the actual touch-began selection route for three independent pianos,
+pad selection, title, count changes, preserved expanded settings, and real native
+Apply/live reload. The Apply test restores its temporary channel change. Native
+two/three-piano sizing/note regressions also pass. Final physical finger testing
+is still required on the Touch Bar.
+
 For the integrated edition, use `zsh musicstrip/Source/build.sh --combined`; the ordinary build remains TouchBar-only. The combined app embeds the shared TouchTab Swift gesture module in its main process, adds a **TouchTab Gestures** menu toggle through the existing MIDI-helper pipe, and preserves the original MIDI engine. On the development Mac, quit 3£ and run `zsh musicstrip/install-combined.sh` for an in-place installation. The main executable is rebuilt from the maintained original source with narrowly scoped gesture lifecycle/pipe hooks; the working app-picker helper, piano engine, resources, MIDI mappings and user settings are retained. Root README describes the separate combined/standalone update feeds and permissions.
 
 Requires macOS/Xcode command-line tools. The original engine is already vendored as a bundle dependency; no download from Documents/Downloads is required to build.

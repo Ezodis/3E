@@ -50,6 +50,7 @@ static void QuitMusicStripParent(void) {
     }
 }
 static IMP originalOpen, originalClose, originalPresetHandler, originalChangeMode, originalShow;
+static void InitializePresetCatalog(void);
 static NSTouchBar *presentation;
 static NSButton *closeButton;
 static NSString *const CloseID = @"local.musicstrip.midi.close";
@@ -539,6 +540,7 @@ static NSArray *MenuTitles(NSMenu *menu) {
 @end
 static void SuppressTray(id cls, SEL sel, id item) { Report("TRAY_SUPPRESSED\n"); }
 static void Open(id self, SEL sel, NSTouchBar *bar, id identifier) {
+    InitializePresetCatalog();
     CGFloat host=closeButton.window.contentView.bounds.size.width;
     if(isfinite(host) && host>200 && host<2048) lastMidiHostWidth=host;
     if (!rebuildingPresentation) ResetPianoExpansion();
@@ -811,6 +813,10 @@ static void BeginPianoHold(NSView *piano,id identity,NSPoint point,NSInteger oct
 static void PianoBegan(NSView *piano,SEL selector,NSEvent *event) {
     if([[(id)NSApp.delegate valueForKey:@"editTouchBar"] boolValue]) return;
     CancelPianoHold(piano);
+    if([[(id)NSApp.delegate valueForKey:@"editCCs"] boolValue]) {
+        ((void(*)(id,SEL,id))objc_msgSend)(NSApp.delegate,NSSelectorFromString(@"pianoTouched:"),piano);
+        return; // Selecting a keyboard must not play notes or expand it.
+    }
     NSSet<NSTouch *> *touches=[event touchesMatchingPhase:NSTouchPhaseBegan inView:piano];
     NSTouch *touch=touches.count==1 ? touches.anyObject : nil;
     NSPoint point=touch ? [touch locationInView:piano] : NSZeroPoint;
@@ -827,6 +833,7 @@ static void PianoBegan(NSView *piano,SEL selector,NSEvent *event) {
     ((void(*)(id,SEL,id))originalPianoBegan)(piano,selector,event);
 }
 static void PianoMoved(NSView *piano,SEL selector,NSEvent *event) {
+    if([[(id)NSApp.delegate valueForKey:@"editCCs"] boolValue]) return;
     PianoArrowHold *hold=[pianoHolds objectForKey:piano];
     for(NSTouch *touch in [event touchesMatchingPhase:NSTouchPhaseTouching inView:piano]) {
         if(hold && [touch.identity isEqual:hold.identity]) {
@@ -838,6 +845,7 @@ static void PianoMoved(NSView *piano,SEL selector,NSEvent *event) {
     if(!hold) ((void(*)(id,SEL,id))originalPianoMoved)(piano,selector,event);
 }
 static void PianoEnded(NSView *piano,SEL selector,NSEvent *event) {
+    if([[(id)NSApp.delegate valueForKey:@"editCCs"] boolValue]) { CancelPianoHold(piano); return; }
     PianoArrowHold *hold=[pianoHolds objectForKey:piano];
     if(hold && !hold.fired && !hold.cancelled) MovePianoHalf(piano,hold.direction);
     CancelPianoHold(piano);
@@ -853,10 +861,12 @@ static void ChangeMode(id self,SEL selector,id sender) {
 }
 static void PresetKey(id self,SEL selector,id sender,id key) {
     if(pianoExpanded) { CollapsePiano(); if(pianoExpanded) return; }
+    NSInteger count=[[self valueForKey:@"allUserTouchbars"] count];
+    if([key isKindOfClass:NSNumber.class] && count && [key integerValue]>=count) key=@(count-1);
     ((void(*)(id,SEL,id,id))originalPresetHandler)(self,selector,sender,key);
 }
 static void ShowPreset(id self,SEL selector,NSTouchBar *bar) {
-    if([[self valueForKey:@"editTouchBar"] boolValue] || [[self valueForKey:@"editCCs"] boolValue]) {
+    if([[self valueForKey:@"editTouchBar"] boolValue]) {
         ((void(*)(id,SEL,id))originalShow)(self,selector,bar);
         return;
     }
@@ -913,6 +923,7 @@ static NSInteger CycleKeyCount(id delegate, NSEventModifierFlags flags) {
     return count;
 }
 #import "MultiPiano.h"
+#import "ControlCustomization.h"
 static void UpdateActivePianoSizing(void) {
     if(!presentation || pianoExpanded || customizationBar) return;
     // Normal presets retain the same outer host/items. No post-presentation
@@ -1277,7 +1288,76 @@ static void TestPianoEndKeys(void) {
 static void Command(NSString *command) {
     id delegate = NSApp.delegate;
     @try {
-        if ([command hasPrefix:@"TOUCHTAB_STATE "]) {
+        if ([command isEqualToString:@"CONTROLS_APPLY_TEST"]) {
+            NSCAssert([[delegate valueForKey:@"editCCs"] boolValue],@"Open the control editor first");
+            id vc=[delegate valueForKey:@"settingsViewController"];
+            NSString *prefsKey=PianoPrefsKey(normalLayoutBar);
+            NSDictionary *prior=[NSUserDefaults.standardUserDefaults dictionaryForKey:prefsKey];
+            @try {
+                NSView *piano=[(NSCustomTouchBarItem *)[normalLayoutBar itemForIdentifier:SecondPianoID] view];
+                ConfigureIndependentPiano(delegate,NSSelectorFromString(@"pianoTouched:"),piano);
+                [[vc valueForKey:@"channelButton"] selectItemAtIndex:6];
+                ((void(*)(id,SEL,id))objc_msgSend)(vc,NSSelectorFromString(@"applySettings:"),nil);
+                NSDictionary *saved=[NSUserDefaults.standardUserDefaults dictionaryForKey:prefsKey];
+                NSCAssert([saved[@"piano2"][@"channel"] intValue]==7,@"Apply must persist the second piano's channel");
+                NSCAssert([saved[@"piano"] isEqual:prior[@"piano"]],@"Applying the second piano must not modify the first piano");
+                NSView *live=[(NSCustomTouchBarItem *)[normalLayoutBar itemForIdentifier:SecondPianoID] view];
+                NSCAssert([[live valueForKey:@"channelNumber"] intValue]==7,@"Apply must update the actual live piano, not only saved preferences");
+                Report("CONTROLS_REAL_APPLY_AND_LIVE_RELOAD_PASSED\n");
+            } @finally {
+                [NSUserDefaults.standardUserDefaults setObject:prior forKey:prefsKey];
+                ReloadCustomizationControls(delegate,NSSelectorFromString(@"reloadTouchbar"));
+                ((void(*)(id,SEL))objc_msgSend)(vc,NSSelectorFromString(@"setInitialState"));
+                ConfigureIndependentPiano(delegate,NSSelectorFromString(@"pianoTouched:"),[(NSCustomTouchBarItem *)[normalLayoutBar itemForIdentifier:NativePianoID] view]);
+            }
+        } else if ([command isEqualToString:@"CONTROLS_TEST"]) {
+            NSTouchBar *saved=normalLayoutBar;
+            NSCAssert(saved && ![[delegate valueForKey:@"editCCs"] boolValue],@"Show a MIDI preset before this test");
+            CustomizeControls(delegate,NSSelectorFromString(@"customizeControls:"),nil);
+            id vc=[delegate valueForKey:@"settingsViewController"];
+            NSCAssert(normalLayoutBar==saved,@"Editor must retain the live preset instead of the empty main shell");
+            NSInteger index=[[delegate valueForKey:@"userTouchbarNumber"] integerValue];
+            NSString *expectedTitle=[NSString stringWithFormat:@"Touchbar %ld",(long)index+1];
+            NSCAssert([[(NSTextField *)[vc valueForKey:@"touchBarName"] stringValue] isEqual:expectedTitle],@"Title must match current preset");
+            for(NSString *identifier in @[NativePianoID,SecondPianoID,ThirdPianoID]) {
+                NSView *piano=[(NSCustomTouchBarItem *)[saved itemForIdentifier:identifier] view];
+                NSCAssert([piano isKindOfClass:NSClassFromString(@"pianoView")],@"Each slot needs a real independent piano");
+                PianoTestEvent *event=[PianoTestEvent new]; event.touch=[PianoTestTouch new]; event.touch.point=NSMakePoint(1,15); event.phase=NSTouchPhaseBegan;
+                PianoBegan(piano,@selector(touchesBeganWithEvent:),(id)event);
+                NSCAssert(objc_getAssociatedObject(vc,&selectedControlKey)==piano,@"Actual touch-began route must select this specific piano");
+                NSCAssert(![pianoHolds objectForKey:piano] && ![[piano valueForKey:@"activeKeys"] count],@"Selection must not start notes or arrow holds");
+                NSCAssert([[vc valueForKey:@"channelButton"] isEnabled],@"Piano channel must remain editable");
+                for(NSString *key in @[@"numOctavesButton",@"startOctaveButton",@"behaviorButton"]) NSCAssert([[vc valueForKey:key] isHidden],@"Expanded-only controls must be hidden");
+                NSLog(@"CC_SELECTED %@ namespace %@ prefs %@ channel %@",identifier,[vc valueForKey:@"controlIdentifier"],[vc valueForKey:@"prefsKey"],[[vc valueForKey:@"channelButton"] titleOfSelectedItem]);
+                NSMutableDictionary *copy=[[vc valueForKey:@"currentControlPrefs"] mutableCopy];
+                id previousChannel=[vc valueForKey:@"presetChannel"];
+                [vc setValue:@7 forKey:@"presetChannel"];
+                WriteCustomizationControl(vc,NSSelectorFromString(@"WritingToPreferences:"),copy);
+                [vc setValue:previousChannel forKey:@"presetChannel"];
+                NSCAssert([copy[@"channel"] intValue]==7,@"Native writer must save channel changes");
+                NSCAssert([copy[@"octaves"] isEqual:[piano valueForKey:@"numOctaves"]] && [copy[@"startOctave"] isEqual:[piano valueForKey:@"startOctave"]],@"Channel editing must preserve expanded octave settings");
+                NSCAssert([copy[@"type"] isEqual:PianoModeName([[piano valueForKey:@"type"] integerValue])],@"Channel editing must preserve gesture mode");
+            }
+            NSView *pad=[(NSCustomTouchBarItem *)[saved itemForIdentifier:@"ch.uebe.midi-touchbar.pad1"] view];
+            if([pad isKindOfClass:NSClassFromString(@"padButton")]) {
+                ((void(*)(id,SEL,id))objc_msgSend)(delegate,NSSelectorFromString(@"padAction:"),pad);
+                NSCAssert([[vc valueForKey:@"controlIdentifier"] isEqual:@"pad1"] && [[vc valueForKey:@"valueTextField"] isEnabled],@"Pad touches must select the native CC editor too");
+                Report("CONTROLS_PAD_SELECTION_PASSED\n");
+            }
+            StripPresetCountEditor *editor=objc_getAssociatedObject(vc,&countEditorKey);
+            id prior=[NSUserDefaults.standardUserDefaults objectForKey:PresetCountPreference];
+            NSUInteger total=[[delegate valueForKey:@"allUserTouchbars"] count];
+            @try {
+                editor.stepper.integerValue=2; [editor changeCount:nil];
+                NSCAssert([[delegate valueForKey:@"allUserTouchbars"] count]==2,@"Count applies immediately");
+                editor.stepper.integerValue=total; [editor changeCount:nil];
+                NSCAssert([[delegate valueForKey:@"allUserTouchbars"] count]==total && normalLayoutBar==saved,@"Hidden presets restore without changing layout");
+            } @finally {
+                editor.stepper.integerValue=total; [editor changeCount:nil];
+                if(prior) [NSUserDefaults.standardUserDefaults setObject:prior forKey:PresetCountPreference]; else [NSUserDefaults.standardUserDefaults removeObjectForKey:PresetCountPreference];
+            }
+            Report("CONTROLS_TOUCH_SELECTION_AND_COUNT_PASSED\n");
+        } else if ([command hasPrefix:@"TOUCHTAB_STATE "]) {
             combinedGestureState=[command substringFromIndex:15];
             ApplyBranding();
         } else if ([command isEqualToString:@"PIANO_INSTANCES_TEST"]) {
@@ -1525,6 +1605,8 @@ static void Command(NSString *command) {
             for(NSString *name in @[NSWindowDidBecomeKeyNotification,NSWindowDidUpdateNotification])
                 [NSNotificationCenter.defaultCenter addObserverForName:name object:nil queue:NSOperationQueue.mainQueue usingBlock:^(NSNotification *note) {
                     HidePianoGestureSetting(((NSWindow *)note.object).contentView);
+                    id vc=[(id)NSApp.delegate valueForKey:@"settingsViewController"];
+                    if(((NSWindow *)note.object).contentViewController==vc) HideExpandedOnlySettings(vc);
                 }];
             originalExitCustomization=method_setImplementation(class_getInstanceMethod(cls,NSSelectorFromString(@"exitCustomization")),(IMP)ExitCustomization);
             method_setImplementation(class_getInstanceMethod(cls,NSSelectorFromString(@"customizeTouchbar:")),(IMP)SafeCustomizeTouchbar);
@@ -1551,6 +1633,7 @@ static void Command(NSString *command) {
             originalOpen = method_setImplementation(open, (IMP)Open);
             originalShow = method_setImplementation(class_getInstanceMethod(cls,NSSelectorFromString(@"showTouchbar:")),(IMP)ShowPreset);
             originalClose = method_setImplementation(close, (IMP)Close);
+            InstallControlCustomizationHooks(cls);
             dispatch_async(dispatch_get_main_queue(), ^{
                 ApplyBranding();
                 BrandMIDIPorts();

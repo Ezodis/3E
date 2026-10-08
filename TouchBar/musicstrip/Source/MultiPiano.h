@@ -220,6 +220,9 @@ static id MakeIndependentPiano(id delegate,SEL selector,NSTouchBar *bar,NSString
         return item;
     }
     NSDictionary *settings=InstanceSettings(bar,identifier);
+    NSString *slot=[identifier componentsSeparatedByString:@"."].lastObject;
+    if(![NSUserDefaults.standardUserDefaults dictionaryForKey:PianoPrefsKey(bar)][slot])
+        SaveInstanceSettings(bar,identifier,settings); // Native editor needs a concrete per-slot defaults dictionary.
     // Use the original piano's kind/behavior semantics, but a new view and state.
     NSCustomTouchBarItem *native=(NSCustomTouchBarItem *)[bar itemForIdentifier:NativePianoID];
     if(!native) native=((id(*)(id,SEL,id,id))originalMakeItem)(delegate,selector,bar,NativePianoID);
@@ -245,7 +248,6 @@ static id MakeIndependentPiano(id delegate,SEL selector,NSTouchBar *bar,NSString
     SizePianoItem(item,bar);
     return item;
 }
-static BOOL editingNativePianoSettings;
 static IMP originalPianoAlertModal;
 static void CollectPianoSettingsViews(NSView *view,NSMutableArray *views) {
     if(!view) return;
@@ -274,43 +276,9 @@ static NSModalResponse PianoSettingsAlertModal(NSAlert *alert,SEL selector) {
     return ((NSModalResponse(*)(id,SEL))originalPianoAlertModal)(alert,selector);
 }
 static void ConfigureIndependentPiano(id delegate,SEL selector,NSView *piano) {
-    StripPianoInstance *instance=objc_getAssociatedObject(piano,&pianoInstanceKey);
-    if(!instance || ![[delegate valueForKey:@"editCCs"] boolValue]) {
-        BOOL editing=[[delegate valueForKey:@"editCCs"] boolValue];
-        editingNativePianoSettings=editing;
-        @try {
-            ((void(*)(id,SEL,id))originalPianoTouched)(delegate,selector,piano);
-            if(editing) {
-                NSViewController *controller=[delegate valueForKey:@"settingsViewController"];
-                HidePianoGestureSetting(controller.view);
-            }
-        } @finally { editingNativePianoSettings=NO; }
-        return;
-    }
-    // Same Customize Controls workflow, independently saved per piano/preset.
-    NSAlert *alert=[NSAlert new]; alert.messageText=@"Piano MIDI Settings";
-    alert.informativeText=@"This keyboard has its own MIDI channel, octave range and position.";
-    [alert addButtonWithTitle:@"Apply"]; [alert addButtonWithTitle:@"Cancel"];
-    NSView *form=[[NSView alloc] initWithFrame:NSMakeRect(0,0,260,100)];
-    NSMutableArray<NSPopUpButton *> *menus=[NSMutableArray new];
-    NSArray *titles=@[@"MIDI channel",@"Visible octaves",@"Starting octave"];
-    NSArray *keys=@[@"channelNumber",@"numOctaves",@"startOctave"];
-    for(NSInteger row=0;row<3;row++) {
-        NSTextField *label=[NSTextField labelWithString:titles[row]]; label.frame=NSMakeRect(0,70-row*32,140,24); [form addSubview:label];
-        NSPopUpButton *menu=[[NSPopUpButton alloc] initWithFrame:NSMakeRect(150,70-row*32,100,26)];
-        NSInteger first=row==2 ? 0 : 1, last=row==0 ? 16 : row==1 ? 10 : 9;
-        for(NSInteger value=first;value<=last;value++) [menu addItemWithTitle:[@(value) stringValue]];
-        [menu selectItemWithTitle:[[piano valueForKey:keys[row]] stringValue]];
-        [form addSubview:menu]; [menus addObject:menu];
-    }
-    alert.accessoryView=form;
-    if([alert runModal]!=NSAlertFirstButtonReturn) return;
-    NSMutableDictionary *settings=[InstanceSettings(instance.bar,instance.identifier) mutableCopy];
-    settings[@"channel"]=@([menus[0].titleOfSelectedItem intValue]);
-    settings[@"octaves"]=@([menus[1].titleOfSelectedItem intValue]);
-    settings[@"startOctave"]=@(MIN([menus[2].titleOfSelectedItem intValue],10-[settings[@"octaves"] intValue]));
-    SaveInstanceSettings(instance.bar,instance.identifier,settings);
-    ApplyInstanceSettings(piano,settings);
+    // Independent pianos already have unique identifiers. Use the same native
+    // editor and preference namespace as every other control, not a modal form.
+    ((void(*)(id,SEL,id))originalPianoTouched)(delegate,selector,piano);
 }
 static NSString *NextPianoSlot(NSArray<NSString *> *items) {
     for(NSString *slot in @[NativePianoID,SecondPianoID,ThirdPianoID])

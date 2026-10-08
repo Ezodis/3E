@@ -33,7 +33,7 @@ Build from the repo root: `zsh TouchBar/musicstrip/Source/build.sh --combined`. 
 
 ### Compatibility
 
-Version 3.0.9 builds TouchBar and Combined as universal Intel/Apple Silicon binaries. Combined requires macOS 12+, TouchBar requires macOS 11+, and standalone TouchTab requires macOS 12+. TouchBar features require a physical Touch Bar; TouchTab requires a multitouch trackpad, with force-click requiring compatible hardware. These apps cannot provide physical Touch Bar controls on Macs without that hardware. Intel is cross-built but has not been physically tested here.
+Version 3.0.10 builds TouchBar and Combined as universal Intel/Apple Silicon binaries. Combined requires macOS 12+, TouchBar requires macOS 11+, and standalone TouchTab requires macOS 12+. TouchBar features require a physical Touch Bar; TouchTab requires a multitouch trackpad, with force-click requiring compatible hardware. These apps cannot provide physical Touch Bar controls on Macs without that hardware. Intel is cross-built but has not been physically tested here.
 
 Downloads are development-signed, not Developer ID notarized. Another Mac may require manual Gatekeeper approval and its own Accessibility/Automation permissions. Four-finger macOS desktop gestures may conflict with TouchTab. Choose either the combined edition or the standalone apps, not both gesture engines simultaneously. There are no runtime dependencies on `/Users/3du/Documents/Codex`.
 
