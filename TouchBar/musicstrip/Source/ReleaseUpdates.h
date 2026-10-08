@@ -1,21 +1,30 @@
 // Check this app's public releases, never the vendor engine's old XML feed.
-static NSString *const StripReleaseVersion=@"2.7.1";
-static NSString *const StripReleasesAPI=@"https://api.github.com/repos/Ezodis/Touchbar3DY/releases/latest";
-static NSString *const StripReleasesPage=@"https://github.com/Ezodis/Touchbar3DY/releases";
+static NSString *const StripReleaseVersion=@"2.7.2";
+static NSString *const StripReleasesAPI=@"https://api.github.com/repos/Ezodis/3E/releases?per_page=100";
+static NSString *const StripReleasesPage=@"https://github.com/Ezodis/3E/releases";
 static BOOL stripUpdateChecking;
 static NSDictionary *StripValidRelease(id value) {
     if(![value isKindOfClass:NSDictionary.class] || [value[@"draft"] boolValue] || [value[@"prerelease"] boolValue]) return nil;
     NSString *tag=value[@"tag_name"];
-    if(![tag isKindOfClass:NSString.class] || ![[NSRegularExpression regularExpressionWithPattern:@"^v[0-9]+\\.[0-9]+\\.[0-9]+$" options:0 error:nil] numberOfMatchesInString:tag options:0 range:NSMakeRange(0,tag.length)]) return nil;
-    NSString *version=[tag substringFromIndex:1];
+    if(![tag isKindOfClass:NSString.class] || ![[NSRegularExpression regularExpressionWithPattern:@"^touchbar-v[0-9]+\\.[0-9]+\\.[0-9]+$" options:0 error:nil] numberOfMatchesInString:tag options:0 range:NSMakeRange(0,tag.length)]) return nil;
+    NSString *version=[tag substringFromIndex:10];
     if(![value[@"assets"] isKindOfClass:NSArray.class]) return nil;
     for(id asset in value[@"assets"]) {
-        if(![asset isKindOfClass:NSDictionary.class] || ![asset[@"name"] isEqual:@"Strip3.zip"]) continue;
+        if(![asset isKindOfClass:NSDictionary.class] || ![asset[@"name"] isEqual:@"TouchBar.zip"]) continue;
         NSString *url=asset[@"browser_download_url"];
-        NSString *expected=[NSString stringWithFormat:@"https://github.com/Ezodis/Touchbar3DY/releases/download/%@/Strip3.zip",tag];
+        NSString *expected=[NSString stringWithFormat:@"https://github.com/Ezodis/3E/releases/download/%@/TouchBar.zip",tag];
         if([url isKindOfClass:NSString.class] && [url isEqual:expected]) return @{@"version":version,@"url":url};
     }
     return nil;
+}
+static NSDictionary *StripNewestRelease(id values) {
+    if(![values isKindOfClass:NSArray.class]) return nil;
+    NSDictionary *newest=nil;
+    for(id value in values) {
+        NSDictionary *release=StripValidRelease(value);
+        if(release && (!newest || [release[@"version"] compare:newest[@"version"] options:NSNumericSearch]==NSOrderedDescending)) newest=release;
+    }
+    return newest;
 }
 static void StripCheckRelease(BOOL foreground) {
     if(stripUpdateChecking) return;
@@ -23,18 +32,18 @@ static void StripCheckRelease(BOOL foreground) {
     NSMutableURLRequest *request=[NSMutableURLRequest requestWithURL:[NSURL URLWithString:StripReleasesAPI]];
     request.timeoutInterval=20;
     [request setValue:@"application/vnd.github+json" forHTTPHeaderField:@"Accept"];
-    [request setValue:@"3Pounds-Touchbar3DY" forHTTPHeaderField:@"User-Agent"];
+    [request setValue:@"3E-TouchBar" forHTTPHeaderField:@"User-Agent"];
     [[[NSURLSession sharedSession] dataTaskWithRequest:request completionHandler:^(NSData *data,NSURLResponse *response,NSError *error) {
         NSDictionary *release=nil;
         if(!error && [(NSHTTPURLResponse *)response statusCode]==200)
-            release=StripValidRelease([NSJSONSerialization JSONObjectWithData:data options:0 error:nil]);
+            release=StripNewestRelease([NSJSONSerialization JSONObjectWithData:data options:0 error:nil]);
         dispatch_async(dispatch_get_main_queue(),^{
             stripUpdateChecking=NO;
             BOOL newer=release && [release[@"version"] compare:StripReleaseVersion options:NSNumericSearch]==NSOrderedDescending;
             if(!foreground && !newer) return;
             NSAlert *alert=[NSAlert new];
             alert.messageText=newer ? @"A 3£ update is available" : (release ? @"3£ is up to date" : @"Could not check for updates");
-            alert.informativeText=newer ? [NSString stringWithFormat:@"Version %@ is available from Ezodis/Touchbar3DY. Download it when you're ready; your current app and Ableton session will not be interrupted.",release[@"version"]] : (release ? [NSString stringWithFormat:@"Installed version: %@. Updates come from Ezodis/Touchbar3DY.",StripReleaseVersion] : @"Check your connection and try again. No app files were changed.");
+            alert.informativeText=newer ? [NSString stringWithFormat:@"Version %@ is available from Ezodis/3E. Download it when you're ready; your current app and Ableton session will not be interrupted.",release[@"version"]] : (release ? [NSString stringWithFormat:@"Installed version: %@. TouchBar updates come from Ezodis/3E.",StripReleaseVersion] : @"Check your connection and try again. No app files were changed.");
             [alert addButtonWithTitle:newer ? @"Download" : @"OK"];
             if(newer) [alert addButtonWithTitle:@"Later"];
             [alert addButtonWithTitle:@"View Releases"];

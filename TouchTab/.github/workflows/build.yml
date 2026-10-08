@@ -1,0 +1,66 @@
+name: Build and Release Touch-Tab
+
+on:
+  push:
+    branches:
+      - master  # Build on every push to master
+    tags:
+      - 'v*'  # Also build when you push a tag like v1.0.0
+  workflow_dispatch:  # Allows manual trigger
+
+jobs:
+  build:
+    runs-on: macos-latest  # Uses GitHub macOS runner
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up Xcode
+        run: sudo xcode-select -switch /Applications/Xcode.app/Contents/Developer
+
+      - name: Build the App
+        run: |
+          xcodebuild -project Touch-Tab.xcodeproj -scheme Touch-Tab -configuration Release -derivedDataPath build/
+          mkdir -p output
+          cp -r build/Build/Products/Release/Touch-Tab.app output/
+
+      - name: Ad-hoc Sign the App
+        run: |
+          codesign --force --deep --sign - output/Touch-Tab.app
+
+      - name: Compress App
+        run: |
+          cd output
+          ditto -c -k --sequesterRsrc --keepParent Touch-Tab.app Touch-Tab.zip
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Touch-Tab
+          path: output/Touch-Tab.zip
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    # Only create release on tags or manual workflow dispatch
+    if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
+    permissions:
+      contents: write
+
+    steps:
+      - name: Download Artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: Touch-Tab
+          path: .
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: Touch-Tab.zip
+          tag_name: ${{ github.ref_name }}
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
