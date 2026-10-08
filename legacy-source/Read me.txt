@@ -1,0 +1,52 @@
+MusicStrip 0.2 — experimental music-only Control Strip helper
+
+1. Quit PockV2 from its menu first, so your normal Touch Bar is visible.
+2. Open MusicStrip.app. It adds one music item to the normal Control Strip.
+   It is inserted automatically; it does not appear in Apple's Customize
+   Control Strip palette and cannot be added by dragging from that screen.
+3. Tap: play/pause. Swipe left: previous track. Swipe right: next track.
+4. Open MusicStrip.app again to quit it and remove its item.
+
+It does not replace the Touch Bar, add volume/brightness controls, install a
+login item, change your keyboard preferences, or modify PockV2. The app must
+remain running for its button to remain available. You can move it into
+Applications if you want to keep it.
+
+This is a prototype using undocumented macOS interfaces. Compilation,
+gesture logic, runtime interface availability, and registration/removal of
+the Control Strip item were checked on this Mac. Its visibility beside the
+normal brightness and volume controls was verified with a Touch Bar capture.
+The app is running and PockV2 has been quit. Physical Touch Bar gestures and
+playback still require a hardware check.
+System updates may affect it.
+The button has a centered icon and the native NSButton Touch Bar background,
+with no text. Its icon follows the current player (Spotify, Safari, etc.) and
+briefly shows playback/skip feedback during gestures. With no player it
+shows a music note.
+
+Routing: identify macOS's current player using MRNowPlayingRequest; prefer
+that player over the remembered player. Only choose a running application.
+Apple Music and iTunes are excluded. Spotify uses documented Spotify Apple
+Events addressed to its current process ID, so quitting and reopening it
+cannot cause a command to launch a different app. The first Spotify command
+may ask permission for MusicStrip to control Spotify. Other players use
+targeted MediaRemote commands with implicit application launching disabled.
+There is no fallback to a generic media key or to launching any app.
+
+The Control Strip presence is reasserted after player/application changes
+and every five seconds, to recover after macOS replaces or hides the item.
+Native expanded media panels may temporarily cover the normal Control Strip.
+
+No menu-bar icon, dock, extra music buttons, analytics, or network requests.
+Source is included. Build with: zsh Source/build.sh
+
+Version 0.2 checks: compiled and signed; selection tests cover current browser
+priority, resumed Spotify, closed players, Apple Music exclusion, and the
+no-launch option. Gesture tests cover tap tolerance, left/right swipes,
+cancellation, and stray events. Physical gestures were confirmed by the
+user for version 0.1; version 0.2's direct Spotify commands need its macOS
+Automation permission and a physical playback check.
+
+References:
+https://github.com/konstantintuev/PockV2
+https://github.com/a2/touch-baer

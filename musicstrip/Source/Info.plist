@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleDisplayName</key>
+	<string>Strip3£</string>
+	<key>CFBundleExecutable</key>
+	<string>MusicStrip</string>
+	<key>CFBundleIconFile</key>
+	<string>StripIcon</string>
+	<key>CFBundleIdentifier</key>
+	<string>local.musicstrip.app</string>
+	<key>CFBundleName</key>
+	<string>Strip3£</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<key>CFBundleShortVersionString</key>
+	<string>2.7.1</string>
+	<key>CFBundleVersion</key>
+	<string>271</string>
+	<key>LSMinimumSystemVersion</key>
+	<string>11.0</string>
+	<key>LSUIElement</key>
+	<true/>
+	<key>NSAppleEventsUsageDescription</key>
+	<string>Strip3£ controls your running Spotify player and reads Safari’s current tab URL to display its media service icon. It will not launch Apple Music or a closed player.</string>
+	<key>NSPrincipalClass</key>
+	<string>NSApplication</string>
+</dict>
+</plist>

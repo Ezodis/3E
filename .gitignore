@@ -1,0 +1,14 @@
+node_modules/
+.env
+.env.*
+!.env.example
+*.log
+.DS_Store
+coverage/
+legacy-source/Source/MusicStrip
+midiBar-upstream/
+legacy-build/
+record-companion/build/
+build/musicstrip/
+__pycache__/
+*.pyc

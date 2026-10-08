@@ -1,0 +1,51 @@
+#!/bin/zsh
+set -eu
+cd "${0:A:h}"
+strip_repo="${PWD:h:h}"
+strip_identity="${STRIP_SIGNING_IDENTITY:-EDA0E1C9F0DD46BE3437CD2733933E31D3A8623D}"
+mkdir -p "$strip_repo/build/musicstrip"
+if [[ "${1:-}" == --bridge-only ]]; then
+  xcrun clang -dynamiclib -fobjc-arc -Wall -Wextra -Wno-unused-parameter -O2 \
+    -mmacosx-version-min=11.0 -framework AppKit -framework CoreMIDI MidiBridge.m \
+    -o "$strip_repo/build/musicstrip/MusicStripMidiBridge.dylib"
+  codesign --force --sign - "$strip_repo/build/musicstrip/MusicStripMidiBridge.dylib"
+  exit 0
+fi
+strip_stage=$(mktemp -d /tmp/strip3-build.XXXXXX)
+trap '[[ "$strip_stage" == /tmp/strip3-build.* ]] && /bin/rm -r -- "$strip_stage"' EXIT
+strip_app="$strip_stage/Strip3£.app"
+ditto --norsrc --noextattr "$strip_repo/recovered/Strip3£.app" "$strip_app"
+cp Info.plist "$strip_app/Contents/Info.plist"
+ditto --norsrc --noextattr Resources "$strip_app/Contents/Resources"
+mkdir -p "$strip_app/Contents/Resources/Ableton/_3E"
+cp "$strip_repo/musicstrip/Ableton/_3E/"*.py "$strip_app/Contents/Resources/Ableton/_3E/"
+xcrun clang -fobjc-arc -Wall -Wextra -Wno-unused-parameter -O2 \
+  -mmacosx-version-min=11.0 -framework AppKit -framework Carbon \
+  -framework ApplicationServices -framework QuartzCore main.m -o "$strip_app/Contents/MacOS/MusicStrip"
+strip_apps_helper="$strip_app/Contents/Helpers/MusicStrip Apps.app"
+cp "$strip_app/Contents/MacOS/MusicStrip" "$strip_apps_helper/Contents/MacOS/MusicStripApps"
+strip_midi="$strip_app/Contents/Helpers/MIDI Touchbar.app"
+strip_framework="$strip_midi/Contents/Frameworks/SnoizeMIDI.framework"
+[[ -e "$strip_framework/Versions/Current" ]] || ln -s A "$strip_framework/Versions/Current"
+[[ -e "$strip_framework/SnoizeMIDI" ]] || ln -s Versions/Current/SnoizeMIDI "$strip_framework/SnoizeMIDI"
+[[ -e "$strip_framework/Resources" ]] || ln -s Versions/Current/Resources "$strip_framework/Resources"
+xcrun clang -dynamiclib -fobjc-arc -Wall -Wextra -Wno-unused-parameter -O2 \
+  -mmacosx-version-min=11.0 -framework AppKit -framework CoreMIDI MidiBridge.m \
+  -o "$strip_midi/Contents/Frameworks/MusicStripMidiBridge.dylib"
+xattr -cr "$strip_app"
+codesign --force --sign - "$strip_framework"
+codesign --force --sign - "$strip_midi/Contents/Frameworks/MusicStripMidiBridge.dylib"
+codesign --force --sign - "$strip_midi"
+codesign --force --sign - "$strip_apps_helper"
+codesign --force --sign "$strip_identity" --timestamp=none "$strip_app"
+codesign --verify --deep --strict "$strip_app"
+strip_output="$strip_repo/build/musicstrip/Strip3£.app"
+if [[ -e "$strip_output" ]]; then
+  [[ -f "$strip_output/Contents/Info.plist" && -f "$strip_output/Contents/MacOS/MusicStrip" ]]
+  [[ "$(/usr/libexec/PlistBuddy -c 'Print CFBundleIdentifier' "$strip_output/Contents/Info.plist")" == local.musicstrip.app ]]
+  /bin/rm -r -- "$strip_output" # Only this verified generated build artifact.
+fi
+ditto --norsrc --noextattr "$strip_app" "$strip_output"
+codesign --verify --deep --strict "$strip_output"
+printf 'Built and verified: %s\n' "$strip_repo/build/musicstrip/Strip3£.app"
+# No installation, launch, zip or persistent backup happens automatically.
