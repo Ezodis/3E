@@ -373,6 +373,7 @@ static NSArray<NSURL *> *DockFolderURLs(NSDictionary *dock) {
 - (void)prepareSwipeApps;
 - (void)swipeApp:(DockSwipeGesture *)gesture;
 - (void)finishSwipeCancelled:(BOOL)cancelled;
+- (void)loadWindowsForApp:(NSRunningApplication *)app chooser:(DockSwipeChooser *)chooser attempt:(NSUInteger)attempt;
 @end
 
 @implementation DockPanel
@@ -555,6 +556,12 @@ static NSArray<NSURL *> *DockFolderURLs(NSDictionary *dock) {
         DockSwipeChooser *chooser=[[DockSwipeChooser alloc] initWithFrame:self.appsScrubber.bounds];
         chooser.visualCenter=[(StripAppsScrubber *)self.appsScrubber visualCenterX];
         chooser.windowChoices=windowChoices;
+        chooser.allowedTouchTypes=NSTouchTypeMaskDirect;
+        __weak DockPanel *selectionPanel=self;
+        chooser.didSelect=^(DockSwipeChooser *selected){
+            DockPanel *panel=selectionPanel;
+            if(panel.swipeChooser==selected) [panel finishSwipeCancelled:NO];
+        };
         self.swipeChooser=chooser; [self.appsScrubber addSubview:chooser positioned:NSWindowAbove relativeTo:nil];
         [chooser updateAt:gesture.currentPoint]; [chooser startScrolling];
         if(!chooser.windowChoices) {
@@ -565,37 +572,7 @@ static NSArray<NSURL *> *DockFolderURLs(NSDictionary *dock) {
             chooser.choices=@[];
             chooser.message=@"Loading windows…";
             [chooser updateAt:gesture.currentPoint];
-            __weak DockPanel *weakSelf=self;
-            dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED,0),^{
-                NSArray *windows=SwipeWindows(app);
-                dispatch_async(dispatch_get_main_queue(),^{
-                    DockPanel *panel=weakSelf;
-                    if(!panel || panel.swipeChooser!=chooser || !panel.visible) return;
-                    chooser.choices=windows;
-                    chooser.message=windows.count ? @"" : @"Loading windows…";
-                    [chooser updateAt:gesture.currentPoint];
-                    if(!windows.count) {
-                        // Keep polling for the duration of the held touch.
-                        // The first AX request can legitimately overlap the
-                        // Touch Bar gesture transition; one retry is not
-                        // enough for the live-finger path.
-                        __block NSUInteger attempts=0;
-                        __block void (^retry)(void);
-                        retry=^{
-                            if(panel.swipeChooser!=chooser || !panel.visible || attempts++>=12) return;
-                            dispatch_after(dispatch_time(DISPATCH_TIME_NOW,(int64_t)(0.2*NSEC_PER_SEC)),dispatch_get_main_queue(),^{
-                                if(panel.swipeChooser!=chooser || !panel.visible) return;
-                                NSArray *next=SwipeWindows(app);
-                                chooser.choices=next;
-                                chooser.message=next.count ? @"" : @"Loading windows…";
-                                [chooser updateAt:gesture.currentPoint];
-                                if(!next.count) retry();
-                            });
-                        };
-                        retry();
-                    }
-                });
-            });
+            [self loadWindowsForApp:app chooser:chooser attempt:0];
         }
     } else if(gesture.trackingPhase==NSGestureRecognizerStateChanged) {
         self.cycleWindowsReverse=gesture.currentPoint.x < gesture.startPoint.x;
@@ -604,11 +581,39 @@ static NSArray<NSURL *> *DockFolderURLs(NSDictionary *dock) {
     else if(gesture.trackingPhase==NSGestureRecognizerStateEnded) { [self.swipeChooser updateAt:gesture.currentPoint]; [self finishSwipeCancelled:NO]; }
     else if(gesture.trackingPhase==NSGestureRecognizerStateCancelled || gesture.trackingPhase==NSGestureRecognizerStateFailed) [self finishSwipeCancelled:YES];
 }
+- (void)loadWindowsForApp:(NSRunningApplication *)app chooser:(DockSwipeChooser *)chooser attempt:(NSUInteger)attempt {
+    if(self.swipeChooser!=chooser || !self.visible) return;
+    if(!AccessibilityTrusted(NO)) {
+        chooser.message=@"Enable 3£ in Accessibility";
+        chooser.needsDisplay=YES; return;
+    }
+    __weak DockPanel *weakSelf=self;
+    dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED,0),^{
+        NSArray *windows=SwipeWindows(app);
+        dispatch_async(dispatch_get_main_queue(),^{
+            DockPanel *panel=weakSelf;
+            if(!panel || panel.swipeChooser!=chooser || !panel.visible) return;
+            chooser.choices=windows;
+            chooser.message=windows.count ? @"" : (attempt>=2 ? @"No open windows" : @"Loading windows…");
+            [chooser updateAt:chooser.finger];
+            if(!windows.count && attempt<2)
+                dispatch_after(dispatch_time(DISPATCH_TIME_NOW,(int64_t)(.2*NSEC_PER_SEC)),dispatch_get_main_queue(),^{
+                    [weakSelf loadWindowsForApp:app chooser:chooser attempt:attempt+1];
+                });
+        });
+    });
+}
 - (void)finishSwipeCancelled:(BOOL)cancelled {
     DockSwipeChooser *chooser=self.swipeChooser; if(!chooser) return;
     NSInteger index=chooser.selectedIndex;
     DockSwipeChoice *choice=!cancelled && index>=0 && index<(NSInteger)chooser.choices.count ? chooser.choices[index] : nil;
-    NSRunningApplication *windowApp=choice.application ?: self.swipeSource.application;
+    if(!cancelled && chooser.windowChoices && !choice) {
+        // A real finger can lift before AX replies. Keep the real chooser
+        // mounted for the late response; the next tap selects a real window.
+        chooser.awaitingSelection=YES; [chooser stopScrolling];
+        self.suppressAppSelectionUntil=NSProcessInfo.processInfo.systemUptime+.25;
+        return;
+    }
     [chooser stopScrolling]; [chooser removeFromSuperview]; self.swipeChooser=nil; self.swipeSource=nil;
     self.suppressAppSelectionUntil=NSProcessInfo.processInfo.systemUptime+.25;
     if(choice.entry) [self activateEntry:choice.entry];
@@ -625,8 +630,6 @@ static NSArray<NSURL *> *DockFolderURLs(NSDictionary *dock) {
         RaiseWindowServerWindow(choice.windowID);
     } else if(choice.windowIndex && choice.application && !choice.application.terminated) {
         dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED,0),^{ RaiseSystemEventsWindow(choice.application,choice.windowIndex); });
-    } else if(!cancelled && chooser.windowChoices && windowApp && !windowApp.terminated) {
-        CycleApplicationWindow(windowApp,self.cycleWindowsReverse);
     }
     self.cycleWindowsReverse=NO;
 }

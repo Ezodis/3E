@@ -35,7 +35,7 @@ if [[ "${1:-}" == --bridge-only ]]; then
 fi
 strip_stage=$(mktemp -d /tmp/strip3-build.XXXXXX)
 trap '[[ "$strip_stage" == /tmp/strip3-build.* ]] && /bin/rm -r -- "$strip_stage"' EXIT
-strip_app="$strip_stage/Strip3£.app"
+strip_app="$strip_stage/3£.app"
 ditto --norsrc --noextattr "$strip_repo/recovered/Strip3£.app" "$strip_app"
 cp Info.plist "$strip_app/Contents/Info.plist"
 if [[ "$strip_combined" == YES ]]; then
@@ -67,7 +67,7 @@ codesign --force --sign - "$strip_midi"
 codesign --force --sign - "$strip_apps_helper"
 codesign --force --sign "$strip_identity" --timestamp=none "$strip_app"
 codesign --verify --deep --strict "$strip_app"
-strip_output="$strip_repo/build/musicstrip/Strip3£.app"
+strip_output="$strip_repo/build/musicstrip/3£.app"
 if [[ -e "$strip_output" ]]; then
   [[ -f "$strip_output/Contents/Info.plist" && -f "$strip_output/Contents/MacOS/MusicStrip" ]]
   [[ "$(/usr/libexec/PlistBuddy -c 'Print CFBundleIdentifier' "$strip_output/Contents/Info.plist")" == local.musicstrip.app ]]
@@ -75,5 +75,5 @@ if [[ -e "$strip_output" ]]; then
 fi
 ditto --norsrc --noextattr "$strip_app" "$strip_output"
 codesign --verify --deep --strict "$strip_output"
-printf 'Built and verified: %s\n' "$strip_repo/build/musicstrip/Strip3£.app"
+printf 'Built and verified: %s\n' "$strip_repo/build/musicstrip/3£.app"
 # No installation, launch, zip or persistent backup happens automatically.

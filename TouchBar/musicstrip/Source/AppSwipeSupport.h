@@ -118,28 +118,6 @@ static void RaiseWindowServerWindow(CGWindowID windowID) {
     if(skyLight) dlclose(skyLight);
 }
 
-// This is the system-native fallback for apps whose Accessibility/window
-// metadata is unavailable. macOS itself still knows how to cycle that app's
-// real windows with Command-`; this avoids inventing window names or showing
-// a false "No open windows" state.
-static void CycleApplicationWindow(NSRunningApplication *app, BOOL reverse) {
-    if(!app || app.terminated) return;
-    [app activateWithOptions:NSApplicationActivateIgnoringOtherApps];
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW,(int64_t)(0.15*NSEC_PER_SEC)),dispatch_get_main_queue(),^{
-        if(app.terminated) return;
-        [app activateWithOptions:NSApplicationActivateIgnoringOtherApps];
-        CGEventRef down=CGEventCreateKeyboardEvent(NULL,50,true);
-        CGEventRef up=CGEventCreateKeyboardEvent(NULL,50,false);
-        if(!down || !up) { if(down) CFRelease(down); if(up) CFRelease(up); return; }
-        CGEventFlags flags=kCGEventFlagMaskCommand|(reverse ? kCGEventFlagMaskShift : 0);
-        CGEventSetFlags(down,flags); CGEventSetFlags(up,flags);
-        // Command-` is handled by macOS's app/window switcher, so it must be
-        // posted to the HID stream after the selected app is frontmost.
-        CGEventPost(kCGHIDEventTap,down); CGEventPost(kCGHIDEventTap,up);
-        CFRelease(down); CFRelease(up);
-    });
-}
-
 static NSArray<DockSwipeChoice *> *InstalledSwipeApps(void) {
     NSMutableArray<DockAppEntry *> *entries=[DockAppEntries(@[],@{}) mutableCopy];
     NSMutableSet *seen=[NSMutableSet new]; for(DockAppEntry *entry in entries) [seen addObject:entry.bundleIdentifier];
@@ -229,6 +207,8 @@ static NSArray<DockSwipeChoice *> *SwipeWindows(NSRunningApplication *app) {
 @property NSArray<DockSwipeChoice *> *choices;
 @property NSString *message;
 @property BOOL windowChoices;
+@property BOOL awaitingSelection;
+@property (copy) void (^didSelect)(DockSwipeChooser *chooser);
 @property CGFloat visualCenter;
 @property CGFloat offset;
 @property NSPoint finger;
@@ -244,6 +224,27 @@ static NSArray<DockSwipeChoice *> *SwipeWindows(NSRunningApplication *app) {
 - (CGFloat)origin;
 @end
 @implementation DockSwipeChooser
+- (void)touchesBeganWithEvent:(NSEvent *)event {
+    [super touchesBeganWithEvent:event];
+    if(!self.awaitingSelection) return;
+    NSSet *touches=[event touchesMatchingPhase:NSTouchPhaseBegan inView:self];
+    if(touches.count==1) [self updateAt:[touches.anyObject locationInView:self]];
+}
+- (void)touchesMovedWithEvent:(NSEvent *)event {
+    [super touchesMovedWithEvent:event];
+    if(!self.awaitingSelection) return;
+    NSSet *touches=[event touchesMatchingPhase:NSTouchPhaseTouching inView:self];
+    if(touches.count==1) [self updateAt:[touches.anyObject locationInView:self]];
+}
+- (void)touchesEndedWithEvent:(NSEvent *)event {
+    [super touchesEndedWithEvent:event];
+    if(!self.awaitingSelection) return;
+    NSSet *touches=[event touchesMatchingPhase:NSTouchPhaseEnded inView:self];
+    if(touches.count==1) {
+        [self updateAt:[touches.anyObject locationInView:self]];
+        if(self.selectedIndex>=0 && self.didSelect) self.didSelect(self);
+    }
+}
 - (instancetype)initWithFrame:(NSRect)frame { if((self=[super initWithFrame:frame])) { self.selectedIndex=-1; self.message=@"Loading…"; self.wantsLayer=YES; self.autoresizingMask=NSViewWidthSizable|NSViewHeightSizable; } return self; }
 - (NSView *)hitTest:(NSPoint)point { return nil; }
 - (CGFloat)pitch { return self.windowChoices ? 160 : 56; }

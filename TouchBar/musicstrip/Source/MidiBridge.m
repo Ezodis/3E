@@ -493,7 +493,7 @@ static NSImage *BrandMenuIcon(void) {
     NSDictionary *attributes=@{NSFontAttributeName:[NSFont systemFontOfSize:16 weight:NSFontWeightBold], NSForegroundColorAttributeName:NSColor.blackColor};
     NSString *text=@"3£"; NSSize size=[text sizeWithAttributes:attributes];
     [text drawAtPoint:NSMakePoint((27-size.width)/2,(18-size.height)/2) withAttributes:attributes];
-    [image unlockFocus]; image.template=YES; image.name=@"Strip3£"; return image;
+    [image unlockFocus]; image.template=YES; image.name=@"3£"; return image;
 }
 static NSString *combinedGestureState=@"permission";
 static void CleanMenu(NSMenu *menu) {

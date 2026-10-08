@@ -2,7 +2,8 @@
 # Update the existing app in place; keep the original MIDI engine/resources.
 set -eu
 cd "${0:A:h:h}"
-strip_app='/Applications/Strip3£.app'
+zsh musicstrip/rename-installed.sh
+strip_app='/Applications/3£.app'
 [[ "$(/usr/libexec/PlistBuddy -c 'Print CFBundleIdentifier' "$strip_app/Contents/Info.plist")" == local.musicstrip.app ]]
 if pgrep -x MusicStrip >/dev/null || pgrep -x 'MIDI Touchbar' >/dev/null; then
   printf 'Quit 3£ first. No installed files changed.\n' >&2; exit 1

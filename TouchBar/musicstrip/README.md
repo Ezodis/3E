@@ -4,6 +4,26 @@ The Apps launcher is a glyph-free 18-point swipe extension beside the macOS Cont
 
 ## Recovery and preservation
 
+Version 3.0.11 uses `3£.app` for the installed app and release archives. Its
+bundle identifier, certificate-backed signing identity and preferences remain
+unchanged. The historical recovered dependency retains its archive filename.
+
+Window swipes query actual app windows asynchronously, without blocking the
+Touch Bar main thread. If a finger lifts before that query finishes, the chooser
+stays visible; a subsequent touch selects a returned window. Empty responses no
+longer trigger synthetic Command-backtick window cycling, and retries terminate
+with an explicit status instead of an infinite loading label. The chooser
+regression checks delayed lift, identical window titles, selection and cancel.
+
+On this development Mac, the actual LaunchServices host reported Accessibility
+denied and System Settings showed the old app entry off. Touch Tab's preference
+was also off and was enabled. macOS authentication is required to refresh the
+existing permission for `/Applications/3£.app`; code cannot grant it. Do not claim
+that gesture/window access works merely because a terminal test inherits Codex's
+permissions. `TouchTabRuntimeState` records the real host PID, bundle path,
+authorization and listener state; `WindowAccessRuntimeState` records read-only AX
+window counts after the real host becomes authorized (not window titles).
+
 `Source/main.m`, the existing MIDI customization bridge, all seven supporting headers, `Info.plist`, icon generator and resources were recovered from the original iCloud project at `Documents/Codex/2026-10-01/i-l/outputs/MusicStrip/Source`. The 84,361-byte main source matches the restored local iCloud file. This is not the earlier incomplete reconstruction.
 
 The bundled original MIDI Touchbar engine (Urban Lienert, bundle ID `ch.uebe.MIDI-Touchbar`) and SnoizeMIDI framework remain binary dependencies in `recovered/`. Their original engine source has not been recovered; do not claim those binaries were compiled from our Objective-C bridge. The `DCisHurt/midiBar` GitHub project is Micro:Bit/Trill hardware firmware, not this Mac engine.
@@ -95,13 +115,13 @@ zsh musicstrip/Source/build.sh
 zsh musicstrip/Source/build.sh --bridge-only
 ```
 
-Full output goes to ignored `build/musicstrip/Strip3£.app`. This builds and verifies the complete package but does not replace the installed main app. Set `STRIP_SIGNING_IDENTITY` to the existing stable certificate identity on another build machine; changing signing identity may require a new macOS approval.
+Full output goes to ignored `build/musicstrip/3£.app`. This builds and verifies the complete package but does not replace the installed main app. Set `STRIP_SIGNING_IDENTITY` to the existing stable certificate identity on another build machine; changing signing identity may require a new macOS approval.
 
 For the additive Record update, quit the canonical app first, then:
 
 ```sh
 zsh musicstrip/install-record.sh
-open '/Applications/Strip3£.app'
+open '/Applications/3£.app'
 ```
 
 The installer updates only the injected MIDI bridge, required framework links/signatures and packaged Ableton script. It refuses to update while MusicStrip or its MIDI helper is running. It never creates an installed companion app or backup. Override `STRIP_ABLETON_SCRIPT_DIR` if your configured User Library is elsewhere. Restart Live after changing its script, then choose _3E once.
@@ -120,7 +140,7 @@ xcrun clang -fobjc-arc -O0 -Wno-unused-parameter -framework AppKit -framework Co
 xcrun clang -fobjc-arc -O0 -Wno-unused-parameter -framework AppKit -framework CoreMIDI \
   musicstrip/Tests/multi_piano.m -o /tmp/3pounds-multi-piano-test
 /tmp/3pounds-multi-piano-test
-'build/musicstrip/Strip3£.app/Contents/MacOS/MusicStrip' --self-test
+'build/musicstrip/3£.app/Contents/MacOS/MusicStrip' --self-test
 ```
 
 The gesture tests call the actual direct-touch handlers (including identity, movement, release, hold and cancellation), without launching another tray app or sending Live commands. `Tests/record_live.m` is an explicit opt-in diagnostic that sends actual commands to a connected Live session; do not run it on an active recording or important project. Automated tests are not a substitute for a user's finger test on the physical Touch Bar.

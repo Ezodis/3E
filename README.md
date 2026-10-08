@@ -14,16 +14,16 @@ Current downloads: [3£ Combined 3.0.9](https://github.com/Ezodis/3E/releases/do
 
 Download the true single-app combined edition or individual apps from [Releases](https://github.com/Ezodis/3E/releases). The older `bundle-v1.0.0` archive contains two separate apps; it is not the integrated edition.
 
-- `touchbar-v…`: `TouchBar.zip`, containing `Strip3£.app`.
+- `touchbar-v…`: `TouchBar.zip`, containing `3£.app`.
 - `touchtab-v…`: `TouchTab.zip`, containing `Touch-Tab.app`.
-- `combined-v…`: `3E-Combined.zip`, containing only `Strip3£.app` with TouchTab's gesture engine embedded in the main process.
+- `combined-v…`: `3E-Combined.zip`, containing only `3£.app` with TouchTab's gesture engine embedded in the main process.
 - `bundle-v…`: `3E-Mac-Apps.zip`, containing both apps.
 
 Each edition checks only its own release prefix. A combined update cannot accidentally install the TouchBar-only or TouchTab-only edition. Update checks offer downloads; they do not silently replace running apps. Existing legacy tags are retained for historical reference.
 
 ## Single-app edition
 
-Install `Strip3£.app` from a `combined-v…` release. Its existing 3£ menu contains **Touch Tab**; toggle this to enable/disable the trackpad engine. The combined edition has one app installation and no separate TouchTab process or icon. The gesture engine runs directly inside the main 3£ process and uses that process's Accessibility approval. Other macOS permission categories (such as Automation for media apps) remain separate. No permissions are granted or reset by the installer.
+Install `3£.app` from a `combined-v…` release. Its existing 3£ menu contains **Touch Tab**; toggle this to enable/disable the trackpad engine. The combined edition has one app installation and no separate TouchTab process or icon. The gesture engine runs directly inside the main 3£ process and uses that process's Accessibility approval. Other macOS permission categories (such as Automation for media apps) remain separate. No permissions are granted or reset by the installer. Version 3.0.11 renames the installed bundle from Strip3£ to 3£ while retaining its original bundle identifier, signing identity and preferences.
 
 Four-finger left/right switches applications; four-finger pinch in/out copies/pastes; force-click switches windows in the active app (Command + force-click reverses direction). Direct Touch Bar piano touches are excluded. Quit stops the gesture tap, pressure monitor and existing internal helpers. Do not also run standalone TouchTab, or gestures could execute twice.
 
@@ -33,7 +33,7 @@ Build from the repo root: `zsh TouchBar/musicstrip/Source/build.sh --combined`. 
 
 ### Compatibility
 
-Version 3.0.10 builds TouchBar and Combined as universal Intel/Apple Silicon binaries. Combined requires macOS 12+, TouchBar requires macOS 11+, and standalone TouchTab requires macOS 12+. TouchBar features require a physical Touch Bar; TouchTab requires a multitouch trackpad, with force-click requiring compatible hardware. These apps cannot provide physical Touch Bar controls on Macs without that hardware. Intel is cross-built but has not been physically tested here.
+Version 3.0.11 builds TouchBar and Combined as universal Intel/Apple Silicon binaries. Combined requires macOS 12+, TouchBar requires macOS 11+, and standalone TouchTab requires macOS 12+. TouchBar features require a physical Touch Bar; TouchTab requires a multitouch trackpad, with force-click requiring compatible hardware. These apps cannot provide physical Touch Bar controls on Macs without that hardware. Intel is cross-built but has not been physically tested here.
 
 Downloads are development-signed, not Developer ID notarized. Another Mac may require manual Gatekeeper approval and its own Accessibility/Automation permissions. Four-finger macOS desktop gestures may conflict with TouchTab. Choose either the combined edition or the standalone apps, not both gesture engines simultaneously. There are no runtime dependencies on `/Users/3du/Documents/Codex`.
 

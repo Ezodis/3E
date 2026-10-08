@@ -365,7 +365,7 @@ static OSStatus SendSpotifyCommand(pid_t pid, int command) {
     if (!LoadInterfaces()) {
         NSAlert *alert = [NSAlert new];
         alert.messageText = @"This macOS version does not expose the required Touch Bar interfaces.";
-        alert.informativeText = @"Strip3£ could not add its music button.";
+        alert.informativeText = @"3£ could not add its music button.";
         [alert runModal];
         [NSApp terminate:nil];
         return;
@@ -507,9 +507,25 @@ static OSStatus SendSpotifyCommand(pid_t pid, int command) {
     NSString *state=StripRefreshGestures();
     if(![state isEqual:self.gestureState]) {
         self.gestureState=state;
-        [NSUserDefaults.standardUserDefaults setObject:@{@"state":state,@"pid":@(getpid()),@"updated":@(NSDate.date.timeIntervalSince1970)} forKey:@"TouchTabRuntimeState"];
         NSLog(@"3£ combined trackpad state: %@ (host PID %d)",state,getpid());
+        if([state isEqual:@"on"]) dispatch_async(dispatch_get_global_queue(QOS_CLASS_UTILITY,0),^{
+            NSMutableDictionary *apps=[NSMutableDictionary new];
+            for(NSString *bundle in @[@"com.apple.Safari",@"com.apple.finder",@"com.openai.codex"]) {
+                NSRunningApplication *app=[NSRunningApplication runningApplicationsWithBundleIdentifier:bundle].firstObject;
+                if(!app || app.terminated) continue;
+                AXUIElementRef target=AXUIElementCreateApplication(app.processIdentifier);
+                AXUIElementSetMessagingTimeout(target,1);
+                CFTypeRef windows=NULL; AXError result=AXUIElementCopyAttributeValue(target,kAXWindowsAttribute,&windows);
+                NSUInteger count=windows && CFGetTypeID(windows)==CFArrayGetTypeID() ? CFArrayGetCount(windows) : 0;
+                if(windows) CFRelease(windows); CFRelease(target);
+                apps[bundle]=@{@"pid":@(app.processIdentifier),@"windowCount":@(count),@"axError":@(result)};
+            }
+            [NSUserDefaults.standardUserDefaults setObject:@{@"pid":@(getpid()),@"apps":apps,@"updated":@(NSDate.date.timeIntervalSince1970)} forKey:@"WindowAccessRuntimeState"];
+        });
     }
+    // Diagnostics from the actual LaunchServices host, not a command-line
+    // child that may inherit its terminal's Accessibility authorization.
+    [NSUserDefaults.standardUserDefaults setObject:@{@"state":state,@"pid":@(getpid()),@"updated":@(NSDate.date.timeIntervalSince1970),@"accessibilityTrusted":@(AccessibilityTrusted(NO)),@"gestureRunning":@(StripGesturesRunning()),@"bundlePath":NSBundle.mainBundle.bundlePath} forKey:@"TouchTabRuntimeState"];
     if(self.midiReady) [self sendMidi:[@"TOUCHTAB_STATE " stringByAppendingString:state]];
 }
 - (void)toggleTouchTab {
@@ -627,7 +643,7 @@ static OSStatus SendSpotifyCommand(pid_t pid, int command) {
                 self.abletonPermissionPrompted = YES;
                 AXIsProcessTrustedWithOptions((__bridge CFDictionaryRef)@{(__bridge NSString *)kAXTrustedCheckOptionPrompt:@YES});
             }
-            NSLog(@"Enable Strip3£ in macOS Accessibility to control Ableton's transport.");
+            NSLog(@"Enable 3£ in macOS Accessibility to control Ableton's transport.");
             return;
         }
         pid_t pid = app.processIdentifier;
