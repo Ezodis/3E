@@ -396,7 +396,7 @@ static void Open(id self, SEL sel, NSTouchBar *bar, id identifier) {
     // The fixed outer row guarantees that saved presets cannot hide the X.
     NSTouchBar *outer = [NSTouchBar new];
     NSCustomTouchBarItem *close = [[NSCustomTouchBarItem alloc] initWithIdentifier:CloseID];
-    NSImage *image = [NSImage imageWithSystemSymbolName:pianoExpanded ? @"chevron.down" : @"xmark.circle.fill" accessibilityDescription:pianoExpanded ? @"Restore piano size" : @"Close MIDI Touchbar"];
+    NSImage *image = [NSImage imageWithSystemSymbolName:@"xmark.circle.fill" accessibilityDescription:@"Close MIDI Touchbar"];
     closeButton = [NSButton buttonWithImage:image target:MusicStripMidiBridge.class action:@selector(closeMidi:)];
     closeButton.bordered = NO;
     closeButton.imagePosition = NSImageOnly;
@@ -1150,7 +1150,7 @@ static void Command(NSString *command) {
     } @catch (NSException *e) { Report("BRIDGE_ERROR\n"); NSLog(@"MusicStrip MIDI bridge: %@", e); }
 }
 @implementation MusicStripMidiBridge
-+ (void)closeMidi:(id)sender { if(pianoExpanded) CollapsePiano(); else Command(@"HIDE"); }
++ (void)closeMidi:(id)sender { Command(@"HIDE"); }
 + (void)load {
 #ifdef STRIP3_RECORD_TESTING
     return; // Gesture tests never install helper hooks or add a tray item.
