@@ -1,6 +1,18 @@
 // Read-only Live scale feedback. Never transpose, filter or reroute MIDI.
 static IMP originalPianoDraw;
 static NSUInteger liveScaleMask;
+static NSArray<NSNumber *> *liveScaleDegrees;
+static char pianoDegreesKey;
+static BOOL PianoShowsDegrees(NSView *piano) { return [objc_getAssociatedObject(piano,&pianoDegreesKey) boolValue]; }
+static void SetPianoShowsDegrees(NSView *piano,BOOL enabled) {
+    objc_setAssociatedObject(piano,&pianoDegreesKey,@(enabled),OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    piano.needsDisplay=YES;
+}
+static NSString *ScaleDegreeForNote(NSInteger note) {
+    NSUInteger index=[liveScaleDegrees indexOfObject:@((note%12+12)%12)];
+    NSArray *names=@[@"I",@"II",@"III",@"IV",@"V",@"VI",@"VII",@"VIII",@"IX",@"X",@"XI",@"XII"];
+    return index!=NSNotFound && index<names.count ? names[index] : nil;
+}
 static NSHashTable<NSView *> *scalePianos;
 static NSUInteger ScaleMaskForState(NSDictionary *state,BOOL connected) {
     if(!connected || ![state[@"scale_supported"] boolValue] || ![state[@"scale_mode"] boolValue]) return 0;
@@ -16,8 +28,14 @@ static NSUInteger ScaleMaskForState(NSDictionary *state,BOOL connected) {
 static BOOL NoteInLiveScale(NSInteger note,NSUInteger mask) { return (mask & (1UL<<((note%12+12)%12)))!=0; }
 static void UpdateLiveScale(NSDictionary *state,BOOL connected) {
     NSUInteger mask=ScaleMaskForState(state,connected);
-    if(mask==liveScaleMask) return;
+    NSMutableArray *degrees=[NSMutableArray new];
+    if(mask) for(NSNumber *interval in state[@"scale_intervals"]) {
+        NSNumber *pitch=@(([state[@"root_note"] integerValue]+interval.integerValue)%12);
+        if(![degrees containsObject:pitch]) [degrees addObject:pitch];
+    }
+    if(mask==liveScaleMask && [degrees isEqual:liveScaleDegrees]) return;
     liveScaleMask=mask;
+    liveScaleDegrees=degrees.copy;
     for(NSView *piano in scalePianos.allObjects) piano.needsDisplay=YES;
 }
 static BOOL ScaleKeyIsPressed(NSView *piano,id key) {
@@ -88,10 +106,23 @@ static void DrawPianoScale(NSView *piano,SEL selector,NSRect dirty) {
         // One cyan color family, with a strong light/dark split so the
         // original white/black key pattern remains readable in the scale.
         NSColor *accent=black
-            ? [NSColor colorWithSRGBRed:.08 green:.40 blue:.47 alpha:1.0]
+            ? [NSColor colorWithSRGBRed:.16 green:.64 blue:.74 alpha:1.0]
             : [NSColor colorWithSRGBRed:.52 green:.86 blue:.93 alpha:1.0];
         [accent setFill];
         [path fill];
+        if(PianoShowsDegrees(piano)) {
+            NSString *degree=ScaleDegreeForNote(start+[[key valueForKey:@"pitch"] integerValue]);
+            NSRect bounds=NSIntersectionRect(path.bounds,piano.bounds);
+            // Keep labels within the existing key geometry, without changing
+            // playable hit areas. White-key labels sit below the black keys.
+            CGFloat fontSize=MIN(9,MAX(5,NSWidth(bounds)/MAX(1,degree.length)-1));
+            NSDictionary *attributes=@{NSFontAttributeName:[NSFont systemFontOfSize:fontSize weight:NSFontWeightBold],NSForegroundColorAttributeName:[NSColor colorWithWhite:.05 alpha:1]};
+            NSSize size=[degree sizeWithAttributes:attributes];
+            if(degree && size.width+1<=NSWidth(bounds)) {
+                [path addClip];
+                [degree drawAtPoint:NSMakePoint(NSMidX(bounds)-size.width/2,black ? NSMaxY(bounds)-size.height-1 : NSMinY(bounds)+1) withAttributes:attributes];
+            }
+        }
         [NSGraphicsContext restoreGraphicsState];
     }
     [NSGraphicsContext restoreGraphicsState];

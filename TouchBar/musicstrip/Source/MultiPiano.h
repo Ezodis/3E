@@ -119,7 +119,7 @@ static void SizePianos(NSTouchBar *bar) {
     CGFloat host=self.window.contentView.bounds.size.width;
     if(isfinite(host) && host>200 && host<2048) {
         lastMidiHostWidth=host;
-        CGFloat target=MAX(180,host-32-88-16);
+        CGFloat target=MAX(180,host-76-32-16);
         if(fabs(self.rowWidth.constant-target)>.1) self.rowWidth.constant=target;
     }
     CGFloat gap=2,usable=MAX(0,NSWidth(self.bounds)-gap*(self.pianos.count-1));
@@ -137,7 +137,7 @@ static NSCustomTouchBarItem *CompactPianoRow(NSTouchBar *bar) {
     if(!item) {
         item=[[NSCustomTouchBarItem alloc] initWithIdentifier:@"local.musicstrip.midi.piano-row"];
         StripCompactPianoRow *row=[[StripCompactPianoRow alloc] initWithFrame:NSMakeRect(0,0,852,30)]; item.view=row;
-        row.rowWidth=[row.widthAnchor constraintEqualToConstant:MAX(180,(lastMidiHostWidth ?: 828)-32-88-16)];
+        row.rowWidth=[row.widthAnchor constraintEqualToConstant:MAX(180,(lastMidiHostWidth ?: 828)-76-32-16)];
         row.rowWidth.active=YES;
         [item.view setContentHuggingPriority:1 forOrientation:NSLayoutConstraintOrientationHorizontal];
         [item.view setContentCompressionResistancePriority:1 forOrientation:NSLayoutConstraintOrientationHorizontal];
@@ -153,7 +153,7 @@ static NSCustomTouchBarItem *CompactPianoRow(NSTouchBar *bar) {
         [views addObject:view];
     }
     StripCompactPianoRow *row=(id)item.view; row.pianos=views;
-    row.rowWidth.constant=MAX(180,(lastMidiHostWidth ?: 828)-32-88-16);
+    row.rowWidth.constant=MAX(180,(lastMidiHostWidth ?: 828)-76-32-16);
     [row setFrameSize:NSMakeSize(row.rowWidth.constant,30)];
     row.needsLayout=YES; [row layoutSubtreeIfNeeded];
     return item;
@@ -173,6 +173,7 @@ static NSArray *PianoGeometry(NSTouchBar *bar) {
 @implementation StripPianoInstance
 @end
 static void TransferPianoInstance(NSView *source,NSView *replacement) {
+    SetPianoShowsDegrees(replacement,PianoShowsDegrees(source));
     objc_setAssociatedObject(replacement,&pianoInstanceKey,objc_getAssociatedObject(source,&pianoInstanceKey),OBJC_ASSOCIATION_RETAIN_NONATOMIC);
 }
 
@@ -202,9 +203,11 @@ static void SaveExpandedPianoSettings(void) {
     settings[@"octaves"]=[expandedPianoView valueForKey:@"numOctaves"];
     settings[@"startOctave"]=[expandedPianoView valueForKey:@"startOctave"];
     settings[@"type"]=PianoModeName([[expandedPianoView valueForKey:@"type"] integerValue]);
+    settings[@"showDegrees"]=@(PianoShowsDegrees(expandedPianoView));
     SaveInstanceSettings(normalLayoutBar,identifier,settings);
 }
 static void ApplyInstanceSettings(NSView *piano,NSDictionary *settings) {
+    SetPianoShowsDegrees(piano,[settings[@"showDegrees"] boolValue]);
     [piano setValue:settings[@"channel"] ?: @1 forKey:@"channelNumber"];
     [piano setValue:settings[@"octaves"] ?: @2 forKey:@"numOctaves"];
     [piano setValue:settings[@"startOctave"] ?: @4 forKey:@"startOctave"];
@@ -216,7 +219,10 @@ static void ApplyInstanceSettings(NSView *piano,NSDictionary *settings) {
 static id MakeIndependentPiano(id delegate,SEL selector,NSTouchBar *bar,NSString *identifier) {
     if(![identifier isEqual:SecondPianoID] && ![identifier isEqual:ThirdPianoID]) {
         id item=((id(*)(id,SEL,id,id))originalMakeItem)(delegate,selector,bar,identifier);
-        if([identifier isEqual:NativePianoID]) SizePianoItem(item,bar);
+        if([identifier isEqual:NativePianoID]) {
+            SetPianoShowsDegrees([item view],[InstanceSettings(bar,identifier)[@"showDegrees"] boolValue]);
+            SizePianoItem(item,bar);
+        }
         return item;
     }
     NSDictionary *settings=InstanceSettings(bar,identifier);

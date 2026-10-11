@@ -4,6 +4,15 @@ int main(void) {
     @autoreleasepool {
         NSDictionary *major=@{@"scale_supported":@YES,@"scale_mode":@YES,@"root_note":@0,@"scale_intervals":@[@0,@2,@4,@5,@7,@9,@11]};
         NSUInteger mask=ScaleMaskForState(major,YES);
+        UpdateLiveScale(major,YES);
+        NSCAssert([ScaleDegreeForNote(60) isEqual:@"I"] && [ScaleDegreeForNote(64) isEqual:@"III"] && !ScaleDegreeForNote(61),@"Only actual scale notes have degrees");
+        NSDictionary *aMinor=@{@"scale_supported":@YES,@"scale_mode":@YES,@"root_note":@9,@"scale_intervals":@[@0,@2,@3,@5,@7,@8,@10,@12]};
+        UpdateLiveScale(aMinor,YES);
+        NSCAssert(liveScaleMask==mask && [ScaleDegreeForNote(60) isEqual:@"III"] && [ScaleDegreeForNote(69) isEqual:@"I"],@"Relative scales share colors but must update their degrees; octave duplicates must not relabel the root");
+        NSView *first=[NSView new],*second=[NSView new],*replacement=[NSView new];
+        SetPianoShowsDegrees(first,YES); TransferPianoInstance(first,replacement);
+        NSCAssert(PianoShowsDegrees(first) && PianoShowsDegrees(replacement) && !PianoShowsDegrees(second),@"Degree display is independent and survives octave replacement");
+        UpdateLiveScale(@{},NO); NSCAssert(!ScaleDegreeForNote(60),@"Disconnected feedback clears degrees");
         for(NSInteger note=0;note<128;note++) {
             BOOL expected=[@[@0,@2,@4,@5,@7,@9,@11] containsObject:@(note%12)];
             NSCAssert(NoteInLiveScale(note,mask)==expected,@"C Major highlighting must be correct at every MIDI octave");

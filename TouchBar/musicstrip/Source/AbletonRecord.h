@@ -149,7 +149,7 @@ static void ApplyRecordLight(StripRecordButton *button,BOOL connected,NSDictiona
         self.item.showsCloseButton=YES;
         self.button=[[StripRecordButton alloc] initWithFrame:NSMakeRect(0,0,44,30)];
         self.button.recordController=self;
-        [self.button.widthAnchor constraintEqualToConstant:44].active=YES;
+        [self.button.widthAnchor constraintEqualToConstant:32].active=YES;
         self.item.collapsedRepresentation=self.button;
         self.options=[NSMutableDictionary dictionary];
         self.performanceMenus=[NSMutableDictionary dictionary];
