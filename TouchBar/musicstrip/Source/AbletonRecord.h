@@ -33,12 +33,14 @@ static NSString *const RecordID = @"local.musicstrip.midi.ableton-record";
 @property NSTimeInterval messageUntil;
 @property NSNumber *queuedTempo;
 @property NSString *queuedTempoSession;
+@property NSArray<NSString *> *legacyTempoTokens;
 @property BOOL returnSurfaceMode;
 @property NSView *nativeSurfaceView;
 @property NSView *nativeDeviceView;
 - (void)send:(NSString *)action;
 - (void)send:(NSString *)action payload:(NSDictionary *)payload;
 - (void)setTempoFromDrag:(double)tempo;
+- (BOOL)writeCommand:(NSString *)action payload:(NSDictionary *)payload token:(NSString *)token;
 - (void)showOptions;
 - (void)refresh;
 - (void)showMenu:(NSString *)name;
@@ -50,6 +52,10 @@ static NSString *const RecordID = @"local.musicstrip.midi.ableton-record";
 @end
 static StripRecordController *recordController;
 static NSString *RecordDirectory(void) {
+#ifdef STRIP3_RECORD_TESTING
+    const char *testDirectory=getenv("STRIP_RECORD_TEST_DIRECTORY");
+    if(testDirectory) return @(testDirectory);
+#endif
     return [NSHomeDirectory() stringByAppendingPathComponent:@"Library/Application Support/Strip3/AbletonRecord"];
 }
 static NSDictionary *RecordJSON(NSString *path) {
@@ -269,23 +275,28 @@ static void ApplyRecordLight(StripRecordButton *button,BOOL connected,NSDictiona
     if(self.pending) return; // Never enqueue repeated toggles while awaiting Live.
     if(![self connected]) { [self notice:@"Live link?"]; return; }
     NSString *token=NSUUID.UUID.UUIDString.lowercaseString;
+    if([self writeCommand:action payload:payload token:token]) {
+        self.pending=token; self.pendingTime=NSDate.date.timeIntervalSince1970;
+    }
+}
+- (BOOL)writeCommand:(NSString *)action payload:(NSDictionary *)payload token:(NSString *)token {
     NSString *directory=[RecordDirectory() stringByAppendingPathComponent:@"commands"];
     NSError *error=nil;
     if(![NSFileManager.defaultManager createDirectoryAtPath:directory withIntermediateDirectories:YES attributes:@{NSFilePosixPermissions:@0700} error:&error]) {
-        [self notice:@"Link error"]; return;
+        self.message=@"Link error"; self.messageUntil=NSDate.date.timeIntervalSince1970+3; return NO;
     }
     NSMutableDictionary *command=[@{@"session":self.state[@"session_id"] ?: @"", @"action":action,
         @"time":@(NSDate.date.timeIntervalSince1970), @"track_index":self.state[@"track_index"] ?: @(-1)} mutableCopy];
     [command addEntriesFromDictionary:payload];
     NSData *data=[NSJSONSerialization dataWithJSONObject:command options:0 error:&error];
     if(!data || ![data writeToFile:[directory stringByAppendingPathComponent:[token stringByAppendingString:@".json"]] options:NSDataWritingAtomic error:&error]) {
-        [self notice:@"Link error"]; return;
+        self.message=@"Link error"; self.messageUntil=NSDate.date.timeIntervalSince1970+3; return NO;
     }
-    self.pending=token; self.pendingTime=NSDate.date.timeIntervalSince1970;
+    return YES;
 }
 - (void)setTempoFromDrag:(double)tempo {
     if(!isfinite(tempo) || ![self connected]) return;
-    if([self.state[@"tempo_drag"] integerValue]!=1) { [self notice:@"Reload Live link"]; return; }
+    if([self.state[@"performance"] integerValue]!=1) return;
     self.queuedTempo=@(MAX(20,MIN(999,tempo))); self.queuedTempoSession=self.state[@"session_id"];
     [self refresh];
 }
@@ -388,7 +399,21 @@ static void ApplyRecordLight(StripRecordButton *button,BOOL connected,NSDictiona
     UpdateActivePianoSizing();
     self.state=RecordJSON([RecordDirectory() stringByAppendingPathComponent:@"state.json"]);
     NSTimeInterval now=NSDate.date.timeIntervalSince1970;
-    if(self.pending) {
+    if(self.legacyTempoTokens.count) {
+        NSMutableArray *waiting=[NSMutableArray new]; BOOL failed=NO;
+        for(NSString *token in self.legacyTempoTokens) {
+            NSString *path=[[RecordDirectory() stringByAppendingPathComponent:@"responses"] stringByAppendingPathComponent:[token stringByAppendingString:@".json"]];
+            NSDictionary *response=RecordJSON(path);
+            if(response) { failed |= ![response[@"ok"] boolValue]; [NSFileManager.defaultManager removeItemAtPath:path error:nil]; }
+            else [waiting addObject:token];
+        }
+        if(failed || now-self.pendingTime>2.5) {
+            self.queuedTempo=nil; self.message=@"Live link?"; self.messageUntil=now+3;
+        }
+        self.legacyTempoTokens=waiting;
+        if(!waiting.count || now-self.pendingTime>2.5) { self.legacyTempoTokens=nil; self.pending=nil; }
+    }
+    if(self.pending && !self.legacyTempoTokens.count) {
         NSString *path=[[RecordDirectory() stringByAppendingPathComponent:@"responses"] stringByAppendingPathComponent:[self.pending stringByAppendingString:@".json"]];
         NSDictionary *response=RecordJSON(path);
         if(response || now-self.pendingTime>2.5) {
@@ -403,8 +428,27 @@ static void ApplyRecordLight(StripRecordButton *button,BOOL connected,NSDictiona
     BOOL connected=[self connected];
     if(self.queuedTempo && (!connected || ![self.queuedTempoSession isEqual:self.state[@"session_id"]])) self.queuedTempo=nil;
     if(self.queuedTempo && !self.pending) {
-        NSNumber *tempo=self.queuedTempo; self.queuedTempo=nil;
-        [self send:@"tempo-set" payload:@{@"tempo":tempo}];
+        NSNumber *tempo=self.queuedTempo;
+        if([self.state[@"tempo_drag"] integerValue]==1) {
+            self.queuedTempo=nil; [self send:@"tempo-set" payload:@{@"tempo":tempo}];
+        } else {
+            // Old Live scripts already understand these operations. Submit a
+            // bounded batch per acknowledgment, not one step per gesture.
+            double difference=tempo.doubleValue-[self.state[@"tempo"] doubleValue];
+            BOOL coarse=fabs(difference)>=1;
+            NSInteger steps=MIN(32,coarse ? (NSInteger)floor(fabs(difference)+.0001) : (NSInteger)llround(fabs(difference)/.1));
+            if(!steps) self.queuedTempo=nil;
+            else {
+                NSString *action=difference>0 ? (coarse ? @"tempo-up" : @"tempo-up-fine") : (coarse ? @"tempo-down" : @"tempo-down-fine");
+                NSMutableArray *tokens=[NSMutableArray new];
+                for(NSInteger i=0;i<steps;i++) {
+                    NSString *token=NSUUID.UUID.UUIDString.lowercaseString;
+                    if(![self writeCommand:action payload:@{} token:token]) { self.queuedTempo=nil; break; }
+                    [tokens addObject:token];
+                }
+                self.legacyTempoTokens=tokens; self.pending=tokens.lastObject; self.pendingTime=now;
+            }
+        }
     }
     UpdateLiveScale(self.state,connected);
     BOOL armed=connected && [self.state[@"armed"] boolValue];
