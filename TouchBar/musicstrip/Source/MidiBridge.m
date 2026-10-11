@@ -232,6 +232,8 @@ static NSString *const NavigationID = @"local.musicstrip.midi.navigation";
 @property NSInteger joinedEdge; // 1 = left half, 2 = right half; 0 = native bezel.
 @property NSInteger optionSegment; // 1..3 for the expanded piano's joined settings.
 @property BOOL standaloneRecord;
+@property BOOL degreeToggle;
+@property BOOL degreeToggleOn;
 @property CGFloat presetHue;
 @property BOOL recordLit;
 @property id touchIdentity;
@@ -272,6 +274,20 @@ static MidiNavigationButton *octavesButton;
         [[[NSGradient alloc] initWithStartingColor:[NSColor colorWithWhite:.24 alpha:1] endingColor:[NSColor colorWithWhite:.13 alpha:1]] drawInRect:self.bounds angle:90];
         if(self.highlighted) { [[NSColor colorWithWhite:1 alpha:.12] setFill]; NSRectFill(self.bounds); }
         if(segment>1) { [[NSColor colorWithWhite:1 alpha:.12] setFill]; NSRectFill(NSMakeRect(0,5,.5,20)); }
+        if(self.degreeToggle) {
+            NSColor *tint=self.degreeToggleOn ? [NSColor colorWithSRGBRed:.52 green:.86 blue:.93 alpha:1] : [NSColor colorWithWhite:.55 alpha:1];
+            if(self.degreeToggleOn) { [[tint colorWithAlphaComponent:.16] setFill]; NSRectFillUsingOperation(self.bounds,NSCompositingOperationSourceOver); }
+            NSImage *symbol=[NSImage imageWithSize:NSMakeSize(22,18) flipped:NO drawingHandler:^BOOL(NSRect rect) {
+                NSSize size=self.image.size;
+                CGFloat ratio=MIN(22/MAX(1,size.width),18/MAX(1,size.height));
+                NSSize fitted=NSMakeSize(size.width*ratio,size.height*ratio);
+                [self.image drawInRect:NSMakeRect((22-fitted.width)/2,(18-fitted.height)/2,fitted.width,fitted.height)];
+                [tint setFill]; NSRectFillUsingOperation(rect,NSCompositingOperationSourceIn); return YES;
+            }];
+            [symbol drawInRect:NSMakeRect(11,6,22,18)];
+            if(self.degreeToggleOn) { [tint setFill]; [[NSBezierPath bezierPathWithOvalInRect:NSMakeRect(35,23,4,4)] fill]; }
+            [NSGraphicsContext restoreGraphicsState]; return;
+        }
         if(self.image) {
             NSImage *glyph=[NSImage imageWithSize:NSMakeSize(18,13) flipped:NO drawingHandler:^BOOL(NSRect rect) {
                 NSSize size=self.image.size;
@@ -429,8 +445,10 @@ static PianoConfigButton *pianoModeButton,*pianoChannelButton;
 static PianoDegreeButton *pianoDegreeButton;
 static void UpdateDegreeButton(void) {
     BOOL enabled=PianoShowsDegrees(expandedPianoView);
-    pianoDegreeButton.title=@"I";
-    pianoDegreeButton.stackedCaption=enabled ? @"ON" : @"OFF";
+    pianoDegreeButton.title=@"";
+    pianoDegreeButton.stackedCaption=@"";
+    pianoDegreeButton.degreeToggle=YES; pianoDegreeButton.degreeToggleOn=enabled;
+    pianoDegreeButton.image=[NSImage imageWithSystemSymbolName:@"music.note.list" accessibilityDescription:@"Scale harmony"] ?: [NSImage imageWithSystemSymbolName:@"music.note" accessibilityDescription:@"Scale harmony"];
     pianoDegreeButton.needsDisplay=YES;
     [pianoDegreeButton setAccessibilityLabel:enabled ? @"Scale degrees shown. Tap to hide." : @"Scale degrees hidden. Tap to show."];
 }

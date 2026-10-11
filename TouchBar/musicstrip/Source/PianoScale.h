@@ -11,7 +11,33 @@ static void SetPianoShowsDegrees(NSView *piano,BOOL enabled) {
 static NSString *ScaleDegreeForNote(NSInteger note) {
     NSUInteger index=[liveScaleDegrees indexOfObject:@((note%12+12)%12)];
     NSArray *names=@[@"I",@"II",@"III",@"IV",@"V",@"VI",@"VII",@"VIII",@"IX",@"X",@"XI",@"XII"];
-    return index!=NSNotFound && index<names.count ? names[index] : nil;
+    if(index==NSNotFound || index>=names.count) return nil;
+    NSString *degree=names[index];
+    // Diatonic triads stack alternate degrees. Other scale sizes retain
+    // neutral degree labels rather than inventing chord qualities.
+    if(liveScaleDegrees.count==7) {
+        NSInteger root=[liveScaleDegrees[index] integerValue];
+        NSInteger third=([liveScaleDegrees[(index+2)%7] integerValue]-root+12)%12;
+        NSInteger fifth=([liveScaleDegrees[(index+4)%7] integerValue]-root+12)%12;
+        if(third==3 && fifth==7) return degree.lowercaseString;
+        if(third==3 && fifth==6) return [degree.lowercaseString stringByAppendingString:@"°"];
+        if(third==4 && fifth==8) return [degree stringByAppendingString:@"+"];
+    }
+    return degree;
+}
+static NSRect PianoDegreeLabelRegion(NSRect bounds,NSBezierPath *path,NSBezierPath *whiteMask,BOOL black) {
+    if(black) return bounds;
+    // Center white-key text in its exposed top stem, not in the wider base
+    // where neighboring black keys would obscure a top-aligned label.
+    CGFloat y=NSMaxY(bounds)-4,run=NSMinX(bounds),bestLeft=run,bestWidth=0;
+    BOOL inside=NO;
+    for(CGFloat x=NSMinX(bounds);x<=NSMaxX(bounds)+.5;x+=.5) {
+        BOOL visible=x<NSMaxX(bounds) && [path containsPoint:NSMakePoint(x,y)] && [whiteMask containsPoint:NSMakePoint(x,y)];
+        if(visible && !inside) run=x;
+        if(!visible && inside && x-run>bestWidth) { bestLeft=run; bestWidth=x-run; }
+        inside=visible;
+    }
+    return NSMakeRect(bestLeft,bounds.origin.y,bestWidth,bounds.size.height);
 }
 static NSHashTable<NSView *> *scalePianos;
 static NSUInteger ScaleMaskForState(NSDictionary *state,BOOL connected) {
@@ -112,15 +138,16 @@ static void DrawPianoScale(NSView *piano,SEL selector,NSRect dirty) {
         [path fill];
         if(PianoShowsDegrees(piano)) {
             NSString *degree=ScaleDegreeForNote(start+[[key valueForKey:@"pitch"] integerValue]);
-            NSRect bounds=NSIntersectionRect(path.bounds,piano.bounds);
-            // Keep labels within the existing key geometry, without changing
-            // playable hit areas. White-key labels sit below the black keys.
-            CGFloat fontSize=MIN(9,MAX(5,NSWidth(bounds)/MAX(1,degree.length)-1));
-            NSDictionary *attributes=@{NSFontAttributeName:[NSFont systemFontOfSize:fontSize weight:NSFontWeightBold],NSForegroundColorAttributeName:[NSColor colorWithWhite:.05 alpha:1]};
+            NSRect bounds=PianoDegreeLabelRegion(NSIntersectionRect(path.bounds,piano.bounds),path,whiteMask,black);
+            CGFloat fontSize=9;
+            NSMutableDictionary *attributes=[@{NSFontAttributeName:[NSFont systemFontOfSize:fontSize weight:NSFontWeightBold],NSForegroundColorAttributeName:[NSColor colorWithWhite:.05 alpha:1]} mutableCopy];
+            while(fontSize>5 && [degree sizeWithAttributes:attributes].width+1>NSWidth(bounds)) {
+                fontSize-=.5; attributes[NSFontAttributeName]=[NSFont systemFontOfSize:fontSize weight:NSFontWeightBold];
+            }
             NSSize size=[degree sizeWithAttributes:attributes];
             if(degree && size.width+1<=NSWidth(bounds)) {
                 [path addClip];
-                [degree drawAtPoint:NSMakePoint(NSMidX(bounds)-size.width/2,black ? NSMaxY(bounds)-size.height-1 : NSMinY(bounds)+1) withAttributes:attributes];
+                [degree drawAtPoint:NSMakePoint(NSMidX(bounds)-size.width/2,NSMaxY(piano.bounds)-size.height-1) withAttributes:attributes];
             }
         }
         [NSGraphicsContext restoreGraphicsState];
