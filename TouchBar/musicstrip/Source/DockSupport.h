@@ -570,6 +570,7 @@ static NSArray<NSURL *> *DockFolderURLs(NSDictionary *dock) {
         } else {
             if(!app || app.terminated) { chooser.message=@"No open windows"; chooser.needsDisplay=YES; return; }
             chooser.choices=@[];
+            chooser.windowQueryPending=YES;
             chooser.message=@"Loading windows…";
             [chooser updateAt:gesture.currentPoint];
             [self loadWindowsForApp:app chooser:chooser attempt:0];
@@ -585,7 +586,7 @@ static NSArray<NSURL *> *DockFolderURLs(NSDictionary *dock) {
     if(self.swipeChooser!=chooser || !self.visible) return;
     if(!AccessibilityTrusted(NO)) {
         chooser.message=@"Enable 3£ in Accessibility";
-        chooser.needsDisplay=YES; return;
+        [self completeWindowLoad:@[] chooser:chooser finished:YES]; return;
     }
     __weak DockPanel *weakSelf=self;
     dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED,0),^{
@@ -593,9 +594,8 @@ static NSArray<NSURL *> *DockFolderURLs(NSDictionary *dock) {
         dispatch_async(dispatch_get_main_queue(),^{
             DockPanel *panel=weakSelf;
             if(!panel || panel.swipeChooser!=chooser || !panel.visible) return;
-            chooser.choices=windows;
             chooser.message=windows.count ? @"" : (attempt>=2 ? @"No open windows" : @"Loading windows…");
-            [chooser updateAt:chooser.finger];
+            [panel completeWindowLoad:windows chooser:chooser finished:windows.count>0 || attempt>=2];
             if(!windows.count && attempt<2)
                 dispatch_after(dispatch_time(DISPATCH_TIME_NOW,(int64_t)(.2*NSEC_PER_SEC)),dispatch_get_main_queue(),^{
                     [weakSelf loadWindowsForApp:app chooser:chooser attempt:attempt+1];
@@ -603,11 +603,20 @@ static NSArray<NSURL *> *DockFolderURLs(NSDictionary *dock) {
         });
     });
 }
+- (void)completeWindowLoad:(NSArray<DockSwipeChoice *> *)windows chooser:(DockSwipeChooser *)chooser finished:(BOOL)finished {
+    if(self.swipeChooser!=chooser || !self.visible) return;
+    chooser.choices=windows; chooser.windowQueryPending=!finished;
+    [chooser updateAt:chooser.finger];
+    // A lift during the query must not strand an empty overlay after its
+    // final response. Real late-arriving windows remain available to tap.
+    if(finished && !windows.count && chooser.awaitingSelection)
+        [self finishSwipeCancelled:YES];
+}
 - (void)finishSwipeCancelled:(BOOL)cancelled {
     DockSwipeChooser *chooser=self.swipeChooser; if(!chooser) return;
     NSInteger index=chooser.selectedIndex;
     DockSwipeChoice *choice=!cancelled && index>=0 && index<(NSInteger)chooser.choices.count ? chooser.choices[index] : nil;
-    if(!cancelled && chooser.windowChoices && !choice) {
+    if(!cancelled && chooser.windowChoices && !choice && (chooser.windowQueryPending || chooser.choices.count)) {
         // A real finger can lift before AX replies. Keep the real chooser
         // mounted for the late response; the next tap selects a real window.
         chooser.awaitingSelection=YES; [chooser stopScrolling];

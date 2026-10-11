@@ -14,6 +14,10 @@ stays visible; a subsequent touch selects a returned window. Empty responses no
 longer trigger synthetic Command-backtick window cycling, and retries terminate
 with an explicit status instead of an infinite loading label. The chooser
 regression checks delayed lift, identical window titles, selection and cancel.
+Releasing a resolved empty window picker restores the app row immediately.
+If the finger lifts during a pending query, real late-arriving windows stay
+selectable; a final empty response automatically restores apps instead of
+leaving a frozen message. Permission failures follow the same dismissal rule.
 
 On this development Mac, the actual LaunchServices host reported Accessibility
 denied and System Settings showed the old app entry off. Touch Tab's preference

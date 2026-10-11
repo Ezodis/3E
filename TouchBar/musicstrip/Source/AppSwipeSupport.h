@@ -208,6 +208,7 @@ static NSArray<DockSwipeChoice *> *SwipeWindows(NSRunningApplication *app) {
 @property NSString *message;
 @property BOOL windowChoices;
 @property BOOL awaitingSelection;
+@property BOOL windowQueryPending;
 @property (copy) void (^didSelect)(DockSwipeChooser *chooser);
 @property CGFloat visualCenter;
 @property CGFloat offset;

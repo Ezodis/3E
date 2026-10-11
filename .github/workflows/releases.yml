@@ -38,6 +38,8 @@ jobs:
           /tmp/gesture-test
           xcrun clang -fobjc-arc -framework AppKit -framework ApplicationServices TouchBar/musicstrip/Tests/native_spaces.m -o /tmp/spaces-test
           /tmp/spaces-test
+          xcrun clang -fobjc-arc -framework AppKit -framework Carbon -framework ApplicationServices -framework QuartzCore TouchBar/musicstrip/Tests/window_chooser.m -o /tmp/window-test
+          /tmp/window-test
           xcrun clang -fobjc-arc -framework AppKit -framework CoreMIDI TouchBar/musicstrip/Tests/combined_menu.m -o /tmp/menu-test
           STRIP_COMBINED_TOUCHTAB=1 /tmp/menu-test
       - name: Verify signatures, architectures and edition; package
