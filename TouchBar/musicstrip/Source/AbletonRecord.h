@@ -10,6 +10,9 @@ static NSString *const RecordID = @"local.musicstrip.midi.ableton-record";
 @property NSString *holdMenu;
 @property NSString *swipeForward;
 @property NSString *swipeBack;
+@property BOOL loopActive;
+@property BOOL punchInActive;
+@property BOOL punchOutActive;
 @end
 @interface StripRecordController : NSObject
 @property NSPopoverTouchBarItem *item;
@@ -21,6 +24,7 @@ static NSString *const RecordID = @"local.musicstrip.midi.ableton-record";
 @property NSMutableArray<NSTouchBar *> *menuStack;
 @property NSTouchBar *menuReturnBar;
 @property NSTouchBar *activeMenuBar;
+@property NSHashTable<StripRecordButton *> *menuRecordButtons;
 @property NSString *pending;
 @property NSTimeInterval pendingTime;
 @property NSString *message;
@@ -32,6 +36,8 @@ static NSString *const RecordID = @"local.musicstrip.midi.ableton-record";
 - (void)perform:(NSString *)action;
 - (void)refreshButtonsConnected:(BOOL)connected;
 - (void)backMenu:(id)sender;
+- (void)returnToMidi;
+- (void)presentMenuBar:(NSTouchBar *)source;
 @end
 static StripRecordController *recordController;
 static NSString *RecordDirectory(void) {
@@ -83,6 +89,31 @@ static void ApplyRecordLight(StripRecordButton *button,BOOL connected,NSDictiona
 - (BOOL)accessibilityPerformPress { [self.recordController send:@"record"]; return YES; }
 @end
 @implementation StripPerformanceButton
+- (void)drawRect:(NSRect)dirty {
+    if(![self.identifier isEqual:@"loop"]) { [super drawRect:dirty]; return; }
+    [NSGraphicsContext saveGraphicsState];
+    NSBezierPath *background=[NSBezierPath bezierPathWithRoundedRect:NSInsetRect(self.bounds,0,1) xRadius:7 yRadius:7];
+    [[NSColor colorWithWhite:self.highlighted ? .28 : .16 alpha:1] setFill]; [background fill];
+    NSColor *on=[NSColor colorWithSRGBRed:1 green:.65 blue:.16 alpha:self.enabled ? 1 : .35];
+    NSColor *off=[NSColor colorWithWhite:.50 alpha:self.enabled ? 1 : .35];
+    for(NSInteger side=0;side<2;side++) {
+        NSBezierPath *punch=[NSBezierPath bezierPath];
+        if(!side) { [punch moveToPoint:NSMakePoint(7,22)]; [punch lineToPoint:NSMakePoint(14,22)]; [punch lineToPoint:NSMakePoint(21,12)]; }
+        else { [punch moveToPoint:NSMakePoint(65,12)]; [punch lineToPoint:NSMakePoint(72,22)]; [punch lineToPoint:NSMakePoint(79,22)]; }
+        punch.lineWidth=2; punch.lineCapStyle=NSLineCapStyleRound;
+        [(side ? self.punchOutActive : self.punchInActive) ? on : off setStroke]; [punch stroke];
+    }
+    NSColor *tint=self.loopActive ? on : [NSColor colorWithWhite:.90 alpha:self.enabled ? 1 : .35];
+    NSImage *image=[NSImage imageWithSystemSymbolName:@"repeat" accessibilityDescription:@"Loop"];
+    NSImage *glyph=[NSImage imageWithSize:NSMakeSize(18,14) flipped:NO drawingHandler:^BOOL(NSRect rect) {
+        [image drawInRect:rect]; [tint setFill]; NSRectFillUsingOperation(rect,NSCompositingOperationSourceIn); return YES;
+    }];
+    [glyph drawInRect:NSMakeRect(34,14,18,14)];
+    NSDictionary *attributes=@{NSFontAttributeName:[NSFont monospacedDigitSystemFontOfSize:9 weight:NSFontWeightMedium],NSForegroundColorAttributeName:tint};
+    NSSize text=[self.title sizeWithAttributes:attributes];
+    [self.title drawAtPoint:NSMakePoint((86-text.width)/2,2) withAttributes:attributes];
+    [NSGraphicsContext restoreGraphicsState];
+}
 - (void)step:(NSInteger)direction {
     if(!self.enabled || !self.tracking || self.cancelled || self.held || self.didStep) return;
     self.didStep=YES; [self.holdTimer invalidate]; self.holdTimer=nil; [self highlight:NO];
@@ -131,7 +162,7 @@ static void ApplyRecordLight(StripRecordButton *button,BOOL connected,NSDictiona
             popover.collapsedRepresentation=button; popover.showsCloseButton=YES;
             self.performanceMenus[action]=popover; button.holdMenu=action;
             if([action isEqual:@"tempo"]) { button.swipeForward=@"tempo-up"; button.swipeBack=@"tempo-down"; }
-            if([action isEqual:@"loop"]) { button.swipeForward=@"loop-next"; button.swipeBack=@"loop-prev"; }
+            if([action isEqual:@"loop"]) { button.swipeForward=@"punch-out"; button.swipeBack=@"punch-in"; }
             item=popover;
         } else {
             NSCustomTouchBarItem *control=[[NSCustomTouchBarItem alloc] initWithIdentifier:identifier]; control.view=button; control.customizationLabel=label; item=control;
@@ -154,11 +185,9 @@ static void ApplyRecordLight(StripRecordButton *button,BOOL connected,NSDictiona
         self.options=[NSMutableDictionary dictionary];
         self.performanceMenus=[NSMutableDictionary dictionary];
         self.menuStack=[NSMutableArray new];
+        self.menuRecordButtons=[NSHashTable weakObjectsHashTable];
         self.item.popoverTouchBar=[self performanceBar:@[
-            @[@"play",@"Play / Pause",@"play.fill"], @[@"stop",@"Stop",@"stop.fill"],
-            @[@"record",@"Record",@"record.circle"], @[@"punch-in",@"Punch In"],
-            @[@"loop",@"Loop",@"repeat"], @[@"punch-out",@"Punch Out"],
-            @[@"tempo",@"BPM"], @[@"tap-tempo",@"Tap"], @[@"more",@"More",@"ellipsis"]
+            @[@"loop",@"Loop",@"repeat"], @[@"tempo",@"BPM"], @[@"more",@"More",@"ellipsis"]
         ]];
         self.performanceMenus[@"loop"].popoverTouchBar=[self performanceBar:@[
             @[@"loop-1",@"1 bar"], @[@"loop-2",@"2 bars"], @[@"loop-4",@"4 bars"], @[@"loop-8",@"8 bars"],
@@ -173,8 +202,8 @@ static void ApplyRecordLight(StripRecordButton *button,BOOL connected,NSDictiona
             @[@"quantization",@"Record Q"], @[@"automation-arm",@"Auto Arm"],
             @[@"re-enable-automation",@"Re-enable"], @[@"stop-clips",@"Stop Clips"]
         ]];
-        self.options[@"loop"].toolTip=@"Tap: loop on/off. Hold: loop lengths and resize. Swipe: move loop brace left/right.";
-        self.options[@"tempo"].toolTip=@"Swipe: ±1 BPM. Tap or hold: fine/coarse tempo controls.";
+        self.options[@"loop"].toolTip=@"Tap: Loop. Swipe left: Punch In. Swipe right: Punch Out. Hold: loop lengths and resize.";
+        self.options[@"tempo"].toolTip=@"Tap: Tap Tempo. Swipe: ±1 BPM. Hold: fine/coarse tempo controls.";
         __weak StripRecordController *weakSelf=self;
         self.pollTimer=[NSTimer timerWithTimeInterval:.2 repeats:YES block:^(NSTimer *timer){ [weakSelf refresh]; }];
         [NSRunLoop.mainRunLoop addTimer:self.pollTimer forMode:NSRunLoopCommonModes];
@@ -214,20 +243,26 @@ static void ApplyRecordLight(StripRecordButton *button,BOOL connected,NSDictiona
 }
 - (void)option:(NSButton *)sender { [self send:sender.identifier]; }
 - (void)perform:(NSString *)action {
-    if([action isEqual:@"tempo"] || [action isEqual:@"more"]) [self showMenu:action];
+    if([action isEqual:@"tempo"]) [self send:@"tap-tempo"];
+    else if([action isEqual:@"more"]) [self showMenu:action];
     else [self send:action];
 }
 - (void)presentMenuBar:(NSTouchBar *)source {
     if(!source || !presentation) return;
     if(!self.menuStack.count) self.menuReturnBar=presentation;
     NSTouchBar *bar=[NSTouchBar new];
-    NSCustomTouchBarItem *back=[[NSCustomTouchBarItem alloc] initWithIdentifier:@"local.musicstrip.performance.back"];
-    NSButton *button=[NSButton buttonWithImage:[NSImage imageWithSystemSymbolName:@"chevron.left" accessibilityDescription:@"Back to MIDI"] target:self action:@selector(backMenu:)];
-    button.bezelStyle=NSBezelStyleRounded; [button.widthAnchor constraintEqualToConstant:44].active=YES; back.view=button;
+    NSCustomTouchBarItem *record=[[NSCustomTouchBarItem alloc] initWithIdentifier:@"local.musicstrip.performance.record"];
+    StripRecordButton *button=[[StripRecordButton alloc] initWithFrame:NSMakeRect(0,0,32,30)];
+    button.recordController=self; button.standaloneRecord=YES;
+    [button.widthAnchor constraintEqualToConstant:32].active=YES; [button.heightAnchor constraintEqualToConstant:30].active=YES;
+    record.view=button; [self.menuRecordButtons addObject:button];
+    ApplyRecordLight(button,[self connected],self.state);
     NSGroupTouchBarItem *group=[[NSGroupTouchBarItem alloc] initWithIdentifier:@"local.musicstrip.performance.controls"];
     group.groupTouchBar=source;
-    bar.templateItems=[NSSet setWithArray:@[back,group]];
-    bar.defaultItemIdentifiers=@[back.identifier,group.identifier];
+    group.prefersEqualWidths=NO;
+    bar.templateItems=[NSSet setWithArray:@[group,record]];
+    bar.defaultItemIdentifiers=@[group.identifier,NSTouchBarItemIdentifierFlexibleSpace,record.identifier];
+    bar.principalItemIdentifier=group.identifier;
     ((void(*)(id,SEL,id))originalClose)(NSApp.delegate,NSSelectorFromString(@"closeTouchbar:"),self.activeMenuBar ?: presentation);
     self.activeMenuBar=bar; [self.menuStack addObject:bar];
     ((void(*)(id,SEL,id,id))originalOpen)(NSApp.delegate,NSSelectorFromString(@"openTouchbar:fromIdentifier:"),bar,normalIdentifier);
@@ -241,8 +276,29 @@ static void ApplyRecordLight(StripRecordButton *button,BOOL connected,NSDictiona
     if(!self.menuStack.count) self.menuReturnBar=nil;
     ((void(*)(id,SEL,id,id))originalOpen)(NSApp.delegate,NSSelectorFromString(@"openTouchbar:fromIdentifier:"),next,normalIdentifier);
 }
+- (void)returnToMidi {
+    if(!self.activeMenuBar) return;
+    ((void(*)(id,SEL,id))originalClose)(NSApp.delegate,NSSelectorFromString(@"closeTouchbar:"),self.activeMenuBar);
+    NSTouchBar *normal=self.menuReturnBar ?: presentation;
+    self.activeMenuBar=nil; self.menuReturnBar=nil; [self.menuStack removeAllObjects];
+    ((void(*)(id,SEL,id,id))originalOpen)(NSApp.delegate,NSSelectorFromString(@"openTouchbar:fromIdentifier:"),normal,normalIdentifier);
+}
 - (void)showMenu:(NSString *)name { [self refresh]; [self presentMenuBar:self.performanceMenus[name].popoverTouchBar]; }
-- (void)showOptions { [self refresh]; [self presentMenuBar:self.item.popoverTouchBar]; }
+- (void)showOptions {
+    if(self.activeMenuBar) { [self returnToMidi]; return; }
+    [self refresh];
+    NSTouchBar *source=[NSTouchBar new];
+    NSMutableSet *items=self.item.popoverTouchBar.templateItems.mutableCopy;
+    NSMutableArray *ids=self.item.popoverTouchBar.defaultItemIdentifiers.mutableCopy;
+    // Preserve the vendor's actual control-surface view, delegates and MIDI
+    // ports. Only its outer navigation/close wrapper is replaced.
+    @try {
+        NSTouchBarItem *surface=[(id)NSApp.delegate valueForKey:@"controlStripItem"];
+        if(surface) { [items addObject:surface]; [ids insertObject:surface.identifier atIndex:0]; source.principalItemIdentifier=surface.identifier; }
+    } @catch(NSException *exception) { NSLog(@"3£ control surface unavailable: %@",exception.reason); }
+    source.templateItems=items; source.defaultItemIdentifiers=ids;
+    [self presentMenuBar:source];
+}
 - (void)refresh {
     UpdateNavigationColor();
     UpdateActivePianoSizing();
@@ -264,6 +320,7 @@ static void ApplyRecordLight(StripRecordButton *button,BOOL connected,NSDictiona
     UpdateLiveScale(self.state,connected);
     BOOL armed=connected && [self.state[@"armed"] boolValue];
     ApplyRecordLight(self.button,connected,self.state);
+    for(StripRecordButton *button in self.menuRecordButtons.allObjects) ApplyRecordLight(button,connected,self.state);
     self.button.toolTip=connected ? [NSString stringWithFormat:@"Ableton Record — %@%@",self.state[@"track_name"] ?: @"",armed ? @" (armed)" : @""] : @"Open Ableton with its MIDITouchbar control surface enabled";
     BOOL showMessage=self.messageUntil>now;
     self.button.imagePosition=showMessage ? NSNoImage : NSImageOnly;
@@ -274,7 +331,7 @@ static void ApplyRecordLight(StripRecordButton *button,BOOL connected,NSDictiona
 - (void)refreshButtonsConnected:(BOOL)connected {
     for(NSString *action in self.options) {
         NSButton *button=self.options[action];
-        BOOL menu=[action isEqual:@"tempo"] || [action isEqual:@"more"];
+        BOOL menu=[action isEqual:@"more"];
         BOOL legacy=[@[@"record",@"session",@"punch-in",@"punch-out",@"overdub",@"loop",@"click",@"quantization"] containsObject:action];
         BOOL performance=connected && [self.state[@"performance"] integerValue]==1;
         button.enabled=menu || (connected && !self.pending && (legacy || performance));
@@ -292,6 +349,12 @@ static void ApplyRecordLight(StripRecordButton *button,BOOL connected,NSDictiona
             CGFloat bars=beats>0 ? [self.state[@"loop_length"] doubleValue]/beats : 0;
             button.title=performance ? [NSString stringWithFormat:@"%.2g bar",bars] : @"Loop";
             button.imagePosition=NSImageLeft;
+            StripPerformanceButton *loop=(id)button;
+            loop.loopActive=connected && [self.state[@"loop"] boolValue];
+            loop.punchInActive=connected && [self.state[@"punch-in"] boolValue];
+            loop.punchOutActive=connected && [self.state[@"punch-out"] boolValue];
+            loop.needsDisplay=YES;
+            [loop setAccessibilityLabel:[NSString stringWithFormat:@"Loop %@. Punch In %@. Punch Out %@. Tap Loop; swipe left Punch In; swipe right Punch Out.",loop.loopActive ? @"on" : @"off",loop.punchInActive ? @"on" : @"off",loop.punchOutActive ? @"on" : @"off"]];
         }
         if([action isEqualToString:@"quantization"]) {
             NSInteger q=[self.state[@"quantization"] integerValue];

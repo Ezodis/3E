@@ -56,7 +56,6 @@ static NSButton *closeButton;
 static NSString *const CloseID = @"local.musicstrip.midi.close";
 static NSString *const LayoutID = @"local.musicstrip.midi.layout";
 static void Cycle(id target, SEL selector, id sender);
-static void SwitchMode(void);
 static void ChangeOctaves(NSInteger direction);
 static void ExpandPiano(NSView *piano);
 static void CollapsePiano(void);
@@ -117,18 +116,65 @@ static BOOL PianoKeyIsBlack(id key) {
     NSInteger pitch=([[key valueForKey:@"pitch"] integerValue]%12+12)%12;
     return [@[@1,@3,@6,@8,@10] containsObject:@(pitch)];
 }
+static NSArray<NSValue *> *ClipPianoPolygon(NSArray<NSValue *> *points,NSRect rect) {
+    for(NSInteger edge=0;edge<4 && points.count;edge++) {
+        NSMutableArray *next=[NSMutableArray new]; NSPoint previous=points.lastObject.pointValue;
+        CGFloat limit=edge==0 ? NSMinX(rect) : edge==1 ? NSMaxX(rect) : edge==2 ? NSMinY(rect) : NSMaxY(rect);
+        for(NSValue *value in points) {
+            NSPoint point=value.pointValue;
+            CGFloat a=edge<2 ? previous.x : previous.y,b=edge<2 ? point.x : point.y;
+            BOOL insideA=edge%2==0 ? a>=limit : a<=limit,insideB=edge%2==0 ? b>=limit : b<=limit;
+            if(insideA!=insideB) {
+                CGFloat ratio=(limit-a)/(b-a);
+                [next addObject:[NSValue valueWithPoint:NSMakePoint(previous.x+ratio*(point.x-previous.x),previous.y+ratio*(point.y-previous.y))]];
+            }
+            if(insideB) [next addObject:value]; previous=point;
+        }
+        points=next;
+    }
+    return points;
+}
+static NSBezierPath *ClippedPianoPath(NSBezierPath *shape,NSRect rect) {
+    NSBezierPath *copy=shape.copy; copy.flatness=.1;
+    NSBezierPath *flat=copy.bezierPathByFlatteningPath,*result=[NSBezierPath bezierPath];
+    NSMutableArray *points=[NSMutableArray new];
+    for(NSInteger i=0;i<=flat.elementCount;i++) {
+        NSPoint point[3]; NSBezierPathElement element=i<flat.elementCount ? [flat elementAtIndex:i associatedPoints:point] : NSBezierPathElementClosePath;
+        if(element==NSBezierPathElementMoveTo || element==NSBezierPathElementClosePath) {
+            NSArray *clipped=ClipPianoPolygon(points,rect);
+            if(clipped.count>=3) {
+                [result moveToPoint:[clipped.firstObject pointValue]];
+                for(NSValue *value in [clipped subarrayWithRange:NSMakeRange(1,clipped.count-1)]) [result lineToPoint:value.pointValue];
+                [result closePath];
+            }
+            [points removeAllObjects];
+        }
+        if(element==NSBezierPathElementMoveTo || element==NSBezierPathElementLineTo) [points addObject:[NSValue valueWithPoint:point[0]]];
+    }
+    return result;
+}
+@interface PianoWhiteHitPath : NSBezierPath
+@property NSArray<NSBezierPath *> *blackContours;
+@end
+@implementation PianoWhiteHitPath
+- (BOOL)containsPoint:(NSPoint)point {
+    // A black contour owns its shared edge too. AppKit's even-odd path test
+    // can otherwise include the coincident edge of a clipped white hole.
+    for(NSBezierPath *black in self.blackContours) if([black containsPoint:point]) return NO;
+    return [super containsPoint:point];
+}
+@end
 static void SetPianoHitRegions(NSView *piano) {
     NSRect keyboard=piano.bounds;
     CGFloat edge=PianoEdgeRect(piano,NO).size.width;
     keyboard.origin.x+=edge; keyboard.size.width=MAX(0,keyboard.size.width-2*edge);
     if(NSIsEmptyRect(keyboard)) return;
-    NSRect top=keyboard; top.origin.y=NSMidY(keyboard); top.size.height=keyboard.size.height/2;
-    NSMutableArray *whiteKeys=[NSMutableArray new],*blackRects=[NSMutableArray new];
+    NSMutableArray *whiteKeys=[NSMutableArray new],*blackPaths=[NSMutableArray new];
     for(id key in [piano valueForKey:@"pianoKeys"]) {
         if(PianoKeyIsBlack(key)) {
-            NSRect rect=NSIntersectionRect([[key valueForKey:@"drawPath"] bounds],top);
-            [key setValue:[NSBezierPath bezierPathWithRect:rect] forKey:@"touchPath"];
-            if(!NSIsEmptyRect(rect)) [blackRects addObject:[NSValue valueWithRect:rect]];
+            NSBezierPath *path=ClippedPianoPath([key valueForKey:@"drawPath"],keyboard);
+            [key setValue:path forKey:@"touchPath"];
+            if(path.elementCount) [blackPaths addObject:path];
         } else [whiteKeys addObject:key];
     }
     [whiteKeys sortUsingComparator:^NSComparisonResult(id a,id b) {
@@ -140,14 +186,15 @@ static void SetPianoHitRegions(NSView *piano) {
         CGFloat left=i ? (NSMaxX([[whiteKeys[i-1] valueForKey:@"drawPath"] bounds])+NSMinX(shape))/2 : NSMinX(keyboard);
         CGFloat right=i+1<whiteKeys.count ? (NSMaxX(shape)+NSMinX([[whiteKeys[i+1] valueForKey:@"drawPath"] bounds]))/2 : NSMaxX(keyboard);
         NSRect rect=NSIntersectionRect(NSMakeRect(left,keyboard.origin.y,MAX(0,right-left),keyboard.size.height),keyboard);
-        NSBezierPath *path=[NSBezierPath bezierPathWithRect:rect]; path.windingRule=NSWindingRuleEvenOdd;
-        // Upper black-key regions are holes in the white-key hit paths.
-        // The lower half is a continuous white-key lane, including beneath
-        // black keys and across the tiny visual gutters between white keys.
-        for(NSValue *value in blackRects) {
-            NSRect cutout=NSIntersectionRect(rect,value.rectValue);
-            if(!NSIsEmptyRect(cutout)) [path appendBezierPathWithRect:cutout];
+        PianoWhiteHitPath *path=[PianoWhiteHitPath new]; [path appendBezierPathWithRect:rect]; path.windingRule=NSWindingRuleEvenOdd;
+        NSMutableArray *adjacentBlackContours=[NSMutableArray new];
+        // Follow the visible black-key contours, including their rounded
+        // lower edge, instead of cutting every key at an imaginary halfway line.
+        for(NSBezierPath *black in blackPaths) if(NSIntersectsRect(rect,black.bounds)) {
+            [adjacentBlackContours addObject:black];
+            [path appendBezierPath:ClippedPianoPath(black,rect)];
         }
+        path.blackContours=adjacentBlackContours;
         [key setValue:path forKey:@"touchPath"];
     }
 }
@@ -426,9 +473,8 @@ static MidiNavigationButton *octavesButton;
     [self.holdTimer invalidate]; self.holdTimer=nil;
     if (self.octaveControl || !self.tracking || self.cancelled || self.held || self.didStep || fabs(self.endY-self.startY)>=3 || fabs(self.endX-self.startX)>=8) return;
     self.held=YES;
-    // The original mode handler rebuilds the bar. Finish this gesture before
-    // that happens, and never turn the eventual release into a preset change.
-    dispatch_async(dispatch_get_main_queue(), ^{ SwitchMode(); });
+    // A held preset switch is inert. Arrangement/control-surface access now
+    // belongs exclusively to the Record hold gesture.
 }
 - (void)finishAt:(NSPoint)point {
     [self.holdTimer invalidate]; self.holdTimer=nil;
@@ -636,6 +682,13 @@ static NSArray *MenuTitles(NSMenu *menu) {
 static void SuppressTray(id cls, SEL sel, id item) { Report("TRAY_SUPPRESSED\n"); }
 static void Open(id self, SEL sel, NSTouchBar *bar, id identifier) {
     InitializePresetCatalog();
+    if(recordController.activeMenuBar && [bar.itemIdentifiers containsObject:@"com.uebe.midi-touchbar.8fader-view"]) {
+        NSTouchBar *device=[NSTouchBar new];
+        NSTouchBarItem *item=[bar itemForIdentifier:@"com.uebe.midi-touchbar.8fader-view"];
+        device.templateItems=[NSSet setWithObject:item]; device.defaultItemIdentifiers=@[item.identifier];
+        device.principalItemIdentifier=item.identifier;
+        [recordController presentMenuBar:device]; return; // No vendor X or preset navigation.
+    }
     CGFloat host=closeButton.window.contentView.bounds.size.width;
     if(isfinite(host) && host>200 && host<2048) lastMidiHostWidth=host;
     if (!rebuildingPresentation) ResetPianoExpansion();
@@ -893,6 +946,7 @@ static void CycleExpandedPianoSetting(BOOL channel,NSInteger direction) {
 @property NSTimer *timer;
 @property BOOL fired;
 @property BOOL cancelled;
+@property BOOL didSwipe;
 @property NSInteger direction;
 - (void)fire;
 @end
@@ -900,7 +954,7 @@ static void CycleExpandedPianoSetting(BOOL channel,NSInteger direction) {
 - (void)fire {
     [self.timer invalidate]; self.timer=nil;
     NSView *piano=self.piano;
-    if(self.fired || self.cancelled || !piano || [[piano valueForKey:@"activeKeys"] count]) return;
+    if(self.fired || self.cancelled || self.didSwipe || !piano || [[piano valueForKey:@"activeKeys"] count]) return;
     self.fired=YES;
     if(!pianoExpanded) ExpandPiano(piano);
 }
@@ -946,8 +1000,13 @@ static void PianoMoved(NSView *piano,SEL selector,NSEvent *event) {
     for(NSTouch *touch in [event touchesMatchingPhase:NSTouchPhaseTouching inView:piano]) {
         if(hold && [touch.identity isEqual:hold.identity]) {
             NSPoint point=[touch locationInView:piano];
+            CGFloat dx=point.x-hold.point.x,dy=point.y-hold.point.y;
+            if(!hold.fired && !hold.cancelled && !hold.didSwipe && fabs(dx)>=8 && fabs(dx)>=fabs(dy)) {
+                hold.didSwipe=YES; [hold.timer invalidate]; hold.timer=nil;
+                MovePianoHalf(piano,dx>0 ? 1 : -1);
+            }
             NSRect edge=PianoEdgeRect(piano,hold.direction>0);
-            if(!NSPointInRect(point,NSInsetRect(edge,-4,-4))) { hold.cancelled=YES; [hold.timer invalidate];hold.timer=nil; }
+            if(!hold.didSwipe && !NSPointInRect(point,NSInsetRect(edge,-4,-4))) { hold.cancelled=YES; [hold.timer invalidate];hold.timer=nil; }
         }
     }
     if(!hold) ((void(*)(id,SEL,id))originalPianoMoved)(piano,selector,event);
@@ -955,7 +1014,7 @@ static void PianoMoved(NSView *piano,SEL selector,NSEvent *event) {
 static void PianoEnded(NSView *piano,SEL selector,NSEvent *event) {
     if([[(id)NSApp.delegate valueForKey:@"editCCs"] boolValue]) { CancelPianoHold(piano); return; }
     PianoArrowHold *hold=[pianoHolds objectForKey:piano];
-    if(hold && !hold.fired && !hold.cancelled) MovePianoHalf(piano,hold.direction);
+    if(hold && !hold.fired && !hold.cancelled && !hold.didSwipe) MovePianoHalf(piano,hold.direction);
     CancelPianoHold(piano);
     ((void(*)(id,SEL,id))originalPianoEnded)(piano,selector,event);
 }
@@ -965,6 +1024,7 @@ static void PianoCancelled(NSView *piano,SEL selector,NSEvent *event) {
 }
 static void ChangeMode(id self,SEL selector,id sender) {
     if(pianoExpanded) { CollapsePiano(); if(pianoExpanded) return; }
+    if(recordController) { [recordController showOptions]; return; }
     ((void(*)(id,SEL,id))originalChangeMode)(self,selector,sender);
 }
 static void PresetKey(id self,SEL selector,id sender,id key) {
@@ -1012,14 +1072,6 @@ static void Cycle(id delegate, SEL selector, id sender) {
     UpdateNavigationColor();
     Report("CYCLED\n");
 }
-static void SwitchMode(void) {
-    id delegate=NSApp.delegate;
-    if (![[delegate valueForKey:@"touchbarShown"] boolValue] ||
-        [[delegate valueForKey:@"editTouchBar"] boolValue] || [[delegate valueForKey:@"editCCs"] boolValue]) return;
-    ((void (*)(id,SEL,id))objc_msgSend)(delegate,NSSelectorFromString(@"changeMode:"),nil);
-    UpdateNavigationColor();
-    Report("MODE_CHANGED\n");
-}
 static NSInteger CycleKeyCount(id delegate, NSEventModifierFlags flags) {
     id center = [delegate valueForKey:@"keyCenter"];
     id keys = ((id (*)(id, SEL))objc_msgSend)(center, NSSelectorFromString(@"registeredHotKeys"));
@@ -1033,7 +1085,7 @@ static NSInteger CycleKeyCount(id delegate, NSEventModifierFlags flags) {
 #import "MultiPiano.h"
 #import "ControlCustomization.h"
 static void UpdateActivePianoSizing(void) {
-    if(!presentation || pianoExpanded || customizationBar) return;
+    if(!presentation || pianoExpanded || customizationBar || recordController.activeMenuBar) return;
     // Normal presets retain the same outer host/items. No post-presentation
     // constraint installation or FlexibleSpace insertion/removal.
 }
@@ -1112,7 +1164,17 @@ static void TestPianoHalfHeightHits(void) {
         if(half.boolValue) SetPianoStartNote(piano,6);
         [piano viewWillDraw];
         NSArray *keys=[piano valueForKey:@"pianoKeys"];
-        for(NSNumber *y in @[@1,@7.5,@14.9]) for(CGFloat x=14.371;x<width.doubleValue-14;x+=.73) {
+        CGFloat blackBottom=30;
+        for(id key in keys) if(PianoKeyIsBlack(key)) {
+            NSBezierPath *path=[key valueForKey:@"touchPath"];
+            if(path.elementCount) blackBottom=MIN(blackBottom,NSMinY(path.bounds));
+            NSPoint visible=NSMakePoint(NSMidX(path.bounds),NSMinY(path.bounds)+2);
+            if([[key valueForKey:@"drawPath"] containsPoint:visible]) {
+                NSCAssert([path containsPoint:visible],@"Black hits include their actual visible lower contour, not just the upper half");
+                for(id white in keys) if(!PianoKeyIsBlack(white)) NSCAssert(![[white valueForKey:@"touchPath"] containsPoint:visible],@"Visible black contours must not be cut by the neighboring white key's middle line: width %@ count %@ half %@ black %@ white %@ point %@ blackBounds %@ whiteBounds %@",width,count,half,[key valueForKey:@"pitch"],[white valueForKey:@"pitch"],NSStringFromPoint(visible),NSStringFromRect(path.bounds),NSStringFromRect([[white valueForKey:@"touchPath"] bounds]));
+            }
+        }
+        for(NSNumber *y in @[@1,@(blackBottom/2),@(blackBottom-.1)]) for(CGFloat x=14.371;x<width.doubleValue-14;x+=.73) {
             NSInteger hits=0;
             for(id key in keys) if([[key valueForKey:@"touchPath"] containsPoint:NSMakePoint(x,y.doubleValue)]) {
                 hits++; NSCAssert(!PianoKeyIsBlack(key),@"Bottom-half touches must never select black keys");
@@ -1145,7 +1207,64 @@ static void TestPianoHalfHeightHits(void) {
             NSCAssert(mode==0 ? output.notes.count>2 : mode==1 ? output.notes.count==2 && output.bends.count==0 : output.bends.count>0,@"Glissando, hold and pitchbend retain their own behavior");
         }
     }
-    Report("NATIVE_PIANO_HALF_HEIGHT_HITS_ALL_MODES_WIDTHS_OCTAVES_AND_HALF_SHIFTS_PASSED\n");
+    Report("NATIVE_VISIBLE_KEY_CONTOURS_ALL_MODES_WIDTHS_OCTAVES_AND_HALF_SHIFTS_PASSED\n");
+}
+static void TestPianoArrowSwipes(void) {
+    for(NSNumber *side in @[@NO,@YES]) for(NSNumber *direction in @[@(-1),@1]) {
+        NSView *piano=((id(*)(id,SEL,int,int))objc_msgSend)([NSClassFromString(@"pianoView") alloc],NSSelectorFromString(@"initWithOctaves:andTransposition:"),3,4);
+        piano.frame=NSMakeRect(0,0,600,30); [piano viewWillDraw];
+        PianoTestOutput *output=[PianoTestOutput new]; [piano setValue:output forKey:@"pianoDelegate"];
+        PianoTestTouch *touch=[PianoTestTouch new]; touch.identity=NSUUID.UUID;
+        touch.point=NSMakePoint(NSMidX(PianoEdgeRect(piano,side.boolValue)),15);
+        NSPoint start=touch.point; NSInteger note=PianoStartNote(piano);
+        PianoTestEvent *event=[PianoTestEvent new]; event.touch=touch; event.phase=NSTouchPhaseBegan;
+        PianoBegan(piano,@selector(touchesBeganWithEvent:),(id)event);
+        event.phase=NSTouchPhaseMoved; touch.point=NSMakePoint(start.x+direction.intValue*10,15);
+        PianoMoved(piano,@selector(touchesMovedWithEvent:),(id)event);
+        NSCAssert(PianoStartNote(piano)==note+direction.intValue*6,@"Either edge arrow follows swipe direction, not which arrow was touched");
+        [[pianoHolds objectForKey:piano] fire];
+        touch.point=NSMakePoint(start.x+direction.intValue*20,15); PianoMoved(piano,@selector(touchesMovedWithEvent:),(id)event);
+        event.phase=NSTouchPhaseEnded; PianoEnded(piano,@selector(touchesEndedWithEvent:),(id)event);
+        NSCAssert(PianoStartNote(piano)==note+direction.intValue*6 && output.notes.count==0 && !pianoExpanded,@"A swipe advances once, never expands, plays a note, or repeats on release");
+        touch.identity=NSUUID.UUID; touch.point=start; event.phase=NSTouchPhaseBegan;
+        PianoBegan(piano,@selector(touchesBeganWithEvent:),(id)event);
+        event.phase=NSTouchPhaseEnded; PianoEnded(piano,@selector(touchesEndedWithEvent:),(id)event);
+        NSCAssert(PianoStartNote(piano)==note+direction.intValue*6+(side.boolValue ? 6 : -6),@"Taps retain the original left/back and right/next behavior");
+    }
+    Report("BOTH_PIANO_ARROW_SWIPE_DIRECTIONS_AND_ORIGINAL_TAPS_PASSED\n");
+}
+static void TestArrangementLayout(void) {
+    StripRecordController *controller=recordController;
+    NSCAssert(controller && !controller.activeMenuBar,@"Start on a normal MIDI preset");
+    [controller.button beginAt:NSMakePoint(16,15) identity:NSUUID.UUID]; [controller.button fireHold]; [controller.button finishAt:NSMakePoint(16,15)];
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW,300*NSEC_PER_MSEC),dispatch_get_main_queue(),^{
+        NSTouchBar *arrangement=controller.activeMenuBar;
+        NSCAssert(arrangement && ![arrangement.itemIdentifiers containsObject:CloseID],@"Record hold opens Arrangement without a close or preset-switch item");
+        NSGroupTouchBarItem *group=(id)[arrangement itemForIdentifier:@"local.musicstrip.performance.controls"];
+        NSCAssert([group.groupTouchBar.itemIdentifiers containsObject:@"com.uebe.midi-touchbar.controlstrip-view"] && group.groupTouchBar.itemIdentifiers.count==4,@"The native control surface is combined with Loop, BPM and More");
+        for(NSString *identifier in group.groupTouchBar.itemIdentifiers) {
+            NSTouchBarItem *item=[group.groupTouchBar itemForIdentifier:identifier];
+            NSView *view=[item isKindOfClass:NSPopoverTouchBarItem.class] ? [(NSPopoverTouchBarItem *)item collapsedRepresentation] : [(NSCustomTouchBarItem *)item view];
+            NSCAssert(view.window && view.bounds.size.width>0,@"Each combined arrangement control must really be visible: %@ %@",identifier,NSStringFromRect(view.frame));
+            Report([[NSString stringWithFormat:@"ARRANGEMENT_VISIBLE %@ %@\n",identifier,NSStringFromRect([view convertRect:view.bounds toView:nil])] UTF8String]);
+        }
+        StripRecordButton *record=(id)((NSCustomTouchBarItem *)[arrangement itemForIdentifier:@"local.musicstrip.performance.record"]).view;
+        NSRect frame=[record convertRect:record.bounds toView:nil];
+        NSCAssert(record.window && fabs(NSWidth(frame)-32)<.1 && fabs(NSMaxX(frame)-record.window.contentView.bounds.size.width)<1,@"Arrangement retains Record at the same far-right position");
+        NSTouchBar *device=[(id)NSApp.delegate valueForKey:@"eightFaderGroup"];
+        Open(NSApp.delegate,NSSelectorFromString(@"openTouchbar:fromIdentifier:"),device,nil);
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW,300*NSEC_PER_MSEC),dispatch_get_main_queue(),^{
+            NSTouchBar *active=controller.activeMenuBar;
+            NSGroupTouchBarItem *deviceGroup=(id)[active itemForIdentifier:@"local.musicstrip.performance.controls"];
+            NSCAssert(deviceGroup.groupTouchBar.itemIdentifiers.count==1 && [deviceGroup.groupTouchBar.itemIdentifiers.firstObject isEqual:@"com.uebe.midi-touchbar.8fader-view"],@"Native device faders retain the Record wrapper without the vendor close button");
+            StripRecordButton *back=(id)((NSCustomTouchBarItem *)[active itemForIdentifier:@"local.musicstrip.performance.record"]).view;
+            [back beginAt:NSMakePoint(16,15) identity:NSUUID.UUID]; [back fireHold]; [back finishAt:NSMakePoint(16,15)];
+            dispatch_after(dispatch_time(DISPATCH_TIME_NOW,200*NSEC_PER_MSEC),dispatch_get_main_queue(),^{
+                NSCAssert(!controller.activeMenuBar && controller.menuStack.count==0 && recordController==controller,@"Holding Record returns directly to the original MIDI bar even from nested device controls");
+                Report("COMBINED_NATIVE_SURFACE_ARRANGEMENT_DEVICE_AND_RECORD_HOLD_RETURN_PASSED\n");
+            });
+        });
+    });
 }
 static void TestNativePianoAddition(void) {
     NSCAssert(!customizationBar,@"Finish customization before this isolated native test");
@@ -1576,6 +1695,30 @@ static void Command(NSString *command) {
                 NSCAssert(mode==0 ? movedNotes>1 : mode==1 ? movedNotes==1 && movedBends==0 : movedBends>0,@"Native gesture modes must really glide, hold, or pitchbend");
                 Report([[NSString stringWithFormat:@"NATIVE_PIANO_TYPE %@=%ld notes=%ld bends=%ld PASSED\n",name,(long)mode,(long)movedNotes,(long)movedBends] UTF8String]);
             }
+        } else if ([command isEqualToString:@"SURFACE_SCHEMA_TEST"]) {
+            for(NSString *key in @[@"controlStripGroup",@"eightFaderGroup",@"controlStripItem",@"eightFaderItem"]) {
+                id value=[delegate valueForKey:key];
+                NSString *description=[value isKindOfClass:NSTouchBar.class] ? [[value itemIdentifiers] description] : [value respondsToSelector:@selector(identifier)] ? [value identifier] : NSStringFromClass([value class]);
+                Report([[NSString stringWithFormat:@"SURFACE %@ %@ %@\n",key,NSStringFromClass([value class]),description] UTF8String]);
+                if([value isKindOfClass:NSTouchBar.class]) for(NSString *identifier in [value itemIdentifiers]) {
+                    NSTouchBarItem *item=[value itemForIdentifier:identifier];
+                    Report([[NSString stringWithFormat:@"SURFACE_ITEM %@ %@\n",identifier,NSStringFromClass(item.class)] UTF8String]);
+                }
+                if([value respondsToSelector:@selector(view)]) {
+                    NSMutableArray *views=[NSMutableArray arrayWithObject:[value valueForKey:@"view"]];
+                    unsigned int count=0; Ivar *ivars=class_copyIvarList([[value valueForKey:@"view"] class],&count);
+                    for(unsigned int i=0;i<count;i++) Report([[NSString stringWithFormat:@"SURFACE_FIELD %s %s\n",ivar_getName(ivars[i]),ivar_getTypeEncoding(ivars[i])] UTF8String]);
+                    free(ivars);
+                    while(views.count) {
+                        NSView *view=views.lastObject; [views removeLastObject]; [views addObjectsFromArray:view.subviews];
+                        Report([[NSString stringWithFormat:@"SURFACE_VIEW %@ %@ %@ %@\n",NSStringFromClass(view.class),NSStringFromRect(view.frame),[view isKindOfClass:NSButton.class] ? [(NSButton *)view title] : @"",[view isKindOfClass:NSControl.class] ? NSStringFromSelector([(NSControl *)view action]) : @""] UTF8String]);
+                    }
+                }
+            }
+        } else if ([command isEqualToString:@"ARRANGEMENT_LAYOUT_TEST"]) {
+            TestArrangementLayout();
+        } else if ([command isEqualToString:@"PIANO_ARROW_SWIPE_TEST"]) {
+            TestPianoArrowSwipes();
         } else if ([command isEqualToString:@"PIANO_HALF_HEIGHT_HITS_TEST"]) {
             TestPianoHalfHeightHits();
         } else if ([command isEqualToString:@"PIANO_ALL_SIDE_HOLDS_TEST"]) {

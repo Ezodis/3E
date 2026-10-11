@@ -22,7 +22,7 @@ int main(void) { @autoreleasepool {
                     [NSValue valueWithRect:NSMakeRect(58,0,20,30)]];
     for(NSUInteger i=0;i<rects.count;i++) {
         HitTestKey *key=[HitTestKey new]; key.pitch=i;
-        key.drawPath=[NSBezierPath bezierPathWithRect:[rects[i] rectValue]];
+        key.drawPath=(i%2) ? [NSBezierPath bezierPathWithRoundedRect:[rects[i] rectValue] xRadius:2 yRadius:2] : [NSBezierPath bezierPathWithRect:[rects[i] rectValue]];
         key.touchPath=[NSBezierPath bezierPathWithRect:NSMakeRect(NSMinX(key.drawPath.bounds),0,NSWidth(key.drawPath.bounds),30)];
         [keys addObject:key];
     }
@@ -30,7 +30,7 @@ int main(void) { @autoreleasepool {
     NSArray *drawing=[keys valueForKey:@"drawPath"];
     for(NSInteger repeat=0;repeat<3;repeat++) {
         SetPianoHitRegions(piano);
-        for(NSNumber *height in @[@1,@7.5,@14.9]) for(CGFloat x=14.371;x<78;x+=.37) {
+        for(NSNumber *height in @[@1,@7.5,@9.9]) for(CGFloat x=14.371;x<78;x+=.37) {
             NSInteger hits=0;
             for(HitTestKey *key in keys) if([key.touchPath containsPoint:NSMakePoint(x,height.doubleValue)]) {
                 hits++; NSCAssert(!PianoKeyIsBlack(key),@"Every lower-half touch must be a white key, even beneath black keys");
@@ -43,8 +43,9 @@ int main(void) { @autoreleasepool {
             BOOL expected=(x>28 && x<40) || (x>50 && x<62);
             NSCAssert(hits==1 && black==expected,@"The upper half preserves black keys without competing white hits");
         }
+        NSCAssert([((HitTestKey *)keys[1]).touchPath containsPoint:NSMakePoint(33,12)] && ![((HitTestKey *)keys[0]).touchPath containsPoint:NSMakePoint(33,12)],@"Visible black area below the old halfway cut is still black, not white");
         for(HitTestKey *key in keys) NSCAssert(![key.touchPath containsPoint:NSMakePoint(7,8)] && ![key.touchPath containsPoint:NSMakePoint(85,23)],@"Piano keys never consume the edge arrows");
         NSCAssert([drawing isEqual:[keys valueForKey:@"drawPath"]],@"Hit-box changes leave drawing geometry untouched");
     }
-    puts("Passed upper-half black hits, continuous lower-half white hits, edge exclusion and repeat-safe unchanged drawing.");
+    puts("Passed visible black-key contours, continuous white lane below black keys, edge exclusion and repeat-safe unchanged drawing.");
 } return 0; }

@@ -22,6 +22,10 @@ int main(void) {
         NSView *joined=JoinCloseNavigation(close,navigation,0,9);
         button.standaloneRecord=YES;
         NSCAssert(joined.subviews.count==2 && joined.bounds.size.width==76,@"Navigation joins the unchanged close slot");
+        [navigation beginAt:NSMakePoint(22,15) identity:nil]; [navigation fireHold];
+        [NSRunLoop.mainRunLoop runUntilDate:[NSDate dateWithTimeIntervalSinceNow:.02]];
+        NSCAssert(navigation.held && controller.holds==0,@"Holding preset navigation no longer opens Control Surface or Record options");
+        [navigation finishAt:NSMakePoint(22,15)];
         NSCAssert(close.frame.size.width==32 && navigation.frame.size.width==44 && navigation.frame.origin.x==32,@"The X position is unchanged; navigation is immediately beside it");
         CGFloat firstHue=navigation.presetHue;
         joined=JoinCloseNavigation(close,navigation,1,9);
@@ -41,14 +45,18 @@ int main(void) {
         NSCAssert(button.recordLit && [button.bezelColor isEqual:NSColor.systemRedColor],@"Live Record-on must make Record red");
         ApplyRecordLight(button,NO,@{@"record":@YES,@"armed":@YES});
         NSCAssert(!button.recordLit,@"A disconnected/stale Live state cannot keep Record red");
-        NSCAssert(button.recordController==controller && controller.item.popoverTouchBar.itemIdentifiers.count==9,@"Joining must retain live command routing and the full transport panel");
+        NSCAssert(button.recordController==controller && controller.item.popoverTouchBar.itemIdentifiers.count==3 && !controller.options[@"play"] && !controller.options[@"stop"] && !controller.options[@"tap-tempo"],@"Arrangement contains only combined Loop, BPM and More; the persistent Record is supplied by the outer row");
         NSCAssert(controller.performanceMenus[@"loop"].popoverTouchBar.itemIdentifiers.count==8 && controller.performanceMenus[@"tempo"].popoverTouchBar.itemIdentifiers.count==4 && controller.performanceMenus[@"more"].popoverTouchBar.itemIdentifiers.count==7,@"Loop, tempo and recording options must all be reachable from the hold panel");
         controller.state=@{@"performance":@1,@"tempo":@128.5,@"playing":@YES,@"loop":@YES,@"beats_per_bar":@3,@"loop_length":@12,@"record":@NO,@"armed":@YES};
         [controller refreshButtonsConnected:YES];
-        NSCAssert([controller.options[@"tempo"].title isEqual:@"128.5 BPM"] && [controller.options[@"loop"].title isEqual:@"4 bar"] && controller.options[@"play"].enabled,@"The panel must show real tempo, time-signature-aware loop length and playing state");
+        NSCAssert([controller.options[@"tempo"].title isEqual:@"128.5 BPM"] && [controller.options[@"loop"].title isEqual:@"4 bar"] && controller.options[@"tempo"].enabled,@"The panel must show real tempo and time-signature-aware loop length");
         controller.state=@{@"loop":@NO}; [controller refreshButtonsConnected:YES];
-        NSCAssert(!controller.options[@"play"].enabled && !controller.options[@"tempo-up"].enabled && controller.options[@"loop"].enabled && [controller.options[@"tempo"].title isEqual:@"— BPM"],@"An old script must never expose apparently working new actions or invent a BPM");
+        NSCAssert(!controller.options[@"tempo"].enabled && !controller.options[@"tempo-up"].enabled && controller.options[@"loop"].enabled && [controller.options[@"tempo"].title isEqual:@"— BPM"],@"An old script must never expose apparently working new actions or invent a BPM");
         StripPerformanceButton *loop=(StripPerformanceButton *)controller.options[@"loop"];
+        controller.state=@{@"loop":@YES,@"punch-in":@YES,@"punch-out":@NO}; [controller refreshButtonsConnected:YES];
+        NSCAssert(loop.loopActive && loop.punchInActive && !loop.punchOutActive,@"Loop and both Punch cues reflect independent acknowledged Live states");
+        [controller refreshButtonsConnected:NO];
+        NSCAssert(!loop.loopActive && !loop.punchInActive && !loop.punchOutActive,@"Disconnected state clears all Loop/Punch cues");
         loop.enabled=YES; [loop beginAt:NSMakePoint(22,15) identity:nil]; [loop finishAt:NSMakePoint(22,15)];
         NSCAssert(([controller.commands isEqual:@[@"loop"]]),@"Loop tap must toggle the real loop");
         [controller.commands removeAllObjects];
@@ -56,12 +64,22 @@ int main(void) {
         [NSRunLoop.mainRunLoop runUntilDate:[NSDate dateWithTimeIntervalSinceNow:.02]];
         [loop finishAt:NSMakePoint(22,15)];
         NSCAssert(([controller.menus isEqual:@[@"loop"]]) && !controller.commands.count,@"Loop hold opens lengths once and release must not toggle Loop");
+        for(NSNumber *direction in @[@(-1),@1]) {
+            NSPoint start=NSMakePoint(direction.intValue>0 ? 10 : 50,15),end=NSMakePoint(direction.intValue>0 ? 50 : 10,15);
+            [loop beginAt:start identity:nil]; [loop moveAt:end]; [loop finishAt:end];
+        }
+        NSCAssert(([controller.commands isEqual:@[@"punch-in",@"punch-out"]]),@"Combined loop swipes toggle Punch In and Punch Out without also toggling Loop");
+        [controller.commands removeAllObjects];
         StripPerformanceButton *tempo=(StripPerformanceButton *)controller.options[@"tempo"];
         tempo.enabled=YES; [tempo beginAt:NSMakePoint(10,15) identity:nil]; [tempo moveAt:NSMakePoint(40,15)]; [tempo finishAt:NSMakePoint(40,15)];
         NSCAssert(([controller.commands isEqual:@[@"tempo-up"]]),@"BPM swipe must issue one coarse tempo step, not open its menu");
         [controller.commands removeAllObjects];
         [tempo beginAt:NSMakePoint(22,15) identity:nil]; [tempo finishAt:NSMakePoint(22,15)];
-        NSCAssert(([controller.menus isEqual:@[@"loop",@"tempo"]]),@"BPM tap must open fine/coarse tempo controls");
+        NSCAssert(([controller.commands isEqual:@[@"tap-tempo"]]) && ([controller.menus isEqual:@[@"loop"]]),@"BPM tap must issue Tap Tempo, never open the tempo menu");
+        [controller.commands removeAllObjects];
+        [tempo beginAt:NSMakePoint(22,15) identity:nil]; [tempo fireHold];
+        [NSRunLoop.mainRunLoop runUntilDate:[NSDate dateWithTimeIntervalSinceNow:.02]]; [tempo finishAt:NSMakePoint(22,15)];
+        NSCAssert(([controller.menus isEqual:@[@"loop",@"tempo"]]) && !controller.commands.count,@"BPM hold preserves optional fine/coarse controls without a Tap Tempo on release");
         tempo.enabled=NO; [tempo beginAt:NSMakePoint(10,15) identity:nil]; [tempo moveAt:NSMakePoint(40,15)]; [tempo finishAt:NSMakePoint(40,15)];
         NSCAssert(!controller.commands.count,@"Disabled performance controls cannot send Live commands");
         NSImage *preview=[[NSImage alloc] initWithSize:NSMakeSize(264,60)];
