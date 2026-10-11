@@ -1,0 +1,64 @@
+name: Build and publish all Mac editions
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: mac-releases
+  cancel-in-progress: false
+jobs:
+  build:
+    runs-on: macos-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        edition: [combined, touchbar, touchtab]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Stamp monotonically increasing versions
+        run: python3 scripts/release.py stamp --offset "$GITHUB_RUN_NUMBER"
+      - name: Build edition without installing or launching
+        env:
+          STRIP_SIGNING_IDENTITY: '-'
+          TOUCHTAB_SIGNING_IDENTITY: '-'
+          EDITION: ${{ matrix.edition }}
+        run: |
+          case "$EDITION" in
+            combined) zsh TouchBar/musicstrip/Source/build.sh --combined ;;
+            touchbar) zsh TouchBar/musicstrip/Source/build.sh ;;
+            touchtab) zsh TouchTab/build.sh ;;
+          esac
+      - name: Test maintained functionality without live app control
+        run: |
+          python3 -m unittest discover -s TouchBar/musicstrip/Tests -p test_record.py
+          python3 -m unittest discover -s scripts -p test_release.py
+          xcrun clang -fobjc-arc -framework AppKit -framework ApplicationServices TouchBar/musicstrip/Tests/gesture_capabilities.m -o /tmp/gesture-test
+          /tmp/gesture-test
+          xcrun clang -fobjc-arc -framework AppKit -framework CoreMIDI TouchBar/musicstrip/Tests/combined_menu.m -o /tmp/menu-test
+          STRIP_COMBINED_TOUCHTAB=1 /tmp/menu-test
+      - name: Verify signatures, architectures and edition; package
+        env:
+          EDITION: ${{ matrix.edition }}
+        run: python3 scripts/release.py package --edition "$EDITION" --offset "$GITHUB_RUN_NUMBER"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.edition }}
+          path: build/releases/*
+          if-no-files-found: error
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: build/releases
+          merge-multiple: true
+      - name: Publish only after all three editions pass
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 scripts/release.py publish --offset "$GITHUB_RUN_NUMBER"

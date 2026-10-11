@@ -10,7 +10,11 @@ Choose one combined macOS app, or either app individually.
 
 ## Downloads
 
-Current downloads: [3£ Combined 3.0.9](https://github.com/Ezodis/3E/releases/download/combined-v3.0.9/3E-Combined.zip), [TouchBar only 3.0.9](https://github.com/Ezodis/3E/releases/download/touchbar-v3.0.9/TouchBar.zip), or [TouchTab only 1.5.2](https://github.com/Ezodis/3E/releases/download/touchtab-v1.5.2/TouchTab.zip). Each is a universal Intel/Apple Silicon build; see hardware and permission requirements below.
+Get the current **Combined**, **TouchBar only**, or **TouchTab only** download from [Releases](https://github.com/Ezodis/3E/releases). Each is a universal Intel/Apple Silicon build; see hardware and permission requirements below. The app's update check selects the newest version for its own edition.
+
+Every push to `main` automatically builds, tests and publishes all three editions via [the release workflow](.github/workflows/releases.yml). All three builds must succeed before publication. Releases are immutable versioned downloads with SHA-256 checksums and source-commit metadata. CI increments each edition's patch version using the workflow run number plus [the base versions](release-versions.json), so later builds are recognized by existing update checks. A failed build leaves the last working release intact; inspect the [Actions page](https://github.com/Ezodis/3E/actions) rather than assuming unpublished source is already downloadable. Manual reruns recover drafts but never overwrite a published version.
+
+CI builds are ad-hoc signed and are not notarized; users must approve their downloaded app on their own Mac. Local release builds can use the configured development signing certificate. Automation never modifies the installed `/Applications/3£.app` or personal permissions/presets.
 
 Download the true single-app combined edition or individual apps from [Releases](https://github.com/Ezodis/3E/releases). The older `bundle-v1.0.0` archive contains two separate apps; it is not the integrated edition.
 
