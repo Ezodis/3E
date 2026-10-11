@@ -9,6 +9,7 @@
 @property TestStatus *theItem;
 @property BOOL editTouchBar;
 @property BOOL editCCs;
+@property BOOL touchbarShown;
 @end
 @implementation TestDelegate
 @end
@@ -28,7 +29,16 @@ int main(void) { @autoreleasepool {
     NSCAssert([toggle.title isEqual:@"Touch Tab"] && toggle.toolTip.length>0,@"Permission explanation belongs in tooltip, not the toggle label");
     NSMenuItem *hide=[[NSMenuItem alloc] initWithTitle:@"Hide 3£" action:nil keyEquivalent:@""];
     [delegate.theItem.menu addItem:hide]; CleanMenu(delegate.theItem.menu); CleanMenu(delegate.theItem.menu);
-    NSCAssert([hide.title isEqual:@"Hide Touch Bar Midi"],@"Menu naming is stable across repeated refreshes");
+    NSCAssert([hide.title isEqual:@"Touch Bar Midi"] && hide.target==MusicStripMidiBridge.class && hide.action==@selector(toggleMidi:),@"Use a stable checked MIDI toggle");
+    delegate.touchbarShown=YES;
+    NSCAssert([MusicStripMidiBridge validateMenuItem:hide] && hide.state==NSControlStateValueOn,@"Visible MIDI is checked");
+    delegate.touchbarShown=NO;
+    NSCAssert([MusicStripMidiBridge validateMenuItem:hide] && hide.state==NSControlStateValueOff,@"Hidden MIDI is unchecked");
+    NSMenuItem *version=[[NSMenuItem alloc] initWithTitle:@"3£ (v. 3.0.11)" action:nil keyEquivalent:@""];
+    [delegate.theItem.menu insertItem:version atIndex:0]; CleanMenu(delegate.theItem.menu); CleanMenu(delegate.theItem.menu);
+    NSCAssert(delegate.theItem.menu.itemArray[1]==toggle && delegate.theItem.menu.itemArray[2]==hide,@"Touch Tab is the first action, followed by MIDI, without duplicates");
+    combinedGestureState=@"on";
+    NSCAssert([MusicStripMidiBridge validateMenuItem:toggle] && toggle.state==NSControlStateValueOn,@"Menu validation retains the actual running checkmark");
     NSMenuItem *surface=[[NSMenuItem alloc] initWithTitle:@"Control Surface Mode" action:NSSelectorFromString(@"changeMode:") keyEquivalent:@""];
     surface.target=delegate; [delegate.theItem.menu addItem:surface]; CleanMenu(delegate.theItem.menu);
     NSCAssert(surface.target==MusicStripMidiBridge.class && surface.action==@selector(toggleSurfaceMode:),@"Menu must bypass the vendor's separate surface bar");

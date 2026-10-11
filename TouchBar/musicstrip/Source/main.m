@@ -529,7 +529,14 @@ static OSStatus SendSpotifyCommand(pid_t pid, int command) {
     if(self.midiReady) [self sendMidi:[@"TOUCHTAB_STATE " stringByAppendingString:state]];
 }
 - (void)toggleTouchTab {
-    [NSUserDefaults.standardUserDefaults setBool:!StripGesturesEnabled() forKey:@"TouchTabGesturesEnabled"];
+    // An unchecked permission-blocked toggle means "enable", not "disable".
+    // Request trust only after this explicit user action, never in the timer.
+    BOOL enable=!StripGesturesRunning();
+    [NSUserDefaults.standardUserDefaults setBool:enable forKey:@"TouchTabGesturesEnabled"];
+    if(enable && !AccessibilityTrusted(NO)) {
+        AccessibilityTrusted(YES);
+        [NSWorkspace.sharedWorkspace openURL:[NSURL URLWithString:@"x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility"]];
+    }
     [self refreshTouchTab];
 }
 #endif

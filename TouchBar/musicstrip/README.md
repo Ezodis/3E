@@ -24,6 +24,8 @@ permissions. `TouchTabRuntimeState` records the real host PID, bundle path,
 authorization and listener state; `WindowAccessRuntimeState` records read-only AX
 window counts after the real host becomes authorized (not window titles).
 
+The combined menu lists Touch Tab first below the version header, then Touch Bar Midi, then Control Surface Mode. Labels stay fixed; checks reflect the real gesture listener, MIDI visibility and combined surface panel respectively. Clicking an unchecked, permission-blocked Touch Tab retries activation and requests Accessibility approval for the actual main app; it does not accidentally disable the saved preference. Permission prompts occur only on that explicit menu action, never in the polling timer. Approval starts the listener automatically on the next refresh.
+
 `Source/main.m`, the existing MIDI customization bridge, all seven supporting headers, `Info.plist`, icon generator and resources were recovered from the original iCloud project at `Documents/Codex/2026-10-01/i-l/outputs/MusicStrip/Source`. The 84,361-byte main source matches the restored local iCloud file. This is not the earlier incomplete reconstruction.
 
 The bundled original MIDI Touchbar engine (Urban Lienert, bundle ID `ch.uebe.MIDI-Touchbar`) and SnoizeMIDI framework remain binary dependencies in `recovered/`. Their original engine source has not been recovered; do not claim those binaries were compiled from our Objective-C bridge. The `DCisHurt/midiBar` GitHub project is Micro:Bit/Trill hardware firmware, not this Mac engine.
@@ -116,7 +118,7 @@ Apply/live reload. The Apply test restores its temporary channel change. Native
 two/three-piano sizing/note regressions also pass. Final physical finger testing
 is still required on the Touch Bar.
 
-For the integrated edition, use `zsh musicstrip/Source/build.sh --combined`; the ordinary build remains TouchBar-only. The combined app embeds the shared TouchTab Swift gesture module in its main process, adds a **TouchTab Gestures** menu toggle through the existing MIDI-helper pipe, and preserves the original MIDI engine. On the development Mac, quit 3£ and run `zsh musicstrip/install-combined.sh` for an in-place installation. The main executable is rebuilt from the maintained original source with narrowly scoped gesture lifecycle/pipe hooks; the working app-picker helper, piano engine, resources, MIDI mappings and user settings are retained. Root README describes the separate combined/standalone update feeds and permissions.
+For the integrated edition, use `zsh musicstrip/Source/build.sh --combined`; the ordinary build remains TouchBar-only. The combined app embeds the shared TouchTab Swift gesture module in its main process, adds a **Touch Tab** menu toggle through the existing MIDI-helper pipe, and preserves the original MIDI engine. On the development Mac, quit 3£ and run `zsh musicstrip/install-combined.sh` for an in-place installation. The main executable is rebuilt from the maintained original source with narrowly scoped gesture lifecycle/pipe hooks; the working app-picker helper, piano engine, resources, MIDI mappings and user settings are retained. Root README describes the separate combined/standalone update feeds and permissions.
 
 Requires macOS/Xcode command-line tools. The original engine is already vendored as a bundle dependency; no download from Documents/Downloads is required to build.
 

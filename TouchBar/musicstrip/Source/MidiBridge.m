@@ -645,8 +645,12 @@ static void CleanMenu(NSMenu *menu) {
         if(!toggle) {
             toggle=[[NSMenuItem alloc] initWithTitle:@"Touch Tab" action:NSSelectorFromString(@"toggleTouchTab:") keyEquivalent:@""];
             toggle.target=NSClassFromString(@"MusicStripMidiBridge"); toggle.identifier=@"local.musicstrip.touchTabToggle";
-            [menu insertItem:toggle atIndex:MIN(2,menu.numberOfItems)];
+            [menu insertItem:toggle atIndex:0];
         }
+        // First actionable row, immediately below the version header.
+        [menu removeItem:toggle];
+        NSInteger position=menu.numberOfItems && [menu.itemArray.firstObject.title containsString:@"(v."] ? 1 : 0;
+        [menu insertItem:toggle atIndex:position];
         toggle.state=[combinedGestureState isEqual:@"on"] ? NSControlStateValueOn : NSControlStateValueOff;
         toggle.title=@"Touch Tab";
         toggle.toolTip=[combinedGestureState isEqual:@"permission"] ? @"Accessibility approval is required for the main 3£ app" : [combinedGestureState isEqual:@"unavailable"] ? @"Trackpad gesture listener unavailable" : @"Toggle trackpad gestures";
@@ -657,6 +661,14 @@ static void CleanMenu(NSMenu *menu) {
             item.target=NSClassFromString(@"MusicStripMidiBridge");
             item.action=NSSelectorFromString(@"toggleSurfaceMode:");
             item.state=recordController.activeMenuBar ? NSControlStateValueOn : NSControlStateValueOff;
+        }
+        if([title isEqual:@"touch bar midi"] ||
+           (([title hasPrefix:@"hide "] || [title hasPrefix:@"show "]) &&
+            ([title containsString:@"3£"] || [title containsString:@"midi touchbar"] || [title containsString:@"touch bar midi"]))) {
+            item.title=@"Touch Bar Midi";
+            item.target=NSClassFromString(@"MusicStripMidiBridge");
+            item.action=NSSelectorFromString(@"toggleMidi:");
+            item.state=[[(id)NSApp.delegate valueForKey:@"touchbarShown"] boolValue] ? NSControlStateValueOn : NSControlStateValueOff;
         }
         if(item.action==NSSelectorFromString(@"setKeyCommands:") || [title containsString:@"key command"] || [title containsString:@"keyboard shortcut"]) { [menu removeItem:item]; continue; }
         if([item.title hasPrefix:@"MIDI Touchbar (v."] || [item.title hasPrefix:@"3£ (v."])
@@ -684,6 +696,7 @@ static NSArray *MenuTitles(NSMenu *menu) {
 + (void)closeMidi:(id)sender;
 + (void)toggleTouchTab:(id)sender;
 + (void)toggleSurfaceMode:(id)sender;
++ (void)toggleMidi:(id)sender;
 @end
 static void SuppressTray(id cls, SEL sel, id item) { Report("TRAY_SUPPRESSED\n"); }
 static void Open(id self, SEL sel, NSTouchBar *bar, id identifier) {
@@ -2011,8 +2024,18 @@ static void Command(NSString *command) {
 }
 @implementation MusicStripMidiBridge
 + (void)toggleTouchTab:(id)sender { Report("TOUCHTAB_TOGGLE\n"); }
++ (void)toggleMidi:(id)sender { Command([[(id)NSApp.delegate valueForKey:@"touchbarShown"] boolValue] ? @"HIDE" : @"SHOW"); ApplyBranding(); }
 + (void)toggleSurfaceMode:(id)sender { ChangeMode(NSApp.delegate,NSSelectorFromString(@"changeMode:"),sender); }
 + (BOOL)validateMenuItem:(NSMenuItem *)item {
+    if(item.action==@selector(toggleTouchTab:)) {
+        item.state=[combinedGestureState isEqual:@"on"] ? NSControlStateValueOn : NSControlStateValueOff;
+        return YES;
+    }
+    if(item.action==@selector(toggleMidi:)) {
+        item.title=@"Touch Bar Midi";
+        item.state=[[(id)NSApp.delegate valueForKey:@"touchbarShown"] boolValue] ? NSControlStateValueOn : NSControlStateValueOff;
+        return ![[(id)NSApp.delegate valueForKey:@"editTouchBar"] boolValue] && ![[(id)NSApp.delegate valueForKey:@"editCCs"] boolValue];
+    }
     if(item.action==@selector(toggleSurfaceMode:)) {
         item.state=recordController.activeMenuBar ? NSControlStateValueOn : NSControlStateValueOff;
         return ![[(id)NSApp.delegate valueForKey:@"editTouchBar"] boolValue] && ![[(id)NSApp.delegate valueForKey:@"editCCs"] boolValue];
