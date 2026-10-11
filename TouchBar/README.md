@@ -8,6 +8,8 @@ Hold either edge arrow of a piano to expand that keyboard. The joined right-hand
 
 In the normal MIDI layout, preset navigation sits directly beside the unchanged left-hand X; Record is a narrower, full-height control at the far right. Its tap, arm/disarm swipes, recording-only red indicator, and held transport/loop options are unchanged. All control widths stay fixed when switching presets; spare space belongs to the pianos or the flexible spacer.
 
+Piano black-key hit boxes occupy only the upper half. The lower half is a continuous white-key lane, including beneath black keys, for white-only glissando. Upper-half touches still select black or white keys according to their horizontal position. This applies to compact, expanded and shifted keyboards in all gesture modes; it does not change drawing, notes, channels, or the edge-arrow controls.
+
 `Strip3/`, `strip3-rebuild/`, `legacy-source/` and `record-companion/` are superseded reconstruction/test work. They are **not** the source of the current installed app and must not replace it. The original recovery is preserved in commit `355f072`; ongoing work uses `musicstrip/`.
 
 This public repository contains TouchBar and TouchTab in separate folders, plus the combined single-app edition. The Instagram/Facebook service remains in the separate private `Ezodis/instagram-grill-bot` repository. Private mixed-project history has not been copied here.

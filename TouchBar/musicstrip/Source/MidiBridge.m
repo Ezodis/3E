@@ -113,7 +113,46 @@ static void SetPianoStartNote(NSView *piano,NSInteger note) {
     objc_setAssociatedObject(piano,&halfOctaveKey,@(note%12==6),OBJC_ASSOCIATION_RETAIN_NONATOMIC);
     [piano setValue:@(-1) forKey:@"lastWidth"]; piano.needsDisplay=YES;
 }
-// Keep the original key shapes, touch regions, note engine and appearance.
+static BOOL PianoKeyIsBlack(id key) {
+    NSInteger pitch=([[key valueForKey:@"pitch"] integerValue]%12+12)%12;
+    return [@[@1,@3,@6,@8,@10] containsObject:@(pitch)];
+}
+static void SetPianoHitRegions(NSView *piano) {
+    NSRect keyboard=piano.bounds;
+    CGFloat edge=PianoEdgeRect(piano,NO).size.width;
+    keyboard.origin.x+=edge; keyboard.size.width=MAX(0,keyboard.size.width-2*edge);
+    if(NSIsEmptyRect(keyboard)) return;
+    NSRect top=keyboard; top.origin.y=NSMidY(keyboard); top.size.height=keyboard.size.height/2;
+    NSMutableArray *whiteKeys=[NSMutableArray new],*blackRects=[NSMutableArray new];
+    for(id key in [piano valueForKey:@"pianoKeys"]) {
+        if(PianoKeyIsBlack(key)) {
+            NSRect rect=NSIntersectionRect([[key valueForKey:@"drawPath"] bounds],top);
+            [key setValue:[NSBezierPath bezierPathWithRect:rect] forKey:@"touchPath"];
+            if(!NSIsEmptyRect(rect)) [blackRects addObject:[NSValue valueWithRect:rect]];
+        } else [whiteKeys addObject:key];
+    }
+    [whiteKeys sortUsingComparator:^NSComparisonResult(id a,id b) {
+        CGFloat left=NSMinX([[a valueForKey:@"drawPath"] bounds]),right=NSMinX([[b valueForKey:@"drawPath"] bounds]);
+        return left<right ? NSOrderedAscending : left>right ? NSOrderedDescending : NSOrderedSame;
+    }];
+    for(NSUInteger i=0;i<whiteKeys.count;i++) {
+        id key=whiteKeys[i]; NSRect shape=[[key valueForKey:@"drawPath"] bounds];
+        CGFloat left=i ? (NSMaxX([[whiteKeys[i-1] valueForKey:@"drawPath"] bounds])+NSMinX(shape))/2 : NSMinX(keyboard);
+        CGFloat right=i+1<whiteKeys.count ? (NSMaxX(shape)+NSMinX([[whiteKeys[i+1] valueForKey:@"drawPath"] bounds]))/2 : NSMaxX(keyboard);
+        NSRect rect=NSIntersectionRect(NSMakeRect(left,keyboard.origin.y,MAX(0,right-left),keyboard.size.height),keyboard);
+        NSBezierPath *path=[NSBezierPath bezierPathWithRect:rect]; path.windingRule=NSWindingRuleEvenOdd;
+        // Upper black-key regions are holes in the white-key hit paths.
+        // The lower half is a continuous white-key lane, including beneath
+        // black keys and across the tiny visual gutters between white keys.
+        for(NSValue *value in blackRects) {
+            NSRect cutout=NSIntersectionRect(rect,value.rectValue);
+            if(!NSIsEmptyRect(cutout)) [path appendBezierPathWithRect:cutout];
+        }
+        [key setValue:path forKey:@"touchPath"];
+    }
+}
+// Keep the original key shapes, note engine and appearance. Split touch
+// regions separately after generating the final visible keyboard geometry.
 // At a half-octave position, rotate the generated keyboard window by six notes.
 static void StabilizePianoEdges(NSView *piano) {
     CGFloat width=piano.bounds.size.width,edge=MIN(14,width/4);
@@ -162,7 +201,7 @@ static void PianoLayout(NSView *piano,SEL selector) {
     BOOL rebuilt=[[piano valueForKey:@"lastWidth"] doubleValue]!=piano.bounds.size.width;
     ((void(*)(id,SEL))originalPianoLayout)(piano,selector);
     if(rebuilt) StabilizePianoEdges(piano);
-    if(!PianoHalf(piano)) return;
+    if(!PianoHalf(piano)) { if(rebuilt) SetPianoHitRegions(piano); return; }
     NSArray *keys=[piano valueForKey:@"pianoKeys"];
     NSMutableDictionary *templates=[NSMutableDictionary dictionary];
     for(id key in keys) { NSInteger pitch=[[key valueForKey:@"pitch"] integerValue]; if(pitch>=0 && pitch<12) templates[@(pitch)]=key; }
@@ -208,6 +247,7 @@ static void PianoLayout(NSView *piano,SEL selector) {
         NSTextCheckingResult *match=[number firstMatchInString:label.stringValue options:0 range:NSMakeRange(0,label.stringValue.length)];
         if(match) label.stringValue=[label.stringValue stringByReplacingCharactersInRange:match.range withString:[NSString stringWithFormat:@"%ld",(long)([[label.stringValue substringWithRange:match.range] integerValue]+1)]];
     }
+    if(rebuilt || templates.count==12) SetPianoHitRegions(piano);
 }
 static void MovePianoHalf(NSView *piano,NSInteger direction) {
     if([[piano valueForKey:@"activeKeys"] count]) return;
@@ -1064,6 +1104,49 @@ static void TestPianoNotesView(NSView *piano) {
     } @finally { [piano setValue:delegate forKey:@"pianoDelegate"]; [piano setValue:kind forKey:@"kind"]; }
 }
 static void TestPianoNotes(void) { TestPianoNotesView(expandedPianoView ?: PianoItemForView(nil).view); }
+static void TestPianoHalfHeightHits(void) {
+    for(NSNumber *width in @[@200,@600]) for(NSNumber *count in @[@1,@3,@10]) for(NSNumber *half in @[@NO,@YES]) {
+        if(half.boolValue && count.intValue==10) continue;
+        NSView *piano=((id(*)(id,SEL,int,int))objc_msgSend)([NSClassFromString(@"pianoView") alloc],NSSelectorFromString(@"initWithOctaves:andTransposition:"),count.intValue,0);
+        piano.frame=NSMakeRect(0,0,width.doubleValue,30);
+        if(half.boolValue) SetPianoStartNote(piano,6);
+        [piano viewWillDraw];
+        NSArray *keys=[piano valueForKey:@"pianoKeys"];
+        for(NSNumber *y in @[@1,@7.5,@14.9]) for(CGFloat x=14.371;x<width.doubleValue-14;x+=.73) {
+            NSInteger hits=0;
+            for(id key in keys) if([[key valueForKey:@"touchPath"] containsPoint:NSMakePoint(x,y.doubleValue)]) {
+                hits++; NSCAssert(!PianoKeyIsBlack(key),@"Bottom-half touches must never select black keys");
+            }
+            NSCAssert(hits==1,@"Native lower-half white-key lane must have no gaps or overlapping hit regions");
+        }
+        PianoTestOutput *output=[PianoTestOutput new];
+        [piano setValue:output forKey:@"pianoDelegate"]; [piano setValue:@1 forKey:@"kind"];
+        for(NSInteger mode=0;mode<3;mode++) {
+            [piano setValue:@(mode) forKey:@"type"];
+            for(id key in keys) if(PianoKeyIsBlack(key)) {
+                NSRect hit=[[key valueForKey:@"touchPath"] bounds]; if(NSIsEmptyRect(hit)) continue;
+                [output.notes removeAllObjects];
+                PianoTestTouch *touch=[PianoTestTouch new]; touch.identity=NSUUID.UUID; touch.point=NSMakePoint(NSMidX(hit),NSMidY(hit));
+                PianoTestEvent *event=[PianoTestEvent new]; event.touch=touch; event.phase=NSTouchPhaseBegan;
+                PianoBegan(piano,@selector(touchesBeganWithEvent:),(id)event);
+                event.phase=NSTouchPhaseEnded; PianoEnded(piano,@selector(touchesEndedWithEvent:),(id)event);
+                NSCAssert(output.notes.count==2 && [output.notes.firstObject[0] integerValue]==[[key valueForKey:@"pitch"] integerValue],@"Upper-half black taps still play and release the correct pitch in every mode");
+            }
+            [output.notes removeAllObjects]; [output.bends removeAllObjects];
+            PianoTestTouch *touch=[PianoTestTouch new]; touch.identity=NSUUID.UUID; touch.point=NSMakePoint(14.371,7.5);
+            PianoTestEvent *event=[PianoTestEvent new]; event.touch=touch; event.phase=NSTouchPhaseBegan;
+            PianoBegan(piano,@selector(touchesBeganWithEvent:),(id)event);
+            for(CGFloat x=15.101;x<width.doubleValue-14;x+=.73) {
+                touch.point=NSMakePoint(x,7.5); event.phase=NSTouchPhaseMoved; PianoMoved(piano,@selector(touchesMovedWithEvent:),(id)event);
+            }
+            event.phase=NSTouchPhaseEnded; PianoEnded(piano,@selector(touchesEndedWithEvent:),(id)event);
+            for(NSArray *note in output.notes) NSCAssert((![@[@1,@3,@6,@8,@10] containsObject:@([note[0] integerValue]%12)]),@"Native bottom gliss/hold/bend gesture must never emit a black-key note");
+            NSCAssert(output.notes.count>=2 && [output.notes.lastObject[1] intValue]==0 && ![[piano valueForKey:@"activeKeys"] count],@"Every mode must release without stuck notes");
+            NSCAssert(mode==0 ? output.notes.count>2 : mode==1 ? output.notes.count==2 && output.bends.count==0 : output.bends.count>0,@"Glissando, hold and pitchbend retain their own behavior");
+        }
+    }
+    Report("NATIVE_PIANO_HALF_HEIGHT_HITS_ALL_MODES_WIDTHS_OCTAVES_AND_HALF_SHIFTS_PASSED\n");
+}
 static void TestNativePianoAddition(void) {
     NSCAssert(!customizationBar,@"Finish customization before this isolated native test");
     NSTouchBar *bar=[NSTouchBar new]; bar.delegate=(id<NSTouchBarDelegate>)NSApp.delegate;
@@ -1493,6 +1576,8 @@ static void Command(NSString *command) {
                 NSCAssert(mode==0 ? movedNotes>1 : mode==1 ? movedNotes==1 && movedBends==0 : movedBends>0,@"Native gesture modes must really glide, hold, or pitchbend");
                 Report([[NSString stringWithFormat:@"NATIVE_PIANO_TYPE %@=%ld notes=%ld bends=%ld PASSED\n",name,(long)mode,(long)movedNotes,(long)movedBends] UTF8String]);
             }
+        } else if ([command isEqualToString:@"PIANO_HALF_HEIGHT_HITS_TEST"]) {
+            TestPianoHalfHeightHits();
         } else if ([command isEqualToString:@"PIANO_ALL_SIDE_HOLDS_TEST"]) {
             TestAllPianoExpansion();
         } else if ([command isEqualToString:@"UPDATE_SOURCE_TEST"]) {
