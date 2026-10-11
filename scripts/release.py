@@ -47,6 +47,11 @@ def stamp(values):
                     f'CURRENT_PROJECT_VERSION = {values["touchtab"]};', source)
     path.write_text(source)
 
+def verify_architectures(executable):
+    # -verify_arch parsing differs across Xcode versions; -archs is stable.
+    architectures = set(run("xcrun", "lipo", "-archs", str(executable)).split())
+    assert {"arm64", "x86_64"} <= architectures, f"Not a universal binary: {architectures}"
+
 def package(edition, values):
     destination = ROOT / "build/releases"
     destination.mkdir(parents=True, exist_ok=True)
@@ -56,8 +61,7 @@ def package(edition, values):
     assert info["CFBundleShortVersionString"] == values[edition], "Stale app version"
     assert bool(info.get("ThreeEIncludesTouchTab")) == (edition == "combined"), "Wrong edition"
     executable = app / "Contents/MacOS" / info["CFBundleExecutable"]
-    for architecture in ("arm64", "x86_64"):
-        run("xcrun", "lipo", "-verify_arch", architecture, str(executable))
+    verify_architectures(executable)
     run("codesign", "--verify", "--deep", "--strict", str(app))
     archive = destination / EDITIONS[edition][1]
     run("ditto", "-c", "-k", "--sequesterRsrc", "--keepParent", str(app), str(archive))

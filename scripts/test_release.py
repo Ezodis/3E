@@ -1,5 +1,6 @@
 import unittest
-from release import versions, EDITIONS
+from unittest.mock import patch
+from release import versions, EDITIONS, verify_architectures
 
 class ReleasesTest(unittest.TestCase):
     def test_three_independent_update_feeds(self):
@@ -13,6 +14,14 @@ class ReleasesTest(unittest.TestCase):
             self.assertLess(values[0], values[1])
             self.assertLess(values[1], values[2])
         self.assertEqual(base["combined"], base["touchbar"])
+
+    def test_portable_architecture_query(self):
+        with patch("release.run", return_value="x86_64 arm64") as command:
+            verify_architectures("/path/3£.app/Contents/MacOS/MusicStrip")
+            command.assert_called_once_with("xcrun", "lipo", "-archs", "/path/3£.app/Contents/MacOS/MusicStrip")
+        with patch("release.run", return_value="arm64"):
+            with self.assertRaises(AssertionError):
+                verify_architectures("/path/MusicStrip")
 
 if __name__ == "__main__":
     unittest.main()
