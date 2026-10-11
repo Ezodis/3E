@@ -51,7 +51,7 @@ class RecordServer:
         result.update({key: bool(getattr(self.song, prop))
                        for key, prop in TOGGLES.items()})
         result["quantization"] = int(self.song.midi_recording_quantization)
-        result.update(performance=1, playing=bool(self.song.is_playing),
+        result.update(performance=1, tempo_drag=1, playing=bool(self.song.is_playing),
                       tempo=float(self.song.tempo), loop_start=float(self.song.loop_start),
                       loop_length=float(self.song.loop_length),
                       beats_per_bar=self.song.signature_numerator * 4.0 / self.song.signature_denominator)
@@ -91,6 +91,11 @@ class RecordServer:
             self.song.tap_tempo()
         elif action == "session-capture":
             self.song.trigger_session_record()
+        elif action == "tempo-set":
+            tempo = float(command.get("tempo", float("nan")))
+            if not math.isfinite(tempo):
+                raise ValueError("Invalid tempo target")
+            self.song.tempo = max(20.0, min(999.0, round(tempo, 2)))
         elif action in ("tempo-up", "tempo-down", "tempo-up-fine", "tempo-down-fine"):
             delta = 0.1 if action.endswith("fine") else 1.0
             if "down" in action:

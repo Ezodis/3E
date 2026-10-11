@@ -684,8 +684,13 @@ static void Open(id self, SEL sel, NSTouchBar *bar, id identifier) {
     InitializePresetCatalog();
     if(recordController.activeMenuBar && [bar.itemIdentifiers containsObject:@"com.uebe.midi-touchbar.8fader-view"]) {
         NSTouchBar *device=[NSTouchBar new];
-        NSTouchBarItem *item=[bar itemForIdentifier:@"com.uebe.midi-touchbar.8fader-view"];
+        NSCustomTouchBarItem *original=(id)[bar itemForIdentifier:@"com.uebe.midi-touchbar.8fader-view"];
+        if(!recordController.nativeDeviceView) recordController.nativeDeviceView=[original valueForKey:@"view"];
+        [recordController.nativeDeviceView removeFromSuperview];
+        NSCustomTouchBarItem *item=[[NSCustomTouchBarItem alloc] initWithIdentifier:@"local.musicstrip.performance.native-device"];
+        item.view=recordController.nativeDeviceView;
         device.templateItems=[NSSet setWithObject:item]; device.defaultItemIdentifiers=@[item.identifier];
+        device.delegate=recordController;
         device.principalItemIdentifier=item.identifier;
         [recordController presentMenuBar:device]; return; // No vendor X or preset navigation.
     }
@@ -1045,6 +1050,7 @@ static void ShowPreset(id self,SEL selector,NSTouchBar *bar) {
     Open(self,NSSelectorFromString(@"openTouchbar:fromIdentifier:"),bar,nil);
 }
 static void Close(id self, SEL sel, id bar) {
+    if(recordController.activeMenuBar) [self setValue:@(recordController.returnSurfaceMode) forKey:@"controlSurfadeMode"];
     ((void (*)(id, SEL, id))originalClose)(self, sel, recordController.activeMenuBar ?: presentation ?: bar);
     RemoveCycleKey(self);
     ResetPianoExpansion(); normalLayoutBar=nil; normalIdentifier=nil;
@@ -1239,25 +1245,44 @@ static void TestArrangementLayout(void) {
     [controller.button beginAt:NSMakePoint(16,15) identity:NSUUID.UUID]; [controller.button fireHold]; [controller.button finishAt:NSMakePoint(16,15)];
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW,300*NSEC_PER_MSEC),dispatch_get_main_queue(),^{
         NSTouchBar *arrangement=controller.activeMenuBar;
+        NSCAssert([[(id)NSApp.delegate valueForKey:@"controlSurfadeMode"] boolValue],@"The native surface engine must actually enter Control Surface Mode, not just display its view");
         NSCAssert(arrangement && ![arrangement.itemIdentifiers containsObject:CloseID],@"Record hold opens Arrangement without a close or preset-switch item");
         NSGroupTouchBarItem *group=(id)[arrangement itemForIdentifier:@"local.musicstrip.performance.controls"];
-        NSCAssert([group.groupTouchBar.itemIdentifiers containsObject:@"com.uebe.midi-touchbar.controlstrip-view"] && group.groupTouchBar.itemIdentifiers.count==4,@"The native control surface is combined with Loop, BPM and More");
+        NSCAssert([group.groupTouchBar.itemIdentifiers containsObject:@"local.musicstrip.performance.native-surface"] && group.groupTouchBar.itemIdentifiers.count==5,@"The native control surface is combined with Loop, BPM and More plus a non-overlap spacer");
         for(NSString *identifier in group.groupTouchBar.itemIdentifiers) {
+            if([identifier isEqual:@"local.musicstrip.performance.surface-gap"]) continue;
             NSTouchBarItem *item=[group.groupTouchBar itemForIdentifier:identifier];
+            if(![item isKindOfClass:NSPopoverTouchBarItem.class] && ![item respondsToSelector:@selector(view)]) continue;
             NSView *view=[item isKindOfClass:NSPopoverTouchBarItem.class] ? [(NSPopoverTouchBarItem *)item collapsedRepresentation] : [(NSCustomTouchBarItem *)item view];
             NSCAssert(view.window && view.bounds.size.width>0,@"Each combined arrangement control must really be visible: %@ %@",identifier,NSStringFromRect(view.frame));
             Report([[NSString stringWithFormat:@"ARRANGEMENT_VISIBLE %@ %@\n",identifier,NSStringFromRect([view convertRect:view.bounds toView:nil])] UTF8String]);
+            if([identifier isEqual:@"local.musicstrip.performance.native-surface"]) {
+                NSMutableArray *descendants=[NSMutableArray arrayWithObject:view]; NSView *native=nil;
+                while(descendants.count) {
+                    NSView *candidate=descendants.lastObject; [descendants removeLastObject]; [descendants addObjectsFromArray:candidate.subviews];
+                    if([candidate isKindOfClass:NSClassFromString(@"controlStripView")]) native=candidate;
+                }
+                view=native;
+                NSCAssert([view isKindOfClass:NSClassFromString(@"controlStripView")],@"The actual native surface view must never become an empty placeholder");
+                [view viewWillDraw];
+                NSCAssert([[view valueForKey:@"ends"] count]>0 && view.subviews.count>0,@"Native surface must build its real fader hit regions and labels");
+                NSBitmapImageRep *rep=[view bitmapImageRepForCachingDisplayInRect:view.bounds];
+                [NSGraphicsContext saveGraphicsState]; [NSGraphicsContext setCurrentContext:[NSGraphicsContext graphicsContextWithBitmapImageRep:rep]];
+                [view drawRect:view.bounds];
+                [NSGraphicsContext restoreGraphicsState];
+                [[rep representationUsingType:NSBitmapImageFileTypePNG properties:@{}] writeToFile:@"/tmp/3e-native-surface.png" atomically:YES];
+            }
         }
-        StripRecordButton *record=(id)((NSCustomTouchBarItem *)[arrangement itemForIdentifier:@"local.musicstrip.performance.record"]).view;
+        StripRecordButton *record=(id)((NSCustomTouchBarItem *)[arrangement itemForIdentifier:@"local.musicstrip.performance.record"]).view.subviews.firstObject;
         NSRect frame=[record convertRect:record.bounds toView:nil];
-        NSCAssert(record.window && fabs(NSWidth(frame)-32)<.1 && fabs(NSMaxX(frame)-record.window.contentView.bounds.size.width)<1,@"Arrangement retains Record at the same far-right position");
+        NSCAssert(record.window && fabs(NSWidth(frame)-32)<.1 && fabs(NSMaxX(frame)-record.window.contentView.bounds.size.width)<1,@"Arrangement retains Record at the same far-right position: %@ host %@",NSStringFromRect(frame),NSStringFromRect(record.window.contentView.bounds));
         NSTouchBar *device=[(id)NSApp.delegate valueForKey:@"eightFaderGroup"];
         Open(NSApp.delegate,NSSelectorFromString(@"openTouchbar:fromIdentifier:"),device,nil);
         dispatch_after(dispatch_time(DISPATCH_TIME_NOW,300*NSEC_PER_MSEC),dispatch_get_main_queue(),^{
             NSTouchBar *active=controller.activeMenuBar;
             NSGroupTouchBarItem *deviceGroup=(id)[active itemForIdentifier:@"local.musicstrip.performance.controls"];
-            NSCAssert(deviceGroup.groupTouchBar.itemIdentifiers.count==1 && [deviceGroup.groupTouchBar.itemIdentifiers.firstObject isEqual:@"com.uebe.midi-touchbar.8fader-view"],@"Native device faders retain the Record wrapper without the vendor close button");
-            StripRecordButton *back=(id)((NSCustomTouchBarItem *)[active itemForIdentifier:@"local.musicstrip.performance.record"]).view;
+            NSCAssert(deviceGroup.groupTouchBar.itemIdentifiers.count==1 && [deviceGroup.groupTouchBar.itemIdentifiers.firstObject isEqual:@"local.musicstrip.performance.native-device"],@"Native device faders retain the Record wrapper without the vendor close button");
+            StripRecordButton *back=(id)((NSCustomTouchBarItem *)[active itemForIdentifier:@"local.musicstrip.performance.record"]).view.subviews.firstObject;
             [back beginAt:NSMakePoint(16,15) identity:NSUUID.UUID]; [back fireHold]; [back finishAt:NSMakePoint(16,15)];
             dispatch_after(dispatch_time(DISPATCH_TIME_NOW,200*NSEC_PER_MSEC),dispatch_get_main_queue(),^{
                 NSCAssert(!controller.activeMenuBar && controller.menuStack.count==0 && recordController==controller,@"Holding Record returns directly to the original MIDI bar even from nested device controls");

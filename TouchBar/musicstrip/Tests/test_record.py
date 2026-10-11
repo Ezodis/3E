@@ -81,6 +81,13 @@ class RecordTests(unittest.TestCase):
         self.song.signature_numerator, self.song.signature_denominator = 6, 8
         self.server.execute(self.command("loop-2"))
         self.assertEqual((self.song.loop_start, self.song.loop_length), (18,6))
+    def test_proportional_tempo_targets_and_validation(self):
+        self.assertEqual(self.server.state()["tempo_drag"], 1)
+        for target, expected in ((128.5,128.5), (110.5,110.5), (122.5,122.5), (-1,20), (1001,999)):
+            self.server.execute(self.command("tempo-set", tempo=target))
+            self.assertEqual(self.song.tempo, expected)
+        for target in (float("nan"), float("inf"), "invalid"):
+            with self.assertRaises(ValueError): self.server.execute(self.command("tempo-set", tempo=target))
     def test_loop_movement_and_resize_do_not_seek_or_change_record(self):
         self.server.execute(self.command("loop-next")); self.assertEqual(self.song.loop_start, 16)
         self.server.execute(self.command("loop-prev")); self.assertEqual(self.song.loop_start, 0)

@@ -4,9 +4,11 @@
 @property NSMutableArray *commands;
 @property NSInteger holds;
 @property NSMutableArray *menus;
+@property NSMutableArray<NSNumber *> *tempoTargets;
 @end
 @implementation TestRecordController
-- (instancetype)init { if((self=[super init])) { self.commands=[NSMutableArray new]; self.menus=[NSMutableArray new]; } return self; }
+- (instancetype)init { if((self=[super init])) { self.commands=[NSMutableArray new]; self.menus=[NSMutableArray new]; self.tempoTargets=[NSMutableArray new]; } return self; }
+- (void)setTempoFromDrag:(double)tempo { [self.tempoTargets addObject:@(tempo)]; }
 - (void)send:(NSString *)action { [self.commands addObject:action]; }
 - (void)showOptions { self.holds++; }
 - (void)showMenu:(NSString *)name { [self.menus addObject:name]; }
@@ -71,8 +73,14 @@ int main(void) {
         NSCAssert(([controller.commands isEqual:@[@"punch-in",@"punch-out"]]),@"Combined loop swipes toggle Punch In and Punch Out without also toggling Loop");
         [controller.commands removeAllObjects];
         StripPerformanceButton *tempo=(StripPerformanceButton *)controller.options[@"tempo"];
+        controller.state=@{@"tempo":@120.5};
         tempo.enabled=YES; [tempo beginAt:NSMakePoint(10,15) identity:nil]; [tempo moveAt:NSMakePoint(40,15)]; [tempo finishAt:NSMakePoint(40,15)];
-        NSCAssert(([controller.commands isEqual:@[@"tempo-up"]]),@"BPM swipe must issue one coarse tempo step, not open its menu");
+        NSCAssert(!controller.commands.count && controller.tempoTargets.lastObject.doubleValue==128.5,@"BPM swipe uses full distance (30 points becomes 8 BPM), not a single step");
+        [tempo beginAt:NSMakePoint(50,15) identity:nil];
+        [tempo moveAt:NSMakePoint(10,15)];
+        NSCAssert(controller.tempoTargets.lastObject.doubleValue==110.5,@"A longer left drag subtracts the proportional amount");
+        [tempo moveAt:NSMakePoint(58,15)]; [tempo finishAt:NSMakePoint(58,15)];
+        NSCAssert(controller.tempoTargets.lastObject.doubleValue==122.5 && !controller.commands.count,@"Reversing direction uses the same original tempo and never fires Tap Tempo on release");
         [controller.commands removeAllObjects];
         [tempo beginAt:NSMakePoint(22,15) identity:nil]; [tempo finishAt:NSMakePoint(22,15)];
         NSCAssert(([controller.commands isEqual:@[@"tap-tempo"]]) && ([controller.menus isEqual:@[@"loop"]]),@"BPM tap must issue Tap Tempo, never open the tempo menu");

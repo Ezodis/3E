@@ -13,8 +13,10 @@ static NSString *const RecordID = @"local.musicstrip.midi.ableton-record";
 @property BOOL loopActive;
 @property BOOL punchInActive;
 @property BOOL punchOutActive;
+@property double dragStartTempo;
+@property NSString *dragSession;
 @end
-@interface StripRecordController : NSObject
+@interface StripRecordController : NSObject <NSTouchBarDelegate>
 @property NSPopoverTouchBarItem *item;
 @property StripRecordButton *button;
 @property NSTimer *pollTimer;
@@ -29,7 +31,14 @@ static NSString *const RecordID = @"local.musicstrip.midi.ableton-record";
 @property NSTimeInterval pendingTime;
 @property NSString *message;
 @property NSTimeInterval messageUntil;
+@property NSNumber *queuedTempo;
+@property NSString *queuedTempoSession;
+@property BOOL returnSurfaceMode;
+@property NSView *nativeSurfaceView;
+@property NSView *nativeDeviceView;
 - (void)send:(NSString *)action;
+- (void)send:(NSString *)action payload:(NSDictionary *)payload;
+- (void)setTempoFromDrag:(double)tempo;
 - (void)showOptions;
 - (void)refresh;
 - (void)showMenu:(NSString *)name;
@@ -89,6 +98,22 @@ static void ApplyRecordLight(StripRecordButton *button,BOOL connected,NSDictiona
 - (BOOL)accessibilityPerformPress { [self.recordController send:@"record"]; return YES; }
 @end
 @implementation StripPerformanceButton
+- (void)beginAt:(NSPoint)point identity:(id)identity {
+    [super beginAt:point identity:identity];
+    if([self.identifier isEqual:@"tempo"]) { self.dragStartTempo=[self.recordController.state[@"tempo"] doubleValue]; self.dragSession=self.recordController.state[@"session_id"] ?: @""; }
+}
+- (void)moveAt:(NSPoint)point {
+    if(![self.identifier isEqual:@"tempo"]) { [super moveAt:point]; return; }
+    if(!self.tracking || self.cancelled || self.held) return;
+    self.endX=point.x; self.endY=point.y;
+    CGFloat dx=point.x-self.startX,dy=point.y-self.startY;
+    if(fabs(dx)>=8 || fabs(dy)>=3) { [self.holdTimer invalidate]; self.holdTimer=nil; }
+    if((!self.enabled && !self.didStep) || ![self.dragSession isEqual:self.recordController.state[@"session_id"] ?: @""] || fabs(dy)>12 || (!self.didStep && (fabs(dx)<8 || fabs(dx)<fabs(dy)))) return;
+    self.didStep=YES; [self highlight:NO];
+    // Absolute target from gesture origin: reversals and coalesced events
+    // cannot lose distance while a previous command awaits acknowledgment.
+    [self.recordController setTempoFromDrag:MAX(20,MIN(999,self.dragStartTempo+round(dx/4.0)))];
+}
 - (void)drawRect:(NSRect)dirty {
     if(![self.identifier isEqual:@"loop"]) { [super drawRect:dirty]; return; }
     [NSGraphicsContext saveGraphicsState];
@@ -138,6 +163,10 @@ static void ApplyRecordLight(StripRecordButton *button,BOOL connected,NSDictiona
 - (BOOL)accessibilityPerformPress { if(!self.enabled) return NO; [self.recordController perform:self.identifier]; return YES; }
 @end
 @implementation StripRecordController
+- (NSTouchBarItem *)touchBar:(NSTouchBar *)touchBar makeItemForIdentifier:(NSTouchBarItemIdentifier)identifier {
+    for(NSTouchBarItem *item in touchBar.templateItems) if([item.identifier isEqual:identifier]) return item;
+    return nil;
+}
 - (StripPerformanceButton *)performanceButton:(NSString *)action label:(NSString *)label symbol:(NSString *)symbol {
     StripPerformanceButton *button=[[StripPerformanceButton alloc] initWithFrame:NSMakeRect(0,0,54,30)];
     button.recordController=self; button.identifier=action; button.title=label;
@@ -225,6 +254,9 @@ static void ApplyRecordLight(StripRecordButton *button,BOOL connected,NSDictiona
 }
 - (void)send:(NSString *)action {
     [self refresh];
+    [self send:action payload:@{}];
+}
+- (void)send:(NSString *)action payload:(NSDictionary *)payload {
     if(self.pending) return; // Never enqueue repeated toggles while awaiting Live.
     if(![self connected]) { [self notice:@"Live link?"]; return; }
     NSString *token=NSUUID.UUID.UUIDString.lowercaseString;
@@ -233,13 +265,20 @@ static void ApplyRecordLight(StripRecordButton *button,BOOL connected,NSDictiona
     if(![NSFileManager.defaultManager createDirectoryAtPath:directory withIntermediateDirectories:YES attributes:@{NSFilePosixPermissions:@0700} error:&error]) {
         [self notice:@"Link error"]; return;
     }
-    NSDictionary *command=@{@"session":self.state[@"session_id"] ?: @"", @"action":action,
-        @"time":@(NSDate.date.timeIntervalSince1970), @"track_index":self.state[@"track_index"] ?: @(-1)};
+    NSMutableDictionary *command=[@{@"session":self.state[@"session_id"] ?: @"", @"action":action,
+        @"time":@(NSDate.date.timeIntervalSince1970), @"track_index":self.state[@"track_index"] ?: @(-1)} mutableCopy];
+    [command addEntriesFromDictionary:payload];
     NSData *data=[NSJSONSerialization dataWithJSONObject:command options:0 error:&error];
     if(!data || ![data writeToFile:[directory stringByAppendingPathComponent:[token stringByAppendingString:@".json"]] options:NSDataWritingAtomic error:&error]) {
         [self notice:@"Link error"]; return;
     }
     self.pending=token; self.pendingTime=NSDate.date.timeIntervalSince1970;
+}
+- (void)setTempoFromDrag:(double)tempo {
+    if(!isfinite(tempo) || ![self connected]) return;
+    if([self.state[@"tempo_drag"] integerValue]!=1) { [self notice:@"Reload Live link"]; return; }
+    self.queuedTempo=@(MAX(20,MIN(999,tempo))); self.queuedTempoSession=self.state[@"session_id"];
+    [self refresh];
 }
 - (void)option:(NSButton *)sender { [self send:sender.identifier]; }
 - (void)perform:(NSString *)action {
@@ -254,8 +293,10 @@ static void ApplyRecordLight(StripRecordButton *button,BOOL connected,NSDictiona
     NSCustomTouchBarItem *record=[[NSCustomTouchBarItem alloc] initWithIdentifier:@"local.musicstrip.performance.record"];
     StripRecordButton *button=[[StripRecordButton alloc] initWithFrame:NSMakeRect(0,0,32,30)];
     button.recordController=self; button.standaloneRecord=YES;
-    [button.widthAnchor constraintEqualToConstant:32].active=YES; [button.heightAnchor constraintEqualToConstant:30].active=YES;
-    record.view=button; [self.menuRecordButtons addObject:button];
+    NSView *recordHost=[[NSView alloc] initWithFrame:NSMakeRect(0,0,32,30)];
+    [recordHost.widthAnchor constraintEqualToConstant:32].active=YES; [recordHost.heightAnchor constraintEqualToConstant:30].active=YES;
+    button.frame=recordHost.bounds; button.autoresizingMask=NSViewWidthSizable|NSViewHeightSizable;
+    [recordHost addSubview:button]; record.view=recordHost; [self.menuRecordButtons addObject:button];
     ApplyRecordLight(button,[self connected],self.state);
     NSGroupTouchBarItem *group=[[NSGroupTouchBarItem alloc] initWithIdentifier:@"local.musicstrip.performance.controls"];
     group.groupTouchBar=source;
@@ -273,7 +314,7 @@ static void ApplyRecordLight(StripRecordButton *button,BOOL connected,NSDictiona
     [self.menuStack removeLastObject];
     NSTouchBar *next=self.menuStack.lastObject ?: self.menuReturnBar;
     self.activeMenuBar=self.menuStack.lastObject;
-    if(!self.menuStack.count) self.menuReturnBar=nil;
+    if(!self.menuStack.count) { self.menuReturnBar=nil; [(id)NSApp.delegate setValue:@(self.returnSurfaceMode) forKey:@"controlSurfadeMode"]; }
     ((void(*)(id,SEL,id,id))originalOpen)(NSApp.delegate,NSSelectorFromString(@"openTouchbar:fromIdentifier:"),next,normalIdentifier);
 }
 - (void)returnToMidi {
@@ -281,22 +322,56 @@ static void ApplyRecordLight(StripRecordButton *button,BOOL connected,NSDictiona
     ((void(*)(id,SEL,id))originalClose)(NSApp.delegate,NSSelectorFromString(@"closeTouchbar:"),self.activeMenuBar);
     NSTouchBar *normal=self.menuReturnBar ?: presentation;
     self.activeMenuBar=nil; self.menuReturnBar=nil; [self.menuStack removeAllObjects];
+    [(id)NSApp.delegate setValue:@(self.returnSurfaceMode) forKey:@"controlSurfadeMode"];
     ((void(*)(id,SEL,id,id))originalOpen)(NSApp.delegate,NSSelectorFromString(@"openTouchbar:fromIdentifier:"),normal,normalIdentifier);
 }
 - (void)showMenu:(NSString *)name { [self refresh]; [self presentMenuBar:self.performanceMenus[name].popoverTouchBar]; }
 - (void)showOptions {
     if(self.activeMenuBar) { [self returnToMidi]; return; }
     [self refresh];
+    self.returnSurfaceMode=[[(id)NSApp.delegate valueForKey:@"controlSurfadeMode"] boolValue];
+    [(id)NSApp.delegate setValue:@YES forKey:@"controlSurfadeMode"];
     NSTouchBar *source=[NSTouchBar new];
     NSMutableSet *items=self.item.popoverTouchBar.templateItems.mutableCopy;
     NSMutableArray *ids=self.item.popoverTouchBar.defaultItemIdentifiers.mutableCopy;
     // Preserve the vendor's actual control-surface view, delegates and MIDI
     // ports. Only its outer navigation/close wrapper is replaced.
     @try {
-        NSTouchBarItem *surface=[(id)NSApp.delegate valueForKey:@"controlStripItem"];
-        if(surface) { [items addObject:surface]; [ids insertObject:surface.identifier atIndex:0]; source.principalItemIdentifier=surface.identifier; }
+        NSTouchBar *nativeBar=[(id)NSApp.delegate valueForKey:@"controlStripGroup"];
+        NSCustomTouchBarItem *original=(id)[nativeBar itemForIdentifier:@"com.uebe.midi-touchbar.controlstrip-view"];
+        // Resolve through the vendor bar's item factory. The delegate's item
+        // property alone is still an uninitialized blank view on first use.
+        if(!self.nativeSurfaceView) self.nativeSurfaceView=[original valueForKey:@"view"];
+        if(self.nativeSurfaceView) {
+            // Reparent its real view into a fresh item; retain the original
+            // delegate and parameter state instead of rebuilding the controls.
+            [self.nativeSurfaceView removeFromSuperview];
+            CGFloat host=lastMidiHostWidth>200 ? lastMidiHostWidth : 1004;
+            CGFloat width=MAX(320,host-32-86-86-54-48);
+            for(NSLayoutConstraint *constraint in self.nativeSurfaceView.constraints)
+                if(constraint.firstAttribute==NSLayoutAttributeWidth && !constraint.secondItem && constraint.relation==NSLayoutRelationEqual) constraint.active=NO;
+            NSView *hostView=[[NSView alloc] initWithFrame:NSMakeRect(0,0,width,30)];
+            [hostView.widthAnchor constraintEqualToConstant:width].active=YES;
+            [hostView.heightAnchor constraintEqualToConstant:30].active=YES;
+            self.nativeSurfaceView.translatesAutoresizingMaskIntoConstraints=NO;
+            [hostView addSubview:self.nativeSurfaceView];
+            [NSLayoutConstraint activateConstraints:@[
+                [self.nativeSurfaceView.leadingAnchor constraintEqualToAnchor:hostView.leadingAnchor],
+                [self.nativeSurfaceView.trailingAnchor constraintEqualToAnchor:hostView.trailingAnchor],
+                [self.nativeSurfaceView.topAnchor constraintEqualToAnchor:hostView.topAnchor],
+                [self.nativeSurfaceView.bottomAnchor constraintEqualToAnchor:hostView.bottomAnchor]
+            ]];
+            NSCustomTouchBarItem *surface=[[NSCustomTouchBarItem alloc] initWithIdentifier:@"local.musicstrip.performance.native-surface"];
+            surface.view=hostView;
+            [items addObject:surface]; [ids insertObject:surface.identifier atIndex:0]; source.principalItemIdentifier=surface.identifier;
+            NSCustomTouchBarItem *gap=[[NSCustomTouchBarItem alloc] initWithIdentifier:@"local.musicstrip.performance.surface-gap"];
+            NSView *gapView=[[NSView alloc] initWithFrame:NSMakeRect(0,0,16,30)];
+            [gapView.widthAnchor constraintEqualToConstant:16].active=YES; gap.view=gapView;
+            [items addObject:gap]; [ids insertObject:gap.identifier atIndex:1];
+        }
     } @catch(NSException *exception) { NSLog(@"3£ control surface unavailable: %@",exception.reason); }
     source.templateItems=items; source.defaultItemIdentifiers=ids;
+    source.delegate=self;
     [self presentMenuBar:source];
 }
 - (void)refresh {
@@ -317,6 +392,11 @@ static void ApplyRecordLight(StripRecordButton *button,BOOL connected,NSDictiona
         }
     }
     BOOL connected=[self connected];
+    if(self.queuedTempo && (!connected || ![self.queuedTempoSession isEqual:self.state[@"session_id"]])) self.queuedTempo=nil;
+    if(self.queuedTempo && !self.pending) {
+        NSNumber *tempo=self.queuedTempo; self.queuedTempo=nil;
+        [self send:@"tempo-set" payload:@{@"tempo":tempo}];
+    }
     UpdateLiveScale(self.state,connected);
     BOOL armed=connected && [self.state[@"armed"] boolValue];
     ApplyRecordLight(self.button,connected,self.state);
@@ -334,7 +414,7 @@ static void ApplyRecordLight(StripRecordButton *button,BOOL connected,NSDictiona
         BOOL menu=[action isEqual:@"more"];
         BOOL legacy=[@[@"record",@"session",@"punch-in",@"punch-out",@"overdub",@"loop",@"click",@"quantization"] containsObject:action];
         BOOL performance=connected && [self.state[@"performance"] integerValue]==1;
-        button.enabled=menu || (connected && !self.pending && (legacy || performance));
+        button.enabled=menu || (connected && (!self.pending || [action isEqual:@"tempo"]) && (legacy || performance));
         BOOL active=connected && [self.state[[action isEqual:@"session-capture"] ? @"session" : action] boolValue];
         button.bezelColor=active ? ([action isEqual:@"record"] || [action isEqual:@"session-capture"] ? NSColor.systemRedColor : NSColor.systemOrangeColor) : nil;
         button.contentTintColor=NSColor.whiteColor;
