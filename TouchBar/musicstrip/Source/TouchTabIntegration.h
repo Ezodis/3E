@@ -12,7 +12,6 @@ static void StripStopGestures(void) {
 }
 static NSString *StripRefreshGestures(void) {
     if(!StripGesturesEnabled()) { StripStopGestures(); return @"off"; }
-    if(!AccessibilityTrusted(NO)) { StripStopGestures(); return @"permission"; }
     if(!StripGestureClass) {
         NSString *path=[NSBundle.mainBundle.bundlePath stringByAppendingPathComponent:@"Contents/Frameworks/ThreeEGestureEngine.dylib"];
         if(!dlopen(path.fileSystemRepresentation,RTLD_NOW|RTLD_LOCAL)) { NSLog(@"3£ gesture module unavailable: %s",dlerror()); return @"unavailable"; }
@@ -20,6 +19,10 @@ static NSString *StripRefreshGestures(void) {
     }
     if(!StripGestureClass) return @"unavailable";
     if(!StripGesturesRunning()) ((BOOL(*)(id,SEL))objc_msgSend)(StripGestureClass,NSSelectorFromString(@"start"));
-    return StripGesturesRunning() ? @"on" : @"unavailable";
+    // Test the capabilities actually used by TouchTab. The general AX trust
+    // query is not a substitute for an enabled event tap and event-post access.
+    if(StripGesturesRunning() && CGPreflightPostEventAccess()) return @"on";
+    if(!CGPreflightPostEventAccess() || !AccessibilityTrusted(NO)) { StripStopGestures(); return @"permission"; }
+    return @"unavailable";
 }
 #endif

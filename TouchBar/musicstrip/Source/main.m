@@ -525,7 +525,7 @@ static OSStatus SendSpotifyCommand(pid_t pid, int command) {
     }
     // Diagnostics from the actual LaunchServices host, not a command-line
     // child that may inherit its terminal's Accessibility authorization.
-    [NSUserDefaults.standardUserDefaults setObject:@{@"state":state,@"pid":@(getpid()),@"updated":@(NSDate.date.timeIntervalSince1970),@"accessibilityTrusted":@(AccessibilityTrusted(NO)),@"gestureRunning":@(StripGesturesRunning()),@"bundlePath":NSBundle.mainBundle.bundlePath} forKey:@"TouchTabRuntimeState"];
+    [NSUserDefaults.standardUserDefaults setObject:@{@"state":state,@"pid":@(getpid()),@"updated":@(NSDate.date.timeIntervalSince1970),@"accessibilityTrusted":@(AccessibilityTrusted(NO)),@"eventPostingAllowed":@(CGPreflightPostEventAccess()),@"eventListeningAllowed":@(CGPreflightListenEventAccess()),@"gestureRunning":@(StripGesturesRunning()),@"bundlePath":NSBundle.mainBundle.bundlePath} forKey:@"TouchTabRuntimeState"];
     if(self.midiReady) [self sendMidi:[@"TOUCHTAB_STATE " stringByAppendingString:state]];
 }
 - (void)toggleTouchTab {
