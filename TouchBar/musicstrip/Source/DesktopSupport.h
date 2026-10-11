@@ -1,4 +1,12 @@
-// Read Spaces through SkyLight; present and select them entirely in our bar.
+// Hand a launcher hold to Apple's own Touch Bar Spaces picker. This launchd
+// notification starts SpacesTouchBarAgent on demand; it does not open the
+// on-screen Mission Control overview or synthesize desktop-switch gestures.
+static NSString *const NativeSpacesPickerNotification=@"com.apple.SpacesTouchBarAgent.showPopover";
+static void ShowNativeSpacesPicker(void) {
+    [NSDistributedNotificationCenter.defaultCenter postNotificationName:NativeSpacesPickerNotification
+        object:nil userInfo:nil deliverImmediately:YES];
+}
+// Legacy custom picker support remains available for diagnostics only.
 // Dock swipe events adapted from Michael Torbert's MIT-licensed
 // spaces-manager. See Resources/SpacesManager-LICENSE.txt.
 static NSArray<NSDictionary *> *DesktopSpaces(void) {

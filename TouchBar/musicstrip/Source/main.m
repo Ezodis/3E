@@ -473,8 +473,10 @@ static OSStatus SendSpotifyCommand(pid_t pid, int command) {
     else if([command isEqualToString:@"ROOT"]) [self.dockPanel.folderBrowser willClose:nil];
 }
 - (void)openDesktops {
-    self.appsRequested=YES; self.midiRequested=NO;
-    [self sendMidi:@"HIDE"]; [self sendApps:@"DESKTOPS"];
+    self.appsRequested=NO; self.midiRequested=NO;
+    [self sendMidi:@"HIDE"]; [self sendApps:@"HIDE"];
+    // Let our modal teardown finish before Apple's agent owns the Touch Bar.
+    dispatch_async(dispatch_get_main_queue(),^{ ShowNativeSpacesPicker(); });
 }
 - (void)startApps {
     self.appsReady=YES; [self.dockPanel prepareSwipeApps];
