@@ -4,6 +4,16 @@ static NSMutableArray<NSTouchBar *> *controlPresetCatalog;
 static NSString *const PresetCountPreference=@"ThreeEPresetCount";
 static char countEditorKey;
 static char selectedControlKey;
+static NSColor *StoredControlColor(NSData *data) {
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
+    return data ? [NSUnarchiver unarchiveObjectWithData:data] : nil;
+#pragma clang diagnostic pop
+}
+static BOOL ControlColorsMatch(NSColor *a,NSColor *b) {
+    a=[a colorUsingColorSpace:NSColorSpace.sRGBColorSpace]; b=[b colorUsingColorSpace:NSColorSpace.sRGBColorSpace];
+    return a && b && fabs(a.redComponent-b.redComponent)<.005 && fabs(a.greenComponent-b.greenComponent)<.005 && fabs(a.blueComponent-b.blueComponent)<.005 && fabs(a.alphaComponent-b.alphaComponent)<.005;
+}
 static void InitializePresetCatalog(void) {
     if(controlPresetCatalog.count) return;
     NSArray *bars=[(id)NSApp.delegate valueForKey:@"allUserTouchbars"];
@@ -40,6 +50,16 @@ static void SelectCustomizationControl(id controller,SEL selector,id control) {
 }
 static void WriteCustomizationControl(id controller,SEL selector,NSMutableDictionary *prefs) {
     ((void(*)(id,SEL,id))originalWriteControl)(controller,selector,prefs);
+    // The vendor writer uses a cached presetColor, which can still contain
+    // the previous selection after the color well changes. Save the actual
+    // visible picker value using the vendor's existing archive format.
+    NSColorWell *well=[controller valueForKey:@"colorWell"];
+    if(well.enabled && !well.hidden && well.color) {
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
+        prefs[@"color"]=[NSArchiver archivedDataWithRootObject:well.color];
+#pragma clang diagnostic pop
+    }
     NSView *piano=objc_getAssociatedObject(controller,&selectedControlKey);
     if([piano isKindOfClass:NSClassFromString(@"pianoView")]) {
         // These controls are hidden here; never overwrite the expanded piano's

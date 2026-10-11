@@ -1643,7 +1643,61 @@ static void TestPianoEndKeys(void) {
 static void Command(NSString *command) {
     id delegate = NSApp.delegate;
     @try {
-        if ([command isEqualToString:@"CONTROLS_APPLY_TEST"]) {
+        if ([command isEqualToString:@"CONTROLS_COLOR_TEST"]) {
+            NSTouchBar *bar=normalLayoutBar;
+            NSString *key=PianoPrefsKey(bar);
+            NSDictionary *prior=[NSUserDefaults.standardUserDefaults dictionaryForKey:key];
+            CustomizeControls(delegate,NSSelectorFromString(@"customizeControls:"),nil);
+            id vc=[delegate valueForKey:@"settingsViewController"];
+            @try {
+                for(NSString *slot in @[@"pad1",@"pad2",@"pad3",@"pad4"]) {
+                    NSString *identifier=[@"ch.uebe.midi-touchbar." stringByAppendingString:slot];
+                    NSView *pad=[(NSCustomTouchBarItem *)[normalLayoutBar itemForIdentifier:identifier] view];
+                    ((void(*)(id,SEL))objc_msgSend)(vc,NSSelectorFromString(@"setInitialState"));
+                    SelectCustomizationControl(vc,NSSelectorFromString(@"setCurrentControl:"),pad);
+                    NSColorWell *well=[vc valueForKey:@"colorWell"];
+                    NSCAssert(well.enabled && !well.hidden,@"Pad color must remain editable");
+                    NSCAssert(ControlColorsMatch(well.color,StoredControlColor(prior[slot][@"color"])),@"Selection must load this pad's own saved color");
+                    NSColor *target=[NSColor colorWithSRGBRed:.2 green:.7 blue:.9 alpha:1];
+                    well.color=target;
+                    ((void(*)(id,SEL,id))objc_msgSend)(vc,NSSelectorFromString(@"colorChanged:"),well);
+                    NSMutableDictionary *written=[[vc valueForKey:@"currentControlPrefs"] mutableCopy];
+                    WriteCustomizationControl(vc,NSSelectorFromString(@"WritingToPreferences:"),written);
+                    NSCAssert(ControlColorsMatch(target,StoredControlColor(written[@"color"])),@"Writer must use the actual picker, not a stale cached color");
+                    ((void(*)(id,SEL,id))objc_msgSend)(vc,NSSelectorFromString(@"applySettings:"),nil);
+                    NSButton *live=[(NSCustomTouchBarItem *)[normalLayoutBar itemForIdentifier:identifier] view];
+                    NSCAssert(ControlColorsMatch(target,live.bezelColor) && ControlColorsMatch(target,[live.cell valueForKey:@"bezelColor"]),@"Apply must update both the actual live button and its cell");
+                    NSDictionary *saved=[NSUserDefaults.standardUserDefaults dictionaryForKey:key];
+                    for(NSString *mapping in @[@"channel",@"kind",@"value",@"type",@"scaleFrom",@"scaleTo"])
+                        NSCAssert([saved[slot][mapping] isEqual:prior[slot][mapping]],@"Color edits must preserve the MIDI mapping");
+                }
+                Report("CC1_TO_CC4_PICKER_SAVE_AND_LIVE_COLOR_PASSED\n");
+            } @finally {
+                [NSUserDefaults.standardUserDefaults setObject:prior forKey:key];
+                ReloadCustomizationControls(delegate,NSSelectorFromString(@"reloadTouchbar"));
+                ((void(*)(id,SEL))objc_msgSend)(vc,NSSelectorFromString(@"setInitialState"));
+            }
+        } else if ([command isEqualToString:@"CONTROL_COLOR_STATUS"]) {
+            NSArray *bars=[delegate valueForKey:@"allUserTouchbars"];
+            for(NSTouchBar *bar in bars) {
+                NSDictionary *prefs=[NSUserDefaults.standardUserDefaults dictionaryForKey:PianoPrefsKey(bar)];
+                for(NSString *identifier in bar.itemIdentifiers) {
+                    NSString *slot=[identifier componentsSeparatedByString:@"."].lastObject;
+                    NSDictionary *settings=prefs[slot];
+                    if(!settings[@"color"]) continue;
+                    id item=[bar itemForIdentifier:identifier];
+                    NSColor *saved=StoredControlColor(settings[@"color"]);
+                    NSView *view=[item respondsToSelector:@selector(view)] ? [item view] : nil;
+                    NSColor *shown=[view respondsToSelector:@selector(bezelColor)] ? [(NSButton *)view bezelColor] : nil;
+                    Report([[NSString stringWithFormat:@"CONTROL_COLOR %@ %@ channel %@ cc %@ class %@ saved %@ shown %@\n",bar.customizationIdentifier,slot,settings[@"channel"],settings[@"value"],NSStringFromClass(view.class),saved,shown] UTF8String]);
+                    if(view.window && view.bounds.size.width>0) {
+                        NSBitmapImageRep *rep=[view bitmapImageRepForCachingDisplayInRect:view.bounds];
+                        [view cacheDisplayInRect:view.bounds toBitmapImageRep:rep];
+                        [[rep representationUsingType:NSBitmapImageFileTypePNG properties:@{}] writeToFile:[@"/tmp/3e-color-" stringByAppendingFormat:@"%@.png",slot] atomically:YES];
+                    }
+                }
+            }
+        } else if ([command isEqualToString:@"CONTROLS_APPLY_TEST"]) {
             NSCAssert([[delegate valueForKey:@"editCCs"] boolValue],@"Open the control editor first");
             id vc=[delegate valueForKey:@"settingsViewController"];
             NSString *prefsKey=PianoPrefsKey(normalLayoutBar);

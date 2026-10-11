@@ -39,6 +39,8 @@ Code signatures change when nested resources change. The main app keeps its cert
 
 MIDI preset navigation is a fixed 44-point segment beside the original left-side X. Record is a fixed, slimmer 32-point control at the far right. It fills red only when Live reports Arrangement Record enabled, never for an armed track; its inactive icon is white. Preset navigation uses a distinct gradient for each preset; holding it does not switch modes. MIDI channel is configured through Customize Controls. The original configured keyboard/pads remain inside the original group.
 
+Customize Controls saves the visible color picker's current value, not the vendor editor's potentially stale cached color. The original color archive format is retained. The native `CONTROLS_COLOR_TEST` exercises selection, picker changes, writing and actual Apply/live-button updates for the configured CC1–4 pads, verifies their mappings are unchanged, and restores the original palette afterwards. `CONTROL_COLOR_STATUS` compares saved and live colors and renders attached pads for visual checking.
+
 - Tap: Arrangement Record.
 - Swipe right: arm Live's selected audio/MIDI track without disarming any other track, even when Live's exclusive-arm preference is enabled. The preference itself is unchanged.
 - Swipe left: disarm that track. These are explicit states, not toggles.
