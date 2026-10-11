@@ -653,6 +653,11 @@ static void CleanMenu(NSMenu *menu) {
     }
     for(NSMenuItem *item in menu.itemArray.copy) {
         NSString *title=item.title.lowercaseString;
+        if([title isEqual:@"control surface mode"]) {
+            item.target=NSClassFromString(@"MusicStripMidiBridge");
+            item.action=NSSelectorFromString(@"toggleSurfaceMode:");
+            item.state=recordController.activeMenuBar ? NSControlStateValueOn : NSControlStateValueOff;
+        }
         if(item.action==NSSelectorFromString(@"setKeyCommands:") || [title containsString:@"key command"] || [title containsString:@"keyboard shortcut"]) { [menu removeItem:item]; continue; }
         if([item.title hasPrefix:@"MIDI Touchbar (v."] || [item.title hasPrefix:@"3£ (v."])
             item.title=[NSString stringWithFormat:@"3£ (v. %@)",StripReleaseVersion];
@@ -678,6 +683,7 @@ static NSArray *MenuTitles(NSMenu *menu) {
 @interface MusicStripMidiBridge : NSObject
 + (void)closeMidi:(id)sender;
 + (void)toggleTouchTab:(id)sender;
++ (void)toggleSurfaceMode:(id)sender;
 @end
 static void SuppressTray(id cls, SEL sel, id item) { Report("TRAY_SUPPRESSED\n"); }
 static void Open(id self, SEL sel, NSTouchBar *bar, id identifier) {
@@ -1029,8 +1035,16 @@ static void PianoCancelled(NSView *piano,SEL selector,NSEvent *event) {
 }
 static void ChangeMode(id self,SEL selector,id sender) {
     if(pianoExpanded) { CollapsePiano(); if(pianoExpanded) return; }
-    if(recordController) { [recordController showOptions]; return; }
-    ((void(*)(id,SEL,id))originalChangeMode)(self,selector,sender);
+    id delegate=NSApp.delegate;
+    if([[delegate valueForKey:@"editTouchBar"] boolValue] || [[delegate valueForKey:@"editCCs"] boolValue]) return;
+    if(!recordController) {
+        NSArray *bars=[delegate valueForKey:@"allUserTouchbars"];
+        if(!bars.count) return;
+        NSInteger index=MAX(0,MIN((NSInteger)bars.count-1,[[delegate valueForKey:@"userTouchbarNumber"] integerValue]));
+        [delegate setValue:@NO forKey:@"controlSurfadeMode"];
+        Open(delegate,NSSelectorFromString(@"openTouchbar:fromIdentifier:"),bars[index],nil);
+    }
+    [recordController showOptions];
 }
 static void PresetKey(id self,SEL selector,id sender,id key) {
     if(pianoExpanded) { CollapsePiano(); if(pianoExpanded) return; }
@@ -1239,10 +1253,22 @@ static void TestPianoArrowSwipes(void) {
     }
     Report("BOTH_PIANO_ARROW_SWIPE_DIRECTIONS_AND_ORIGINAL_TAPS_PASSED\n");
 }
-static void TestArrangementLayout(void) {
+static void TestArrangementLayout(BOOL viaMenu,BOOL fromHidden) {
+    if(fromHidden) Close(NSApp.delegate,NSSelectorFromString(@"closeTouchbar:"),nil);
+    if(viaMenu) {
+        ApplyBranding();
+        NSMenu *menu=[[(id)NSApp.delegate valueForKey:@"theItem"] menu];
+        NSMenuItem *surface=nil;
+        for(NSMenuItem *item in menu.itemArray) if([item.title isEqual:@"Control Surface Mode"]) surface=item;
+        NSCAssert(surface && surface.action==@selector(toggleSurfaceMode:),@"The real status-menu item must use the Record-hold route");
+        NSCAssert([NSApp sendAction:surface.action to:surface.target from:surface],@"Actual menu action must be dispatchable");
+    }
     StripRecordController *controller=recordController;
-    NSCAssert(controller && !controller.activeMenuBar,@"Start on a normal MIDI preset");
-    [controller.button beginAt:NSMakePoint(16,15) identity:NSUUID.UUID]; [controller.button fireHold]; [controller.button finishAt:NSMakePoint(16,15)];
+    NSCAssert(controller,@"Menu must initialize MIDI even from hidden");
+    if(!viaMenu) {
+        NSCAssert(!controller.activeMenuBar,@"Start on a normal MIDI preset");
+        [controller.button beginAt:NSMakePoint(16,15) identity:NSUUID.UUID]; [controller.button fireHold]; [controller.button finishAt:NSMakePoint(16,15)];
+    }
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW,300*NSEC_PER_MSEC),dispatch_get_main_queue(),^{
         NSTouchBar *arrangement=controller.activeMenuBar;
         NSCAssert([[(id)NSApp.delegate valueForKey:@"controlSurfadeMode"] boolValue],@"The native surface engine must actually enter Control Surface Mode, not just display its view");
@@ -1295,6 +1321,13 @@ static void TestArrangementLayout(void) {
             dispatch_after(dispatch_time(DISPATCH_TIME_NOW,200*NSEC_PER_MSEC),dispatch_get_main_queue(),^{
                 NSCAssert(!controller.activeMenuBar && controller.menuStack.count==0 && recordController==controller,@"Holding Record returns directly to the original MIDI bar even from nested device controls");
                 Report("COMBINED_NATIVE_SURFACE_ARRANGEMENT_DEVICE_AND_RECORD_HOLD_RETURN_PASSED\n");
+                if(viaMenu) {
+                    [MusicStripMidiBridge toggleSurfaceMode:nil];
+                    NSCAssert(controller.activeMenuBar,@"Menu can re-open the same combined bar");
+                    [MusicStripMidiBridge toggleSurfaceMode:nil];
+                    NSCAssert(!controller.activeMenuBar,@"Selecting the menu again returns to MIDI");
+                    Report(fromHidden ? "SURFACE_MENU_FROM_HIDDEN_PASSED\n" : "SURFACE_MENU_FROM_MIDI_PASSED\n");
+                }
             });
         });
     });
@@ -1749,7 +1782,11 @@ static void Command(NSString *command) {
                 }
             }
         } else if ([command isEqualToString:@"ARRANGEMENT_LAYOUT_TEST"]) {
-            TestArrangementLayout();
+            TestArrangementLayout(NO,NO);
+        } else if ([command isEqualToString:@"SURFACE_MENU_TEST"]) {
+            TestArrangementLayout(YES,NO);
+        } else if ([command isEqualToString:@"SURFACE_MENU_HIDDEN_TEST"]) {
+            TestArrangementLayout(YES,YES);
         } else if ([command isEqualToString:@"PIANO_ARROW_SWIPE_TEST"]) {
             TestPianoArrowSwipes();
         } else if ([command isEqualToString:@"PIANO_HALF_HEIGHT_HITS_TEST"]) {
@@ -1920,6 +1957,14 @@ static void Command(NSString *command) {
 }
 @implementation MusicStripMidiBridge
 + (void)toggleTouchTab:(id)sender { Report("TOUCHTAB_TOGGLE\n"); }
++ (void)toggleSurfaceMode:(id)sender { ChangeMode(NSApp.delegate,NSSelectorFromString(@"changeMode:"),sender); }
++ (BOOL)validateMenuItem:(NSMenuItem *)item {
+    if(item.action==@selector(toggleSurfaceMode:)) {
+        item.state=recordController.activeMenuBar ? NSControlStateValueOn : NSControlStateValueOff;
+        return ![[(id)NSApp.delegate valueForKey:@"editTouchBar"] boolValue] && ![[(id)NSApp.delegate valueForKey:@"editCCs"] boolValue];
+    }
+    return YES;
+}
 + (void)closeMidi:(id)sender { if(pianoExpanded) CollapsePiano(); else Command(@"HIDE"); }
 + (void)load {
 #ifdef STRIP3_RECORD_TESTING
