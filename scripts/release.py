@@ -120,6 +120,9 @@ def publish(values):
     for tag in prepared:
         run("gh", "release", "edit", tag, "--repo", REPO, "--draft=false", "--latest=false", env=env)
         print(f"Published https://github.com/{REPO}/releases/tag/{tag}")
+    # GitHub's generic Latest link should lead to the integrated edition;
+    # standalone updaters continue using their own edition-specific tags.
+    run("gh", "release", "edit", prepared[0], "--repo", REPO, "--latest", env=env)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
