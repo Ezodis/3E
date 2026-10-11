@@ -188,7 +188,16 @@ static void ApplyRecordLight(StripRecordButton *button,BOOL connected,NSDictiona
         if([@[@"loop",@"tempo",@"more"] containsObject:action]) {
             NSPopoverTouchBarItem *popover=[[NSPopoverTouchBarItem alloc] initWithIdentifier:identifier];
             popover.customizationLabel=label;
-            popover.collapsedRepresentation=button; popover.showsCloseButton=YES;
+            // AppKit applies NSButton's bezel alignment outsets to a direct
+            // collapsed representation, clipping our edge-drawn Punch icons.
+            // A plain, fixed-size host keeps the full drawing and touch region.
+            CGFloat width=[@[@"loop",@"tempo"] containsObject:action] ? 86 : 54;
+            NSView *host=[[NSView alloc] initWithFrame:NSMakeRect(0,0,width,30)];
+            [host.widthAnchor constraintEqualToConstant:width].active=YES;
+            [host.heightAnchor constraintEqualToConstant:30].active=YES;
+            button.frame=host.bounds; button.autoresizingMask=NSViewWidthSizable|NSViewHeightSizable;
+            [host addSubview:button];
+            popover.collapsedRepresentation=host; popover.showsCloseButton=YES;
             self.performanceMenus[action]=popover; button.holdMenu=action;
             if([action isEqual:@"tempo"]) { button.swipeForward=@"tempo-up"; button.swipeBack=@"tempo-down"; }
             if([action isEqual:@"loop"]) { button.swipeForward=@"punch-out"; button.swipeBack=@"punch-in"; }

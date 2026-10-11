@@ -1275,6 +1275,14 @@ static void TestArrangementLayout(void) {
         }
         StripRecordButton *record=(id)((NSCustomTouchBarItem *)[arrangement itemForIdentifier:@"local.musicstrip.performance.record"]).view.subviews.firstObject;
         NSRect frame=[record convertRect:record.bounds toView:nil];
+        for(NSString *action in @[@"loop",@"tempo"]) {
+            NSView *button=controller.options[action];
+            NSRect full=[button convertRect:button.bounds toView:nil];
+            for(NSView *ancestor=button.superview;ancestor;ancestor=ancestor.superview) {
+                NSRect clip=[ancestor convertRect:ancestor.bounds toView:nil];
+                NSCAssert(NSMinX(full)>=NSMinX(clip)-.1 && NSMaxX(full)<=NSMaxX(clip)+.1,@"The full %@ drawing and gesture area must be unclipped: %@ within %@",action,NSStringFromRect(full),NSStringFromRect(clip));
+            }
+        }
         NSCAssert(record.window && fabs(NSWidth(frame)-32)<.1 && fabs(NSMaxX(frame)-record.window.contentView.bounds.size.width)<1,@"Arrangement retains Record at the same far-right position: %@ host %@",NSStringFromRect(frame),NSStringFromRect(record.window.contentView.bounds));
         NSTouchBar *device=[(id)NSApp.delegate valueForKey:@"eightFaderGroup"];
         Open(NSApp.delegate,NSSelectorFromString(@"openTouchbar:fromIdentifier:"),device,nil);
