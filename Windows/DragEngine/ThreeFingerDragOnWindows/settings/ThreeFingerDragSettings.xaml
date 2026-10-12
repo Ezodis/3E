@@ -1,0 +1,264 @@
+﻿<Page
+    x:Class="ThreeFingerDragOnWindows.settings.ThreeFingerDragSettings"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    xmlns:wuc="using:WinUICommunity"
+    xmlns:local="using:ThreeFingerDragOnWindows.touchpad"
+    mc:Ignorable="d">
+
+
+    <ScrollView Margin="0"
+                HorizontalAlignment="Stretch"
+                VerticalScrollBarVisibility="Auto">
+        <StackPanel Margin="20,0,20,20"
+                    ChildrenTransitions="{StaticResource SettingsCardsAnimations}"
+                    Spacing="5">
+
+            <InfoBar
+                Title="The three finger drag might not work properly on this Settings window, but you can try it out on other windows!"
+                IsIconVisible="False"
+                IsOpen="True"
+                IsClosable="True"
+                Severity="Warning" />
+
+            <wuc:SettingsCard
+                Description="Allows to select text, drag windows and other objects with three finger on the touchpad (left click simulation)."
+                HeaderIcon="{wuc:BitmapIcon Source='ms-appx:///Assets/icon-threefinger.png', ShowAsMonochrome=True}"
+                Header="Enable three finger drag">
+                <ToggleSwitch x:Name="Enabled"
+                              IsOn="{x:Bind EnabledProperty, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+            </wuc:SettingsCard>
+
+            <wuc:SettingsExpander
+                IsEnabled="{Binding ElementName=Enabled, Path=IsOn}"
+                Description="You can do this in the windows settings (Bluetooth &amp; Devices > Touchpad). You can also disable the &quot;Tap twice and drag to multi-select&quot;."
+                Header="Make sure to disable windows three finger drag gestures"
+                IsExpanded="False"
+                HeaderIcon="{wuc:FontIcon FontFamily={StaticResource SymbolThemeFontFamily}, Glyph=&#xEA37;}">
+                <HyperlinkButton Content="Go to Settings"
+                                 Click="OpenSettings" />
+                <wuc:SettingsExpander.ItemsHeader>
+                    <InfoBar
+                        BorderThickness="0"
+                        CornerRadius="0"
+                        IsIconVisible="False"
+                        IsOpen="True"
+                        IsClosable="False"
+                        Severity="Informational"
+                        Margin="-17,0,0,0">
+                        <Grid Margin="5"
+                              ColumnSpacing="5">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+
+                            <Image Source="ms-appx:///Assets/TouchpadThreeFingerSettings.png"
+                                   Grid.Column="0"
+                                   VerticalAlignment="Top" />
+                            <Image Source="ms-appx:///Assets/TouchpadTapsSettings.png"
+                                   Grid.Column="1"
+                                   VerticalAlignment="Top" />
+                        </Grid>
+                    </InfoBar>
+                </wuc:SettingsExpander.ItemsHeader>
+
+            </wuc:SettingsExpander>
+
+            <wuc:SettingsCard
+                Description="Keep the left button to be able to select text and drag objects."
+                HeaderIcon="{wuc:FontIcon FontFamily={StaticResource SymbolThemeFontFamily}, Glyph=&#xE962;}"
+                Header="Mouse button to be hold while dragging">
+                <ComboBox x:Name="ButtonType"
+                          SelectedIndex="{x:Bind ButtonTypeProperty, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                          MinWidth="240">
+                    <x:String>None</x:String>
+                    <x:String>Left</x:String>
+                    <x:String>Right</x:String>
+                    <x:String>Middle</x:String>
+                </ComboBox>
+            </wuc:SettingsCard>
+
+            <wuc:SettingsExpander
+                IsEnabled="{Binding ElementName=Enabled, Path=IsOn}"
+                Description="After releasing the three fingers, using only one or two fingers will instantly release the click. However, if you hang on, the click will be released only after a short delay. This feature allows you to reposition your fingers on the touchpad without releasing the click."
+                Header="Allow releasing fingers and restarting drag without releasing the click"
+                HeaderIcon="{wuc:FontIcon FontFamily={StaticResource SymbolThemeFontFamily}, Glyph=&#xE8B0;}"
+                IsExpanded="True">
+                <ToggleSwitch x:Name="AllowReleaseAndRestart"
+                              IsOn="{x:Bind AllowReleaseAndRestartProperty, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                <wuc:SettingsExpander.Items>
+                    <wuc:SettingsCard Description="Recommended: 500 ms."
+                                      Header="Delay before click release (ms)"
+                                      IsEnabled="{Binding ElementName=AllowReleaseAndRestart, Path=IsOn}">
+                        <NumberBox MinWidth="240"
+                                   LargeChange="50"
+                                   Maximum="2000"
+                                   Minimum="0"
+                                   SmallChange="100"
+                                   SpinButtonPlacementMode="Compact"
+                                   Value="{x:Bind ReleaseDelayProperty, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                    </wuc:SettingsCard>
+                </wuc:SettingsExpander.Items>
+
+            </wuc:SettingsExpander>
+
+            <ItemsControl ItemsSource="{x:Bind MouseSpeedSettingItems}" Style="{x:Null}">
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate x:DataType="local:MouseSpeedSettings">
+                        <wuc:SettingsExpander
+                            IsEnabled="{Binding ElementName=Enabled, Path=IsOn}"
+                            Description="By default, three-finger movement on the touchpad doesn't affect the mouse pointer. ThreeFingerDragOnWindows autonomously handles cursor movement. This might result in some variations compared to single-finger control. You can customize this behavior here or disable it if you found another way to move the cursor with three fingers."
+                            Header="{x:Bind Header}"
+                            HeaderIcon="{wuc:FontIcon FontFamily={StaticResource SymbolThemeFontFamily}, Glyph=&#xE7C2;}"
+                            IsExpanded="True">
+                            <ToggleSwitch x:Name="CursorMove"
+                                          IsOn="{x:Bind CursorMoveProperty, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                            <wuc:SettingsExpander.Items>
+                                <!-- content is an alignment of a numberbox and a slider  in a horizontal box -->
+                                <wuc:SettingsCard Header="Mouse Speed"
+                                                  Description="Default to 30"
+                                                  IsEnabled="{Binding ElementName=CursorMove, Path=IsOn}">
+                                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Left" Spacing="10">
+                                        <!-- Slider -->
+                                        <Slider MinWidth="200"
+                                                StepFrequency="1"
+                                                Maximum="200"
+                                                Minimum="1"
+                                                Value="{x:Bind CursorSpeedProperty, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+
+                                        <!-- NumberBox -->
+                                        <NumberBox MinWidth="80"
+                                                   Value="{x:Bind CursorSpeedProperty, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                                   Maximum="100000"
+                                                   Minimum="0"
+                                                   SmallChange="5"
+                                                   LargeChange="10"
+                                                   SpinButtonPlacementMode="Compact" />
+                                    </StackPanel>
+                                </wuc:SettingsCard>
+                                       
+                                <wuc:SettingsCard Description="Default to 10, 0 to disable."
+                                                  Header="Mouse acceleration"
+                                                  IsEnabled="{Binding ElementName=CursorMove, Path=IsOn}">
+                                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Left" Spacing="10">
+                                        <Slider MinWidth="200"
+                                                StepFrequency="1"
+                                                Maximum="30"
+                                                Minimum="0"
+                                                Value="{x:Bind CursorAccelerationProperty, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+
+                                        <NumberBox MinWidth="80"
+                                                   Value="{x:Bind CursorAccelerationProperty, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                                   Minimum="0"
+                                                   Maximum="1000"
+                                                   SmallChange="5"
+                                                   LargeChange="10"
+                                                   SpinButtonPlacementMode="Compact" />
+                                    </StackPanel>
+                                </wuc:SettingsCard>
+                            </wuc:SettingsExpander.Items>
+
+                        </wuc:SettingsExpander>
+                        
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+
+            <wuc:SettingsCard
+                HeaderIcon="{wuc:FontIcon FontFamily={StaticResource SymbolThemeFontFamily}, Glyph=&#xE768;}"
+                Header="Start drag mouse move threshold"
+                Description="The drag will only start if the cursor would have moved at least this distance due to three fingers movement. This is used to differentiate three finger gesture from four finger gestures. Recommended: 100px">
+
+                <StackPanel Orientation="Horizontal" HorizontalAlignment="Left" Spacing="10">
+                    <Slider MinWidth="150"
+                            StepFrequency="1"
+                            Maximum="200"
+                            Minimum="0"
+                            Value="{x:Bind StartDragThresholdProperty, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+
+                    <NumberBox MinWidth="80"
+                               Value="{x:Bind StartDragThresholdProperty, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                               Minimum="0"
+                               Maximum="1000"
+                               SmallChange="5"
+                               LargeChange="20"
+                               SpinButtonPlacementMode="Compact" />
+                </StackPanel>
+
+            </wuc:SettingsCard>
+            <wuc:SettingsCard
+                HeaderIcon="{wuc:FontIcon FontFamily={StaticResource SymbolThemeFontFamily}, Glyph=&#xE71A;}"
+                Header="End drag mouse move threshold"
+                Description="The drag will end if the cursor have already moved at least this distance due to one finger movement. Recommended: 10px. This threshold can’t be higher than the start drag threshold.">
+
+                <StackPanel Orientation="Horizontal" HorizontalAlignment="Left" Spacing="10">
+                    <Slider MinWidth="150"
+                            StepFrequency="1"
+                            Maximum="200"
+                            Minimum="0"
+                            Value="{x:Bind StopDragThresholdProperty, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+
+                    <NumberBox MinWidth="80"
+                               Value="{x:Bind StopDragThresholdProperty, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                               Minimum="0"
+                               Maximum="1000"
+                               SmallChange="1"
+                               LargeChange="5"
+                               SpinButtonPlacementMode="Compact" />
+                </StackPanel>
+            </wuc:SettingsCard>
+
+            <Expander
+                IsExpanded="False"
+                ExpandDirection="Down"
+                VerticalAlignment="Top"
+                HorizontalAlignment="Stretch"
+                Header="Troubleshooting">
+
+                <StackPanel Margin="0,0,0,0"
+                            ChildrenTransitions="{StaticResource SettingsCardsAnimations}"
+                            Spacing="5">
+
+                    <wuc:SettingsCard
+                        Description="If the fingers move more than this distance at once, the record will be discarded. Can be used to prevent cursor jumps due to jumpy touchpad reports. Set to 0 to disable the limit. Default to 0."
+                        Header="Limit the maximum allowed distance the finger can be moved at once">
+
+                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Left" Spacing="10">
+                            <Slider MinWidth="150"
+                                    StepFrequency="1"
+                                    Maximum="200"
+                                    Minimum="0"
+                                    Value="{x:Bind MaxFingerMoveDistanceProperty, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+
+                            <NumberBox MinWidth="80"
+                                       Value="{x:Bind MaxFingerMoveDistanceProperty, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                       Minimum="0"
+                                       Maximum="10000"
+                                       SmallChange="5"
+                                       LargeChange="10"
+                                       SpinButtonPlacementMode="Compact" />
+                        </StackPanel>
+                    </wuc:SettingsCard>
+
+                    <wuc:SettingsCard
+                        Description="Move the cursor based on an average of the last N inputs. Raise the value to smooth the cursor movement. Change this setting only if you are having issues as it will raise latency. Default to 1."
+                        Header="Average cursor movement">
+                        <NumberBox MinWidth="60"
+                                   Value="{x:Bind CursorAveragingProperty, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                   Minimum="1"
+                                   Maximum="10"
+                                   SmallChange="1"
+                                   LargeChange="1"
+                                   SpinButtonPlacementMode="Compact" />
+                    </wuc:SettingsCard>
+
+                </StackPanel>
+            </Expander>
+
+        </StackPanel>
+    </ScrollView>
+
+</Page>

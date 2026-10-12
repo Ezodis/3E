@@ -1,0 +1,31 @@
+(defcfg
+  windows-interception-keyboard-hwids (
+    "{{POWER_KEYBOARD_HWID}}"
+  )
+)
+
+(defsrc
+  lctl lmet lalt k
+)
+
+(defalias
+  command-key (tap-dance-eager 350 (
+    lalt
+    (multi (release-key lalt) lmet h)
+  ))
+  triangle-layer (layer-while-held power-special)
+)
+
+(deflayer base
+  lmet @command-key @triangle-layer k
+)
+
+;; Command activates immediately as raw Left Alt, which the system scan-code
+;; map converts to Ctrl. A second tap within 350 ms releases that modifier and
+;; emits Win+H. Command+Tab and other Command shortcuts are never delayed.
+
+;; The dotted-triangle key reports Alt+K. Suppress that mobile-only sequence
+;; and emit raw Left Ctrl, which the system scan-code map converts to Alt.
+(deflayer power-special
+  _ _ _ lctl
+)

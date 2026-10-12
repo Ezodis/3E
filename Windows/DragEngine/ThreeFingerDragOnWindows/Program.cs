@@ -1,0 +1,96 @@
+﻿using System;
+using System.Diagnostics;
+using System.Threading;
+using System.Threading.Tasks;
+using Microsoft.UI.Dispatching;
+using Microsoft.Windows.AppLifecycle;
+using ThreeFingerDragOnWindows.utils;
+using Application = Microsoft.UI.Xaml.Application;
+using Utils = ThreeFingerDragOnWindows.utils.Utils;
+
+namespace ThreeFingerDragOnWindows;
+
+public class Program {
+    [STAThread]
+    static Task<int> Main(string[] args){
+        if (args.Length == 2 && args[0] == "--self-test") {
+            var cases = new[] {
+                WindowsHub.ScheduledTheme(new DateTime(2026, 1, 1, 11, 59, 59)) == 0,
+                WindowsHub.ScheduledTheme(new DateTime(2026, 1, 1, 12, 0, 0)) == 1,
+                WindowsHub.ScheduledTheme(new DateTime(2026, 1, 1, 19, 59, 59)) == 1,
+                WindowsHub.ScheduledTheme(new DateTime(2026, 1, 1, 20, 0, 0)) == 0,
+                WindowsHub.WindowsReleaseVersion("combined-v99.0.0") == null,
+                WindowsHub.WindowsReleaseVersion("windows-vinvalid") == null,
+                WindowsHub.WindowsReleaseVersion("windows-v1.2.3") == new Version(1, 2, 3),
+            };
+            bool passed = Array.TrueForAll(cases, item => item);
+            System.IO.File.WriteAllText(args[1], System.Text.Json.JsonSerializer.Serialize(new { passed, cases, version = WindowsHub.Version }));
+            return Task.FromResult(passed ? 0 : 1);
+        }
+        WinRT.ComWrappersSupport.InitializeComWrappers();
+
+        (AppInstance existingInstance, bool existingInstanceIsAdmin) = FindExistingInstance();
+
+        if(existingInstance != null){
+            if(Utils.IsAppRunningAsAdministrator() && !existingInstanceIsAdmin && TerminateOldInstance(existingInstance.ProcessId)){
+                Logger.Log("Unelevated instance found and killed. Starting the app");
+                StartApp();
+            } else{
+                Logger.Log("Instance found, redirecting activation.");
+                RedirectActivation(existingInstance);
+            }
+        } else{
+            Logger.Log("No instance found, starting the app.");
+            StartApp();
+        }
+        return Task.FromResult(0);
+    }
+
+    private static void RedirectActivation(AppInstance instance){
+        AppActivationArguments args = AppInstance.GetCurrent().GetActivatedEventArgs();
+        _ = instance.RedirectActivationToAsync(args);
+    }
+
+    private static void StartApp(){
+        AppInstance.FindOrRegisterForKey("ThreeFingerDragOnWindows-SingleInstance-" + (Utils.IsAppRunningAsAdministrator() ? "Admin" : "User"));
+        AppInstance.GetCurrent().Activated += OnActivated;
+
+        Application.Start((p) => {
+            var context = new DispatcherQueueSynchronizationContext(
+                DispatcherQueue.GetForCurrentThread());
+            SynchronizationContext.SetSynchronizationContext(context);
+            new App();
+        });
+    }
+
+    private static (AppInstance, bool) FindExistingInstance(){
+        foreach(AppInstance appInstance in AppInstance.GetInstances()){
+            if(appInstance.IsCurrent) continue;
+            if(appInstance.Key.Equals("ThreeFingerDragOnWindows-SingleInstance-User")){
+                return (appInstance, false);
+            }
+
+            if(appInstance.Key.Equals("ThreeFingerDragOnWindows-SingleInstance-Admin")){
+                return (appInstance, true);
+            }
+        }
+
+        return (null, false);
+    }
+
+    private static void OnActivated(object sender, AppActivationArguments args){
+        (Application.Current as App)?.DispatcherQueue.TryEnqueue(() => { (Application.Current as App)?.OpenSettingsWindow(); });
+    }
+
+    private static bool TerminateOldInstance(uint processId){
+        try{
+            Process oldInstance = Process.GetProcessById((int) processId);
+            oldInstance.Kill();
+        } catch(Exception ex){
+            Logger.Log(ex.ToString());
+            return false;
+        }
+
+        return true;
+    }
+}
