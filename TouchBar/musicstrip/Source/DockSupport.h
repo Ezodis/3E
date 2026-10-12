@@ -369,6 +369,7 @@ static NSArray<NSURL *> *DockFolderURLs(NSDictionary *dock) {
 - (void)refresh;
 - (NSDictionary *)snapshot;
 - (void)restorePresentation;
+- (void)suspendPresentation;
 - (void)holdApp:(NSPressGestureRecognizer *)gesture;
 - (void)prepareSwipeApps;
 - (void)swipeApp:(DockSwipeGesture *)gesture;
@@ -377,6 +378,12 @@ static NSArray<NSURL *> *DockFolderURLs(NSDictionary *dock) {
 @end
 
 @implementation DockPanel
+- (void)suspendPresentation {
+    // Keep the populated row and its models alive, but release modal ownership
+    // before another process (Apple's Spaces agent) presents its own Touch Bar.
+    if(self.visible && self.bar)
+        ((void(*)(id,SEL,id))objc_msgSend)(NSTouchBar.class,NSSelectorFromString(@"dismissSystemModalTouchBar:"),self.bar);
+}
 - (void)restorePresentation {
     if(!self.visible) return;
     ConfigureAppsOverlay();

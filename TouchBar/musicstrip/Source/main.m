@@ -320,6 +320,8 @@ static OSStatus SendSpotifyCommand(pid_t pid, int command) {
 @property BOOL appsVisible;
 @property NSCustomTouchBarItem *appsOverlayTrayItem;
 @property BOOL appsRequested;
+@property BOOL nativeSpacesActive;
+@property NSUInteger nativeSpacesGeneration;
 @property MusicView *musicView;
 @property DockLauncher *dockLauncher;
 @property DockPanel *dockPanel;
@@ -436,6 +438,7 @@ static OSStatus SendSpotifyCommand(pid_t pid, int command) {
     [self startMidi];
 }
 - (void)appsLauncherCommand:(int)command {
+    self.nativeSpacesActive=NO; self.nativeSpacesGeneration++;
     if(command==5) {
         self.appsRequested=YES; self.midiRequested=NO;
         [self sendMidi:@"HIDE"]; [self sendApps:@"SHOW"];
@@ -462,8 +465,11 @@ static OSStatus SendSpotifyCommand(pid_t pid, int command) {
         }
         NSLog(@"Apps panel: VISIBLE");
     } else if([command isEqualToString:@"HIDE"] || [command isEqualToString:@"QUIT"]) {
+        self.nativeSpacesActive=NO; self.nativeSpacesGeneration++;
         [self.dockPanel close:nil];
-    } else if([command isEqualToString:@"RESTORE"]) [self.dockPanel restorePresentation];
+    } else if([command isEqualToString:@"RESTORE"]) {
+        if(!self.nativeSpacesActive) [self.dockPanel restorePresentation];
+    }
     else if([command isEqualToString:@"STATUS"]) {
         NSMutableDictionary *state=[[self.dockPanel snapshot] mutableCopy];
         state[@"buttonWidth"]=@(NSWidth(self.dockLauncher.frame)); self.appsStatus=state;
@@ -473,21 +479,52 @@ static OSStatus SendSpotifyCommand(pid_t pid, int command) {
     else if([command isEqualToString:@"ROOT"]) [self.dockPanel.folderBrowser willClose:nil];
 }
 - (void)openDesktops {
-    // Preserve a real app row under Apple's temporary picker. Clearing both
-    // modal bars first can leave a black row or dismiss a newly presented picker.
+    if(self.nativeSpacesActive) return;
+    self.nativeSpacesActive=YES; self.nativeSpacesGeneration++;
     self.appsRequested=YES; self.midiRequested=NO;
     [self sendApps:@"SHOW"];
     [self presentNativeSpacesWhenReady:20];
 }
+- (BOOL)nativeSpacesPickerVisible { return NativeSpacesPickerVisible(); }
+- (void)finishNativeSpacesHandoff {
+    self.nativeSpacesActive=NO; self.nativeSpacesGeneration++;
+    if(self.appsRequested && self.dockPanel.visible && !self.midiVisible && !self.midiRequested)
+        [self.dockPanel restorePresentation];
+}
+- (void)checkNativeSpaces:(NSUInteger)generation remaining:(NSInteger)attempts didShow:(BOOL)didShow {
+    if(!self.nativeSpacesActive || generation!=self.nativeSpacesGeneration) return;
+    if(!self.appsRequested || !self.dockPanel.visible || self.midiRequested || self.midiVisible) {
+        self.nativeSpacesActive=NO; self.nativeSpacesGeneration++; return;
+    }
+    BOOL visible=[self nativeSpacesPickerVisible];
+    if(!visible && (didShow || attempts<=0)) {
+        NSLog(@"Native Spaces %@; restoring populated app row",didShow ? @"dismissed" : @"did not become visible");
+        [self finishNativeSpacesHandoff]; return;
+    }
+    __weak AppDelegate *weakSelf=self;
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW,100*NSEC_PER_MSEC),dispatch_get_main_queue(),^{
+        [weakSelf checkNativeSpaces:generation remaining:MAX(0,attempts-1) didShow:didShow || visible];
+    });
+}
 - (void)presentNativeSpacesWhenReady:(NSInteger)attempts {
-    if(!self.appsRequested || !self.dockPanel.visible) return;
+    if(!self.nativeSpacesActive || !self.appsRequested || !self.dockPanel.visible) return;
     __weak AppDelegate *weakSelf=self;
     if(self.midiVisible) {
         if(attempts>0) dispatch_after(dispatch_time(DISPATCH_TIME_NOW,50*NSEC_PER_MSEC),dispatch_get_main_queue(),^{ [weakSelf presentNativeSpacesWhenReady:attempts-1]; });
-        return; // Never leave a black bar if the old MIDI modal cannot close.
+        else [self finishNativeSpacesHandoff];
+        return;
     }
+    NSUInteger generation=self.nativeSpacesGeneration;
+    [self.dockPanel suspendPresentation];
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW,200*NSEC_PER_MSEC),dispatch_get_main_queue(),^{
-        if(weakSelf.appsRequested && weakSelf.dockPanel.visible && !weakSelf.midiVisible) ShowNativeSpacesPicker();
+        if(!weakSelf.nativeSpacesActive || generation!=weakSelf.nativeSpacesGeneration) return;
+        if(!weakSelf.appsRequested || !weakSelf.dockPanel.visible || weakSelf.midiVisible || weakSelf.midiRequested) {
+            [weakSelf finishNativeSpacesHandoff]; return;
+        }
+        ShowNativeSpacesPicker();
+        // Delivery is not evidence of rendering. Apple's native visibility
+        // signal must arrive within 1.5s, otherwise restore the existing row.
+        [weakSelf checkNativeSpaces:generation remaining:15 didShow:NO];
     });
 }
 - (void)startApps {
