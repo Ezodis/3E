@@ -90,7 +90,7 @@ function Get-InstalledApp([string]$Pattern) {
         if ($app) { return $app }
     }
 }
-function Install-ReleaseApp([string]$Repository, [string]$AssetPattern, [string]$DisplayName, [string]$Arguments) {
+function Install-ReleaseApp([string]$Repository, [string]$AssetPattern, [string]$DisplayName, [string]$Arguments, [bool]$RequireSignature = $true) {
     if (Get-InstalledApp $DisplayName) { return }
     $release = Invoke-RestMethod "https://api.github.com/repos/$Repository/releases/latest" -Headers @{ 'User-Agent'='3EWindows-Setup' }
     $asset = $release.assets | Where-Object name -match $AssetPattern | Select-Object -First 1
@@ -98,7 +98,10 @@ function Install-ReleaseApp([string]$Repository, [string]$AssetPattern, [string]
     $installer = Join-Path $env:TEMP ([Guid]::NewGuid().ToString('N') + '.exe')
     try {
         Invoke-WebRequest $asset.browser_download_url -OutFile $installer -UseBasicParsing
-        if ((Get-AuthenticodeSignature -LiteralPath $installer).Status -ne 'Valid') { throw "$DisplayName installer signature is invalid." }
+        $hasDigest = $asset.digest -match '^sha256:([a-fA-F0-9]{64})$'
+        if ($hasDigest -and (Get-FileHash -LiteralPath $installer -Algorithm SHA256).Hash -ne $Matches[1]) { throw "$DisplayName installer checksum mismatch." }
+        if ($RequireSignature -and (Get-AuthenticodeSignature -LiteralPath $installer).Status -ne 'Valid') { throw "$DisplayName installer signature is invalid." }
+        if (-not $RequireSignature -and -not $hasDigest) { throw "$DisplayName official release checksum is missing." }
         $process = Start-Process -FilePath $installer -ArgumentList $Arguments -Wait -PassThru
         if ($process.ExitCode -notin @(0,3010)) { throw "$DisplayName installation failed ($($process.ExitCode))." }
     } finally { Remove-Item -LiteralPath $installer -Force -ErrorAction SilentlyContinue }
@@ -215,7 +218,7 @@ if ([IO.Path]::GetFullPath($PSCommandPath) -ne [IO.Path]::GetFullPath((Join-Path
 }
 
 Install-ReleaseApp 'microsoft/PowerToys' "^PowerToysUserSetup-.+-$arch\.exe$" 'PowerToys*' '/install /quiet /norestart'
-Install-ReleaseApp 't1m0thyj/WinDynamicDesktop' "^WinDynamicDesktop_.+_$arch`_Setup\.exe$" 'WinDynamicDesktop*' '/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /SP- /TASKS="registerddw"'
+Install-ReleaseApp 't1m0thyj/WinDynamicDesktop' "^WinDynamicDesktop_.+_$arch`_Setup\.exe$" 'WinDynamicDesktop*' '/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /SP- /TASKS="registerddw"' $false
 
 $ptSettings = Join-Path $env:LOCALAPPDATA 'Microsoft\PowerToys\settings.json'
 Edit-Json $ptSettings {

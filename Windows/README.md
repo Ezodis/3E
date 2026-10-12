@@ -28,7 +28,7 @@ Setup removes duplicate Edy input startup tasks and their registry autoruns, pre
 
 The app checks daily without pop-up notifications and displays available updates in its menu. **Check for updates** examines only stable `windows-v…` releases of `Ezodis/3E`; it cannot select a Mac release. Installing an update requires an explicit click, a valid SHA-256 match against that release's `SHA256SUMS.txt`, and Windows administrator approval. Failed/offline checks wait until the next daily attempt; the menu can retry immediately.
 
-The unsigned app is built from maintained source and includes the upstream drag MIT license. External installer Authenticode signatures are checked; the official .NET download is also checked against Microsoft's SHA-512 metadata. Windows may request approval for an unsigned downloaded script/app. A published release is immutable; increment [`version.json`](version.json) before publishing another version.
+The unsigned app is built from maintained source and includes the upstream drag MIT license. Microsoft installer Authenticode signatures are checked; .NET is also checked against Microsoft's SHA-512 metadata. WinDynamicDesktop's unsigned installer is checked against its official GitHub asset's SHA-256 digest, and Kanata against its published checksums. Windows may request approval for an unsigned downloaded script/app. A published release is immutable; increment [`version.json`](version.json) before publishing another version.
 
 ## Build
 
