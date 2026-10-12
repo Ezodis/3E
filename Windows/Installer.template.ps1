@@ -259,6 +259,8 @@ if ($device -and $arch -eq 'x64') {
     [Array]::Copy($meaningful,$buffer,$meaningful.Length)
     $config = $EmbeddedKeyboardTemplate.Replace('{{POWER_KEYBOARD_HWID}}', ($buffer -join ', '))
     [IO.File]::WriteAllText((Join-Path $keyboardFolder '3EWindows.kbd'), $config, [Text.UTF8Encoding]::new($false))
+    $hasKeyboardRuntime = (Test-Path -LiteralPath (Join-Path $keyboardFolder '3EWindows.Keyboard.exe')) -and (Test-Path -LiteralPath (Join-Path $keyboardFolder 'interception.dll')) -and (Test-Path -LiteralPath (Join-Path $keyboardFolder 'install-interception.exe'))
+    if (-not $AppOnly -or -not $hasKeyboardRuntime) {
     $temporary = Join-Path $env:TEMP ('3EWindows-keyboard-' + [Guid]::NewGuid().ToString('N'))
     New-Item -ItemType Directory -Path $temporary -Force | Out-Null
     try {
@@ -297,6 +299,7 @@ if ($device -and $arch -eq 'x64') {
         if (-not $resolved.StartsWith([IO.Path]::GetFullPath($env:TEMP).TrimEnd('\') + '\3EWindows-keyboard-', [StringComparison]::OrdinalIgnoreCase)) { throw 'Unsafe temporary path.' }
         Remove-Item -LiteralPath $resolved -Recurse -Force -ErrorAction SilentlyContinue
     }
+    }
 } elseif ($arch -eq 'arm64' -and $device) { Write-Warning 'Clicks Interception driver is not supported on ARM64; the other features are available.' }
 else { Write-Host 'Connect the Clicks keyboard and run this installer again to add its device-specific layout.' }
 
@@ -329,19 +332,7 @@ $recovery = @'
 Stop-ScheduledTask -TaskName '3£Windows' -ErrorAction SilentlyContinue
 Get-Process -Name '3£Windows','3EWindows.Keyboard','PowerToys.KeyboardManagerEngine' -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
 Start-Sleep -Seconds 2
-$launchTime = [DateTime]::UtcNow
 Start-ScheduledTask -TaskName '3£Windows'
-$statusPath = Join-Path $data 'status.json'
-$deadline = [DateTime]::UtcNow.AddSeconds(15)
-$started = $false
-do {
-    Start-Sleep -Seconds 1
-    if ((Get-Process -Name '3£Windows' -ErrorAction SilentlyContinue) -and (Test-Path -LiteralPath $statusPath) -and (Get-Item -LiteralPath $statusPath).LastWriteTimeUtc -ge $launchTime) { $started = $true; break }
-} while ([DateTime]::UtcNow -lt $deadline)
-if (-not $started) { throw '3£Windows did not complete startup; see Windows Application events and the local 3EWindows logs.' }
-$suiteStopped = $false
-$resolvedRollback = [IO.Path]::GetFullPath($rollback)
-if ($resolvedRollback.StartsWith([IO.Path]::GetFullPath($env:TEMP).TrimEnd('\') + '\3EWindows-rollback-', [StringComparison]::OrdinalIgnoreCase)) { Remove-Item -LiteralPath $resolvedRollback -Recurse -Force -ErrorAction SilentlyContinue }
 '@
 $encoded = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($recovery))
 $xmlUser = [Security.SecurityElement]::Escape($user)
@@ -361,7 +352,19 @@ Register-ScheduledTask -TaskName '3£Windows Resume Recovery' -Xml $xml -Force |
 
 {{KIRO_TASK}}
 
+$launchTime = [DateTime]::UtcNow
 Start-ScheduledTask -TaskName '3£Windows'
+$statusPath = Join-Path $data 'status.json'
+$deadline = [DateTime]::UtcNow.AddSeconds(15)
+$started = $false
+do {
+    Start-Sleep -Seconds 1
+    if ((Get-Process -Name '3£Windows' -ErrorAction SilentlyContinue) -and (Test-Path -LiteralPath $statusPath) -and (Get-Item -LiteralPath $statusPath).LastWriteTimeUtc -ge $launchTime) { $started = $true; break }
+} while ([DateTime]::UtcNow -lt $deadline)
+if (-not $started) { throw '3£Windows did not complete startup; see Windows Application events and the local 3EWindows logs.' }
+$suiteStopped = $false
+$resolvedRollback = [IO.Path]::GetFullPath($rollback)
+if ($resolvedRollback.StartsWith([IO.Path]::GetFullPath($env:TEMP).TrimEnd('\') + '\3EWindows-rollback-', [StringComparison]::OrdinalIgnoreCase)) { Remove-Item -LiteralPath $resolvedRollback -Recurse -Force -ErrorAction SilentlyContinue }
 Write-Host "3£Windows $Version installed. One tray menu owns keyboard, drag, themes and wallpaper."
 Write-Host 'Copy 3£Windows.ps1 alone to another PC to install the same setup.'
 if (-not $AppOnly) { Write-Host 'Restart Windows to activate the left Alt/Ctrl swap and any newly installed keyboard driver.' }

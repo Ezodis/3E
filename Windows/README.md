@@ -4,7 +4,7 @@ One Windows tray app for three-finger dragging, Clicks keyboard mapping, PowerTo
 
 ## Install and export
 
-Download [`3£Windows.ps1`](../3%C2%A3Windows.ps1) from this repository or a [`windows-v…` release](https://github.com/Ezodis/3E/releases). Run:
+Download [`3£Windows.ps1`](../3%C2%A3Windows.ps1) from this repository, or extract it from **3EWindows.zip** in a [`windows-v…` release](https://github.com/Ezodis/3E/releases). The ZIP preserves the exact filename despite GitHub's asset-name normalization. Run:
 
 ```powershell
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File '.\3£Windows.ps1'

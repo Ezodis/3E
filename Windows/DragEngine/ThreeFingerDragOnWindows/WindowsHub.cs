@@ -1,6 +1,7 @@
 using System;
 using System.Diagnostics;
 using System.IO;
+using System.IO.Compression;
 using System.Linq;
 using System.Net.Http;
 using System.Runtime.InteropServices;
@@ -17,7 +18,7 @@ namespace ThreeFingerDragOnWindows;
 
 // The drag engine and the hub share this process and its single notification icon.
 public sealed class WindowsHub : IDisposable {
-    public const string Version = "1.0.0";
+    public const string Version = "1.0.1";
     private const string ReleasesUrl = "https://api.github.com/repos/Ezodis/3E/releases";
     private readonly string root = AppContext.BaseDirectory;
     private readonly string data = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "3EWindows");
@@ -281,17 +282,43 @@ public sealed class WindowsHub : IDisposable {
 
     private async Task InstallUpdateAsync(JsonElement release) {
         const string name = "3£Windows.ps1";
-        var sums = await http.GetStringAsync(AssetUrl(release, "SHA256SUMS.txt"));
-        var checksum = sums.Split('\n').Select(line => line.Trim().Split(new[] { ' ', '\t' }, 2, StringSplitOptions.RemoveEmptyEntries))
-            .FirstOrDefault(parts => parts.Length == 2 && parts[1].TrimStart('*', ' ') == name)?[0];
-        if (checksum == null || checksum.Length != 64 || !checksum.All(Uri.IsHexDigit)) throw new InvalidDataException("Installer checksum is missing or invalid.");
-        var bytes = await http.GetByteArrayAsync(AssetUrl(release, name));
-        if (!Convert.ToHexString(SHA256.HashData(bytes)).Equals(checksum, StringComparison.OrdinalIgnoreCase)) throw new InvalidDataException("Installer checksum verification failed.");
+        var contents = await ReadVerifiedInstallerAsync(release);
         var folder = Path.Combine(data, "Updates", Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(folder);
         var installer = Path.Combine(folder, name);
-        await File.WriteAllBytesAsync(installer, bytes);
+        await File.WriteAllBytesAsync(installer, contents);
         Process.Start(new ProcessStartInfo("powershell.exe", "-NoProfile -ExecutionPolicy Bypass -File \"" + installer + "\" -AppOnly") { UseShellExecute = true, Verb = "runas" })?.Dispose();
+    }
+
+    private static async Task<byte[]> ReadVerifiedInstallerAsync(JsonElement release) {
+        const string name = "3£Windows.ps1";
+        const string assetName = "3EWindows.zip";
+        var sums = await http.GetStringAsync(AssetUrl(release, "SHA256SUMS.txt"));
+        var checksum = sums.Split('\n').Select(line => line.Trim().Split(new[] { ' ', '\t' }, 2, StringSplitOptions.RemoveEmptyEntries))
+            .FirstOrDefault(parts => parts.Length == 2 && parts[1].TrimStart('*', ' ') == assetName)?[0];
+        if (checksum == null || checksum.Length != 64 || !checksum.All(Uri.IsHexDigit)) throw new InvalidDataException("Installer checksum is missing or invalid.");
+        var bytes = await http.GetByteArrayAsync(AssetUrl(release, assetName));
+        if (!Convert.ToHexString(SHA256.HashData(bytes)).Equals(checksum, StringComparison.OrdinalIgnoreCase)) throw new InvalidDataException("Installer checksum verification failed.");
+        using (var archive = new ZipArchive(new MemoryStream(bytes), ZipArchiveMode.Read)) {
+            var entry = archive.GetEntry(name);
+            if (archive.Entries.Count != 1 || entry == null || entry.Length > 128 * 1024 * 1024) throw new InvalidDataException("Invalid portable installer archive.");
+            using var contents = entry.Open();
+            using var output = new MemoryStream();
+            await contents.CopyToAsync(output);
+            return output.ToArray();
+        }
+    }
+
+    // Read-only release validation uses exactly the download path used by updates.
+    public static async Task VerifyReleaseAsync(string metadataPath, string reportPath) {
+        using var release = JsonDocument.Parse(await File.ReadAllTextAsync(metadataPath));
+        var tag = release.RootElement.GetProperty("tag_name").GetString();
+        if (WindowsReleaseVersion(tag) == null) throw new InvalidDataException("Not a Windows release.");
+        var installer = await ReadVerifiedInstallerAsync(release.RootElement);
+        await File.WriteAllTextAsync(reportPath, JsonSerializer.Serialize(new {
+            passed = true, tag, installerName = "3£Windows.ps1", bytes = installer.Length,
+            sha256 = Convert.ToHexString(SHA256.HashData(installer)).ToLowerInvariant()
+        }));
     }
 
     public void Dispose() {

@@ -13,6 +13,7 @@ namespace ThreeFingerDragOnWindows;
 public class Program {
     [STAThread]
     static Task<int> Main(string[] args){
+        if (args.Length == 3 && args[0] == "--verify-release") return VerifyRelease(args[1], args[2]);
         if (args.Length == 2 && args[0] == "--self-test") {
             var cases = new[] {
                 WindowsHub.ScheduledTheme(new DateTime(2026, 1, 1, 11, 59, 59)) == 0,
@@ -44,6 +45,11 @@ public class Program {
             StartApp();
         }
         return Task.FromResult(0);
+    }
+
+    private static async Task<int> VerifyRelease(string metadata, string report) {
+        try { await WindowsHub.VerifyReleaseAsync(metadata, report); return 0; }
+        catch (Exception ex) { System.IO.File.WriteAllText(report, ex.ToString()); return 1; }
     }
 
     private static void RedirectActivation(AppInstance instance){

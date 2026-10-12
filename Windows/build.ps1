@@ -47,6 +47,8 @@ $installer = [IO.File]::ReadAllText((Join-Path $PSScriptRoot 'Installer.template
 $installer = $installer.Replace('{{VERSION}}',$version).Replace('{{POWERTOYS_CONFIG}}',[IO.File]::ReadAllText((Join-Path $PSScriptRoot 'PowerToys.json'))).Replace('{{KEYBOARD_CONFIG}}',[IO.File]::ReadAllText((Join-Path $PSScriptRoot 'Keyboard.template.kbd')))
 $installer = $installer.Replace('{{APP_X64}}',$payloads.x64).Replace('{{APP_ARM64}}',$payloads.arm64).Replace('{{KIRO_TASK}}',$kiroTemplate.Replace('{{KIRO_ENCODED}}',$kiroEncoded))
 if ($installer -match '{{(APP_|VERSION|KIRO_|POWERTOYS_|KEYBOARD_CONFIG)') { throw 'Unresolved installer placeholders.' }
+$recovery = [regex]::Match($installer, "(?s)\`$recovery = @'\r?\n(.*?)\r?\n'@").Groups[1].Value
+if (-not $recovery -or $recovery -match '\$(data|rollback|suiteStopped|statusPath)\b') { throw 'The recovery task must be self-contained and independent of installer variables.' }
 $tokens = $null; $errors = $null
 [Management.Automation.Language.Parser]::ParseInput($installer,[ref]$tokens,[ref]$errors) | Out-Null
 if ($errors.Count) { throw ($errors.Message -join "`n") }
@@ -55,8 +57,16 @@ $installerPath = Join-Path $repository '3£Windows.ps1'
 [IO.File]::WriteAllText($installerPath,$installer,[Text.UTF8Encoding]::new($true))
 $release = Join-Path $build 'release'
 New-Item -ItemType Directory -Path $release -Force | Out-Null
-Copy-Item -LiteralPath $installerPath -Destination $release -Force
+$oldReleaseScript = Join-Path $release '3£Windows.ps1'
+if (Test-Path -LiteralPath $oldReleaseScript) { Remove-Item -LiteralPath $oldReleaseScript }
+$releaseArchive = Join-Path $release '3EWindows.zip'
+Compress-Archive -LiteralPath $installerPath -DestinationPath $releaseArchive -Force
+$zip = [IO.Compression.ZipFile]::OpenRead($releaseArchive)
+try {
+    if ($zip.Entries.Count -ne 1 -or $zip.Entries[0].FullName -ne '3£Windows.ps1') { throw 'The release ZIP must preserve the exact installer filename.' }
+} finally { $zip.Dispose() }
 $checksum = (Get-FileHash -LiteralPath $installerPath -Algorithm SHA256).Hash.ToLowerInvariant()
-[IO.File]::WriteAllText((Join-Path $release 'SHA256SUMS.txt'),"$checksum  3£Windows.ps1`n",[Text.UTF8Encoding]::new($false))
-[IO.File]::WriteAllText((Join-Path $release 'release.json'),(@{version=$version;edition='windows';repository='Ezodis/3E';architectures=@('x64','arm64');sha256=$checksum} | ConvertTo-Json),[Text.UTF8Encoding]::new($false))
+$archiveChecksum = (Get-FileHash -LiteralPath $releaseArchive -Algorithm SHA256).Hash.ToLowerInvariant()
+[IO.File]::WriteAllText((Join-Path $release 'SHA256SUMS.txt'),"$archiveChecksum  3EWindows.zip`n$checksum  3£Windows.ps1`n",[Text.UTF8Encoding]::new($false))
+[IO.File]::WriteAllText((Join-Path $release 'release.json'),(@{version=$version;edition='windows';repository='Ezodis/3E';architectures=@('x64','arm64');asset='3EWindows.zip';installerSha256=$checksum;archiveSha256=$archiveChecksum} | ConvertTo-Json),[Text.UTF8Encoding]::new($false))
 Write-Host "Built 3£Windows $version : $installerPath"
