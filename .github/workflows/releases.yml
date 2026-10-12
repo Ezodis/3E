@@ -40,6 +40,8 @@ jobs:
           /tmp/spaces-test
           xcrun clang -fobjc-arc -framework AppKit -framework Carbon -framework ApplicationServices -framework QuartzCore TouchBar/musicstrip/Tests/window_chooser.m -o /tmp/window-test
           /tmp/window-test
+          xcrun clang -fobjc-arc -Wno-deprecated-declarations -framework AppKit -framework Carbon -framework ApplicationServices -framework QuartzCore TouchBar/musicstrip/Tests/spaces_handoff.m -o /tmp/spaces-handoff-test
+          /tmp/spaces-handoff-test
           xcrun clang -fobjc-arc -framework AppKit -framework CoreMIDI TouchBar/musicstrip/Tests/combined_menu.m -o /tmp/menu-test
           STRIP_COMBINED_TOUCHTAB=1 /tmp/menu-test
       - name: Verify signatures, architectures and edition; package

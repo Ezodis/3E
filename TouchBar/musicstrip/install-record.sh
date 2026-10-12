@@ -13,9 +13,14 @@ if pgrep -x MusicStrip >/dev/null || pgrep -x 'MIDI Touchbar' >/dev/null; then
 fi
 [[ -f "$strip_app/Contents/MacOS/MusicStrip" ]]
 strip_combined=$(/usr/libexec/PlistBuddy -c 'Print ThreeEIncludesTouchTab' "$strip_app/Contents/Info.plist" 2>/dev/null || true)
+strip_installed_version=$(/usr/libexec/PlistBuddy -c 'Print CFBundleShortVersionString' "$strip_app/Contents/Info.plist")
+strip_version="${STRIP_RELEASE_VERSION:-$strip_installed_version}"
+[[ "$strip_version" =~ '^[0-9]+\.[0-9]+\.[0-9]+$' ]] || { printf 'Invalid release version\n' >&2; exit 1; }
 zsh musicstrip/Source/build.sh --bridge-only
 cp build/musicstrip/MusicStripMidiBridge.dylib "$strip_helper/Contents/Frameworks/MusicStripMidiBridge.dylib"
 cp musicstrip/Source/Info.plist "$strip_app/Contents/Info.plist"
+/usr/libexec/PlistBuddy -c "Set CFBundleShortVersionString $strip_version" "$strip_app/Contents/Info.plist"
+/usr/libexec/PlistBuddy -c "Set CFBundleVersion $strip_version" "$strip_app/Contents/Info.plist"
 if [[ "$strip_combined" == true ]]; then
   /usr/libexec/PlistBuddy -c 'Add ThreeEIncludesTouchTab bool true' "$strip_app/Contents/Info.plist"
   /usr/libexec/PlistBuddy -c 'Set LSMinimumSystemVersion 12.0' "$strip_app/Contents/Info.plist"

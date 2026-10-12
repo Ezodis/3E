@@ -637,6 +637,7 @@ static NSImage *BrandMenuIcon(void) {
     [image unlockFocus]; image.template=YES; image.name=@"3£"; return image;
 }
 static NSString *combinedGestureState=@"permission";
+static BOOL appsMenuVisible;
 static void CleanMenu(NSMenu *menu) {
     NSStatusItem *statusItem=[(id)NSApp.delegate valueForKey:@"theItem"];
     if([NSProcessInfo.processInfo.environment[@"STRIP_COMBINED_TOUCHTAB"] isEqual:@"1"] && menu==statusItem.menu) {
@@ -672,13 +673,26 @@ static void CleanMenu(NSMenu *menu) {
         }
         if(item.action==NSSelectorFromString(@"setKeyCommands:") || [title containsString:@"key command"] || [title containsString:@"keyboard shortcut"]) { [menu removeItem:item]; continue; }
         if([item.title hasPrefix:@"MIDI Touchbar (v."] || [item.title hasPrefix:@"3£ (v."])
-            item.title=[NSString stringWithFormat:@"3£ (v. %@)",StripReleaseVersion];
+            item.title=[NSString stringWithFormat:@"3£ (v. %@)",StripInstalledVersion()];
         else if([title hasPrefix:@"hide "] && ([title containsString:@"3£"] || [title containsString:@"midi touchbar"])) item.title=@"Hide Touch Bar Midi";
         else if([title hasPrefix:@"show "] && ([title containsString:@"3£"] || [title containsString:@"midi touchbar"])) item.title=@"Show Touch Bar Midi";
         else if([item.title containsString:@"MIDI Touchbar"]) item.title=[item.title stringByReplacingOccurrencesOfString:@"MIDI Touchbar" withString:@"3£"];
         else if([item.title containsString:@"Strip3£"]) item.title=[item.title stringByReplacingOccurrencesOfString:@"Strip3£" withString:@"3£"];
         item.keyEquivalent=@""; item.keyEquivalentModifierMask=0;
         if(item.submenu) CleanMenu(item.submenu);
+    }
+    if(menu==statusItem.menu) {
+        NSMenuItem *apps=nil;
+        for(NSMenuItem *item in menu.itemArray) if([item.identifier isEqual:@"local.musicstrip.appsToggle"]) apps=item;
+        if(!apps) {
+            apps=[[NSMenuItem alloc] initWithTitle:@"Touch Bar App" action:NSSelectorFromString(@"toggleApps:") keyEquivalent:@""];
+            apps.identifier=@"local.musicstrip.appsToggle";
+            apps.target=NSClassFromString(@"MusicStripMidiBridge");
+        } else [menu removeItem:apps];
+        NSInteger index=menu.numberOfItems && [menu.itemArray.firstObject.title containsString:@"(v."] ? 1 : 0;
+        if(index<menu.numberOfItems && [menu.itemArray[index].identifier isEqual:@"local.musicstrip.touchTabToggle"]) index++;
+        [menu insertItem:apps atIndex:index];
+        apps.state=appsMenuVisible ? NSControlStateValueOn : NSControlStateValueOff;
     }
 }
 static void ApplyBranding(void) {
@@ -697,6 +711,7 @@ static NSArray *MenuTitles(NSMenu *menu) {
 + (void)toggleTouchTab:(id)sender;
 + (void)toggleSurfaceMode:(id)sender;
 + (void)toggleMidi:(id)sender;
++ (void)toggleApps:(id)sender;
 @end
 static void SuppressTray(id cls, SEL sel, id item) { Report("TRAY_SUPPRESSED\n"); }
 static void Open(id self, SEL sel, NSTouchBar *bar, id identifier) {
@@ -1779,6 +1794,8 @@ static void Command(NSString *command) {
                 if(prior) [NSUserDefaults.standardUserDefaults setObject:prior forKey:PresetCountPreference]; else [NSUserDefaults.standardUserDefaults removeObjectForKey:PresetCountPreference];
             }
             Report("CONTROLS_TOUCH_SELECTION_AND_COUNT_PASSED\n");
+        } else if ([command hasPrefix:@"APPS_STATE "]) {
+            appsMenuVisible=[[command substringFromIndex:11] boolValue]; ApplyBranding();
         } else if ([command hasPrefix:@"TOUCHTAB_STATE "]) {
             combinedGestureState=[command substringFromIndex:15];
             ApplyBranding();
@@ -2024,9 +2041,13 @@ static void Command(NSString *command) {
 }
 @implementation MusicStripMidiBridge
 + (void)toggleTouchTab:(id)sender { Report("TOUCHTAB_TOGGLE\n"); }
++ (void)toggleApps:(id)sender { Report("APPS_TOGGLE\n"); }
 + (void)toggleMidi:(id)sender { Command([[(id)NSApp.delegate valueForKey:@"touchbarShown"] boolValue] ? @"HIDE" : @"SHOW"); ApplyBranding(); }
 + (void)toggleSurfaceMode:(id)sender { ChangeMode(NSApp.delegate,NSSelectorFromString(@"changeMode:"),sender); }
 + (BOOL)validateMenuItem:(NSMenuItem *)item {
+    if(item.action==@selector(toggleApps:)) {
+        item.state=appsMenuVisible ? NSControlStateValueOn : NSControlStateValueOff; return YES;
+    }
     if(item.action==@selector(toggleTouchTab:)) {
         item.state=[combinedGestureState isEqual:@"on"] ? NSControlStateValueOn : NSControlStateValueOff;
         return YES;

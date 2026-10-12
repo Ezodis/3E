@@ -473,10 +473,22 @@ static OSStatus SendSpotifyCommand(pid_t pid, int command) {
     else if([command isEqualToString:@"ROOT"]) [self.dockPanel.folderBrowser willClose:nil];
 }
 - (void)openDesktops {
-    self.appsRequested=NO; self.midiRequested=NO;
-    [self sendMidi:@"HIDE"]; [self sendApps:@"HIDE"];
-    // Let our modal teardown finish before Apple's agent owns the Touch Bar.
-    dispatch_async(dispatch_get_main_queue(),^{ ShowNativeSpacesPicker(); });
+    // Preserve a real app row under Apple's temporary picker. Clearing both
+    // modal bars first can leave a black row or dismiss a newly presented picker.
+    self.appsRequested=YES; self.midiRequested=NO;
+    [self sendApps:@"SHOW"];
+    [self presentNativeSpacesWhenReady:20];
+}
+- (void)presentNativeSpacesWhenReady:(NSInteger)attempts {
+    if(!self.appsRequested || !self.dockPanel.visible) return;
+    __weak AppDelegate *weakSelf=self;
+    if(self.midiVisible) {
+        if(attempts>0) dispatch_after(dispatch_time(DISPATCH_TIME_NOW,50*NSEC_PER_MSEC),dispatch_get_main_queue(),^{ [weakSelf presentNativeSpacesWhenReady:attempts-1]; });
+        return; // Never leave a black bar if the old MIDI modal cannot close.
+    }
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW,200*NSEC_PER_MSEC),dispatch_get_main_queue(),^{
+        if(weakSelf.appsRequested && weakSelf.dockPanel.visible && !weakSelf.midiVisible) ShowNativeSpacesPicker();
+    });
 }
 - (void)startApps {
     self.appsReady=YES; [self.dockPanel prepareSwipeApps];
@@ -584,6 +596,7 @@ static OSStatus SendSpotifyCommand(pid_t pid, int command) {
                 }
                 if ([line isEqualToString:@"READY"]) {
                     self.midiReady = YES;
+                    [self sendMidi:self.appsVisible ? @"APPS_STATE 1" : @"APPS_STATE 0"];
 #ifdef STRIP_COMBINED_TOUCHTAB
                     [self refreshTouchTab];
 #endif
@@ -592,6 +605,8 @@ static OSStatus SendSpotifyCommand(pid_t pid, int command) {
                 } else if ([line isEqualToString:@"TOUCHTAB_TOGGLE"]) {
                     [self toggleTouchTab];
 #endif
+                } else if ([line isEqualToString:@"APPS_TOGGLE"]) {
+                    [self appsLauncherCommand:2];
                 } else if ([line isEqualToString:@"VISIBLE"]) {
                     self.midiVisible=YES;
                     if(self.appsVisible || self.appsRequested) [self sendMidi:@"HIDE"];
@@ -790,6 +805,7 @@ static OSStatus SendSpotifyCommand(pid_t pid, int command) {
     }
 }
 - (void)refresh {
+    if(self.midiReady) [self sendMidi:self.appsVisible ? @"APPS_STATE 1" : @"APPS_STATE 0"];
     [self suppressNativeMediaTray];
     if (self.item && !self.midiVisible && !self.appsVisible && !self.appsRequested) SetPresence(self.appsOverlayTrayItem ? AppsTrayID : ItemID, YES);
 
@@ -1243,9 +1259,8 @@ int main(int argc, const char *argv[]) {
             dispatch_after(dispatch_time(DISPATCH_TIME_NOW,14*NSEC_PER_SEC),dispatch_get_main_queue(),^{ [delegate sendApps:@"STATUS"]; });
             dispatch_after(dispatch_time(DISPATCH_TIME_NOW,16*NSEC_PER_SEC),dispatch_get_main_queue(),^{
                 NSLog(@"Desktop snapshot: %@",delegate.appsStatus);
-                NSCAssert(delegate.appsVisible && [delegate.appsStatus[@"mode"] isEqual:@"desktops"] && [delegate.appsStatus[@"spaces"] count]>0,@"Hold opens real Touch Bar desktops");
-                NSCAssert([delegate.appsStatus[@"centerError"] doubleValue]<.01,@"Desktop row is centered");
-                NSLog(@"Capture desktops: READY"); [delegate sendApps:@"SHOW"];
+                NSCAssert(delegate.appsVisible && [delegate.appsStatus[@"mode"] isEqual:@"apps"] && [delegate.appsStatus[@"apps"] count]>0,@"Native Spaces handoff must retain a populated app row underneath");
+                NSLog(@"Native Spaces handoff requested; physical picker visibility must be checked interactively"); [delegate sendApps:@"SHOW"];
             });
             dispatch_after(dispatch_time(DISPATCH_TIME_NOW,20*NSEC_PER_SEC),dispatch_get_main_queue(),^{ [delegate sendApps:@"STATUS"]; });
             dispatch_after(dispatch_time(DISPATCH_TIME_NOW,22*NSEC_PER_SEC),dispatch_get_main_queue(),^{

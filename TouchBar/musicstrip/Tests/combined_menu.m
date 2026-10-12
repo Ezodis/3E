@@ -18,13 +18,13 @@ int main(void) { @autoreleasepool {
     TestDelegate *delegate=[TestDelegate new]; delegate.theItem=[TestStatus new]; delegate.theItem.menu=[NSMenu new]; NSApp.delegate=delegate;
     NSCAssert(StripCombinedRelease(),@"Run with STRIP_COMBINED_TOUCHTAB=1");
     CleanMenu(delegate.theItem.menu);
-    NSCAssert(delegate.theItem.menu.numberOfItems==1,@"Add one gesture toggle to the existing menu, not another icon");
+    NSCAssert(delegate.theItem.menu.numberOfItems==2,@"Add gesture and App toggles to the existing menu, not another icon");
     NSMenuItem *toggle=delegate.theItem.menu.itemArray.firstObject;
     NSCAssert(toggle.target==MusicStripMidiBridge.class && toggle.action==@selector(toggleTouchTab:),@"Use the existing parent/helper pipe action");
     combinedGestureState=@"on"; CleanMenu(delegate.theItem.menu);
     NSCAssert(toggle.state==NSControlStateValueOn && [toggle.title isEqual:@"Touch Tab"],@"Reflect actual enabled runtime state without changing the label");
     combinedGestureState=@"off"; CleanMenu(delegate.theItem.menu);
-    NSCAssert(toggle.state==NSControlStateValueOff && delegate.theItem.menu.numberOfItems==1,@"Disabling never duplicates the menu item");
+    NSCAssert(toggle.state==NSControlStateValueOff && delegate.theItem.menu.numberOfItems==2,@"Disabling never duplicates the menu item");
     combinedGestureState=@"permission"; CleanMenu(delegate.theItem.menu);
     NSCAssert([toggle.title isEqual:@"Touch Tab"] && toggle.toolTip.length>0,@"Permission explanation belongs in tooltip, not the toggle label");
     NSMenuItem *hide=[[NSMenuItem alloc] initWithTitle:@"Hide 3£" action:nil keyEquivalent:@""];
@@ -36,7 +36,11 @@ int main(void) { @autoreleasepool {
     NSCAssert([MusicStripMidiBridge validateMenuItem:hide] && hide.state==NSControlStateValueOff,@"Hidden MIDI is unchecked");
     NSMenuItem *version=[[NSMenuItem alloc] initWithTitle:@"3£ (v. 3.0.11)" action:nil keyEquivalent:@""];
     [delegate.theItem.menu insertItem:version atIndex:0]; CleanMenu(delegate.theItem.menu); CleanMenu(delegate.theItem.menu);
-    NSCAssert(delegate.theItem.menu.itemArray[1]==toggle && delegate.theItem.menu.itemArray[2]==hide,@"Touch Tab is the first action, followed by MIDI, without duplicates");
+    NSMenuItem *apps=delegate.theItem.menu.itemArray[2];
+    NSCAssert(delegate.theItem.menu.itemArray[1]==toggle && [apps.title isEqual:@"Touch Bar App"] && delegate.theItem.menu.itemArray[3]==hide,@"Touch Tab, App and MIDI remain in stable order without duplicates");
+    NSCAssert(apps.target==MusicStripMidiBridge.class && apps.action==@selector(toggleApps:),@"App menu uses the existing main-process pipe");
+    appsMenuVisible=YES; [MusicStripMidiBridge validateMenuItem:apps]; NSCAssert(apps.state==NSControlStateValueOn,@"Visible apps are checked");
+    appsMenuVisible=NO; [MusicStripMidiBridge validateMenuItem:apps]; NSCAssert(apps.state==NSControlStateValueOff,@"Hidden apps are unchecked");
     combinedGestureState=@"on";
     NSCAssert([MusicStripMidiBridge validateMenuItem:toggle] && toggle.state==NSControlStateValueOn,@"Menu validation retains the actual running checkmark");
     NSMenuItem *surface=[[NSMenuItem alloc] initWithTitle:@"Control Surface Mode" action:NSSelectorFromString(@"changeMode:") keyEquivalent:@""];
