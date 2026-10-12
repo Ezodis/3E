@@ -33,7 +33,6 @@
         <tb:TaskbarIcon
             x:Name="TaskbarIcon"
             ToolTipText="3£Windows — keyboard, drag and themes"
-            IconSource="ms-appx:///Assets/icon.ico"
             MenuActivation="RightClick"
             NoLeftClickDelay="True"
             LeftClickCommand="{StaticResource OpenSettingsWindowCommand}">

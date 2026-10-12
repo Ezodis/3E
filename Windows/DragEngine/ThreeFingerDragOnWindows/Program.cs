@@ -13,6 +13,18 @@ namespace ThreeFingerDragOnWindows;
 public class Program {
     [STAThread]
     static Task<int> Main(string[] args){
+        if (args.Length == 2 && args[0] == "--preview-tray-icons") {
+            System.IO.Directory.CreateDirectory(args[1]);
+            foreach (bool light in new[] { true, false }) {
+                using var artwork = TrayIconArtwork.CreateBitmap(light);
+                using var preview = new System.Drawing.Bitmap(64, 64);
+                using var graphics = System.Drawing.Graphics.FromImage(preview);
+                graphics.Clear(light ? System.Drawing.Color.White : System.Drawing.Color.FromArgb(25, 25, 25));
+                graphics.DrawImage(artwork, 0, 0);
+                preview.Save(System.IO.Path.Combine(args[1], light ? "light-taskbar.png" : "dark-taskbar.png"));
+            }
+            return Task.FromResult(0);
+        }
         if (args.Length == 3 && args[0] == "--verify-release") return VerifyRelease(args[1], args[2]);
         if (args.Length == 2 && args[0] == "--self-test") {
             var cases = new[] {

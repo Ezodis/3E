@@ -16,6 +16,10 @@ public sealed partial class HandlerWindow : Window {
     private readonly App _app;
     private readonly ContactsManager _contactsManager;
     private readonly ThreeFingerDrag _threeFingersDrag;
+    private readonly DispatcherTimer _iconTimer = new() { Interval = TimeSpan.FromSeconds(2) };
+    private System.Drawing.Icon _trayArtwork;
+    private bool? _lightTaskbar;
+    public string TrayIconForeground => _lightTaskbar == true ? "black" : "white";
 
     public bool TouchpadInitialized; // Became true when the touchpad check is done, but does not confirm that the touchpad has been registered
     public bool TouchpadExists;
@@ -26,6 +30,17 @@ public sealed partial class HandlerWindow : Window {
         InitializeComponent();
 
         _app = app;
+        UpdateTrayIcon();
+        TaskbarIcon.ForceCreate(false);
+        Microsoft.Win32.SystemEvents.UserPreferenceChanged += OnUserPreferenceChanged;
+        _iconTimer.Tick += (_, _) => UpdateTrayIcon();
+        _iconTimer.Start();
+        Closed += (_, _) => {
+            _iconTimer.Stop();
+            Microsoft.Win32.SystemEvents.UserPreferenceChanged -= OnUserPreferenceChanged;
+            TaskbarIcon.Dispose();
+            _trayArtwork?.Dispose();
+        };
         _contactsManager = new ContactsManager(this);
         _threeFingersDrag = new ThreeFingerDrag();
 
@@ -37,6 +52,23 @@ public sealed partial class HandlerWindow : Window {
     }
 
     // TaskbarIcon Actions
+    private void OnUserPreferenceChanged(object sender, Microsoft.Win32.UserPreferenceChangedEventArgs e) {
+        _app.DispatcherQueue.TryEnqueue(UpdateTrayIcon);
+    }
+
+    private void UpdateTrayIcon() {
+        using var preferences = Microsoft.Win32.Registry.CurrentUser.OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize");
+        // System theme controls the taskbar, independently of the apps theme.
+        bool light = Convert.ToInt32(preferences?.GetValue("SystemUsesLightTheme", 1)) != 0;
+        if (_lightTaskbar == light) return;
+        var artwork = TrayIconArtwork.Create(light);
+        var previous = _trayArtwork;
+        TaskbarIcon.Icon = artwork;
+        _trayArtwork = artwork;
+        _lightTaskbar = light;
+        previous?.Dispose();
+    }
+
     private void OpenSettingsWindow(object sender, ExecuteRequestedEventArgs e){
         Logger.Log("Opening SettingsWindow from HandlerWindow TaskbarIcon");
         _app.OpenSettingsWindow();
