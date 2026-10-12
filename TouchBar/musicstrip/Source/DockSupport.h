@@ -369,6 +369,7 @@ static NSArray<NSURL *> *DockFolderURLs(NSDictionary *dock) {
 - (void)refresh;
 - (NSDictionary *)snapshot;
 - (void)restorePresentation;
+- (void)rebuildPresentation;
 - (void)suspendPresentation;
 - (void)holdApp:(NSPressGestureRecognizer *)gesture;
 - (void)prepareSwipeApps;
@@ -378,6 +379,18 @@ static NSArray<NSURL *> *DockFolderURLs(NSDictionary *dock) {
 @end
 
 @implementation DockPanel
+- (void)rebuildPresentation {
+    if(!self.visible) return;
+    [self finishSwipeCancelled:YES];
+    [self suspendPresentation];
+    // A dismissed modal can keep its data while losing its remote render host.
+    // Do not reuse that bar or its transparent, detached scrubber for recovery.
+    self.appsItem=[[NSCustomTouchBarItem alloc] initWithIdentifier:DockAppsID];
+    self.appsItem.visibilityPriority=NSTouchBarItemPriorityHigh;
+    self.bar=[NSTouchBar new]; self.bar.templateItems=[NSSet setWithObject:self.appsItem];
+    self.bar.defaultItemIdentifiers=@[DockAppsID]; self.bar.principalItemIdentifier=DockAppsID;
+    self.signature=nil; [self refresh]; [self restorePresentation];
+}
 - (void)suspendPresentation {
     // Keep the populated row and its models alive, but release modal ownership
     // before another process (Apple's Spaces agent) presents its own Touch Bar.

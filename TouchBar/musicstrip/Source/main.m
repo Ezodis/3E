@@ -479,11 +479,14 @@ static OSStatus SendSpotifyCommand(pid_t pid, int command) {
     else if([command isEqualToString:@"ROOT"]) [self.dockPanel.folderBrowser willClose:nil];
 }
 - (void)openDesktops {
-    if(self.nativeSpacesActive) return;
-    self.nativeSpacesActive=YES; self.nativeSpacesGeneration++;
+    // Safety rollback: the private Apple handoff blanks the physical bar on
+    // macOS 27, even though the retained model reports itself visible. Do not
+    // suspend apps or request that picker until real rendering is validated.
+    self.nativeSpacesActive=NO; self.nativeSpacesGeneration++;
     self.appsRequested=YES; self.midiRequested=NO;
+    BOOL rebuild=self.dockPanel.visible;
     [self sendApps:@"SHOW"];
-    [self presentNativeSpacesWhenReady:20];
+    if(rebuild) [self.dockPanel rebuildPresentation];
 }
 - (BOOL)nativeSpacesPickerVisible { return NativeSpacesPickerVisible(); }
 - (void)finishNativeSpacesHandoff {
@@ -1296,17 +1299,20 @@ int main(int argc, const char *argv[]) {
             dispatch_after(dispatch_time(DISPATCH_TIME_NOW,14*NSEC_PER_SEC),dispatch_get_main_queue(),^{ [delegate sendApps:@"STATUS"]; });
             dispatch_after(dispatch_time(DISPATCH_TIME_NOW,16*NSEC_PER_SEC),dispatch_get_main_queue(),^{
                 NSLog(@"Desktop snapshot: %@",delegate.appsStatus);
-                NSCAssert(delegate.appsVisible && [delegate.appsStatus[@"mode"] isEqual:@"apps"] && [delegate.appsStatus[@"apps"] count]>0,@"Native Spaces handoff must retain a populated app row underneath");
-                NSLog(@"Native Spaces handoff requested; physical picker visibility must be checked interactively"); [delegate sendApps:@"SHOW"];
+                NSCAssert(delegate.appsVisible && [delegate.appsStatus[@"mode"] isEqual:@"apps"] && [delegate.appsStatus[@"apps"] count]>0,@"Hold must leave populated apps rather than request a failing native picker");
+                NSTouchBar *previous=delegate.dockPanel.bar;
+                [delegate openDesktops];
+                NSCAssert(!delegate.nativeSpacesActive && delegate.dockPanel.bar!=previous,@"Repeated hold must rebuild the presentation without starting native Spaces");
             });
             dispatch_after(dispatch_time(DISPATCH_TIME_NOW,20*NSEC_PER_SEC),dispatch_get_main_queue(),^{ [delegate sendApps:@"STATUS"]; });
             dispatch_after(dispatch_time(DISPATCH_TIME_NOW,22*NSEC_PER_SEC),dispatch_get_main_queue(),^{
                 NSLog(@"Apps snapshot: %@",delegate.appsStatus);
                 NSCAssert([delegate.appsStatus[@"mode"] isEqual:@"apps"] && [delegate.appsStatus[@"centerError"] doubleValue]<.01,@"Apps row is centered");
                 NSCAssert(([delegate.appsStatus[@"layout"] isEqual:@[DockAppsID]]),@"No folder or Trash items");
+                NSCAssert(delegate.dockPanel.appsScrubber.window && delegate.dockPanel.appsScrubber.alphaValue==1,@"Rebuilt app row is attached and opaque, not a retained transparent scrubber");
                 NSLog(@"Capture apps: READY");
             });
-            dispatch_after(dispatch_time(DISPATCH_TIME_NOW,25*NSEC_PER_SEC),dispatch_get_main_queue(),^{ [delegate sendApps:@"HIDE"]; NSLog(@"Passed desktop hold, centered apps and no folders/Trash"); [NSApp terminate:nil]; });
+            dispatch_after(dispatch_time(DISPATCH_TIME_NOW,25*NSEC_PER_SEC),dispatch_get_main_queue(),^{ [delegate sendApps:@"HIDE"]; NSLog(@"Passed safe launcher hold, fresh modal host, attached opaque apps and centering; physical rendering still requires user confirmation"); [NSApp terminate:nil]; });
         }
         if(argc>1 && strcmp(argv[1],"--folder-smoke-test")==0) {
             NSString *path=[NSTemporaryDirectory() stringByAppendingPathComponent:NSUUID.UUID.UUIDString];

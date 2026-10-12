@@ -3,9 +3,11 @@
 #undef main
 @interface TestSpacesPanel : DockPanel
 @property NSInteger restores;
+@property NSInteger rebuilds;
 @end
 @implementation TestSpacesPanel
 - (void)restorePresentation { self.restores++; }
+- (void)rebuildPresentation { self.rebuilds++; }
 @end
 @interface TestSpacesDelegate : AppDelegate
 @property NSMutableArray *commands;
@@ -30,16 +32,21 @@ int main(void) { @autoreleasepool {
     delegate.dockPanel=panel; delegate.commands=[NSMutableArray new];
     delegate.midiRequested=YES;
     [delegate openDesktops];
-    NSCAssert([delegate.commands isEqual:@[@"SHOW"]] && delegate.requestedNative && !delegate.midiRequested,
-              @"Keep apps underneath native Spaces instead of clearing both bars to black");
+    NSCAssert([delegate.commands isEqual:@[@"SHOW"]] && !delegate.requestedNative && !delegate.midiRequested && !delegate.nativeSpacesActive,
+              @"Hold must not invoke the physically failing native handoff or suspend the app row");
+    [delegate openDesktops];
+    NSCAssert(panel.rebuilds==1 && !delegate.requestedNative,@"Repeated hold rebuilds the rendered host, not a retained blank modal");
+    delegate.nativeSpacesActive=YES;
     NSUInteger generation=delegate.nativeSpacesGeneration;
     [delegate checkNativeSpaces:generation remaining:0 didShow:NO];
     NSCAssert(!delegate.nativeSpacesActive && panel.restores==1,@"Failed native launch must restore apps, not stay black");
     [delegate openDesktops];
+    delegate.nativeSpacesActive=YES;
     generation=delegate.nativeSpacesGeneration;
     [delegate checkNativeSpaces:generation remaining:5 didShow:YES];
     NSCAssert(!delegate.nativeSpacesActive && panel.restores==2,@"Native dismissal returns to app row");
     [delegate openDesktops];
+    delegate.nativeSpacesActive=YES;
     generation=delegate.nativeSpacesGeneration;
     delegate.nativeSpacesGeneration++;
     [delegate checkNativeSpaces:generation remaining:0 didShow:NO];
