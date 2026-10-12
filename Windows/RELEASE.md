@@ -2,7 +2,7 @@
 
 The tray icon uses native 3£ artwork: black on light taskbars and white on dark taskbars. It follows the system/taskbar theme, including manual changes and the automatic dark schedule, with a contrasting outline for accent colours.
 
-SSMS 22 now follows the Windows light/dark schedule too, using its supported system theme preference. Existing profiles are detected at startup and periodically, including after SSMS is installed or first opened. The tray menu can disable SSMS theme synchronization. Query windows and database connections stay open; only the theme preference is managed, preserving other settings and comments.
+SSMS 22 now rotates among its installed themes, choosing a different light palette during the day and a different dark palette at night. Rotation runs at app startup, noon and 8 PM, and the tray menu adds **Rotate SSMS theme now**. The previous theme is excluded from each new choice. Existing profiles are detected automatically. Query windows and database connections stay open; only the theme preference is managed, preserving other settings and comments.
 
 Download **3EWindows.zip**, extract **3£Windows.ps1**, then run it with Windows PowerShell. The ZIP preserves the pound sign in the installer filename, which GitHub changes for loose release assets. Copy the extracted script alone to export the setup. The app, both architecture payloads and keyboard rules are embedded in that single file. Missing third-party applications and Microsoft runtimes download from their official sources; installation requires internet and administrator approval. Restart Windows after first installation to activate the keyboard filter and left Alt/Ctrl swap.
 

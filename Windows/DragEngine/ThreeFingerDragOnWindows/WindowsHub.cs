@@ -18,7 +18,7 @@ namespace ThreeFingerDragOnWindows;
 
 // The drag engine and the hub share this process and its single notification icon.
 public sealed class WindowsHub : IDisposable {
-    public const string Version = "1.0.4";
+    public const string Version = "1.0.5";
     private const string ReleasesUrl = "https://api.github.com/repos/Ezodis/3E/releases";
     private readonly string root = AppContext.BaseDirectory;
     private readonly string data = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "3EWindows");
@@ -31,6 +31,7 @@ public sealed class WindowsHub : IDisposable {
     private DateTime lastTick = DateTime.Now;
     private string updateTag;
     private int ssmsThemeProfiles;
+    private string ssmsRotationPeriod;
     private static readonly HttpClient http = CreateHttpClient();
 
     public sealed class HubSettings {
@@ -122,7 +123,7 @@ public sealed class WindowsHub : IDisposable {
 
     private async Task EnsureComponentsAsync() {
         if (disposed) return;
-        if (settings.SsmsTheme) ssmsThemeProfiles = SsmsTheme.Configure(Log);
+        UpdateSsmsTheme();
         if (settings.PowerToys) {
             if (!IsRunning("PowerToys")) Start(PowerToysPath);
             await Task.Delay(1500);
@@ -162,6 +163,7 @@ public sealed class WindowsHub : IDisposable {
                 version = Version, timestampUtc = DateTime.UtcNow,
                 trayIconForeground = handler.TrayIconForeground,
                 ssmsThemeSync = settings.SsmsTheme, ssmsThemeProfiles,
+                ssmsThemes = SsmsTheme.CurrentThemeNames,
                 touchpadDetected = handler.TouchpadExists, inputReceiverInstalled = handler.InputReceiverInstalled,
                 keyboardInstalled = File.Exists(KeyboardPath), keyboardRunning = IsRunning("3EWindows.Keyboard"),
                 powerToysRunning = IsRunning("PowerToys"), shortcutsRunning = IsRunning("PowerToys.KeyboardManagerEngine"),
@@ -194,7 +196,16 @@ public sealed class WindowsHub : IDisposable {
         key.SetValue("SystemUsesLightTheme", theme, RegistryValueKind.DWord);
         SendMessageTimeout(new IntPtr(0xffff), 0x001A, UIntPtr.Zero, "ImmersiveColorSet", 2, 1000, out _);
         lastTheme = theme;
-        if (settings.SsmsTheme) ssmsThemeProfiles = SsmsTheme.Configure(Log);
+        UpdateSsmsTheme();
+    }
+
+    private void UpdateSsmsTheme(bool rotate = false) {
+        if (!settings.SsmsTheme) return;
+        using var preferences = Registry.CurrentUser.OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize");
+        bool light = Convert.ToInt32(preferences?.GetValue("AppsUseLightTheme", ScheduledTheme(DateTime.Now))) != 0;
+        string period = SsmsTheme.RotationPeriod(DateTime.Now, light);
+        ssmsThemeProfiles = SsmsTheme.Configure(Log, light, rotate || period != ssmsRotationPeriod);
+        ssmsRotationPeriod = period;
     }
 
     private void Item(string label, Action click) {
@@ -227,7 +238,8 @@ public sealed class WindowsHub : IDisposable {
         });
         menu.Items.Add(new MenuFlyoutSeparator());
         Toggle("Auto dark — light 12 PM–8 PM", settings.AutoDark, enabled => { settings.AutoDark = enabled; lastTheme = -1; ApplyTheme(); });
-        Toggle("SSMS 22 follows light/dark theme", settings.SsmsTheme, enabled => { settings.SsmsTheme = enabled; if (enabled) ssmsThemeProfiles = SsmsTheme.Configure(Log); });
+        Toggle("Rotate SSMS themes", settings.SsmsTheme, enabled => { settings.SsmsTheme = enabled; if (enabled) UpdateSsmsTheme(true); });
+        Item("Rotate SSMS theme now", () => { settings.SsmsTheme = true; UpdateSsmsTheme(true); Save(); });
         Item("Use light theme", () => { settings.AutoDark = false; Save(); SetTheme(1); });
         Item("Use dark theme", () => { settings.AutoDark = false; Save(); SetTheme(0); });
         Toggle("Dynamic wallpaper", settings.Wallpaper, enabled => {
