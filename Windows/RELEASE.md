@@ -1,5 +1,7 @@
 3£Windows combines three-finger dragging, Clicks keyboard mapping, PowerToys shortcuts and Workspaces, automatic light/dark mode, and dynamic wallpaper behind one normal tray icon.
 
+A normal left-click now opens a compact component chooser for drag settings, PowerToys, keyboard, themes and wallpaper. Choose the component to configure. Right-click retains the full controls menu; dragging settings open only when explicitly selected.
+
 The tray icon uses native 3£ artwork: black on light taskbars and white on dark taskbars. It follows the system/taskbar theme, including manual changes and the automatic dark schedule, with a contrasting outline for accent colours.
 
 SSMS 22 now rotates among its installed themes, choosing a different light palette during the day and a different dark palette at night. Rotation runs at app startup, noon and 8 PM, and the tray menu adds **Rotate SSMS theme now**. The previous theme is excluded from each new choice. Existing profiles are detected automatically. Query windows and database connections stay open; only the theme preference is managed, preserving other settings and comments.

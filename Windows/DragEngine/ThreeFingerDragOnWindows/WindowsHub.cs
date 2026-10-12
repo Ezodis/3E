@@ -18,7 +18,7 @@ namespace ThreeFingerDragOnWindows;
 
 // The drag engine and the hub share this process and its single notification icon.
 public sealed class WindowsHub : IDisposable {
-    public const string Version = "1.0.5";
+    public const string Version = "1.0.6";
     private const string ReleasesUrl = "https://api.github.com/repos/Ezodis/3E/releases";
     private readonly string root = AppContext.BaseDirectory;
     private readonly string data = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "3EWindows");
@@ -162,6 +162,7 @@ public sealed class WindowsHub : IDisposable {
             File.WriteAllText(Path.Combine(data, "status.json"), JsonSerializer.Serialize(new {
                 version = Version, timestampUtc = DateTime.UtcNow,
                 trayIconForeground = handler.TrayIconForeground,
+                trayLeftClick = "component chooser", trayRightClick = "all controls",
                 ssmsThemeSync = settings.SsmsTheme, ssmsThemeProfiles,
                 ssmsThemes = SsmsTheme.CurrentThemeNames,
                 touchpadDetected = handler.TouchpadExists, inputReceiverInstalled = handler.InputReceiverInstalled,
@@ -220,6 +221,8 @@ public sealed class WindowsHub : IDisposable {
         menu.Items.Add(item);
     }
 
+    public void RefreshControls() => RefreshMenu();
+
     private void RefreshMenu() {
         menu.Items.Clear();
         menu.Items.Add(new MenuFlyoutItem { Text = "3£Windows " + Version, IsEnabled = false });
@@ -252,6 +255,44 @@ public sealed class WindowsHub : IDisposable {
         Item(updateTag == null ? "Check for updates…" : "Update available: " + updateTag + "…", () => _ = CheckUpdatesAsync(true));
         Item("Open portable installer", () => Process.Start(new ProcessStartInfo("explorer.exe", "/select,\"" + Path.Combine(root, "3£Windows.ps1") + "\"") { UseShellExecute = true }));
         Item("Quit 3£Windows", () => App.Instance.Quit());
+    }
+
+    public MenuFlyout CreateLauncher(Action showAllControls) {
+        var launcher = new MenuFlyout();
+        launcher.Items.Add(new MenuFlyoutItem { Text = "3£Windows — choose controls", IsEnabled = false });
+        MenuFlyoutItem ActionItem(string text, Action action) {
+            var item = new MenuFlyoutItem { Text = text };
+            item.Click += (_, _) => {
+                try { action(); } catch (Exception ex) { Log(ex); MessageBox(IntPtr.Zero, ex.Message, "3£Windows", 0x10); }
+            };
+            return item;
+        }
+        ToggleMenuFlyoutItem Switch(string text, bool value, Action<bool> change) {
+            var item = new ToggleMenuFlyoutItem { Text = text, IsChecked = value };
+            item.Click += (_, _) => { try { change(item.IsChecked); Save(); } catch (Exception ex) { Log(ex); } };
+            return item;
+        }
+        void OpenPowerToys() => Start(Path.Combine(Path.GetDirectoryName(PowerToysPath), "WinUI3Apps", "PowerToys.Settings.exe"), "", true);
+        launcher.Items.Add(ActionItem("Drag settings…", () => App.Instance.OpenSettingsWindow()));
+        launcher.Items.Add(ActionItem("PowerToys settings…", OpenPowerToys));
+        var keyboard = new MenuFlyoutSubItem { Text = "Keyboard controls" };
+        keyboard.Items.Add(Switch("Enable Clicks keyboard mapping", settings.Keyboard, enabled => {
+            settings.Keyboard = enabled;
+            if (enabled) _ = EnsureComponentsAsync(); else Stop("3EWindows.Keyboard");
+        }));
+        keyboard.Items.Add(ActionItem("Keyboard shortcuts…", OpenPowerToys));
+        launcher.Items.Add(keyboard);
+        var themes = new MenuFlyoutSubItem { Text = "Theme controls" };
+        themes.Items.Add(Switch("Auto light/dark schedule", settings.AutoDark, enabled => { settings.AutoDark = enabled; lastTheme = -1; ApplyTheme(); }));
+        themes.Items.Add(ActionItem("Use light theme", () => { settings.AutoDark = false; Save(); SetTheme(1); }));
+        themes.Items.Add(ActionItem("Use dark theme", () => { settings.AutoDark = false; Save(); SetTheme(0); }));
+        themes.Items.Add(Switch("Rotate SSMS themes", settings.SsmsTheme, enabled => { settings.SsmsTheme = enabled; if (enabled) UpdateSsmsTheme(true); }));
+        themes.Items.Add(ActionItem("Rotate SSMS theme now", () => { settings.SsmsTheme = true; UpdateSsmsTheme(true); Save(); }));
+        launcher.Items.Add(themes);
+        launcher.Items.Add(ActionItem("Wallpaper controls…", () => Start(WallpaperPath, "", true)));
+        launcher.Items.Add(new MenuFlyoutSeparator());
+        launcher.Items.Add(ActionItem("All controls…", showAllControls));
+        return launcher;
     }
 
     // Windows has its own release prefix; /latest could select a macOS release.

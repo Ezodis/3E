@@ -10,6 +10,8 @@
     <Grid>
 
         <Grid.Resources>
+            <XamlUICommand x:Key="LauncherCommand" ExecuteRequested="OpenLauncher" Label="Choose controls" />
+            <XamlUICommand x:Key="AllControlsCommand" ExecuteRequested="OpenAllControls" Label="All controls" />
             <XamlUICommand
                 x:Uid="Taskbar_Menu_QuitApp"
                 x:Key="QuitAppCommand"
@@ -32,10 +34,11 @@
 
         <tb:TaskbarIcon
             x:Name="TaskbarIcon"
-            ToolTipText="3£Windows — keyboard, drag and themes"
-            MenuActivation="RightClick"
+            ToolTipText="3£Windows — click to choose controls"
+            MenuActivation="None"
             NoLeftClickDelay="True"
-            LeftClickCommand="{StaticResource OpenSettingsWindowCommand}">
+            LeftClickCommand="{StaticResource LauncherCommand}"
+            RightClickCommand="{StaticResource AllControlsCommand}">
 
             <tb:TaskbarIcon.ContextFlyout>
                 <MenuFlyout x:Name="MenuFlyout1" AreOpenCloseAnimationsEnabled="True">

@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
+using System.Runtime.InteropServices;
 using System.Timers;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Input;
@@ -52,6 +53,25 @@ public sealed partial class HandlerWindow : Window {
     }
 
     // TaskbarIcon Actions
+    [DllImport("user32.dll")] private static extern bool GetCursorPos(out System.Drawing.Point point);
+
+    private void ShowMenu(Microsoft.UI.Xaml.Controls.MenuFlyout menu) {
+        TaskbarIcon.ContextFlyout = menu;
+        GetCursorPos(out var point);
+        TaskbarIcon.ShowContextMenu(point);
+    }
+
+    private void OpenLauncher(object sender, ExecuteRequestedEventArgs e) {
+        if (_app.Hub != null) ShowMenu(_app.Hub.CreateLauncher(ShowAllControls));
+    }
+
+    private void OpenAllControls(object sender, ExecuteRequestedEventArgs e) => ShowAllControls();
+
+    private void ShowAllControls() {
+        _app.Hub?.RefreshControls();
+        ShowMenu(HubMenu);
+    }
+
     private void OnUserPreferenceChanged(object sender, Microsoft.Win32.UserPreferenceChangedEventArgs e) {
         _app.DispatcherQueue.TryEnqueue(UpdateTrayIcon);
     }
