@@ -35,6 +35,9 @@ public class Program {
                 WindowsHub.WindowsReleaseVersion("combined-v99.0.0") == null,
                 WindowsHub.WindowsReleaseVersion("windows-vinvalid") == null,
                 WindowsHub.WindowsReleaseVersion("windows-v1.2.3") == new Version(1, 2, 3),
+                SsmsTheme.FollowSystem("/* keep comment */ {\"other\":true,\"environment.visualExperience.colorTheme\":\"dark\"}") == "/* keep comment */ {\"other\":true,\"environment.visualExperience.colorTheme\":\"system\"}",
+                SsmsTheme.FollowSystem("{\"environment.visualExperience.colorTheme\":\"system\"}") == "{\"environment.visualExperience.colorTheme\":\"system\"}",
+                SsmsTheme.FollowSystem("{/* UTF-8: £ */\"other\":true,}").Contains("\"environment.visualExperience.colorTheme\": \"system\""),
             };
             bool passed = Array.TrueForAll(cases, item => item);
             System.IO.File.WriteAllText(args[1], System.Text.Json.JsonSerializer.Serialize(new { passed, cases, version = WindowsHub.Version }));
