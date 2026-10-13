@@ -80,9 +80,71 @@ static NSString *const DockFoldersID = @"local.musicstrip.dock.folders";
 @interface LauncherPairView : NSView
 @property DockLauncher *apps;
 @property MusicView *music;
+@property (weak) MusicView *inputTarget;
+@property id inputIdentity;
+- (void)beginAt:(NSPoint)point identity:(id)identity;
+- (void)moveAt:(NSPoint)point;
+- (void)finishAt:(NSPoint)point;
+- (void)cancelInput;
 @end
 static const CGFloat AppsExtensionWidth=18;
 @implementation LauncherPairView
+- (instancetype)initWithFrame:(NSRect)frame {
+    if((self=[super initWithFrame:frame])) {
+        self.allowedTouchTypes=NSTouchTypeMaskDirect;
+        self.wantsRestingTouches=YES;
+    }
+    return self;
+}
+// The registered custom item's root owns the whole finger lifecycle. Its
+// starting location selects a child; movement never switches to the other
+// child or depends on that child's narrow hit area receiving the release.
+- (NSView *)hitTest:(NSPoint)point { return [super hitTest:point] ? self : nil; }
+- (void)beginAt:(NSPoint)point identity:(id)identity {
+    if(self.inputTarget || !NSPointInRect(point,self.bounds)) return;
+    MusicView *target=NSPointInRect(point,self.apps.frame) ? self.apps : self.music;
+    if(!target || !NSPointInRect(point,target.frame)) return;
+    self.inputTarget=target; self.inputIdentity=identity;
+    [target beginAt:[self convertPoint:point toView:target] identity:identity];
+}
+- (void)moveAt:(NSPoint)point {
+    MusicView *target=self.inputTarget;
+    if(target) [target moveAt:[self convertPoint:point toView:target]];
+}
+- (void)finishAt:(NSPoint)point {
+    MusicView *target=self.inputTarget;
+    NSPoint local=target ? [self convertPoint:point toView:target] : NSZeroPoint;
+    self.inputTarget=nil; self.inputIdentity=nil;
+    if(target) [target finishAt:local];
+}
+- (void)cancelInput {
+    MusicView *target=self.inputTarget; self.inputTarget=nil; self.inputIdentity=nil;
+    if(!target) return;
+    target.cancelled=YES; target.tracking=NO; target.touchIdentity=nil;
+    [target.holdTimer invalidate]; target.holdTimer=nil; [target highlight:NO];
+}
+- (void)viewWillMoveToWindow:(NSWindow *)window {
+    if(window!=self.window) [self cancelInput];
+    [super viewWillMoveToWindow:window];
+}
+- (void)touchesBeganWithEvent:(NSEvent *)event {
+    for(NSTouch *touch in [event touchesMatchingPhase:NSTouchPhaseBegan inView:nil]) {
+        if(touch.type==NSTouchTypeDirect) [self beginAt:[touch locationInView:self] identity:touch.identity];
+        if(self.inputTarget) break;
+    }
+}
+- (void)touchesMovedWithEvent:(NSEvent *)event {
+    for(NSTouch *touch in [event touchesMatchingPhase:NSTouchPhaseTouching inView:nil])
+        if([touch.identity isEqual:self.inputIdentity]) [self moveAt:[touch locationInView:self]];
+}
+- (void)touchesEndedWithEvent:(NSEvent *)event {
+    for(NSTouch *touch in [event touchesMatchingPhase:NSTouchPhaseEnded inView:nil])
+        if([touch.identity isEqual:self.inputIdentity]) [self finishAt:[touch locationInView:self]];
+}
+- (void)touchesCancelledWithEvent:(NSEvent *)event { [self cancelInput]; }
+- (void)mouseDown:(NSEvent *)event { [self beginAt:[self convertPoint:event.locationInWindow fromView:nil] identity:nil]; }
+- (void)mouseDragged:(NSEvent *)event { [self moveAt:[self convertPoint:event.locationInWindow fromView:nil]]; }
+- (void)mouseUp:(NSEvent *)event { [self finishAt:[self convertPoint:event.locationInWindow fromView:nil]]; }
 - (NSSize)intrinsicContentSize { return NSMakeSize(70,30); }
 - (void)layout {
     [super layout];

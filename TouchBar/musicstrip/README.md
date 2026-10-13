@@ -4,6 +4,8 @@ The Apps launcher is a glyph-free 18-point swipe extension beside the macOS Cont
 
 The existing menu has a checked **Touch Bar App** toggle after Touch Tab, reflecting actual app-row visibility through the main/helper pipe. Menu version labels and update comparisons read the containing 3£ app's Info.plist, not the helper's vendor version or stale compile-time base. Additive installs preserve the current release version; set `STRIP_RELEASE_VERSION` to the verified matching published version when syncing a new build.
 
+The shared app/media root explicitly accepts direct Touch Bar input and forwards each finger's lifecycle to the button where it began. Crossing the 18-point app region into media during a swipe does not change targets or lose release events. Cancellation clears tracking and hold timers. Tests cover both input regions, boundary-crossing swipes, app hold inactivity, media holds and cancellation. Physical confirmation is still needed after input changes. `AppsLauncherLastInput` records only the host PID, command and timestamp for an actual app-button action; it contains no app, media or MIDI content.
+
 ## Recovery and preservation
 
 Version 3.0.11 uses `3£.app` for the installed app and release archives. Its

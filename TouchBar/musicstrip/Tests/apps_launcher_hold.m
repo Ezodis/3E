@@ -25,5 +25,25 @@ int main(void) { @autoreleasepool {
     media.performHold=^{ holds++; };
     [media beginAt:NSMakePoint(20,15) identity:nil]; [media fireHold]; [media finishAt:NSMakePoint(20,15)];
     NSCAssert(holds==1,@"Media hold to open MIDI is unaffected");
+    LauncherPairView *pair=[[LauncherPairView alloc] initWithFrame:NSMakeRect(0,0,70,30)];
+    pair.apps=launcher; pair.music=media; [pair addSubview:launcher]; [pair addSubview:media]; [pair layout];
+    NSCAssert(pair.allowedTouchTypes==NSTouchTypeMaskDirect && [pair hitTest:NSMakePoint(7,15)]==pair && [pair hitTest:NSMakePoint(40,15)]==pair,
+              @"Registered root accepts direct touches across both button regions");
+    __block NSInteger mediaTaps=0;
+    media.performCommand=^(int command){ mediaTaps++; };
+    [pair beginAt:NSMakePoint(7,15) identity:@1]; [pair finishAt:NSMakePoint(7,15)];
+    NSCAssert(taps==2 && !mediaTaps,@"Root forwards app tap to the app button only");
+    [pair beginAt:NSMakePoint(7,15) identity:@2]; [pair moveAt:NSMakePoint(35,15)]; [pair finishAt:NSMakePoint(35,15)];
+    NSCAssert(closes==2 && !mediaTaps,@"Swipe crossing into media retains its original app target");
+    [pair beginAt:NSMakePoint(7,15) identity:@3]; [pair moveAt:NSMakePoint(-12,15)]; [pair finishAt:NSMakePoint(-12,15)];
+    NSCAssert(opens==2,@"Left swipe finishing outside the root still opens apps");
+    [pair beginAt:NSMakePoint(40,15) identity:@4]; [pair finishAt:NSMakePoint(40,15)];
+    NSCAssert(mediaTaps==1 && taps==2,@"Root forwards media taps independently");
+    [pair beginAt:NSMakePoint(40,15) identity:@5]; [media fireHold]; [pair finishAt:NSMakePoint(40,15)];
+    NSCAssert(holds==2 && mediaTaps==1,@"Root media hold preserves MIDI behavior without a release tap");
+    [pair beginAt:NSMakePoint(7,15) identity:@6]; [launcher fireHold]; [pair finishAt:NSMakePoint(7,15)];
+    NSCAssert(taps==2 && holds==2,@"Root app hold remains inactive");
+    [pair beginAt:NSMakePoint(7,15) identity:@7]; [pair cancelInput]; [pair finishAt:NSMakePoint(7,15)];
+    NSCAssert(taps==2 && !pair.inputTarget && !launcher.tracking && !launcher.holdTimer,@"Cancelled input cannot leave a dead tracked button or trigger a tap");
     puts("Passed apps hold removal, tap/swipe preservation and independent media hold. No live app actions sent.");
 } return 0; }

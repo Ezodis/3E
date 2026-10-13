@@ -435,6 +435,10 @@ static OSStatus SendSpotifyCommand(pid_t pid, int command) {
     [self startMidi];
 }
 - (void)appsLauncherCommand:(int)command {
+    // Host-side evidence of a real input action, without recording app names,
+    // media or MIDI content. Useful if the remote Touch Bar stops dispatching.
+    if(NSProcessInfo.processInfo.arguments.count==1)
+        [NSUserDefaults.standardUserDefaults setObject:@{@"command":@(command),@"pid":@(getpid()),@"updated":@(NSDate.date.timeIntervalSince1970)} forKey:@"AppsLauncherLastInput"];
     if(command==5) {
         self.appsRequested=YES; self.midiRequested=NO;
         [self sendMidi:@"HIDE"]; [self sendApps:@"SHOW"];
