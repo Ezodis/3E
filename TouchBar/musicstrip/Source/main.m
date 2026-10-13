@@ -320,8 +320,6 @@ static OSStatus SendSpotifyCommand(pid_t pid, int command) {
 @property BOOL appsVisible;
 @property NSCustomTouchBarItem *appsOverlayTrayItem;
 @property BOOL appsRequested;
-@property BOOL nativeSpacesActive;
-@property NSUInteger nativeSpacesGeneration;
 @property MusicView *musicView;
 @property DockLauncher *dockLauncher;
 @property DockPanel *dockPanel;
@@ -392,12 +390,11 @@ static OSStatus SendSpotifyCommand(pid_t pid, int command) {
     };
     self.musicView.performHold = ^{ [weakSelf openMidi]; };
     self.dockPanel=[DockPanel new];
-    self.dockPanel.willShow=^{ [weakSelf sendMidi:@"HIDE"]; weakSelf.midiRequested=NO; weakSelf.dockLauncher.panelOpen=YES; weakSelf.dockLauncher.needsDisplay=YES; [weakSelf.dockLauncher setAccessibilityLabel:@"Apps beside Control Strip arrow: swipe left to open, right to close; tap to toggle; hold for desktops"]; };
+    self.dockPanel.willShow=^{ [weakSelf sendMidi:@"HIDE"]; weakSelf.midiRequested=NO; weakSelf.dockLauncher.panelOpen=YES; weakSelf.dockLauncher.needsDisplay=YES; [weakSelf.dockLauncher setAccessibilityLabel:@"Apps beside Control Strip arrow: swipe left to open, right to close; tap to toggle"]; };
     self.item=[[NSCustomTouchBarItem alloc] initWithIdentifier:ItemID];
     self.dockLauncher=[[DockLauncher alloc] initWithFrame:NSMakeRect(0,0,40,30)];
     self.dockLauncher.performCommand=^(int command){ [weakSelf appsLauncherCommand:command]; };
-    [self.dockLauncher setAccessibilityLabel:@"Apps beside Control Strip arrow: swipe left to open, right to close; tap to toggle; hold for desktops"];
-    self.dockLauncher.performHold=^{ [weakSelf openDesktops]; };
+    [self.dockLauncher setAccessibilityLabel:@"Apps beside Control Strip arrow: swipe left to open, right to close; tap to toggle"];
     LauncherPairView *pair=[[LauncherPairView alloc] initWithFrame:NSMakeRect(0,0,70,30)];
     pair.apps=self.dockLauncher; pair.music=self.musicView;
     self.musicView.translatesAutoresizingMaskIntoConstraints=YES;
@@ -438,7 +435,6 @@ static OSStatus SendSpotifyCommand(pid_t pid, int command) {
     [self startMidi];
 }
 - (void)appsLauncherCommand:(int)command {
-    self.nativeSpacesActive=NO; self.nativeSpacesGeneration++;
     if(command==5) {
         self.appsRequested=YES; self.midiRequested=NO;
         [self sendMidi:@"HIDE"]; [self sendApps:@"SHOW"];
@@ -465,10 +461,9 @@ static OSStatus SendSpotifyCommand(pid_t pid, int command) {
         }
         NSLog(@"Apps panel: VISIBLE");
     } else if([command isEqualToString:@"HIDE"] || [command isEqualToString:@"QUIT"]) {
-        self.nativeSpacesActive=NO; self.nativeSpacesGeneration++;
         [self.dockPanel close:nil];
     } else if([command isEqualToString:@"RESTORE"]) {
-        if(!self.nativeSpacesActive) [self.dockPanel restorePresentation];
+        [self.dockPanel restorePresentation];
     }
     else if([command isEqualToString:@"STATUS"]) {
         NSMutableDictionary *state=[[self.dockPanel snapshot] mutableCopy];
@@ -477,58 +472,6 @@ static OSStatus SendSpotifyCommand(pid_t pid, int command) {
         DockIconButton *button=[self.dockPanel buttonFor:[NSURL fileURLWithPath:[command substringFromIndex:7] isDirectory:YES] label:@"Folder" image:nil action:@selector(openFolder:)]; [self.dockPanel openFolder:button];
     } else if([command isEqualToString:@"BACK"]) [self.dockPanel.folderBrowser willDismiss:nil];
     else if([command isEqualToString:@"ROOT"]) [self.dockPanel.folderBrowser willClose:nil];
-}
-- (void)openDesktops {
-    // Safety rollback: the private Apple handoff blanks the physical bar on
-    // macOS 27, even though the retained model reports itself visible. Do not
-    // suspend apps or request that picker until real rendering is validated.
-    self.nativeSpacesActive=NO; self.nativeSpacesGeneration++;
-    self.appsRequested=YES; self.midiRequested=NO;
-    BOOL rebuild=self.dockPanel.visible;
-    [self sendApps:@"SHOW"];
-    if(rebuild) [self.dockPanel rebuildPresentation];
-}
-- (BOOL)nativeSpacesPickerVisible { return NativeSpacesPickerVisible(); }
-- (void)finishNativeSpacesHandoff {
-    self.nativeSpacesActive=NO; self.nativeSpacesGeneration++;
-    if(self.appsRequested && self.dockPanel.visible && !self.midiVisible && !self.midiRequested)
-        [self.dockPanel restorePresentation];
-}
-- (void)checkNativeSpaces:(NSUInteger)generation remaining:(NSInteger)attempts didShow:(BOOL)didShow {
-    if(!self.nativeSpacesActive || generation!=self.nativeSpacesGeneration) return;
-    if(!self.appsRequested || !self.dockPanel.visible || self.midiRequested || self.midiVisible) {
-        self.nativeSpacesActive=NO; self.nativeSpacesGeneration++; return;
-    }
-    BOOL visible=[self nativeSpacesPickerVisible];
-    if(!visible && (didShow || attempts<=0)) {
-        NSLog(@"Native Spaces %@; restoring populated app row",didShow ? @"dismissed" : @"did not become visible");
-        [self finishNativeSpacesHandoff]; return;
-    }
-    __weak AppDelegate *weakSelf=self;
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW,100*NSEC_PER_MSEC),dispatch_get_main_queue(),^{
-        [weakSelf checkNativeSpaces:generation remaining:MAX(0,attempts-1) didShow:didShow || visible];
-    });
-}
-- (void)presentNativeSpacesWhenReady:(NSInteger)attempts {
-    if(!self.nativeSpacesActive || !self.appsRequested || !self.dockPanel.visible) return;
-    __weak AppDelegate *weakSelf=self;
-    if(self.midiVisible) {
-        if(attempts>0) dispatch_after(dispatch_time(DISPATCH_TIME_NOW,50*NSEC_PER_MSEC),dispatch_get_main_queue(),^{ [weakSelf presentNativeSpacesWhenReady:attempts-1]; });
-        else [self finishNativeSpacesHandoff];
-        return;
-    }
-    NSUInteger generation=self.nativeSpacesGeneration;
-    [self.dockPanel suspendPresentation];
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW,200*NSEC_PER_MSEC),dispatch_get_main_queue(),^{
-        if(!weakSelf.nativeSpacesActive || generation!=weakSelf.nativeSpacesGeneration) return;
-        if(!weakSelf.appsRequested || !weakSelf.dockPanel.visible || weakSelf.midiVisible || weakSelf.midiRequested) {
-            [weakSelf finishNativeSpacesHandoff]; return;
-        }
-        ShowNativeSpacesPicker();
-        // Delivery is not evidence of rendering. Apple's native visibility
-        // signal must arrive within 1.5s, otherwise restore the existing row.
-        [weakSelf checkNativeSpaces:generation remaining:15 didShow:NO];
-    });
 }
 - (void)startApps {
     self.appsReady=YES; [self.dockPanel prepareSwipeApps];
@@ -541,7 +484,7 @@ static OSStatus SendSpotifyCommand(pid_t pid, int command) {
         NSString *identifier=weakSelf.appsOverlayTrayItem ? AppsTrayID : ItemID;
         SetPresence(identifier,YES);
         weakSelf.dockLauncher.panelOpen=NO; weakSelf.dockLauncher.needsDisplay=YES;
-        [weakSelf.dockLauncher setAccessibilityLabel:@"Apps beside Control Strip arrow: swipe left to open, right to close; tap to toggle; hold for desktops"];
+        [weakSelf.dockLauncher setAccessibilityLabel:@"Apps beside Control Strip arrow: swipe left to open, right to close; tap to toggle"];
         if(weakSelf.midiRequested && weakSelf.midiReady) { weakSelf.midiRequested=NO; [weakSelf sendMidi:@"SHOW"]; }
     };
 }
@@ -967,12 +910,12 @@ int main(int argc, const char *argv[]) {
             [launcher beginAt:NSMakePoint(20,15) identity:nil]; [launcher finishAt:NSMakePoint(20,15)];
             NSCAssert(dockTaps==1 && dockHolds==0,@"Apps tap opens only the app panel");
             [launcher beginAt:NSMakePoint(20,15) identity:nil]; [launcher fireHold]; [launcher fireHold]; [launcher finishAt:NSMakePoint(20,15)];
-            NSCAssert(dockTaps==1 && dockHolds==1,@"Desktop picker hold must run once without opening apps afterward");
+            NSCAssert(dockTaps==1 && dockHolds==0,@"App launcher hold does nothing and does not toggle on release");
             [launcher beginAt:NSMakePoint(20,15) identity:nil]; [launcher moveAt:NSMakePoint(35,15)]; [launcher fireHold]; [launcher finishAt:NSMakePoint(35,15)];
-            NSCAssert(dockTaps==1 && dockHolds==1 && dockCloses==1,@"Right swipe closes without a tap or hold");
+            NSCAssert(dockTaps==1 && dockHolds==0 && dockCloses==1,@"Right swipe closes without a tap or hold");
             launcher.frame=NSMakeRect(0,0,14,30);
             [launcher beginAt:NSMakePoint(7,15) identity:nil]; [launcher moveAt:NSMakePoint(-8,15)]; [launcher fireHold]; [launcher finishAt:NSMakePoint(-8,15)];
-            NSCAssert(dockOpens==1 && dockTaps==1 && dockHolds==1,@"Left swipe can finish beyond the narrow launcher");
+            NSCAssert(dockOpens==1 && dockTaps==1 && dockHolds==0,@"Left swipe can finish beyond the narrow launcher");
             [launcher beginAt:NSMakePoint(7,15) identity:nil]; [launcher moveAt:NSMakePoint(22,15)]; launcher.cancelled=YES; [launcher finishAt:NSMakePoint(22,15)];
             NSCAssert(dockCloses==1,@"Cancelled swipes do not close apps");
             DockPanel *centerPanel=[DockPanel new];
@@ -1290,29 +1233,28 @@ int main(int argc, const char *argv[]) {
             });
             dispatch_after(dispatch_time(DISPATCH_TIME_NOW,16*NSEC_PER_SEC),dispatch_get_main_queue(),^{ NSLog(@"Passed native Touch Bar takeover suppression"); [NSApp terminate:nil]; });
         }
-        if(argc>1 && strcmp(argv[1],"--desktop-smoke-test")==0) {
+        if(argc>1 && strcmp(argv[1],"--apps-hold-disabled-smoke-test")==0) {
+            __block NSTouchBar *originalBar;
             dispatch_after(dispatch_time(DISPATCH_TIME_NOW,7*NSEC_PER_SEC),dispatch_get_main_queue(),^{ [delegate sendMidi:@"HIDE"]; });
-            dispatch_after(dispatch_time(DISPATCH_TIME_NOW,9*NSEC_PER_SEC),dispatch_get_main_queue(),^{ NSLog(@"Capture launcher: READY"); });
+            dispatch_after(dispatch_time(DISPATCH_TIME_NOW,9*NSEC_PER_SEC),dispatch_get_main_queue(),^{ [delegate sendApps:@"SHOW"]; originalBar=delegate.dockPanel.bar; });
             dispatch_after(dispatch_time(DISPATCH_TIME_NOW,11*NSEC_PER_SEC),dispatch_get_main_queue(),^{
+                NSCAssert(!delegate.dockLauncher.performHold,@"Installed app launcher has no hold action");
                 [delegate.dockLauncher beginAt:NSMakePoint(7,15) identity:nil]; [delegate.dockLauncher fireHold]; [delegate.dockLauncher finishAt:NSMakePoint(7,15)];
             });
             dispatch_after(dispatch_time(DISPATCH_TIME_NOW,14*NSEC_PER_SEC),dispatch_get_main_queue(),^{ [delegate sendApps:@"STATUS"]; });
             dispatch_after(dispatch_time(DISPATCH_TIME_NOW,16*NSEC_PER_SEC),dispatch_get_main_queue(),^{
-                NSLog(@"Desktop snapshot: %@",delegate.appsStatus);
-                NSCAssert(delegate.appsVisible && [delegate.appsStatus[@"mode"] isEqual:@"apps"] && [delegate.appsStatus[@"apps"] count]>0,@"Hold must leave populated apps rather than request a failing native picker");
-                NSTouchBar *previous=delegate.dockPanel.bar;
-                [delegate openDesktops];
-                NSCAssert(!delegate.nativeSpacesActive && delegate.dockPanel.bar!=previous,@"Repeated hold must rebuild the presentation without starting native Spaces");
+                NSCAssert(delegate.appsVisible && delegate.dockPanel.bar==originalBar && [delegate.appsStatus[@"apps"] count]>0,@"Holding leaves the original populated bar untouched");
+                [delegate.dockLauncher beginAt:NSMakePoint(7,15) identity:nil]; [delegate.dockLauncher fireHold]; [delegate.dockLauncher finishAt:NSMakePoint(7,15)];
             });
             dispatch_after(dispatch_time(DISPATCH_TIME_NOW,20*NSEC_PER_SEC),dispatch_get_main_queue(),^{ [delegate sendApps:@"STATUS"]; });
             dispatch_after(dispatch_time(DISPATCH_TIME_NOW,22*NSEC_PER_SEC),dispatch_get_main_queue(),^{
                 NSLog(@"Apps snapshot: %@",delegate.appsStatus);
                 NSCAssert([delegate.appsStatus[@"mode"] isEqual:@"apps"] && [delegate.appsStatus[@"centerError"] doubleValue]<.01,@"Apps row is centered");
                 NSCAssert(([delegate.appsStatus[@"layout"] isEqual:@[DockAppsID]]),@"No folder or Trash items");
-                NSCAssert(delegate.dockPanel.appsScrubber.window && delegate.dockPanel.appsScrubber.alphaValue==1,@"Rebuilt app row is attached and opaque, not a retained transparent scrubber");
+                NSCAssert(delegate.dockPanel.bar==originalBar && delegate.dockPanel.appsScrubber.window && delegate.dockPanel.appsScrubber.alphaValue==1,@"Repeated holds preserve original attached, opaque app row");
                 NSLog(@"Capture apps: READY");
             });
-            dispatch_after(dispatch_time(DISPATCH_TIME_NOW,25*NSEC_PER_SEC),dispatch_get_main_queue(),^{ [delegate sendApps:@"HIDE"]; NSLog(@"Passed safe launcher hold, fresh modal host, attached opaque apps and centering; physical rendering still requires user confirmation"); [NSApp terminate:nil]; });
+            dispatch_after(dispatch_time(DISPATCH_TIME_NOW,25*NSEC_PER_SEC),dispatch_get_main_queue(),^{ [delegate sendApps:@"HIDE"]; NSLog(@"Passed removal of app launcher hold: original modal remains attached, opaque and centered; physical rendering still requires user confirmation"); [NSApp terminate:nil]; });
         }
         if(argc>1 && strcmp(argv[1],"--folder-smoke-test")==0) {
             NSString *path=[NSTemporaryDirectory() stringByAppendingPathComponent:NSUUID.UUID.UUIDString];

@@ -1,22 +1,3 @@
-// Hand a launcher hold to Apple's own Touch Bar Spaces picker. This launchd
-// notification starts SpacesTouchBarAgent on demand; it does not open the
-// on-screen Mission Control overview or synthesize desktop-switch gestures.
-#import <notify.h>
-static NSString *const NativeSpacesPickerNotification=@"com.apple.SpacesTouchBarAgent.showPopover";
-static BOOL NativeSpacesPickerVisible(void) {
-    static int token=-1;
-    static dispatch_once_t once;
-    dispatch_once(&once,^{
-        NSString *name=[NSString stringWithFormat:@"user.uid.%ld.com.apple.services.touchbar.active",(long)getuid()];
-        if(notify_register_check(name.UTF8String,&token)!=NOTIFY_STATUS_OK) token=-1;
-    });
-    uint64_t state=0;
-    return token>=0 && notify_get_state(token,&state)==NOTIFY_STATUS_OK && state==1;
-}
-static void ShowNativeSpacesPicker(void) {
-    [NSDistributedNotificationCenter.defaultCenter postNotificationName:NativeSpacesPickerNotification
-        object:nil userInfo:nil deliverImmediately:YES];
-}
 // Legacy custom picker support remains available for diagnostics only.
 // Dock swipe events adapted from Michael Torbert's MIT-licensed
 // spaces-manager. See Resources/SpacesManager-LICENSE.txt.

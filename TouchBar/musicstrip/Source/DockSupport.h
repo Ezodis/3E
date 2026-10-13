@@ -68,8 +68,10 @@ static NSString *const DockFoldersID = @"local.musicstrip.dock.folders";
         if([touch.identity isEqual:self.touchIdentity]) [self finishAt:[touch locationInView:self]];
 }
 - (void)fireHold {
-    if(fabs(self.endX-self.startX)>=8) return;
-    [super fireHold];
+    // Apps has no long-press action. Consume it so release cannot accidentally
+    // toggle the bar. Do not inherit MusicView's MIDI-opening hold behavior.
+    [self.holdTimer invalidate]; self.holdTimer=nil;
+    if(self.tracking && !self.cancelled && fabs(self.endX-self.startX)<8) self.didHold=YES;
 }
 @end
 
@@ -369,8 +371,6 @@ static NSArray<NSURL *> *DockFolderURLs(NSDictionary *dock) {
 - (void)refresh;
 - (NSDictionary *)snapshot;
 - (void)restorePresentation;
-- (void)rebuildPresentation;
-- (void)suspendPresentation;
 - (void)holdApp:(NSPressGestureRecognizer *)gesture;
 - (void)prepareSwipeApps;
 - (void)swipeApp:(DockSwipeGesture *)gesture;
@@ -379,24 +379,6 @@ static NSArray<NSURL *> *DockFolderURLs(NSDictionary *dock) {
 @end
 
 @implementation DockPanel
-- (void)rebuildPresentation {
-    if(!self.visible) return;
-    [self finishSwipeCancelled:YES];
-    [self suspendPresentation];
-    // A dismissed modal can keep its data while losing its remote render host.
-    // Do not reuse that bar or its transparent, detached scrubber for recovery.
-    self.appsItem=[[NSCustomTouchBarItem alloc] initWithIdentifier:DockAppsID];
-    self.appsItem.visibilityPriority=NSTouchBarItemPriorityHigh;
-    self.bar=[NSTouchBar new]; self.bar.templateItems=[NSSet setWithObject:self.appsItem];
-    self.bar.defaultItemIdentifiers=@[DockAppsID]; self.bar.principalItemIdentifier=DockAppsID;
-    self.signature=nil; [self refresh]; [self restorePresentation];
-}
-- (void)suspendPresentation {
-    // Keep the populated row and its models alive, but release modal ownership
-    // before another process (Apple's Spaces agent) presents its own Touch Bar.
-    if(self.visible && self.bar)
-        ((void(*)(id,SEL,id))objc_msgSend)(NSTouchBar.class,NSSelectorFromString(@"dismissSystemModalTouchBar:"),self.bar);
-}
 - (void)restorePresentation {
     if(!self.visible) return;
     ConfigureAppsOverlay();
