@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
 3£Windows: one tray menu for three-finger drag, Clicks keyboard, PowerToys,
 automatic light/dark mode and dynamic wallpaper.
@@ -6,29 +6,50 @@ automatic light/dark mode and dynamic wallpaper.
 Portable single-file installer. The application and keyboard rules are embedded.
 Copy this .ps1 alone to another Windows PC. Internet is needed to install signed
 third-party dependencies not already present. Requires Windows 10 1809+ / 11,
-administrator approval, and a Precision Touchpad for dragging. The Clicks driver
-is supported on x64 only. ARM64 supports the other features.
+administrator approval, and a Precision Touchpad for dragging. Clicks mapping on x64
+uses a device-specific filter; no class-wide keyboard or mouse filter is installed.
 Setup preserves personal wallpaper and drag preferences. Existing Edy startup
 tasks are migrated to 3£Windows. Updates use only Ezodis/3E windows-v releases.
+.PARAMETER Install
+Reinstall explicitly. Without switches, an existing installation starts the suite.
 .PARAMETER Down
 Remove 3£Windows and its startup tasks; restore backed-up input preferences.
 Third-party PowerToys, WinDynamicDesktop and .NET installations are retained.
 .PARAMETER KeyboardOnly
 Apply only the left Alt/Ctrl swap (or remove it with -Down); restart required.
+.PARAMETER RepairKeyboard
+Restore the Clicks-only Command/Ctrl mapping and double-tap voice shortcut.
 .PARAMETER AppOnly
 Update the app and startup integration without changing keyboard, touchpad or
 PowerToys module preferences. Used by the built-in updater.
 #>
 [CmdletBinding()]
-param([switch]$Down, [switch]$KeyboardOnly, [switch]$AppOnly)
+param([switch]$Down, [switch]$KeyboardOnly, [switch]$AppOnly, [switch]$Install, [switch]$RepairKeyboard)
 $ErrorActionPreference = 'Stop'
 $Version = '{{VERSION}}'
+# Existing installations launch without rerunning setup. Use -Install to reinstall.
+$EmbeddedLauncher = @'
+{{LAUNCHER}}
+'@
+# A current installation launches directly. A newer portable file updates the
+# app and existing Clicks components without resetting personal input settings.
+if (-not ($Down -or $KeyboardOnly -or $AppOnly -or $Install -or $RepairKeyboard) -and (Test-Path -LiteralPath (Join-Path $env:ProgramFiles '3EWindows\3£Windows.exe'))) {
+    $assembly = Join-Path $env:ProgramFiles '3EWindows\ThreeEWindows.dll'
+    if ((Test-Path -LiteralPath $assembly) -and [Diagnostics.FileVersionInfo]::GetVersionInfo($assembly).ProductVersion.Split('+')[0] -eq $Version) {
+        & ([scriptblock]::Create($EmbeddedLauncher))
+        exit
+    }
+    $AppOnly = $true
+}
+
 $EmbeddedPowerToysKeyboardConfig = @'
 {{POWERTOYS_CONFIG}}
 '@
 $EmbeddedKeyboardTemplate = @'
 {{KEYBOARD_CONFIG}}
 '@
+{{CLICKS_ASSETS}}
+
 $EmbeddedAppX64 = @'
 {{APP_X64}}
 '@
@@ -42,7 +63,9 @@ if (-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administra
     if ($Down) { $arguments += ' -Down' }
     if ($KeyboardOnly) { $arguments += ' -KeyboardOnly' }
     if ($AppOnly) { $arguments += ' -AppOnly' }
-    Start-Process powershell.exe -Verb RunAs -ArgumentList $arguments
+    if ($Install) { $arguments += ' -Install' }
+    if ($RepairKeyboard) { $arguments += ' -RepairKeyboard' }
+    Start-Process powershell.exe -Verb RunAs -WindowStyle Hidden -ArgumentList $arguments
     exit
 }
 $root = Join-Path $env:ProgramFiles '3EWindows'
@@ -59,7 +82,7 @@ function Stop-Suite {
         Stop-ScheduledTask -TaskName $task -ErrorAction SilentlyContinue
         if ($RemoveTasks) { Unregister-ScheduledTask -TaskName $task -Confirm:$false -ErrorAction SilentlyContinue }
     }
-    Get-Process -Name '3£Windows','ThreeEWindows','3EWindows.Keyboard','EdyPowerKeyboard','ThreeFingerDragOnWindows','PowerToys','PowerToys.KeyboardManagerEngine','WinDynamicDesktop' -ErrorAction SilentlyContinue |
+    Get-Process -Name '3£Windows','ThreeEWindows','3EWindows.Keyboard','ClicksAccents','EdyPowerKeyboard','ThreeFingerDragOnWindows','PowerToys','PowerToys.KeyboardManagerEngine','WinDynamicDesktop' -ErrorAction SilentlyContinue |
         Stop-Process -Force -ErrorAction SilentlyContinue
     Start-Sleep -Milliseconds 700
 }
@@ -72,7 +95,7 @@ function Set-LeftModifierSwap {
         Set-ItemProperty -LiteralPath $scanKey -Name 'Scancode Map' -Value $map -Type Binary
     }
 }
-if ($KeyboardOnly) { Set-LeftModifierSwap; Write-Host 'Restart Windows to activate the modifier change.'; exit }
+# Keyboard-only handling preserves the Clicks-specific profile below.
 
 function Edit-Json([string]$Path, [scriptblock]$Change) {
     $json = if (Test-Path -LiteralPath $Path) { Get-Content -LiteralPath $Path -Raw | ConvertFrom-Json } else { [pscustomobject]@{} }
@@ -82,6 +105,23 @@ function Edit-Json([string]$Path, [scriptblock]$Change) {
 }
 function Set-JsonProperty($Object, [string]$Name, $Value) {
     $Object | Add-Member -MemberType NoteProperty -Name $Name -Value $Value -Force
+}
+
+{{CLICKS_FUNCTIONS}}
+
+if ($RepairKeyboard) {
+    Restore-ClicksKeyboard
+    $installedScript = Join-Path $root '3£Windows.ps1'
+    if ([IO.Path]::GetFullPath($PSCommandPath) -ne [IO.Path]::GetFullPath($installedScript)) {
+        Copy-Item -LiteralPath $PSCommandPath -Destination $installedScript -Force
+    }
+    if (Test-Path -LiteralPath $appExe) { & ([scriptblock]::Create($EmbeddedLauncher)) }
+    exit
+}
+if ($KeyboardOnly) {
+    Set-LeftModifierSwap
+    Write-Host 'Restart Windows to activate the modifier change.'
+    exit
 }
 
 function Get-InstalledApp([string]$Pattern) {
@@ -110,6 +150,7 @@ function Install-ReleaseApp([string]$Repository, [string]$AssetPattern, [string]
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 if ($Down) {
     Stop-Suite -RemoveTasks
+    Remove-ClicksDeviceMapping
     Unregister-ScheduledTask -TaskName '3£Windows Kiro Theme' -Confirm:$false -ErrorAction SilentlyContinue
     Unregister-ScheduledTask -TaskName 'Edy Kiro Theme' -Confirm:$false -ErrorAction SilentlyContinue
     if (Test-Path -LiteralPath $backupPath) {
@@ -224,7 +265,7 @@ $ptSettings = Join-Path $env:LOCALAPPDATA 'Microsoft\PowerToys\settings.json'
 Edit-Json $ptSettings {
     param($j)
     Set-JsonProperty $j 'startup' $false
-    Set-JsonProperty $j 'run_elevated' $false
+    Set-JsonProperty $j 'run_elevated' $true
     Set-JsonProperty $j 'show_tray_icon' $false
     Set-JsonProperty $j 'enable_quick_access' $false
     if (-not $j.enabled) { Set-JsonProperty $j 'enabled' ([pscustomobject]@{}) }
@@ -247,65 +288,10 @@ if (-not $AppOnly) {
     Set-ItemProperty -LiteralPath $winlogon -Name RestartApps -Type DWord -Value 1
 }
 
-# Device IDs are discovered here, never copied from the exporting machine.
-$device = Get-PnpDevice -Class Keyboard -ErrorAction SilentlyContinue | Where-Object {
-    $ids = (Get-PnpDeviceProperty -InstanceId $_.InstanceId -KeyName 'DEVPKEY_Device_HardwareIds' -ErrorAction SilentlyContinue).Data
-    @($ids) -match '^HID\\VID_07D7&UP:0001_U:0006$'
-} | Select-Object -First 1
-$keyboardFolder = Join-Path $root 'Keyboard'
-if ($device -and $arch -eq 'x64') {
-    New-Item -ItemType Directory -Path $keyboardFolder -Force | Out-Null
-    $ids = @((Get-PnpDeviceProperty -InstanceId $device.InstanceId -KeyName 'DEVPKEY_Device_HardwareIds').Data)
-    $meaningful = [Text.Encoding]::Unicode.GetBytes(($ids -join "`0") + "`0`0")
-    if ($meaningful.Length -gt 1024) { throw 'Clicks hardware ID is too long.' }
-    $buffer = [byte[]]::new(1024)
-    [Array]::Copy($meaningful,$buffer,$meaningful.Length)
-    $config = $EmbeddedKeyboardTemplate.Replace('{{POWER_KEYBOARD_HWID}}', ($buffer -join ', '))
-    [IO.File]::WriteAllText((Join-Path $keyboardFolder '3EWindows.kbd'), $config, [Text.UTF8Encoding]::new($false))
-    $hasKeyboardRuntime = (Test-Path -LiteralPath (Join-Path $keyboardFolder '3EWindows.Keyboard.exe')) -and (Test-Path -LiteralPath (Join-Path $keyboardFolder 'interception.dll')) -and (Test-Path -LiteralPath (Join-Path $keyboardFolder 'install-interception.exe'))
-    if (-not $AppOnly -or -not $hasKeyboardRuntime) {
-    $temporary = Join-Path $env:TEMP ('3EWindows-keyboard-' + [Guid]::NewGuid().ToString('N'))
-    New-Item -ItemType Directory -Path $temporary -Force | Out-Null
-    try {
-        $kanata = Invoke-RestMethod 'https://api.github.com/repos/jtroo/kanata/releases/latest' -Headers @{'User-Agent'='3EWindows-Setup'}
-        $asset = $kanata.assets | Where-Object name -eq 'windows-binaries-x64.zip' | Select-Object -First 1
-        if (-not $asset) { throw 'The Kanata x64 asset is missing.' }
-        $zip = Join-Path $temporary 'kanata.zip'
-        Invoke-WebRequest $asset.browser_download_url -OutFile $zip -UseBasicParsing
-        $sumsAsset = $kanata.assets | Where-Object name -eq 'sha256sums' | Select-Object -First 1
-        if (-not $sumsAsset) { throw 'Kanata release checksums are missing.' }
-        $sums = (Invoke-WebRequest $sumsAsset.browser_download_url -UseBasicParsing).Content
-        if ($sums -is [byte[]]) { $sums = [Text.Encoding]::UTF8.GetString($sums) }
-        $checksum = [regex]::Match($sums, '(?m)^([a-fA-F0-9]{64})\s+\*?windows-binaries-x64\.zip\s*$').Groups[1].Value
-        if (-not $checksum -or (Get-FileHash -LiteralPath $zip -Algorithm SHA256).Hash -ne $checksum) { throw 'Kanata archive checksum mismatch.' }
-        Expand-Archive -LiteralPath $zip -DestinationPath (Join-Path $temporary 'kanata')
-        $binary = Get-ChildItem -LiteralPath (Join-Path $temporary 'kanata') -Recurse -Filter 'kanata_windows_tty_wintercept_x64.exe' | Select-Object -First 1
-        if (-not $binary) { throw 'The headless Kanata Interception binary is missing.' }
-        Copy-Item -LiteralPath $binary.FullName -Destination (Join-Path $keyboardFolder '3EWindows.Keyboard.exe') -Force
-        $interception = Invoke-RestMethod 'https://api.github.com/repos/oblitum/Interception/releases/latest' -Headers @{'User-Agent'='3EWindows-Setup'}
-        $asset = $interception.assets | Where-Object name -eq 'Interception.zip' | Select-Object -First 1
-        if (-not $asset) { throw 'The Interception asset is missing.' }
-        $zip = Join-Path $temporary 'interception.zip'
-        Invoke-WebRequest $asset.browser_download_url -OutFile $zip -UseBasicParsing
-        Expand-Archive -LiteralPath $zip -DestinationPath (Join-Path $temporary 'interception')
-        $dll = Get-ChildItem -LiteralPath (Join-Path $temporary 'interception') -Recurse -Filter interception.dll | Where-Object FullName -like '*library*x64*' | Select-Object -First 1
-        $driver = Get-ChildItem -LiteralPath (Join-Path $temporary 'interception') -Recurse -Filter install-interception.exe | Select-Object -First 1
-        Copy-Item -LiteralPath $dll.FullName -Destination $keyboardFolder -Force
-        Copy-Item -LiteralPath $driver.FullName -Destination $keyboardFolder -Force
-        if (-not (Test-Path -LiteralPath 'HKLM:\SYSTEM\CurrentControlSet\Services\keyboard')) {
-            & (Join-Path $keyboardFolder 'install-interception.exe') /install | Out-Host
-            if ($LASTEXITCODE -ne 0) { throw 'Clicks driver installation failed.' }
-            Write-Warning 'Restart Windows to activate the Clicks keyboard driver.'
-        }
-    } finally {
-        $resolved = [IO.Path]::GetFullPath($temporary)
-        if (-not $resolved.StartsWith([IO.Path]::GetFullPath($env:TEMP).TrimEnd('\') + '\3EWindows-keyboard-', [StringComparison]::OrdinalIgnoreCase)) { throw 'Unsafe temporary path.' }
-        Remove-Item -LiteralPath $resolved -Recurse -Force -ErrorAction SilentlyContinue
-    }
-    }
-} elseif ($arch -eq 'arm64' -and $device) { Write-Warning 'Clicks Interception driver is not supported on ARM64; the other features are available.' }
-else { Write-Host 'Connect the Clicks keyboard and run this installer again to add its device-specific layout.' }
-
+# Bind the signed filter only to confirmed Clicks keyboard device instances.
+# App-only updates preserve the existing input configuration and enable state.
+if (-not $AppOnly) { Restore-ClicksKeyboard }
+elseif (Test-Path -LiteralPath (Join-Path $data 'ClicksDeviceMapping.json')) { Restore-ClicksKeyboard -PreserveEnableState }
 $wallSettings = Join-Path $env:LOCALAPPDATA 'Programs\WinDynamicDesktop\settings.json'
 Edit-Json $wallSettings { param($j) Set-JsonProperty $j 'hideTrayIcon' $true }
 Get-ScheduledTask -TaskPath '\PowerToys\' -ErrorAction SilentlyContinue | Where-Object TaskName -like 'Autorun*' | Disable-ScheduledTask -ErrorAction SilentlyContinue | Out-Null
@@ -323,19 +309,18 @@ $user = [Security.Principal.WindowsIdentity]::GetCurrent().Name
 foreach ($name in @('Edy PowerToys Startup','Edy Power Keyboard','Edy Three Finger Drag','Edy Input Resume Recovery')) {
     Unregister-ScheduledTask -TaskName $name -Confirm:$false -ErrorAction SilentlyContinue
 }
-$taskPrincipal = New-ScheduledTaskPrincipal -UserId $user -LogonType Interactive -RunLevel Highest
+$taskPrincipal = New-ScheduledTaskPrincipal -UserId ([Security.Principal.WindowsIdentity]::GetCurrent().User.Value) -LogonType Interactive -RunLevel Highest
 $taskSettings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable -ExecutionTimeLimit ([TimeSpan]::Zero) -MultipleInstances IgnoreNew
 $trigger = New-ScheduledTaskTrigger -AtLogOn -User $user
 $trigger.Delay = 'PT10S'
-$action = New-ScheduledTaskAction -Execute $appExe -WorkingDirectory $root
+$launcherPath = Join-Path $root 'Launch-3EWindows.ps1'
+[IO.File]::WriteAllText($launcherPath, $EmbeddedLauncher, [Text.UTF8Encoding]::new($true))
+$action = New-ScheduledTaskAction -Execute (Join-Path $env:WINDIR 'System32\WindowsPowerShell\v1.0\powershell.exe') -Argument ('-NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File "' + $launcherPath + '" -Wait') -WorkingDirectory $root
 Register-ScheduledTask -TaskName '3£Windows' -Action $action -Trigger $trigger -Principal $taskPrincipal -Settings $taskSettings -Force | Out-Null
 
-# Sleep recovery reopens the same app and refreshes all device hooks together.
+# Sleep recovery reuses the elevated suite; the hub refreshes device hooks after waking.
 $recovery = @'
-Stop-ScheduledTask -TaskName '3£Windows' -ErrorAction SilentlyContinue
-Get-Process -Name '3£Windows','3EWindows.Keyboard','PowerToys.KeyboardManagerEngine' -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
-Start-Sleep -Seconds 2
-Start-ScheduledTask -TaskName '3£Windows'
+& (Join-Path $env:ProgramFiles '3EWindows\Launch-3EWindows.ps1')
 '@
 $encoded = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($recovery))
 $xmlUser = [Security.SecurityElement]::Escape($user)
@@ -356,7 +341,9 @@ Register-ScheduledTask -TaskName '3£Windows Resume Recovery' -Xml $xml -Force |
 {{KIRO_TASK}}
 
 $launchTime = [DateTime]::UtcNow
-Start-ScheduledTask -TaskName '3£Windows'
+# Setup already has the elevated token required by the input engines. Starting
+# through Task Scheduler can instead yield a medium token and wait on a UAC UI.
+& ([scriptblock]::Create($EmbeddedLauncher))
 $statusPath = Join-Path $data 'status.json'
 $deadline = [DateTime]::UtcNow.AddSeconds(15)
 $started = $false

@@ -1,0 +1,23 @@
+Clicks keyboard runtime dependencies
+
+Kanata 1.12.0 (unmodified windows tty wintercept x64 binary, renamed 3EWindows.Keyboard.exe)
+Source and release: https://github.com/jtroo/kanata/tree/v1.12.0
+License: LGPL-3.0, see Kanata-LICENSE.txt.
+
+Interception 1.0.1 (unmodified x64 library and signed Windows 7 x64 driver resources)
+Source and release: https://github.com/oblitum/Interception/tree/v1.0.1
+License: LGPL-3.0, see Interception-LICENSE.txt and upstream distribution terms.
+interception_upstream.dll is the original library. The keyboard and mouse support
+driver resources are renamed 3EWindowsClicks.sys and 3EWindowsInterceptionSupport.sys.
+Only the keyboard driver attaches to verified Clicks device instances. The support
+driver supplies the API control-device bank and is not attached to input devices.
+Vendor binary hashes are recorded in vendor/sha256.json in the source repository.
+
+ClicksReconnectGuard.cs adapts the temporary NT-object symlink workaround from
+https://github.com/hygorostrowskij/interception-driver-fix
+Copyright 2025 Hygor Ostrowskij de Morais, BSD-3-Clause: ReconnectGuard-LICENSE.txt.
+
+The compiled adapter and helpers have maintained source beside their installed
+binaries and in https://github.com/Ezodis/3E/tree/main/Windows/Keyboard.
+Replace/rebuild them using Windows/Keyboard/build.ps1; no keyboard-capture tools
+are included. Offline tests use simulated inputs only.

@@ -1,31 +1,45 @@
 (defcfg
+  ;; All Clicks key events must reach one-shot processing so any next key consumes it.
+  process-unmapped-keys yes
   windows-interception-keyboard-hwids (
     "{{POWER_KEYBOARD_HWID}}"
   )
 )
 
+;; The hardware filter above restricts this profile to the Clicks keyboard.
 (defsrc
-  lctl lmet lalt k
+  lctl lmet lalt k tab lsft rsft
 )
 
 (defalias
+  ctrl-key {{CTRL_AS_ALT}}
   command-key (tap-dance-eager 350 (
-    lalt
-    (multi (release-key lalt) lmet h)
+    (one-shot-release 5000 {{COMMAND_AS_CTRL}})
+    (multi
+      (release-key {{COMMAND_AS_CTRL}})
+      (release-key lsft)
+      (release-key rsft)
+      lmet h)
   ))
+  shift-key (one-shot-release 5000 lsft)
+  right-shift-key (one-shot-release 5000 rsft)
   triangle-layer (layer-while-held power-special)
 )
 
 (deflayer base
-  lmet @command-key @triangle-layer k
+  @ctrl-key @command-key @triangle-layer k tab @shift-key @right-shift-key
 )
 
-;; Command activates immediately as raw Left Alt, which the system scan-code
-;; map converts to Ctrl. A second tap within 350 ms releases that modifier and
-;; emits Win+H. Command+Tab and other Command shortcuts are never delayed.
+;; Use the keyboard's Android mode for Windows.
+;; The labeled Ctrl key emits Right Alt; the red Clicks Tab input is unchanged.
+;; Right Alt avoids the global left-Alt shortcut remaps and scan-code swap.
+;; Command = Ctrl, compensating for the existing system Alt/Ctrl scan-code swap.
+;; Tap Command or Shift for the next key, or hold for normal modifier behavior.
+;; Sequential Command/Shift taps combine and restart the five-second timeout.
+;; Double-tap Command releases pending Ctrl/Shift before Windows+H dictation.
 
-;; The dotted-triangle key reports Alt+K. Suppress that mobile-only sequence
-;; and emit raw Left Ctrl, which the system scan-code map converts to Alt.
+;; The six-dot/triangle key reports Alt+K. Emit Windows for that sequence.
+;; An ordinary K remains K; the red Clicks key remains Tab in either layer.
 (deflayer power-special
-  _ _ _ lctl
+  _ _ _ lmet tab _ _
 )

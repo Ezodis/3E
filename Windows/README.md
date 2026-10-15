@@ -10,7 +10,7 @@ Download [`3£Windows.ps1`](../3%C2%A3Windows.ps1) from this repository, or extr
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File '.\3£Windows.ps1'
 ```
 
-Copy that one file to another PC to replicate the setup. It embeds the x64 and ARM64 app builds, the keyboard rules, the PowerToys shortcut profile and setup logic. No companion `.kbd`, ZIP or source files are required beside the installer. Internet is required for missing .NET 10, Windows App Runtime 1.8, PowerToys, WinDynamicDesktop and Clicks/Interception dependencies, which come from their official publishers. First setup needs administrator approval and a Windows restart for the keyboard driver/modifier swap. Corporate policy may restrict elevation or input filters.
+Copy that one file to another PC to replicate the setup. It embeds the x64 and ARM64 app builds, keyboard rules, PowerToys shortcut profile, signed Clicks drivers, reconnect guard, and accent/symbol picker. No companion `.kbd`, Python scripts, ZIP or source files are required beside the installer. Installation extracts its maintained runtime files under `%ProgramFiles%\3EWindows`. Internet is required for missing .NET 10, Windows App Runtime 1.8, PowerToys and WinDynamicDesktop. First setup needs administrator approval and a Windows restart for the modifier swap. Corporate policy may restrict elevation or input filters.
 
 Windows 10 1809+ and Windows 11 are supported by the app framework; individual current PowerToys releases may require a newer Windows build. Both x64 and ARM64 binaries build here; ARM64 has not been physically tested. Clicks Interception requires x64 Windows, and three-finger drag requires a Precision Touchpad. The microphone key is unchanged because current Clicks firmware supplies no Windows-visible event.
 
@@ -24,7 +24,27 @@ Left-click **3£Windows** to open a compact component chooser: drag settings, Po
 
 Setup removes duplicate Edy input startup tasks and their registry autoruns, preserves drag/wallpaper preferences, and installs one `3£Windows` sign-in task plus a short resume recovery task. A separate scheduled Kiro theme action preserves the existing noon/8 PM theme behavior. PowerToys Light Switch is disabled to avoid competing with the integrated auto dark engine. Existing keyboard device IDs are discovered on each destination PC, never embedded from the exporting PC.
 
-`-AppOnly` refreshes the application and startup integration while retaining input preferences; the built-in updater uses it. `-KeyboardOnly` sets only the left Alt/Ctrl scan-code swap. `-Down` removes the suite and restores saved input settings while retaining third-party applications/runtimes. The migration retains an existing Interception installation, and teardown removes its keyboard filter. It does not broadly reset Explorer, mouse or clipboard preferences.
+Running the same version launches the suite directly. Running a newer portable file updates the app and previously configured Clicks components. `-AppOnly` performs that update while retaining input preferences and the keyboard enable state; the built-in updater uses it. `-Install` explicitly runs full setup. `-RepairKeyboard` configures or restores the Clicks mapping after pairing. `-KeyboardOnly` sets only the left Alt/Ctrl scan-code swap. `-Down` removes the suite and restores saved input settings while retaining third-party applications/runtimes. A legacy class-wide Interception filter must be removed and Windows restarted before Clicks-only setup; the new installer never attaches its filter to the keyboard or mouse class.
+
+## Clicks keys and hold menus
+
+Use the keyboard's Android mode for Windows. Mapping applies only to verified Clicks Power Keyboard devices. Command acts as Ctrl; the labeled Ctrl key sends right Alt, avoiding the existing left-Alt shortcut remaps; the red Clicks key remains Tab; the six-dot key opens Windows. Double-tap Command within 350 ms for Windows dictation. Tap Command or Shift to apply it to the next key within five seconds; sequential Command and Shift taps combine. Holding either modifier keeps normal modifier behavior.
+
+Hold a letter or number for 650 ms, release it, then press 1–9 to choose. Letter menus offer accents, including uppercase variants. Esc cancels; the menu expires after six seconds. Ctrl/Alt/Windows shortcuts and other keyboards do not activate the picker. Selection replaces the original character without using the clipboard or recording typed text.
+
+| Hold | Choices |
+| --- | --- |
+| 0 | 🙂 😂 ❤️ 👍 🙏 🎉 🔥 ✅ 👀 |
+| 1 | $ € £ ¥ ¢ ₹ ₩ ₽ ₿ |
+| 2 | ± × ÷ ≈ ≠ ≤ ≥ ∞ √ |
+| 3 | ✓ ✗ ★ ♥ ☀ ☂ ☕ ⌘ ⌀ |
+| 4 | ← → ↑ ↓ ↔ ↕ ↗ ↘ ⇒ |
+| 5 | ¿ ¡ … — – • · « » |
+| 6 | Square, curly and angle brackets |
+| 7 | © ® ™ ° § ¶ † ✓ ✗ |
+| 8 / 9 | Superscript / subscript digits |
+
+For example, hold **1**, release, then press **2** to type **€**. The reconnect guard prevents the legacy driver from exhausting its keyboard slots after repeated Bluetooth reconnects. The picker stops with the keyboard component; reconnect protection stays running while its device driver is installed.
 
 ## Updates and releases
 
@@ -34,7 +54,7 @@ The unsigned app is built from maintained source and includes the upstream drag 
 
 ## Build
 
-Install the .NET 10 SDK on Windows, then run `./Windows/build.ps1` from the repository root. It builds both architectures, runs compiled tests for schedule boundaries and update-channel isolation, parses the assembled PowerShell installer, and generates the root installer plus release assets under `build/windows/release`. Windows PowerShell 5.1 compatibility is preserved by a UTF-8 BOM. ARM64 is cross-compiled; the release self-test runs on x64.
+Install the .NET 10 SDK on x64 Windows, then run `./Windows/build.ps1` from the repository root. It builds both app architectures and the keyboard helpers, runs offline modifier/dictation, Unicode picker and device-routing tests, runs the app's schedule/update tests, parses the assembled installer, and generates the root script plus release assets under `build/windows/release`. The keyboard build downloads checksum-pinned Zig 0.13.0 if necessary; `THREEE_ZIG` may point to an existing compiler. Zig and the test harnesses are build-only dependencies. Vendor hashes and licenses are maintained under `Keyboard`. Windows PowerShell 5.1 compatibility is preserved by a UTF-8 BOM. ARM64 is cross-compiled; keyboard helpers and self-tests run on x64.
 
 The [Windows workflow](../.github/workflows/windows-releases.yml) rebuilds and publishes a new version after successful validation. It does not mark Windows as the global latest release or interfere with the existing Mac edition channels. The generated root script is committed for direct copying; release assets are regenerated from the same source/template.
 

@@ -18,7 +18,7 @@ namespace ThreeFingerDragOnWindows;
 
 // The drag engine and the hub share this process and its single notification icon.
 public sealed class WindowsHub : IDisposable {
-    public const string Version = "1.0.6";
+    public const string Version = "1.0.7";
     private const string ReleasesUrl = "https://api.github.com/repos/Ezodis/3E/releases";
     private readonly string root = AppContext.BaseDirectory;
     private readonly string data = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "3EWindows");
@@ -98,6 +98,8 @@ public sealed class WindowsHub : IDisposable {
     }
 
     private string PowerToysPath => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "PowerToys", "PowerToys.exe");
+    private static void StopKeyboard() { Stop("3EWindows.Keyboard"); Stop("ClicksAccents"); }
+
     private string KeyboardPath => Path.Combine(root, "Keyboard", "3EWindows.Keyboard.exe");
     private string WallpaperPath => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Programs", "WinDynamicDesktop", "WinDynamicDesktop.exe");
 
@@ -142,7 +144,7 @@ public sealed class WindowsHub : IDisposable {
         try {
             var now = DateTime.Now;
             if ((now - lastTick).TotalSeconds > 90) {
-                Stop("3EWindows.Keyboard"); Stop("PowerToys.KeyboardManagerEngine");
+                StopKeyboard(); Stop("PowerToys.KeyboardManagerEngine");
                 lastTheme = -1;
             }
             lastTick = now;
@@ -230,7 +232,7 @@ public sealed class WindowsHub : IDisposable {
         Item("Drag settings…", () => App.Instance.OpenSettingsWindow());
         Toggle(File.Exists(KeyboardPath) ? "Clicks keyboard — " + (IsRunning("3EWindows.Keyboard") ? "running" : "stopped") : "Clicks keyboard — connect and run setup", settings.Keyboard, enabled => {
             settings.Keyboard = enabled;
-            if (enabled) _ = EnsureComponentsAsync(); else Stop("3EWindows.Keyboard");
+            if (enabled) _ = EnsureComponentsAsync(); else StopKeyboard();
         });
         Toggle("PowerToys shortcuts and Workspaces", settings.PowerToys, enabled => {
             settings.PowerToys = enabled;
@@ -251,7 +253,7 @@ public sealed class WindowsHub : IDisposable {
         });
         Item("Show wallpaper controls…", () => Start(WallpaperPath, "", true));
         menu.Items.Add(new MenuFlyoutSeparator());
-        Item("Restart input engines", () => { Stop("3EWindows.Keyboard"); Stop("PowerToys.KeyboardManagerEngine"); _ = EnsureComponentsAsync(); });
+        Item("Restart input engines", () => { StopKeyboard(); Stop("PowerToys.KeyboardManagerEngine"); _ = EnsureComponentsAsync(); });
         Item(updateTag == null ? "Check for updates…" : "Update available: " + updateTag + "…", () => _ = CheckUpdatesAsync(true));
         Item("Open portable installer", () => Process.Start(new ProcessStartInfo("explorer.exe", "/select,\"" + Path.Combine(root, "3£Windows.ps1") + "\"") { UseShellExecute = true }));
         Item("Quit 3£Windows", () => App.Instance.Quit());
@@ -278,7 +280,7 @@ public sealed class WindowsHub : IDisposable {
         var keyboard = new MenuFlyoutSubItem { Text = "Keyboard controls" };
         keyboard.Items.Add(Switch("Enable Clicks keyboard mapping", settings.Keyboard, enabled => {
             settings.Keyboard = enabled;
-            if (enabled) _ = EnsureComponentsAsync(); else Stop("3EWindows.Keyboard");
+            if (enabled) _ = EnsureComponentsAsync(); else StopKeyboard();
         }));
         keyboard.Items.Add(ActionItem("Keyboard shortcuts…", OpenPowerToys));
         launcher.Items.Add(keyboard);
@@ -385,6 +387,6 @@ public sealed class WindowsHub : IDisposable {
         disposed = true;
         timer.Stop();
         Save();
-        Stop("3EWindows.Keyboard"); Stop("PowerToys"); Stop("PowerToys.KeyboardManagerEngine"); Stop("WinDynamicDesktop");
+        StopKeyboard(); Stop("PowerToys"); Stop("PowerToys.KeyboardManagerEngine"); Stop("WinDynamicDesktop");
     }
 }

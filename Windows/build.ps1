@@ -11,11 +11,20 @@ $source = [regex]::Replace($source, 'public const string Version = "[^"]+";', ('
 [IO.File]::WriteAllText($hubSource,$source,[Text.UTF8Encoding]::new($false))
 $build = Join-Path $repository 'build\windows'
 New-Item -ItemType Directory -Path $build -Force | Out-Null
+& (Join-Path $PSScriptRoot 'Keyboard\build.ps1')
+if (-not $?) { throw 'Keyboard build or offline verification failed.' }
+$assetLines = @('$EmbeddedClicksAssets = @{')
+foreach ($file in Get-ChildItem -LiteralPath (Join-Path $build 'keyboard') -File | Where-Object { $_.Extension -in @('.exe','.dll','.sys','.cs','.c','.txt') } | Sort-Object Name) {
+    $hash = (Get-FileHash -LiteralPath $file.FullName).Hash
+    $encoded = [Convert]::ToBase64String([IO.File]::ReadAllBytes($file.FullName))
+    $assetLines += "    '$($file.Name)' = @{ SHA256='$hash'; Data='$encoded' }"
+}
+$assetLines += '}'
 $payloads = @{}
 foreach ($arch in @('x64','arm64')) {
     $output = Join-Path $build "framework-$arch"
     if (-not $SkipBuild) {
-        dotnet publish $project -c Release -r "win-$arch" "-p:Platform=$arch" '-p:WindowsPackageType=None' '-p:WindowsAppSDKSelfContained=false' '-p:WindowsAppSdkBootstrapInitialize=true' "-p:Version=$version" "-p:AssemblyVersion=$version.0" --self-contained false -o $output
+        dotnet publish $project -c Release -r "win-$arch" "-p:Platform=$arch" '-p:WindowsPackageType=None' '-p:WindowsAppSDKSelfContained=false' '-p:WindowsAppSdkBootstrapInitialize=true' "-p:Version=$version" "-p:AssemblyVersion=$version.0" "-p:RestoreConfigFile=$(Join-Path $PSScriptRoot 'NuGet.Config')" --self-contained false -o $output
         if ($LASTEXITCODE -ne 0) { throw "Windows $arch build failed." }
     }
     $appHost = Join-Path $output 'ThreeEWindows.exe'
@@ -44,9 +53,12 @@ $kiroTriggers = @((New-ScheduledTaskTrigger -AtLogOn -User $user),(New-Scheduled
 Register-ScheduledTask -TaskName '3£Windows Kiro Theme' -Action $kiroAction -Trigger $kiroTriggers -Principal $taskPrincipal -Settings $taskSettings -Force | Out-Null
 '@
 $installer = [IO.File]::ReadAllText((Join-Path $PSScriptRoot 'Installer.template.ps1'))
+$installer = $installer.Replace('{{LAUNCHER}}',[IO.File]::ReadAllText((Join-Path $PSScriptRoot 'Launcher.ps1')))
+$installer = $installer.Replace('{{CLICKS_FUNCTIONS}}',[IO.File]::ReadAllText((Join-Path $PSScriptRoot 'Keyboard\ClicksScopedFunctions.ps1'))).Replace('{{CLICKS_ASSETS}}',($assetLines -join "`r`n"))
 $installer = $installer.Replace('{{VERSION}}',$version).Replace('{{POWERTOYS_CONFIG}}',[IO.File]::ReadAllText((Join-Path $PSScriptRoot 'PowerToys.json'))).Replace('{{KEYBOARD_CONFIG}}',[IO.File]::ReadAllText((Join-Path $PSScriptRoot 'Keyboard.template.kbd')))
 $installer = $installer.Replace('{{APP_X64}}',$payloads.x64).Replace('{{APP_ARM64}}',$payloads.arm64).Replace('{{KIRO_TASK}}',$kiroTemplate.Replace('{{KIRO_ENCODED}}',$kiroEncoded))
-if ($installer -match '{{(APP_|VERSION|KIRO_|POWERTOYS_|KEYBOARD_CONFIG)') { throw 'Unresolved installer placeholders.' }
+if ($installer -match '{{(APP_|VERSION|KIRO_|POWERTOYS_|KEYBOARD_CONFIG|LAUNCHER|CLICKS_)') { throw 'Unresolved installer placeholders.' }
+if ($installer -match '(?i)C:\\Users\\|DEV_[0-9A-F]{12}|capture-clicks|button-tester|\.py\b') { throw 'A machine-specific path, hardware identity, or diagnostic dependency leaked into the installer.' }
 $recovery = [regex]::Match($installer, "(?s)\`$recovery = @'\r?\n(.*?)\r?\n'@").Groups[1].Value
 if (-not $recovery -or $recovery -match '\$(data|rollback|suiteStopped|statusPath)\b') { throw 'The recovery task must be self-contained and independent of installer variables.' }
 $tokens = $null; $errors = $null
@@ -55,6 +67,8 @@ if ($errors.Count) { throw ($errors.Message -join "`n") }
 $installerPath = Join-Path $repository '3£Windows.ps1'
 # Windows PowerShell 5.1 needs the BOM for the pound sign in file/task names.
 [IO.File]::WriteAllText($installerPath,$installer,[Text.UTF8Encoding]::new($true))
+& powershell.exe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'Keyboard\Tests\Verify-Installer.ps1') -Path $installerPath
+if ($LASTEXITCODE -ne 0) { throw 'Single-file installer verification failed under Windows PowerShell 5.1.' }
 $release = Join-Path $build 'release'
 New-Item -ItemType Directory -Path $release -Force | Out-Null
 $oldReleaseScript = Join-Path $release '3£Windows.ps1'
