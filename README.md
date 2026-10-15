@@ -4,7 +4,7 @@ Choose the combined macOS app, either Mac app individually, or **3£Windows** fo
 
 | App | Source | Purpose |
 | --- | --- | --- |
-| 3£Windows | [Windows](Windows/) · [portable installer](3%C2%A3Windows.ps1) | One Windows tray menu for drag, Clicks keyboard, PowerToys, auto dark and wallpaper |
+| 3£Windows | [Windows](Windows/) · [portable installer](3%C2%A3Windows.ps1) | One Windows tray menu for drag, Clicks keyboard, PowerToys, optional iPhone trackpad, auto dark and wallpaper |
 | 3£ Combined | [TouchBar](TouchBar/) + [TouchTab gesture module](TouchTab/CombinedModule.swift) | Both feature sets in one installed app and one menu-bar icon |
 | TouchBar (3£) | [TouchBar](TouchBar/) | Custom Touch Bar MIDI keyboards, Ableton live-performance controls, app/window and media control |
 | TouchTab | [TouchTab](TouchTab/) | Four-finger trackpad app switching, pinch copy/paste and force-click window switching |

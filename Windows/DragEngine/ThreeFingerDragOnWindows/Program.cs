@@ -11,8 +11,10 @@ using Utils = ThreeFingerDragOnWindows.utils.Utils;
 namespace ThreeFingerDragOnWindows;
 
 public class Program {
+    private static bool openPhoneTrackpad;
     [STAThread]
     static Task<int> Main(string[] args){
+        openPhoneTrackpad = Array.Exists(args, arg => arg == "--phone-trackpad");
         if (args.Length == 2 && args[0] == "--preview-tray-icons") {
             System.IO.Directory.CreateDirectory(args[1]);
             foreach (bool light in new[] { true, false }) {
@@ -83,6 +85,7 @@ public class Program {
                 DispatcherQueue.GetForCurrentThread());
             SynchronizationContext.SetSynchronizationContext(context);
             new App();
+            if (openPhoneTrackpad) App.Instance.Hub.OpenPhoneTrackpad();
         });
     }
 
@@ -102,7 +105,11 @@ public class Program {
     }
 
     private static void OnActivated(object sender, AppActivationArguments args){
-        (Application.Current as App)?.DispatcherQueue.TryEnqueue(() => { (Application.Current as App)?.OpenSettingsWindow(); });
+        bool phone = args.Data is Windows.ApplicationModel.Activation.ILaunchActivatedEventArgs launch && launch.Arguments.Contains("--phone-trackpad", StringComparison.Ordinal);
+        (Application.Current as App)?.DispatcherQueue.TryEnqueue(() => {
+            if (phone) (Application.Current as App)?.Hub.OpenPhoneTrackpad();
+            else (Application.Current as App)?.OpenSettingsWindow();
+        });
     }
 
     private static bool TerminateOldInstance(uint processId){

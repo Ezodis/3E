@@ -18,12 +18,14 @@ namespace ThreeFingerDragOnWindows;
 
 // The drag engine and the hub share this process and its single notification icon.
 public sealed class WindowsHub : IDisposable {
-    public const string Version = "1.0.8";
+    public const string Version = "1.0.9";
     private const string ReleasesUrl = "https://api.github.com/repos/Ezodis/3E/releases";
     private readonly string root = AppContext.BaseDirectory;
     private readonly string data = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "3EWindows");
     private readonly DispatcherTimer timer = new() { Interval = TimeSpan.FromSeconds(20) };
     private readonly MenuFlyout menu;
+    private readonly PhoneTrackpad phoneTrackpad = new();
+    private PhoneTrackpadPopup phonePopup;
     private HubSettings settings;
     private bool busy, disposed;
     private int lastTheme = -1;
@@ -164,13 +166,14 @@ public sealed class WindowsHub : IDisposable {
             File.WriteAllText(Path.Combine(data, "status.json"), JsonSerializer.Serialize(new {
                 version = Version, timestampUtc = DateTime.UtcNow,
                 trayIconForeground = handler.TrayIconForeground,
-                trayLeftClick = "component chooser", trayRightClick = "all controls",
+                trayLeftClick = "iPhone trackpad QR popup", trayRightClick = "all controls and iPhone QR",
                 ssmsThemeSync = settings.SsmsTheme, ssmsThemeProfiles,
                 ssmsThemes = SsmsTheme.CurrentThemeNames,
                 touchpadDetected = handler.TouchpadExists, inputReceiverInstalled = handler.InputReceiverInstalled,
                 keyboardInstalled = File.Exists(KeyboardPath), keyboardRunning = IsRunning("3EWindows.Keyboard"),
                 powerToysRunning = IsRunning("PowerToys"), shortcutsRunning = IsRunning("PowerToys.KeyboardManagerEngine"),
                 wallpaperRunning = IsRunning("WinDynamicDesktop"), autoDark = settings.AutoDark,
+                phoneTrackpadRunning = phoneTrackpad.Running, phoneTrackpadStatus = phoneTrackpad.Status,
                 menu = menu.Items.Select(item => item switch {
                     ToggleMenuFlyoutItem toggle => toggle.Text,
                     MenuFlyoutItem command => command.Text,
@@ -225,11 +228,22 @@ public sealed class WindowsHub : IDisposable {
 
     public void RefreshControls() => RefreshMenu();
 
+    public void OpenPhoneTrackpad() {
+        try {
+            phoneTrackpad.Start();
+            phonePopup ??= new PhoneTrackpadPopup(phoneTrackpad);
+            phonePopup.Show();
+            WriteDiagnostics();
+        } catch (Exception ex) { Log(ex); }
+    }
+
     private void RefreshMenu() {
         menu.Items.Clear();
         menu.Items.Add(new MenuFlyoutItem { Text = "3£Windows " + Version, IsEnabled = false });
         Toggle("Three-finger drag", App.SettingsData.ThreeFingerDrag, enabled => { App.SettingsData.ThreeFingerDrag = enabled; App.SettingsData.save(); });
         Item("Drag settings…", () => App.Instance.OpenSettingsWindow());
+        Item("iPhone trackpad — show QR…", OpenPhoneTrackpad);
+        if (phoneTrackpad.Running) Item("Stop iPhone trackpad", () => phoneTrackpad.Stop());
         Toggle(File.Exists(KeyboardPath) ? "Clicks keyboard — " + (IsRunning("3EWindows.Keyboard") ? "running" : "stopped") : "Clicks keyboard — connect and run setup", settings.Keyboard, enabled => {
             settings.Keyboard = enabled;
             if (enabled) _ = EnsureComponentsAsync(); else StopKeyboard();
@@ -276,6 +290,7 @@ public sealed class WindowsHub : IDisposable {
         }
         void OpenPowerToys() => Start(Path.Combine(Path.GetDirectoryName(PowerToysPath), "WinUI3Apps", "PowerToys.Settings.exe"), "", true);
         launcher.Items.Add(ActionItem("Drag settings…", () => App.Instance.OpenSettingsWindow()));
+        launcher.Items.Add(ActionItem("iPhone trackpad…", OpenPhoneTrackpad));
         launcher.Items.Add(ActionItem("PowerToys settings…", OpenPowerToys));
         var keyboard = new MenuFlyoutSubItem { Text = "Keyboard controls" };
         keyboard.Items.Add(Switch("Enable Clicks keyboard mapping", settings.Keyboard, enabled => {
@@ -386,6 +401,8 @@ public sealed class WindowsHub : IDisposable {
     public void Dispose() {
         disposed = true;
         timer.Stop();
+        phonePopup?.Dispose();
+        phoneTrackpad.Dispose();
         Save();
         StopKeyboard(); Stop("PowerToys"); Stop("PowerToys.KeyboardManagerEngine"); Stop("WinDynamicDesktop");
     }

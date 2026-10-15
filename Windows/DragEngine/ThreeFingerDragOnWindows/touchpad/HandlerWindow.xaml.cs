@@ -62,7 +62,7 @@ public sealed partial class HandlerWindow : Window {
     }
 
     private void OpenLauncher(object sender, ExecuteRequestedEventArgs e) {
-        if (_app.Hub != null) ShowMenu(_app.Hub.CreateLauncher(ShowAllControls));
+        _app.Hub?.OpenPhoneTrackpad();
     }
 
     private void OpenAllControls(object sender, ExecuteRequestedEventArgs e) => ShowAllControls();

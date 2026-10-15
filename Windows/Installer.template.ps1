@@ -2,6 +2,10 @@
 .SYNOPSIS
 3£Windows: one tray menu for three-finger drag, Clicks keyboard, PowerToys,
 automatic light/dark mode and dynamic wallpaper.
+.NOTES
+iPhone trackpad is optional and off at startup. Open it from the tray menu,
+then scan its QR code on the same trusted Wi-Fi. No internet is needed.
+Missing Wi-Fi or a disconnected phone never stops other suite components.
 .DESCRIPTION
 Portable single-file installer. The application and keyboard rules are embedded.
 Copy this .ps1 alone to another Windows PC. Internet is needed to install signed
@@ -85,6 +89,10 @@ function Stop-Suite {
     Get-Process -Name '3£Windows','ThreeEWindows','3EWindows.Keyboard','ClicksAccents','EdyPowerKeyboard','ThreeFingerDragOnWindows','PowerToys','PowerToys.KeyboardManagerEngine','WinDynamicDesktop' -ErrorAction SilentlyContinue |
         Stop-Process -Force -ErrorAction SilentlyContinue
     Start-Sleep -Milliseconds 700
+    # Forced shutdown/update may bypass the optional receiver's normal cleanup.
+    $phoneFirewall = $null
+    try { $phoneFirewall = New-Object -ComObject HNetCfg.FwPolicy2; $phoneFirewall.Rules.Remove('3EWindows Phone Trackpad') } catch { }
+    finally { if ($null -ne $phoneFirewall) { [Runtime.InteropServices.Marshal]::FinalReleaseComObject($phoneFirewall) | Out-Null } }
 }
 
 function Set-LeftModifierSwap {

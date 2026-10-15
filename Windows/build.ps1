@@ -34,6 +34,10 @@ foreach ($arch in @('x64','arm64')) {
     if (-not (Test-Path -LiteralPath (Join-Path $output '3£Windows.exe'))) { throw "Missing $arch application." }
     foreach ($symbols in Get-ChildItem -LiteralPath $output -Filter '*.pdb') { Remove-Item -LiteralPath $symbols.FullName }
     Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'DragEngine\LICENSE') -Destination (Join-Path $output 'THIRD-PARTY-LICENSE-ThreeFingerDragOnWindows.txt') -Force
+    Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'PhoneTrackpad-QRCoder-LICENSE.txt') -Destination (Join-Path $output 'THIRD-PARTY-LICENSE-QRCoder.txt') -Force
+    $phoneSource = Join-Path $output 'PhoneTrackpadSource'
+    New-Item -ItemType Directory -Path $phoneSource -Force | Out-Null
+    Get-ChildItem -LiteralPath (Split-Path -Parent $project) -Filter 'PhoneTrackpad*' -File | Copy-Item -Destination $phoneSource -Force
     $archive = Join-Path $build "3EWindows-$arch.zip"
     Compress-Archive -Path (Join-Path $output '*') -DestinationPath $archive -Force
     $payloads[$arch] = [Convert]::ToBase64String([IO.File]::ReadAllBytes($archive))
@@ -43,6 +47,10 @@ foreach ($arch in @('x64','arm64')) {
 $report = Join-Path $build 'self-test.json'
 $testProcess = Start-Process -FilePath (Join-Path $build 'framework-x64\3£Windows.exe') -ArgumentList ('--self-test "' + $report + '"') -Wait -PassThru -WindowStyle Hidden
 if ($testProcess.ExitCode -ne 0 -or -not (Test-Path -LiteralPath $report) -or -not (Get-Content -LiteralPath $report -Raw | ConvertFrom-Json).passed) { throw 'Release self-test failed.' }
+dotnet run --project (Join-Path $PSScriptRoot 'PhoneTrackpadTests')
+if ($LASTEXITCODE -ne 0) { throw 'Phone trackpad network/disconnect tests failed.' }
+node (Join-Path $PSScriptRoot 'PhoneTrackpadTests\gestures.test.cjs')
+if ($LASTEXITCODE -ne 0) { throw 'Phone trackpad gesture tests failed.' }
 
 $kiroSource = [IO.File]::ReadAllText((Join-Path $PSScriptRoot 'KiroTheme.ps1'))
 $kiroEncoded = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($kiroSource))

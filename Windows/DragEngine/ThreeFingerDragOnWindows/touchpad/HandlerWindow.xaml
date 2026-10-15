@@ -10,7 +10,7 @@
     <Grid>
 
         <Grid.Resources>
-            <XamlUICommand x:Key="LauncherCommand" ExecuteRequested="OpenLauncher" Label="Choose controls" />
+            <XamlUICommand x:Key="LauncherCommand" ExecuteRequested="OpenLauncher" Label="iPhone trackpad QR" />
             <XamlUICommand x:Key="AllControlsCommand" ExecuteRequested="OpenAllControls" Label="All controls" />
             <XamlUICommand
                 x:Uid="Taskbar_Menu_QuitApp"
@@ -34,7 +34,7 @@
 
         <tb:TaskbarIcon
             x:Name="TaskbarIcon"
-            ToolTipText="3£Windows — click to choose controls"
+            ToolTipText="3£Windows — left: iPhone QR · right: all controls"
             MenuActivation="None"
             NoLeftClickDelay="True"
             LeftClickCommand="{StaticResource LauncherCommand}"
