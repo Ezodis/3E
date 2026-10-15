@@ -23,7 +23,7 @@ foreach($name in $required) {
 $profile=Read-EmbeddedValue 'EmbeddedKeyboardTemplate'
 if($profile -notmatch '\{\{POWER_KEYBOARD_HWID\}\}' -or $profile -notmatch 'one-shot-release 5000' -or $profile -notmatch 'tap-dance-eager 350') {throw 'Portable keyboard rules are incomplete.'}
 $picker=[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($assets['ClicksAccents.cs'].Data))
-if($picker -notmatch '✓ ✗ ★ ♥ ☀ ☂ ☕ ⌘ ⌀' -or $picker -match 'keyCalls|taggedCalls|public string Diagnostics') {throw 'Wrong hold-3 menu or leftover picker diagnostics.'}
+if($picker -notmatch '✓ ✗ ★ ♥ ☀ ☂ ☕ ⌘ ⚡' -or $picker -match 'keyCalls|taggedCalls|public string Diagnostics') {throw 'Wrong hold-3 menu or leftover picker diagnostics.'}
 Add-Type -AssemblyName System.IO.Compression
 foreach($name in @('EmbeddedAppX64','EmbeddedAppArm64')) {
     $bytes=[Convert]::FromBase64String((Read-EmbeddedValue $name))

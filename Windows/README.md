@@ -37,7 +37,7 @@ Hold a letter or number for 650 ms, release it, then press 1–9 to choose. Lett
 | 0 | 🙂 😂 ❤️ 👍 🙏 🎉 🔥 ✅ 👀 |
 | 1 | $ € £ ¥ ¢ ₹ ₩ ₽ ₿ |
 | 2 | ± × ÷ ≈ ≠ ≤ ≥ ∞ √ |
-| 3 | ✓ ✗ ★ ♥ ☀ ☂ ☕ ⌘ ⌀ |
+| 3 | ✓ ✗ ★ ♥ ☀ ☂ ☕ ⌘ ⚡ |
 | 4 | ← → ↑ ↓ ↔ ↕ ↗ ↘ ⇒ |
 | 5 | ¿ ¡ … — – • · « » |
 | 6 | Square, curly and angle brackets |
