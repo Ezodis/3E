@@ -39,6 +39,10 @@ public sealed class TrackpadFirewall : ITrackpadFirewall {
 }
 
 public sealed class NativeTrackpadInput : ITrackpadInput, IDisposable {
+    // PowerToys uses this marker to avoid remapping already-generated shortcuts.
+    // Required because the suite swaps left Alt+Tab and Ctrl+Tab.
+    // microsoft/PowerToys: src/modules/keyboardmanager/common/KeyboardManagerConstants.h
+    private const uint ShortcutMarker = 0x101;
     private readonly PhoneMidiWindows midi = new();
     private bool switching;
     public object GetInfo() => new {platform="windows",midi=midi.Info()};
@@ -68,7 +72,7 @@ public sealed class NativeTrackpadInput : ITrackpadInput, IDisposable {
     public void Release() { if (held) { try { Send(0x0004); } finally { held = false; } } }
     // The protocol exposes fixed actions, never arbitrary keyboard input.
     private static void WindowsShortcut(ushort key) {
-        static Input Key(ushort code, bool up) => new() { Type = 1, Data = new InputData { Keyboard = new Keyboard { Key = code, Flags = (up ? 2u : 0u) | (code == 0x5B ? 1u : 0u) } } };
+        static Input Key(ushort code, bool up) => KeyEvent(code,up);
         var inputs = new[] { Key(0x5B,false), Key(key,false), Key(key,true), Key(0x5B,true) };
         if (SendInput(4, inputs, Marshal.SizeOf<Input>()) == 4) return;
         // A partial injection must never leave Windows or Tab held down.
@@ -77,7 +81,7 @@ public sealed class NativeTrackpadInput : ITrackpadInput, IDisposable {
     }
     public void TaskView() => WindowsShortcut(0x09); // Windows + Tab
     public void ShowDesktop() => WindowsShortcut(0x44); // Windows + D
-    private static Input KeyEvent(ushort key,bool up=false) => new() { Type=1,Data=new InputData { Keyboard=new Keyboard { Key=key,Flags=(up?2u:0u) | (key==0x5B || key==0x25 || key==0x27 ? 1u:0u) } } };
+    private static Input KeyEvent(ushort key,bool up=false) => new() { Type=1,Data=new InputData { Keyboard=new Keyboard { Key=key,Extra=(UIntPtr)ShortcutMarker,Flags=(up?2u:0u) | (key==0x5B || key==0x25 || key==0x27 ? 1u:0u) } } };
     private static void Keys(params Input[] keys) { if(SendInput((uint)keys.Length,keys,Marshal.SizeOf<Input>())!=keys.Length) throw new InvalidOperationException("Windows could not accept the shortcut."); }
     private static void ReleaseKeys(params ushort[] keys) { foreach(var key in keys) SendInput(1,new[]{KeyEvent(key,true)},Marshal.SizeOf<Input>()); }
     public void AppsBegin() {

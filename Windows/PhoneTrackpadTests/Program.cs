@@ -42,6 +42,14 @@ if (args.Length == 1 && args[0] == "--firewall-smoke") {
 }
 
 var fake = new FakeInput(); var firewall = new FakeFirewall();
+var keyFactory=typeof(NativeTrackpadInput).GetMethod("KeyEvent",System.Reflection.BindingFlags.NonPublic|System.Reflection.BindingFlags.Static);
+bool marked=true;
+foreach(ushort key in new ushort[]{0x12,0x09,0x10,0x11,0x5B,0x25,0x27,0xB3}) foreach(bool up in new[]{false,true}) {
+    object native=keyFactory.Invoke(null,new object[]{key,up});
+    object data=native.GetType().GetField("Data").GetValue(native),keyboard=data.GetType().GetField("Keyboard").GetValue(data);
+    marked &= ((UIntPtr)keyboard.GetType().GetField("Extra").GetValue(keyboard)).ToUInt64()==0x101;
+}
+Check(marked,"Fixed shortcut presses and releases bypass the suite's PowerToys remappings without injecting test input");
 void ApplyText(string command) { using var parsed=JsonDocument.Parse(command); PhoneTrackpad.Apply(parsed.RootElement,fake); }
 ApplyText("{\"type\":\"appsBegin\"}"); ApplyText("{\"type\":\"appsStep\",\"direction\":-1}");
 Check(fake.Switching && fake.Commands.Contains("appsStep:-1"),"App switcher begins and steps through the native boundary");
