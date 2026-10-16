@@ -15,7 +15,14 @@
   // SECOND_TAP near the same spot, hold still for DRAG_ARM ("Drag ready"),
   // then move. Moving straight after a tap is always a plain pointer move,
   // so it can never press the button (closing menus or picking windows).
-  const TAP_TOLERANCE = 14, TAP_TIME = 750, SECOND_TAP = 350, SECOND_TAP_DISTANCE = 40, DRAG_ARM = 250, HOLD_RIGHT_CLICK = 800;
+  const TAP_TOLERANCE = 14, TAP_TIME = 750, SECOND_TAP = 350, SECOND_TAP_DISTANCE = 40, DRAG_ARM = 250;
+  // Two-finger gestures behave like a laptop trackpad: the first 10 px pick an
+  // axis (or a pinch). A quick sideways swipe goes back/forward; a slower
+  // sideways slide scrolls horizontally. Scrolls glide on after lifting.
+  const AXIS_PICK = 10, SWIPE_DISTANCE = 80, SWIPE_TIME = 320, LIFT_SWIPE_DISTANCE = 60, LIFT_SWIPE_TIME = 450;
+  const PINCH_START = 28, PINCH_STEP = 24, MOMENTUM_MIN = 0.35, MOMENTUM_DECAY = 0.95;
+  let two = null, momentum = null, motionHistory = [], accelerate = true;
+  try { accelerate = localStorage.getItem('3e-acceleration') !== 'false'; } catch {}
   function hint() { $('padHint').textContent = scrollMode ? 'Swipe to scroll' : 'Swipe to move · tap to click'; }
   hint();
   let socket, ready = false, heartbeat, dragging = false, threeDrag = false;
@@ -181,8 +188,11 @@
     clearTimeout(holdTimer);
     if(releaseTimer) { clearTimeout(releaseTimer); releaseTimer=null; }
     const point = center(e.touches), count = e.touches.length;
+    momentum = null; // any touch stops a gliding scroll
+    if (count === 2 && !two) two = { start: performance.now(), origin: point, spread0: spread(e.touches), zoomRef: 0, axis: null, decided: false, nav: false, bufX: 0, samples: [] };
     if (!mode) {
-      started = performance.now(); distance = 0; offset = 0; peak = 0; cancelled = false;
+      started = performance.now(); distance = 0; offset = 0; peak = 0; cancelled = false; motionHistory = [];
+      if (Math.abs(dx) < 1) dx = 0; if (Math.abs(dy) < 1) dy = 0; if (Math.abs(sx) < 1) sx = 0; if (Math.abs(sy) < 1) sy = 0; // drop sub-unit leftovers from the last gesture
       gestureOrigin = point; fourOrigin = null; fourDone = false;
       tapCandidate = count === 1 && !dragging && !scrollMode && lastTap && started - lastTap.time < SECOND_TAP && Math.hypot(point.x-lastTap.x,point.y-lastTap.y) < SECOND_TAP_DISTANCE;
       lastTap = null;
@@ -198,11 +208,6 @@
       tapCandidate = false; if (tapDrag) { drag(false); tapDrag = false; cancelled=true; }
     }
     mode = count; peak = Math.max(peak, count); last = point;
-    if (count === 1 && !dragging && !scrollMode && !tapCandidate) {
-      holdTimer = setTimeout(() => {
-        if (ready && mode === 1 && offset < 10 && !dragging && !document.hidden) { flush(true); send('right'); cancelled = true; }
-      },HOLD_RIGHT_CLICK);
-    }
     if (count >= 4) {
       // Four fingers must never become an accidental three-finger drag.
       dx = dy = sx = sy = 0; drag(false); threeDrag = tapDrag = false;
@@ -241,13 +246,76 @@
         else { clearTimeout(pressTimer); tapCandidate = false; } // just moving: never press
       }
       const limited = n => Math.max(-8000,Math.min(8000,n));
-      if ((mode === 2 || scrollMode) && !dragging) { sx = limited(sx+x*3); sy = limited(sy-y*3); }
-      else { dx = limited(dx+x*Number(speed.value)); dy = limited(dy+y*Number(speed.value)); }
+      if (mode === 2 && two && !dragging) { twoFingerMove(e.touches, point, x, y, limited); last = point; mode = count; flush(); return; }
+      if (scrollMode && !dragging) { sx = limited(sx+x*3); sy = limited(sy-y*3); }
+      else { const gain = Number(speed.value)*acceleration(x, y); dx = limited(dx+x*gain); dy = limited(dy+y*gain); }
     }
     last = point; mode = e.touches.length;
     flush(); // First movement goes immediately; subsequent samples are capped at 125 Hz.
   }, { passive: false });
   const tapTolerance = () => TAP_TOLERANCE;
+  function spread(touches) { return touches.length < 2 ? 0 : Math.hypot(touches[0].clientX-touches[1].clientX, touches[0].clientY-touches[1].clientY); }
+  // Speed-based pointer acceleration (finger speed over the last 150 ms):
+  // slow, careful motion stays precise; quick flicks cross the screen.
+  function acceleration(x, y) {
+    const now = performance.now();
+    motionHistory.push({ t: now, d: Math.hypot(x, y) });
+    while (motionHistory.length && now-motionHistory[0].t > 150) motionHistory.shift();
+    if (!accelerate) return 1;
+    const span = now - motionHistory[0].t;
+    if (span < 8) return 1;
+    const speed = motionHistory.slice(1).reduce((n, m) => n + m.d, 0) * 1000 / span; // px/s
+    return Math.max(0.55, Math.min(2.2, 0.5 + speed/700));
+  }
+  function twoFingerMove(touches, point, x, y, limited) {
+    const now = performance.now(), g = two;
+    if (!g.axis) {
+      const moved = Math.hypot(point.x-g.origin.x, point.y-g.origin.y), pinch = Math.abs(spread(touches)-g.spread0);
+      if (pinch >= PINCH_START && pinch > moved*1.2) { g.axis = 'zoom'; g.zoomRef = spread(touches); return; }
+      if (moved < AXIS_PICK) return;
+      const tx = point.x-g.origin.x, ty = point.y-g.origin.y;
+      g.axis = Math.abs(tx) > Math.abs(ty)*1.6 ? 'h' : 'v';
+      x = tx; y = ty; // nothing from the first few pixels is lost
+    }
+    if (g.axis === 'zoom') {
+      const change = spread(touches) - g.zoomRef;
+      if (Math.abs(change) >= PINCH_STEP) { send('zoom', { direction: change > 0 ? 1 : -1 }); g.zoomRef = spread(touches); }
+      return;
+    }
+    if (g.axis === 'h') {
+      if (g.nav) return;
+      if (!g.decided) {
+        g.bufX += x;
+        const total = point.x-g.origin.x, elapsed = now-g.start;
+        if (Math.abs(total) >= SWIPE_DISTANCE && elapsed <= SWIPE_TIME) { navigateHistory(total); return; }
+        if (elapsed <= SWIPE_TIME) return;
+        g.decided = true; x = g.bufX; // a slow slide: release the held motion as a scroll
+      }
+      sx = limited(sx+x*3); g.samples.push({ t: now, x: x*3, y: 0 });
+    } else {
+      // Ignore minor sideways drift on vertical scrolls; keep deliberate diagonals.
+      if (Math.abs(x) < Math.abs(y)*0.4) x = 0;
+      sx = limited(sx+x*3); sy = limited(sy-y*3); g.samples.push({ t: now, x: x*3, y: -y*3 });
+    }
+    while (g.samples.length && now-g.samples[0].t > 100) g.samples.shift();
+  }
+  // Fingers moving right go back (as on a Mac or Windows precision touchpad).
+  function navigateHistory(total) { two.nav = true; two.decided = true; send('history', { direction: total > 0 ? -1 : 1 }); }
+  function endTwoFinger(liftPoint) {
+    const g = two; two = null;
+    if (!g || !g.axis) return false;
+    if (g.axis === 'h' && !g.decided) {
+      const total = (liftPoint?.x ?? g.origin.x) - g.origin.x;
+      if (Math.abs(total) >= LIFT_SWIPE_DISTANCE && performance.now()-g.start <= LIFT_SWIPE_TIME) { two = g; navigateHistory(total); two = null; return true; }
+      sx += g.bufX*3;
+    }
+    if ((g.axis === 'v' || g.axis === 'h' && !g.nav) && g.samples.length >= 2) {
+      const span = Math.max(16, g.samples.at(-1).t - g.samples[0].t);
+      const vx = g.samples.reduce((n, m) => n+m.x, 0)/span, vy = g.samples.reduce((n, m) => n+m.y, 0)/span;
+      if (Math.hypot(vx, vy) >= MOMENTUM_MIN) momentum = { vx, vy, t: performance.now() };
+    }
+    return true;
+  }
   function disarm() { dragArmed = false; if (!dragging) { pad.classList.remove('dragging'); hint(); } }
   function startTapDrag(x, y) {
     clearTimeout(pressTimer); tapCandidate = false; dragArmed = false;
@@ -285,6 +353,9 @@
       return;
     }
     if (threeDrag && e.touches.length < 3) { drag(false); threeDrag = false; cancelled = true; }
+    // After a real two-finger gesture, a finger left on the glass does nothing
+    // (no pointer jump), and the lift is never a two-finger right-click.
+    if (two && e.touches.length < 2 && endTwoFinger(last)) cancelled = true;
     if (tapCandidate && !e.touches.length) {
       // Tap, tap: a native double-click (two clicks at the same spot).
       // An armed drag that never moved is cancelled without clicking.
@@ -310,7 +381,17 @@
   // Some watch viewers expose taps as clicks but consume continuous touch events.
   pad.addEventListener('click', () => { if (performance.now()-lastTouchAt > 500 && !scrollMode) send('left'); });
   pad.addEventListener('contextmenu', e => e.preventDefault());
-  function frame() { flush(); requestAnimationFrame(frame); } requestAnimationFrame(frame);
+  function frame(now) {
+    if (momentum && ready) {
+      const at = now ?? performance.now(), step = Math.min(50, at - momentum.t); momentum.t = at;
+      sx += momentum.vx*step; sy += momentum.vy*step;
+      const decay = Math.pow(MOMENTUM_DECAY, step/16);
+      momentum.vx *= decay; momentum.vy *= decay;
+      if (Math.hypot(momentum.vx, momentum.vy) < 0.05) momentum = null;
+    }
+    flush(); requestAnimationFrame(frame);
+  }
+  requestAnimationFrame(frame);
   function suspend(message) {
     connectionAttempt++;
     clearTimeout(reconnectTimer); reconnectTimer = null; clearTimeout(connectTimeout); connecting = false;
@@ -348,7 +429,7 @@
   });
   function releaseControls() {
     clearTimeout(holdTimer); clearTimeout(pressTimer); clearTimeout(releaseTimer); releaseTimer=null;
-    dx=dy=sx=sy=0; drag(false); dragArmed=false; send('releaseAll'); pad.classList.remove('dragging'); hint();
+    dx=dy=sx=sy=0; two=null; momentum=null; drag(false); dragArmed=false; send('releaseAll'); pad.classList.remove('dragging'); hint();
     threeDrag=tapDrag=tapCandidate=false; mode=peak=0; last=lastTap=null; cancelled=true;
     window.ThreeESurface?.cancel();
   }
@@ -356,6 +437,9 @@
     if (show) releaseControls();
     $('settingsPanel').hidden = !show; $('settings').setAttribute('aria-expanded',String(show));
   }
+  function accelerationLabel() { $('acceleration').setAttribute('aria-pressed', String(accelerate)); $('acceleration').textContent = 'Pointer acceleration: ' + (accelerate ? 'on' : 'off'); }
+  accelerationLabel();
+  $('acceleration').addEventListener('click', () => { accelerate = !accelerate; try { localStorage.setItem('3e-acceleration', String(accelerate)); } catch {} accelerationLabel(); });
   $('settings').addEventListener('click', () => settings(true));
   $('closeSettings').addEventListener('click', () => settings(false));
   $('fullscreen').addEventListener('click', async () => {

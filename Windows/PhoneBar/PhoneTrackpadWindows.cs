@@ -39,7 +39,7 @@ public sealed class TrackpadFirewall : ITrackpadFirewall {
         try {
             policy.Rules.Remove(NameRule);
             rule.Name = NameRule;
-            rule.Description = "Answers phonebar.local for the Phone Bar receiver while it runs.";
+            rule.Description = "Answers 3e.local for the Phone Bar receiver while it runs.";
             rule.Protocol = 17; rule.LocalPorts = "5353"; rule.RemoteAddresses = "LocalSubnet";
             rule.Direction = 1; rule.Action = 1; rule.Profiles = int.MaxValue; rule.EdgeTraversal = false; rule.Enabled = true;
             policy.Rules.Add(rule);
@@ -190,6 +190,20 @@ public sealed class NativeTrackpadInput : ITrackpadInput, IDisposable {
         // A rejected injection (for example a secure desktop) must not drop the
         // phone connection or leave a modifier held.
         if (SendInput((uint)sequence.Length, sequence, Marshal.SizeOf<Input>()) != sequence.Length) ReleaseKeys(keys.Reverse().ToArray());
+    }
+    // Browser Back/Forward keys work in Chrome, Edge, Firefox and File Explorer.
+    public void History(int direction) {
+        if (direction == 0) return;
+        Release();
+        ushort key = direction < 0 ? (ushort)0xA6 : (ushort)0xA7;
+        SendInput(2, new[] { KeyEvent(key), KeyEvent(key, true) }, Marshal.SizeOf<Input>());
+    }
+    // Ctrl + one wheel notch: the standard zoom step in browsers and most apps.
+    public void Zoom(int direction) {
+        if (direction == 0) return;
+        var wheel = new Input { Data = new InputData { Mouse = new Mouse { Data = unchecked((uint)(direction > 0 ? 120 : -120)), Flags = 0x0800 } } };
+        var inputs = new[] { KeyEvent(0x11), wheel, KeyEvent(0x11, true) };
+        if (SendInput(3, inputs, Marshal.SizeOf<Input>()) != 3) ReleaseKeys(0x11);
     }
     public void Media(int action) => media?.Invoke(action);
     public void Volume(int level) => volume?.Invoke(level);

@@ -67,6 +67,8 @@ public sealed class MacInput : ITrackpadInput, IDisposable {
         Release();AppsEnd();var (key,flags)=shortcuts[id];
         try{Key(key,true,flags);}finally{Key(key,false,flags);}
     }
+    public void History(int direction){if(direction==0)return;Release();ushort key=direction<0?(ushort)33:(ushort)30;try{Key(key,true,Cmd);}finally{Key(key,false,Cmd);}} // Cmd+[ / Cmd+]
+    public void Zoom(int direction){if(direction==0)return;ushort key=direction>0?(ushort)24:(ushort)27;try{Key(key,true,Cmd);}finally{Key(key,false,Cmd);}} // Cmd+= / Cmd+-
     public void Media(int action)=>media(action);
     public void Volume(int level)=>volume.Set(level);
     public void MidiPort(int id)=>midi.Select(id);

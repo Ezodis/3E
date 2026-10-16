@@ -56,6 +56,7 @@ if ($testProcess.ExitCode -ne 0 -or -not (Test-Path -LiteralPath $report) -or -n
 dotnet run --project (Join-Path $PSScriptRoot 'PhoneTrackpadTests')
 if ($LASTEXITCODE -ne 0) { throw 'Phone trackpad network/disconnect tests failed.' }
 node (Join-Path $PSScriptRoot 'PhoneTrackpadTests\gestures.test.cjs')
+node (Join-Path $PSScriptRoot 'PhoneTrackpadTests\trackpad.test.cjs')
 if ($LASTEXITCODE -ne 0) { throw 'Phone trackpad gesture tests failed.' }
 node (Join-Path $PSScriptRoot 'PhoneTrackpadTests\dock.test.cjs')
 if ($LASTEXITCODE) { throw 'Phone dock tests failed.' }
