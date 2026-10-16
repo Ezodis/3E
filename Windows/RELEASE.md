@@ -1,4 +1,8 @@
-3£Windows 1.0.24: a phone link that stays the same, drag that works on a real phone, and a better volume control.
+3£Windows 1.0.25: volume buttons use speaker icons.
+
+- The top volume button is the speaker-with-sound-waves icon (volume up) and the bottom one is a speaker with a single small wave (volume down). Both press the laptop's volume keys. The separate speaker icon above the slider is gone.
+
+Includes everything from 1.0.24:
 
 - **One link that keeps working:** the pairing link is saved, so it is the same after restarts, updates and network changes. Phone Bar now stays on and restarts itself after sleep or a network change. The tray has "Phone Bar — new link" to revoke the old link; "Stop Phone Bar" turns it off until you open the QR again.
 - **phonebar.local:** the receiver answers http://phonebar.local:17833. The QR still opens the IP address; the page switches to phonebar.local automatically when the network supports it, so a bookmark or home-screen icon keeps working when the laptop's IP changes. Networks that block .local names keep using the IP link.
