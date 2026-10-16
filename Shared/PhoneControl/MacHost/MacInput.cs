@@ -72,6 +72,7 @@ public sealed class MacInput : ITrackpadInput, IDisposable {
     public void MidiPort(int id)=>midi.Select(id);
     public void Midi(bool note,int channel,int number,int value)=>midi.Send(note,channel,number,value);
     public void MidiPanic()=>midi.Panic();
+    public void VolumeStep(int direction){if(direction==0)return;int level=ThreeEGetOutputVolume();if(level>=0)volume.Set(Math.Clamp(level+direction*6,0,100));}
     public void ReleaseAll(){volume.CancelPending();try{Release();}finally{try{navigation.End();}finally{midi.Panic();}}}
     public void Dispose(){try{ReleaseAll();}finally{volume.Dispose();midi.Dispose();}}
 }

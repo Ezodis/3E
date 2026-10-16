@@ -43,6 +43,8 @@ public sealed class WindowsHub : IDisposable {
         public bool SsmsTheme { get; set; } = true;
         public bool Wallpaper { get; set; } = true;
         public DateTime LastUpdateCheckUtc { get; set; }
+        // Phone Bar keeps one saved link and stays reachable unless stopped from the menu.
+        public bool PhoneBarAlwaysOn { get; set; } = true;
     }
 
     public WindowsHub(MenuFlyout menu) {
@@ -74,7 +76,7 @@ public sealed class WindowsHub : IDisposable {
     }
 
     private async Task StartAsync() {
-        try { ConfigureHiddenIcons(); await EnsureComponentsAsync(); ApplyTheme(); WriteDiagnostics(); }
+        try { ConfigureHiddenIcons(); await EnsureComponentsAsync(); ApplyTheme(); KeepPhoneBar(); WriteDiagnostics(); }
         catch (Exception ex) { Log(ex); }
         if ((DateTime.UtcNow - settings.LastUpdateCheckUtc).TotalHours >= 24) await CheckUpdatesAsync(false);
     }
@@ -151,6 +153,7 @@ public sealed class WindowsHub : IDisposable {
             }
             lastTick = now;
             ApplyTheme();
+            KeepPhoneBar();
             if (now >= nextRecovery) {
                 await EnsureComponentsAsync();
                 nextRecovery = now.AddSeconds(60);
@@ -245,8 +248,15 @@ public sealed class WindowsHub : IDisposable {
 
     public void RefreshControls() => RefreshMenu();
 
+    // Restarts the receiver after sleep or a network change so the saved link works.
+    private void KeepPhoneBar() {
+        if (!settings.PhoneBarAlwaysOn || disposed) return;
+        try { phoneBar.EnsureRunning(); } catch (Exception ex) { Log(ex); }
+    }
+
     public void OpenPhoneTrackpad() {
         try {
+            if (!settings.PhoneBarAlwaysOn) { settings.PhoneBarAlwaysOn = true; Save(); }
             phoneBar.Show();
             WriteDiagnostics();
         } catch (Exception ex) { Log(ex); }
@@ -258,7 +268,8 @@ public sealed class WindowsHub : IDisposable {
         Toggle("Three-finger drag", App.SettingsData.ThreeFingerDrag, enabled => { App.SettingsData.ThreeFingerDrag = enabled; App.SettingsData.save(); });
         Item("Drag settings…", () => App.Instance.OpenSettingsWindow());
         Item("3£ Phone Bar — show QR…", OpenPhoneTrackpad);
-        if (phoneBar.Running) Item("Stop Phone Bar", () => phoneBar.Stop());
+        if (phoneBar.Running) Item("Stop Phone Bar", () => { settings.PhoneBarAlwaysOn = false; Save(); phoneBar.Stop(); });
+        Item("Phone Bar — new link (old one stops working)", () => { phoneBar.ResetLink(); OpenPhoneTrackpad(); });
         Toggle(File.Exists(KeyboardPath) ? "Clicks keyboard — " + (IsRunning("3EWindows.Keyboard") ? "running" : "stopped") : "Clicks keyboard — connect and run setup", settings.Keyboard, enabled => {
             settings.Keyboard = enabled;
             if (enabled) _ = EnsureComponentsAsync(); else StopKeyboard();

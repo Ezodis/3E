@@ -8,25 +8,75 @@ namespace ThreeE.PhoneBar.Windows;
 public sealed class PhoneBarModule : IDisposable {
     private PhoneTrackpad receiver;
     private PhoneTrackpadPopup popup;
+    private PhoneNameResponder name;
     private bool disposed;
     private PhoneMediaState media;
     private OutputVolume volume;
     public bool Running => receiver?.Running ?? false;
     public string Status => receiver?.Status ?? "Off";
+    public string NamedUrl => receiver?.NamedUrl;
+    private static string LinkPath => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "3EWindows", "phone-link.txt");
 
-    public void Show() {
+    // The pairing secret is kept in the user's local profile so a phone's saved
+    // link keeps working after restarts and updates. ResetLink() revokes it.
+    private static string StoredToken() {
+        try {
+            if (File.Exists(LinkPath)) {
+                var stored = File.ReadAllText(LinkPath).Trim();
+                if (stored.Length == 48 && stored.All(Uri.IsHexDigit)) return stored;
+            }
+            var token = Convert.ToHexString(System.Security.Cryptography.RandomNumberGenerator.GetBytes(24));
+            Directory.CreateDirectory(Path.GetDirectoryName(LinkPath));
+            File.WriteAllText(LinkPath, token);
+            return token;
+        } catch { return null; }
+    }
+
+    private void EnsureReceiver() {
         ObjectDisposedException.ThrowIf(disposed, this);
         media ??= new();
         volume ??= new(WindowsOutputVolume.Read,WindowsOutputVolume.Write);
         receiver ??= new(PhoneTrackpad.GetLocalAddress,
-            new NativeTrackpadInput(()=>new {media=media?.State},action=>media?.Send(action),()=>volume?.State,level=>volume?.Set(level),()=>volume?.CancelPending()), new TrackpadFirewall(), PhoneTrackpad.Port);
-        if (receiver.Start()) PhonePowerTuning.Begin(); else PhonePowerTuning.End();
+            new NativeTrackpadInput(()=>new {media=media?.State},action=>media?.Send(action),()=>volume?.State,level=>volume?.Set(level),()=>volume?.CancelPending(),()=>volume?.Refresh()),
+            new TrackpadFirewall(), PhoneTrackpad.Port) { TokenProvider = StoredToken, AliasHost = PhoneNameResponder.Name };
+    }
+
+    // Starts (or restarts after a network change) without showing the popup.
+    public bool EnsureRunning() {
+        EnsureReceiver();
+        media ??= new();
+        volume ??= new(WindowsOutputVolume.Read,WindowsOutputVolume.Write);
+        bool running = receiver.Running || receiver.Start();
+        if (running) PhonePowerTuning.Begin(); else PhonePowerTuning.End();
+        UpdateName(running ? receiver.Address : null);
+        return running;
+    }
+
+    private void UpdateName(System.Net.IPAddress address) {
+        if (address != null && name?.Address?.Equals(address) == true) return;
+        name?.Dispose(); name = null;
+        if (address == null) return;
+        try { new TrackpadFirewall().OpenName(); } catch { }
+        try { name = new PhoneNameResponder(address); } catch { /* The IP link keeps working without the name. */ }
+    }
+
+    public void Show() {
+        EnsureRunning();
         popup ??= new(receiver);
         popup.Show();
     }
 
+    // Revokes the saved phone link; the next start issues a new QR code.
+    public void ResetLink() {
+        try { if (File.Exists(LinkPath)) File.Delete(LinkPath); } catch { }
+        bool wasRunning = Running;
+        Stop();
+        if (wasRunning) EnsureRunning();
+    }
+
     public void Stop() {
         popup?.Dispose(); popup = null;
+        name?.Dispose(); name = null;
         receiver?.Stop();
         PhonePowerTuning.End();
         media?.Dispose(); media=null;

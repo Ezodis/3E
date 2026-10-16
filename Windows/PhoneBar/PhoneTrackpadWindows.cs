@@ -32,9 +32,22 @@ public sealed class TrackpadFirewall : ITrackpadFirewall {
             policy.Rules.Add(rule);
         } finally { Marshal.FinalReleaseComObject(rule); Marshal.FinalReleaseComObject(policy); }
     }
+    public const string NameRule = "3EWindows Phone Bar name (mDNS)";
+    public void OpenName() {
+        dynamic policy = Activator.CreateInstance(Type.GetTypeFromProgID("HNetCfg.FwPolicy2"));
+        dynamic rule = Activator.CreateInstance(Type.GetTypeFromProgID("HNetCfg.FWRule"));
+        try {
+            policy.Rules.Remove(NameRule);
+            rule.Name = NameRule;
+            rule.Description = "Answers phonebar.local for the Phone Bar receiver while it runs.";
+            rule.Protocol = 17; rule.LocalPorts = "5353"; rule.RemoteAddresses = "LocalSubnet";
+            rule.Direction = 1; rule.Action = 1; rule.Profiles = int.MaxValue; rule.EdgeTraversal = false; rule.Enabled = true;
+            policy.Rules.Add(rule);
+        } finally { Marshal.FinalReleaseComObject(rule); Marshal.FinalReleaseComObject(policy); }
+    }
     public void Close() {
         dynamic policy = Activator.CreateInstance(Type.GetTypeFromProgID("HNetCfg.FwPolicy2"));
-        try { policy.Rules.Remove(PhoneTrackpad.FirewallName); } finally { Marshal.FinalReleaseComObject(policy); }
+        try { policy.Rules.Remove(PhoneTrackpad.FirewallName); try { policy.Rules.Remove(NameRule); } catch { } } finally { Marshal.FinalReleaseComObject(policy); }
     }
 }
 
@@ -49,9 +62,9 @@ public sealed class NativeTrackpadInput : ITrackpadInput, IDisposable {
     private readonly Func<object> controls;
     private readonly Action<int> media,volume;
     private readonly Func<object> volumeState;
-    private readonly Action cancelVolume;
-    public NativeTrackpadInput(Func<object> controls = null, Action<int> media = null, Func<object> volumeState = null, Action<int> volume = null, Action cancelVolume = null) {
-        this.controls=controls;this.media=media;this.volumeState=volumeState;this.volume=volume;this.cancelVolume=cancelVolume;
+    private readonly Action cancelVolume, refreshVolume;
+    public NativeTrackpadInput(Func<object> controls = null, Action<int> media = null, Func<object> volumeState = null, Action<int> volume = null, Action cancelVolume = null, Action refreshVolume = null) {
+        this.controls=controls;this.media=media;this.volumeState=volumeState;this.volume=volume;this.cancelVolume=cancelVolume;this.refreshVolume=refreshVolume;
         navigation=new(HasMultipleDesktops,SendDesktopShortcut,BeginApps,AppsStep,AppsEnd);
     }
     public object GetConnectionInfo() => new {platform="windows",volume=volumeState?.Invoke(),controls=controls?.Invoke()};
@@ -120,7 +133,7 @@ public sealed class NativeTrackpadInput : ITrackpadInput, IDisposable {
     }
     public void TaskView() => WindowsShortcut(0x09); // Windows + Tab
     public void ShowDesktop() => WindowsShortcut(0x44); // Windows + D
-    private static Input KeyEvent(ushort key,bool up=false) => new() { Type=1,Data=new InputData { Keyboard=new Keyboard { Key=key,Extra=(UIntPtr)ShortcutMarker,Flags=(up?2u:0u) | (key==0x5B || key==0x25 || key==0x27 || key==0x2C ? 1u:0u) } } };
+    private static Input KeyEvent(ushort key,bool up=false) => new() { Type=1,Data=new InputData { Keyboard=new Keyboard { Key=key,Extra=(UIntPtr)ShortcutMarker,Flags=(up?2u:0u) | (key==0x5B || key==0x25 || key==0x27 || key==0x2C || key==0xAE || key==0xAF ? 1u:0u) } } };
     private static void Keys(params Input[] keys) { if(SendInput((uint)keys.Length,keys,Marshal.SizeOf<Input>())!=keys.Length) throw new InvalidOperationException("Windows could not accept the shortcut."); }
     private static void ReleaseKeys(params ushort[] keys) { foreach(var key in keys) SendInput(1,new[]{KeyEvent(key,true)},Marshal.SizeOf<Input>()); }
     public void AppsBegin() => BeginApps(1);
@@ -180,6 +193,15 @@ public sealed class NativeTrackpadInput : ITrackpadInput, IDisposable {
     }
     public void Media(int action) => media?.Invoke(action);
     public void Volume(int level) => volume?.Invoke(level);
+    // The real Windows volume keys: same 2% steps and on-screen volume flyout as the keyboard.
+    public void VolumeStep(int direction) {
+        if (direction == 0) return;
+        ushort key = direction > 0 ? (ushort)0xAF : (ushort)0xAE;
+        cancelVolume?.Invoke();
+        SendInput(2, new[] { KeyEvent(key), KeyEvent(key, true) }, Marshal.SizeOf<Input>());
+        // Windows applies the key asynchronously; re-read after it lands.
+        _ = Task.Delay(150).ContinueWith(_ => refreshVolume?.Invoke());
+    }
 }
 
 // While the receiver runs, Windows must not throttle this background tray

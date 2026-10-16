@@ -16,7 +16,7 @@ function tap(x=10,y=10){fire('touchstart',[touch(x,y)]);fire('touchend',[]);}
 // Tap, then touch again and hold: the drag arms without pressing anything.
 function begin(){tap();fire('touchstart',[touch(10,10)]);timer(250);}
 // Armed, then a small move: the press happens only now.
-function grab(){begin();fire('touchmove',[touch(13,10)]);}
+function grab(){begin();fire('touchmove',[touch(16,10)]);}
 tap();expect([{type:'left'}],'single tap');
 fire('touchstart',fingers(2,10,10));fire('touchend',[]);expect([{type:'right'}],'two-finger tap');
 fire('touchstart',[touch(10,10)]);fire('touchmove',[touch(30,20)]);assert.deepEqual(sent,[{type:'move',x:60,y:30}],'first movement does not wait for animation frame');frame();fire('touchend',[]);expect([{type:'move',x:60,y:30}],'relative movement');
@@ -25,6 +25,9 @@ tap();tap();expect([{type:'left'},{type:'left'}],'quick double tap sends two cli
 tap();fire('touchstart',[touch(10,10)]);fire('touchmove',[touch(14,10)]);fire('touchend',[]);expect([{type:'left'},{type:'left'}],'small jitter during the second tap is still a double-click');
 tap();fire('touchstart',[touch(10,10)]);fire('touchmove',[touch(30,12)]);fire('touchend',[]);expect([{type:'left'},{type:'move',x:60,y:6}],'moving straight after a tap is a plain move and never presses');
 tap();fire('touchstart',[touch(10,10)]);time+=200;fire('touchmove',[touch(30,12)]);fire('touchend',[]);expect([{type:'left'},{type:'move',x:60,y:6}],'a short pause before moving still never presses');
+tap();fire('touchstart',[touch(10,10)]);for(const [x,y] of [[12,11],[9,12],[11,8],[8,10],[12,12],[10,9],[12,10],[9,11]])fire('touchmove',[touch(x,y)]);timer(250);fire('touchmove',[touch(40,12)]);fire('touchend',[]);timer(120);
+assert.ok(sent.some(c=>c.type==='dragStart'),'a hold with natural finger jitter still arms the drag');expect(sent.slice(),'jittery hold-drag');
+fire('touchstart',[touch(50,50)]);for(const [x,y] of [[52,51],[49,52],[51,48],[48,50],[52,52],[50,49]])fire('touchmove',[touch(x,y)]);fire('touchend',[]);expect(sent.filter(c=>c.type!=='move').length===1&&sent.some(c=>c.type==='left')?sent.slice():[{type:'left'}],'a tap with finger jitter is still a click');
 begin();assert.equal(sent.length,1,'arming sends nothing');fire('touchend',[]);expect([{type:'left'}],'an armed drag lifted without moving cancels without clicking');
 begin();fire('touchmove',[touch(10,40)]);fire('touchend',[]);timer(120);expect([{type:'left'},{type:'dragStart',x:0,y:1},{type:'move',x:0,y:90},{type:'up'}],'vertical tap-drag reports its direction');
 begin();assert.deepEqual(sent,[{type:'left'}],'holding the second contact arms a drag without pressing');fire('touchmove',[touch(11,10)]);fire('touchmove',[touch(30,20)]);fire('touchend',[]);assert.ok(!sent.some(c=>c.type==='up'),'brief contact loss keeps drag');timer(120);expect([{type:'left'},{type:'dragStart',x:1,y:0},{type:'move',x:60,y:30},{type:'up'}],'double-tap-hold-drag releases after contact grace');
@@ -39,15 +42,15 @@ fire('touchstart',fingers(4,10,10));fire('touchmove',fingers(4,80,20));fire('tou
 fire('touchstart',fingers(4,100,10));fire('touchmove',fingers(4,20,10));fire('touchend',[]);expect([{type:'desktop',direction:1}],'four left goes to next desktop');
 fire('touchstart',fingers(5,10,10));fire('touchmove',fingers(5,10,90));fire('touchend',[]);expect([],'five contacts ignored');
 element('speed').value='20';begin();fire('touchmove',[touch(210,10)]);fire('touchend',[]);timer(120);expect([{type:'left'},{type:'dragStart',x:1,y:0},{type:'move',x:4000,y:0},{type:'up'}],'20x motion uses one packet');element('speed').value='3';
-grab();fire('touchcancel',[]);expect([{type:'left'},{type:'dragStart',x:1,y:0},{type:'move',x:9,y:0},{type:'up'},{type:'releaseAll'}],'cancel immediately releases all held controls');
-grab();element('settings').handlers.click();expect([{type:'left'},{type:'dragStart',x:1,y:0},{type:'move',x:9,y:0},{type:'up'},{type:'releaseAll'}],'settings release dragging');element('closeSettings').handlers.click();
-grab();doc.hidden=true;doc.handlers.visibilitychange();expect([{type:'left'},{type:'dragStart',x:1,y:0},{type:'move',x:9,y:0},{type:'releaseAll'}],'backgrounding releases all controls');assert.equal(ws.readyState,3);
+grab();fire('touchcancel',[]);expect([{type:'left'},{type:'dragStart',x:1,y:0},{type:'move',x:18,y:0},{type:'up'},{type:'releaseAll'}],'cancel immediately releases all held controls');
+grab();element('settings').handlers.click();expect([{type:'left'},{type:'dragStart',x:1,y:0},{type:'move',x:18,y:0},{type:'up'},{type:'releaseAll'}],'settings release dragging');element('closeSettings').handlers.click();
+grab();doc.hidden=true;doc.handlers.visibilitychange();expect([{type:'left'},{type:'dragStart',x:1,y:0},{type:'move',x:18,y:0},{type:'releaseAll'}],'backgrounding releases all controls');assert.equal(ws.readyState,3);
 fire('touchstart',[touch(10,10)]);fire('touchmove',[touch(30,10)]);fire('touchend',[]);expect([],'sleeping touches do not replay');
 doc.hidden=false;doc.handlers.visibilitychange();connected();element('connect').handlers.click();assert.equal(ws.readyState,3);checks++;doc.hidden=true;doc.handlers.visibilitychange();doc.hidden=false;doc.handlers.visibilitychange();assert.equal(ws.readyState,3);checks++;
 element('connect').handlers.click();connected();fire('touchstart',[touch(10,10)]);time+=500;fire('touchend',[]);expect([{type:'left'}],'one-contact controls always accept slower taps');
 fire('touchstart',[touch(10,10)]);time+=800;timer(800);fire('touchend',[]);expect([{type:'right'}],'hold right-clicks once');
 element('scrollMode').handlers.click();fire('touchstart',[touch(10,10)]);fire('touchmove',[touch(30,30)]);fire('touchend',[]);expect([{type:'scroll',x:60,y:-60}],'one contact scrolls');element('scrollMode').handlers.click();
-grab();win.handlers.resize();assert.deepEqual(sent,[{type:'left'},{type:'dragStart',x:1,y:0},{type:'move',x:9,y:0}],'Safari chrome height changes must not release a drag');checks++;win.innerWidth=844;win.handlers.resize();expect([{type:'left'},{type:'dragStart',x:1,y:0},{type:'move',x:9,y:0},{type:'up'},{type:'releaseAll'}],'rotation releases all controls');
+grab();win.handlers.resize();assert.deepEqual(sent,[{type:'left'},{type:'dragStart',x:1,y:0},{type:'move',x:18,y:0}],'Safari chrome height changes must not release a drag');checks++;win.innerWidth=844;win.handlers.resize();expect([{type:'left'},{type:'dragStart',x:1,y:0},{type:'move',x:18,y:0},{type:'up'},{type:'releaseAll'}],'rotation releases all controls');
 fire('touchstart',[touch(10,10)]);ws.bufferedAmount=600;fire('touchmove',[touch(20,10)]);fire('touchmove',[touch(30,10)]);frame();assert.deepEqual(sent,[],'brief backpressure keeps unsent motion out of the socket');assert.equal(ws.readyState,1);ws.bufferedAmount=0;frame();fire('touchend',[]);expect([{type:'move',x:60,y:0}],'coalesced motion resumes without a reconnect or a backlog of old packets');
 begin();ws.bufferedAmount=600;fire('touchmove',[touch(30,10)]);fire('touchend',[]);timer(120);ws.bufferedAmount=0;expect([{type:'left'},{type:'dragStart',x:1,y:0},{type:'move',x:60,y:0},{type:'up'}],'backpressure preserves motion before a drag release');
 const failed=ws;ws.close();timer(250);assert.notEqual(ws,failed);connected();checks++;time+=1500;pings.length=0;heartbeat();assert.deepEqual(pings.splice(0),[{type:'ping'}]);ws.onmessage({data:'{"pong":true}'});time+=1500;heartbeat();assert.equal(ws.readyState,1);sent.length=0;checks++;

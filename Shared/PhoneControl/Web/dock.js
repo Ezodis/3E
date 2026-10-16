@@ -94,6 +94,23 @@
     volumePending=level;if(!volumeSendTimer)volumeSendTimer=setTimeout(flushVolume,40);
   }
   function finishVolume(){volumeEditing=false;flushVolume();clearTimeout(volumeHideTimer);volumeHideTimer=setTimeout(()=>hideVolume(),3500);}
+  // Drag anywhere on the track: the level follows the finger (top = 100%).
+  const volumeTrack=$('volumeTrack');let trackPointer=null;
+  function levelAt(y){const r=volumeTrack.getBoundingClientRect();return (r.bottom-y)*100/Math.max(1,r.height);}
+  volumeTrack.addEventListener('pointerdown',e=>{
+    if(!C.connected()||!volume.available)return;e.preventDefault();C.release();showVolume();volumeEditing=true;
+    trackPointer=e.pointerId;volumeTrack.setPointerCapture?.(e.pointerId);changeVolume(levelAt(e.clientY));
+  });
+  volumeTrack.addEventListener('pointermove',e=>{if(trackPointer!==e.pointerId)return;e.preventDefault();changeVolume(levelAt(e.clientY));});
+  for(const type of ['pointerup','pointercancel','lostpointercapture'])volumeTrack.addEventListener(type,e=>{if(trackPointer!==e.pointerId)return;trackPointer=null;finishVolume();});
+  // Up/down use the laptop's own volume keys (system steps and on-screen flyout).
+  for(const [id,direction] of [['volumeUp',1],['volumeDown',-1]]){
+    $(id).addEventListener('click',()=>{
+      if(!C.connected())return;showVolume();C.send('volumeStep',{direction});
+      if(volume.available&&volume.level!=null){const level=Math.max(0,Math.min(100,+volumeSlider.value+direction*2));volumeSlider.value=level;volumePane.style.setProperty('--volume',level+'%');$('volumeValue').textContent=level+'%';volumeQuiet=performance.now()+700;}
+      finishVolume();
+    });
+  }
   volumeSlider.addEventListener('pointerdown',()=>{C.release();showVolume();volumeEditing=true;});
   volumeSlider.addEventListener('input',()=>{showVolume();changeVolume(+volumeSlider.value);if(!volumeEditing)finishVolume();});
   volumeSlider.addEventListener('pointerup',finishVolume);

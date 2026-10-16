@@ -19,6 +19,8 @@ public sealed class OutputVolume : IDisposable {
         try { wake.Release(); } catch(SemaphoreFullException) { }
     }
     public void CancelPending()=>Interlocked.Exchange(ref pending,-1);
+    // Re-read soon (for example after a native volume key changed the level).
+    public void Refresh(){try{wake.Release();}catch(SemaphoreFullException){}}
     private async Task Run() {
         try {
             while(!stop.IsCancellationRequested) {

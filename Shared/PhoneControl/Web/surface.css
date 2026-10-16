@@ -23,7 +23,13 @@
 #volumeTrack:before{content:'';position:absolute;inset:auto 0 0;height:var(--volume,0%);border-radius:inherit;background:#bce8d8;pointer-events:none}
 #volumeTrack:after{content:'';position:absolute;left:-5px;bottom:clamp(0px,calc(var(--volume,0%) - 3px),calc(100% - 6px));width:24px;height:6px;border-radius:4px;background:#eef8f3;box-shadow:0 1px 4px #0004;pointer-events:none}
 #volumeTrack:focus-within{outline:1px solid #bce8d8;outline-offset:5px}
-#outputVolume{position:absolute;left:50%;transform:translateX(-50%);appearance:slider-vertical;writing-mode:vertical-lr;direction:rtl;width:38px;height:100%;opacity:0;margin:0;touch-action:none}
+/* The visible track handles touch directly (iOS has no reliable vertical range input);
+   the hidden range input stays for keyboard and assistive control. */
+#volumeTrack{touch-action:none;cursor:ns-resize}
+#outputVolume{position:absolute;inset:0;width:100%;height:100%;opacity:0;margin:0;pointer-events:none}
+#volumeUp,#volumeDown{width:44px;height:38px;min-height:38px;padding:0;border-radius:14px;display:flex;align-items:center;justify-content:center;background:#31444f;border:0;touch-action:manipulation}
+#volumeUp:active,#volumeDown:active{background:#a8e5cd;color:#0e2420}#volumeUp svg,#volumeDown svg{width:20px;height:20px}
+.watch #volumeUp,.watch #volumeDown{display:none}
 #volumeValue{font-size:11px;line-height:14px;font-variant-numeric:tabular-nums;color:#c1d6ce}
 .watch #volumePane{right:7px;bottom:51px;width:44px;padding:7px 4px;border-radius:17px;gap:3px}.watch #volumeTrack{height:70px}.watch #outputVolume{width:34px}.watch #volumePane svg{width:17px;height:17px}.watch #volumeValue{font-size:10px}
 @media(max-height:350px){#volumeTrack{height:80px}}
