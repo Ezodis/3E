@@ -7,7 +7,8 @@ using ThreeE.PhoneHost;
 if(args.Contains("--native-self-test")) {
     if(MacInput.ThreeEValidateScrollEvent()!=1)throw new Exception("Quartz scroll event mismatch");
     if(MacInput.ThreeEHasMultipleSpaces() is <0 or >1)throw new Exception("Space discovery mismatch");
-    Console.WriteLine("PASS: native Quartz scroll event ABI and read-only Space discovery (no posted input)");return;
+    if(MacInput.ThreeEGetOutputVolume() is < -1 or >100)throw new Exception("Output volume probe mismatch");
+    Console.WriteLine("PASS: native Quartz scroll event ABI and read-only Space/output-volume discovery (no posted input)");return;
 }
 if(args.Contains("--midi-self-test")) {
     using var midi=new MacMidi();midi.Select(0);

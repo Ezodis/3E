@@ -10,14 +10,16 @@ public sealed class PhoneBarModule : IDisposable {
     private PhoneTrackpadPopup popup;
     private bool disposed;
     private PhoneMediaState media;
+    private OutputVolume volume;
     public bool Running => receiver?.Running ?? false;
     public string Status => receiver?.Status ?? "Off";
 
     public void Show() {
         ObjectDisposedException.ThrowIf(disposed, this);
         media ??= new();
+        volume ??= new(WindowsOutputVolume.Read,WindowsOutputVolume.Write);
         receiver ??= new(PhoneTrackpad.GetLocalAddress,
-            new NativeTrackpadInput(()=>new {media=media?.State},action=>media?.Send(action)), new TrackpadFirewall(), PhoneTrackpad.Port);
+            new NativeTrackpadInput(()=>new {media=media?.State},action=>media?.Send(action),()=>volume?.State,level=>volume?.Set(level),()=>volume?.CancelPending()), new TrackpadFirewall(), PhoneTrackpad.Port);
         receiver.Start();
         popup ??= new(receiver);
         popup.Show();
@@ -27,6 +29,7 @@ public sealed class PhoneBarModule : IDisposable {
         popup?.Dispose(); popup = null;
         receiver?.Stop();
         media?.Dispose(); media=null;
+        volume?.Dispose(); volume=null;
     }
 
     public void Dispose() {

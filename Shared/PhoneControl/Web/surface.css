@@ -12,3 +12,18 @@
 @media(min-width:700px) and (max-height:500px){.strip{display:grid;grid-template-columns:1fr 24px;gap:5px;padding:8px 5px}.strip h2,.strip-buttons{grid-column:1/-1}.strip .control:nth-child(2){grid-row:2;grid-column:1}.strip .control:nth-child(3){grid-row:3;grid-column:1}.strip .fader{grid-column:2;grid-row:2/4;width:24px;height:130px}.strip .knob{width:36px;height:36px}.strip .control{gap:2px}.strip .strip-buttons{justify-content:center}}
 
 @media(min-width:301px) and (max-width:600px){#studio header{display:grid;grid-template-columns:1fr auto;gap:6px}#studio h1{font-size:19px}.studio-tabs{grid-column:1/-1;grid-row:2}#closeStudio{grid-column:2;grid-row:1}}
+
+/* The app artwork itself is the target; keep its touch area without a bezel. */
+#apps,#apps.active,#apps:active{color:#eef5fa;background:transparent;border:0;box-shadow:none;padding:0;width:56px;min-width:56px}
+#apps svg,#apps img{width:46px;height:46px}#apps.active{transform:scale(.94)}
+.watch #apps{min-width:0}.watch #apps svg,.watch #apps img{width:34px;height:34px}
+#volumePane{position:fixed;z-index:2;right:max(20px,env(safe-area-inset-right));bottom:calc(max(12px,env(safe-area-inset-bottom)) + 66px);width:60px;padding:12px 8px 9px;border-radius:24px;background:#243340f5;color:#eef5fa;box-shadow:0 5px 22px #0004;display:flex;align-items:center;flex-direction:column;gap:8px;touch-action:none;user-select:none}
+#volumePane svg{width:22px;height:22px;pointer-events:none}
+#volumeTrack{position:relative;width:14px;height:140px;border-radius:8px;background:#43545d}
+#volumeTrack:before{content:'';position:absolute;inset:auto 0 0;height:var(--volume,0%);border-radius:inherit;background:#bce8d8;pointer-events:none}
+#volumeTrack:after{content:'';position:absolute;left:-5px;bottom:clamp(0px,calc(var(--volume,0%) - 3px),calc(100% - 6px));width:24px;height:6px;border-radius:4px;background:#eef8f3;box-shadow:0 1px 4px #0004;pointer-events:none}
+#volumeTrack:focus-within{outline:1px solid #bce8d8;outline-offset:5px}
+#outputVolume{position:absolute;left:50%;transform:translateX(-50%);appearance:slider-vertical;writing-mode:vertical-lr;direction:rtl;width:38px;height:100%;opacity:0;margin:0;touch-action:none}
+#volumeValue{font-size:11px;line-height:14px;font-variant-numeric:tabular-nums;color:#c1d6ce}
+.watch #volumePane{right:7px;bottom:51px;width:44px;padding:7px 4px;border-radius:17px;gap:3px}.watch #volumeTrack{height:70px}.watch #outputVolume{width:34px}.watch #volumePane svg{width:17px;height:17px}.watch #volumeValue{font-size:10px}
+@media(max-height:350px){#volumeTrack{height:80px}}

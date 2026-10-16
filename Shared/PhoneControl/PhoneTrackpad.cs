@@ -387,6 +387,7 @@ input{width:100%;padding:13px;border:1px solid #415260;border-radius:10px;backgr
             case "appsStep": sink.AppsStep(Range("direction",-1,1)); break;
             case "appsEnd": sink.AppsEnd(); break;
             case "media": sink.Media(Range("action",0,2)); break;
+            case "volume": sink.Volume(Range("level",0,100)); break;
             case "midiPort": sink.MidiPort(Range("id",-1,1024)); break;
             case "midiCC": sink.Midi(false,Range("channel",0,15),Range("number",0,119),Range("value",0,127)); break;
             case "midiNote": sink.Midi(true,Range("channel",0,15),Range("number",0,127),Range("value",0,127)); break;
@@ -415,6 +416,7 @@ public interface ITrackpadInput {
     void AppsStep(int direction) { }
     void AppsEnd() { }
     void Media(int action) { }
+    void Volume(int level) { }
     void MidiPort(int id) { }
     void Midi(bool note,int channel,int number,int value) { }
     void MidiPanic() { }

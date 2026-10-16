@@ -17,6 +17,31 @@
     stop:svg('<rect x="6" y="6" width="20" height="20" rx="2" fill="currentColor"/>')
   };
   let active=null, holdTimer, restoreTimer, lastPointer=-Infinity, controls={};
+  let volume={available:false,level:null},volumeEditing=false,volumePending=null,volumeSendTimer,volumeHideTimer,volumeQuiet=0;
+  const volumePane=$('volumePane'),volumeSlider=$('outputVolume');
+  function showVolume(){clearTimeout(volumeHideTimer);volumePane.hidden=false;$('media').setAttribute('aria-expanded','true');}
+  function hideVolume(discard=false){
+    clearTimeout(volumeHideTimer);volumePane.hidden=true;volumeEditing=false;$('media').setAttribute('aria-expanded','false');
+    if(discard){clearTimeout(volumeSendTimer);volumeSendTimer=null;volumePending=null;}
+  }
+  function flushVolume(){
+    clearTimeout(volumeSendTimer);volumeSendTimer=null;
+    if(volumePending!==null&&C.connected())C.send('volume',{level:volumePending});
+    volumePending=null;
+  }
+  function changeVolume(value){
+    if(!C.connected()||!volume.available)return;
+    const level=Math.max(0,Math.min(100,Math.round(value)));
+    volumeSlider.value=level;volumePane.style.setProperty('--volume',level+'%');$('volumeValue').textContent=level+'%';volumeQuiet=performance.now()+1200;
+    volumePending=level;if(!volumeSendTimer)volumeSendTimer=setTimeout(flushVolume,40);
+  }
+  function finishVolume(){volumeEditing=false;flushVolume();clearTimeout(volumeHideTimer);volumeHideTimer=setTimeout(()=>hideVolume(),3500);}
+  volumeSlider.addEventListener('pointerdown',()=>{C.release();showVolume();volumeEditing=true;});
+  volumeSlider.addEventListener('input',()=>{showVolume();changeVolume(+volumeSlider.value);if(!volumeEditing)finishVolume();});
+  volumeSlider.addEventListener('pointerup',finishVolume);
+  volumeSlider.addEventListener('change',finishVolume);
+  volumeSlider.addEventListener('pointercancel',()=>hideVolume(true));
+  document.addEventListener('pointerdown',e=>{if(!volumePane.contains(e.target)&&!$('media').contains(e.target))hideVolume(true);});
   const validImage=value=>typeof value==='string'&&value.length<32768&&/^data:image\/png;base64,[A-Za-z0-9+/=]+$/.test(value);
   function picture(parent,value,fallback) {
     const span=document.createElement('span');span.className='dock-glyph';
@@ -35,10 +60,11 @@
   }
   function restore(){clearTimeout(restoreTimer);if(!active){paint('apps');paint('media');}}
   function finishFeedback(kind,icon){paint(kind,icon);clearTimeout(restoreTimer);restoreTimer=setTimeout(restore,300);}
-  function cancel(event){
+  function cancel(event,keepVolume=false){
     if(event&&active&&event.pointerId!==active.id)return;
     clearTimeout(holdTimer);
     if(active?.kind==='apps'){C.send('navigateEnd');C.send('appsEnd');}
+    if(!keepVolume)hideVolume(true);
     active=null;for(const kind of ['apps','media'])$(kind).classList.remove('active');restore();
   }
   function move(e){
@@ -47,6 +73,12 @@
     a.max=Math.max(a.max,Math.hypot(dx,dy));
     if(a.max>10)clearTimeout(holdTimer);
     if(!a.axis&&Math.max(Math.abs(dx),Math.abs(dy))>=12)a.axis=Math.abs(dx)>Math.abs(dy)*1.15?'horizontal':'vertical';
+    if(a.kind==='media'&&a.axis==='vertical'&&(dy<=-18||a.volume)){
+      if(!a.volume){a.volume=true;a.volumeY=e.clientY;a.volumeLevel=volume.available?+volumeSlider.value:null;showVolume();}
+      else if(a.volumeLevel===null&&volume.available){a.volumeY=e.clientY;a.volumeLevel=+volumeSlider.value;}
+      else if(a.volumeLevel!==null)changeVolume(a.volumeLevel+(a.volumeY-e.clientY)*100/Math.max(70,volumeSlider.getBoundingClientRect().height));
+      return;
+    }
     if(a.axis!=='horizontal')return;
     if(a.kind==='media'){if(Math.abs(dx)>=24)paint('media',dx<0?'previous':'next');else paint('media');return;}
     const change=e.clientX-a.stepX,threshold=a.steps?48:26,now=performance.now();
@@ -86,7 +118,7 @@
           else C.send('media',{action:0});
         }
       }
-      cancel();if(feedback)finishFeedback(kind,feedback);
+      if(a.volume)flushVolume();cancel(null,a.volume);if(a.volume)finishVolume();if(feedback)finishFeedback(kind,feedback);
       if(button.hasPointerCapture(e.pointerId))button.releasePointerCapture(e.pointerId);
     });
     button.addEventListener('pointercancel',e=>{lastPointer=performance.now();cancel(e);});
@@ -97,11 +129,26 @@
       else C.send('media',{action:0});
     });
     button.addEventListener('keydown',e=>{
+      if(kind==='media'&&C.connected()&&['ArrowUp','ArrowDown'].includes(e.key)){
+        e.preventDefault();const wasOpen=!volumePane.hidden;showVolume();if(wasOpen)changeVolume(+volumeSlider.value+(e.key==='ArrowUp'?5:-5));finishVolume();return;
+      }
       if(!C.connected()||!['ArrowLeft','ArrowRight'].includes(e.key))return;e.preventDefault();
       if(kind==='apps'){C.send('navigate',{direction:e.key==='ArrowLeft'?-1:1});C.send('navigateEnd');}
       else C.send('media',{action:e.key==='ArrowLeft'?1:2});
     });
   }
-  window.ThreeEDock={cancel,describe(info){if(info?.controls){controls=info.controls;if(!active)restore();}}};
+  $('media').addEventListener('wheel',e=>{
+    if(!C.connected()||!e.deltaY)return;e.preventDefault();showVolume();changeVolume(+volumeSlider.value+(e.deltaY<0?2:-2));finishVolume();
+  },{passive:false});
+  window.ThreeEDock={cancel,describe(info){
+    if(info?.controls){controls=info.controls;if(!active)restore();}
+    if(info?.volume){
+      volume=info.volume;volumeSlider.disabled=!volume.available;
+      if(!volume.available){$('volumeValue').textContent='—';volumeSlider.setAttribute('aria-label','Output volume unavailable for this device');}
+      else if(!active?.volume&&!volumeEditing&&performance.now()>=volumeQuiet){
+        volumeSlider.value=volume.level;volumePane.style.setProperty('--volume',volume.level+'%');$('volumeValue').textContent=volume.level+'%';volumeSlider.setAttribute('aria-label','Laptop output volume');
+      }
+    }
+  }};
   if(C.info)window.ThreeEDock.describe(C.info);restore();
 })();

@@ -42,7 +42,14 @@ if (args.Length == 1 && args[0] == "--firewall-smoke") {
 }
 
 await MediaRouterTests.Run(Check);
+await OutputVolumeTests.Run(Check);
 var fake = new FakeInput(); var firewall = new FakeFirewall();
+using(var volumeCommand=JsonDocument.Parse("{\"type\":\"volume\",\"level\":37}"))PhoneTrackpad.Apply(volumeCommand.RootElement,fake);
+Check(fake.Commands.Contains("volume:37"),"Volume commands reach the native boundary");
+foreach(int invalidVolume in new[]{-1,101}) {
+    bool rejected=false;try{using var command=JsonDocument.Parse(JsonSerializer.Serialize(new{type="volume",level=invalidVolume}));PhoneTrackpad.Apply(command.RootElement,fake);}catch(InvalidDataException){rejected=true;}
+    Check(rejected,"Out-of-range volume command is rejected");
+}
 var navigationLog=new List<string>(); bool multiple=true;
 var navigation=new NavigationGesture(()=>multiple,d=>navigationLog.Add("desktop:"+d),d=>navigationLog.Add("begin:"+d),d=>navigationLog.Add("step:"+d),()=>navigationLog.Add("end"));
 navigation.Step(1);multiple=false;navigation.Step(-1);navigation.End();
@@ -260,7 +267,10 @@ sealed class FakeInput : ITrackpadInput {
     public readonly ConcurrentQueue<string> Commands = new(); public volatile bool Held;
     public volatile bool Switching;public int MidiNotes;private int selected=-1;
     public bool FailMidiDiscovery;
-    public object GetInfo(){if(FailMidiDiscovery)throw new InvalidOperationException("MIDI driver unavailable");return new {platform="windows",midi=new {ports=new[]{new MidiPort(0,"Test MIDI (no hardware)")},selected,status="Test MIDI"}};}
+    private int outputVolume=50;
+    public object GetConnectionInfo()=>new {platform="windows",volume=new {available=true,level=outputVolume}};
+    public void Volume(int level){outputVolume=level;Commands.Enqueue($"volume:{level}");}
+    public object GetInfo(){if(FailMidiDiscovery)throw new InvalidOperationException("MIDI driver unavailable");return new {platform="windows",volume=new {available=true,level=outputVolume},midi=new {ports=new[]{new MidiPort(0,"Test MIDI (no hardware)")},selected,status="Test MIDI"}};}
     public void ReleaseAll(){Release();AppsEnd();MidiPanic();}
     public void AppsBegin(){Switching=true;Commands.Enqueue("appsBegin");}
     public void AppsStep(int direction)=>Commands.Enqueue($"appsStep:{direction}");

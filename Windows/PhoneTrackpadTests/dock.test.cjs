@@ -1,9 +1,9 @@
 const fs=require('node:fs'),vm=require('node:vm'),assert=require('node:assert/strict'),path=require('node:path');
 let now=1000,next=0,checks=0;const timers=new Map(),sent=[],elements=new Map();
-function element(){return {handlers:{},dataset:{},classList:{add(){},remove(){}},children:[],append(child){this.children.push(child);},replaceChildren(){this.children=[];},addEventListener(type,fn){this.handlers[type]=fn;},setPointerCapture(){},hasPointerCapture(){return true;},releasePointerCapture(){}};}
-for(const id of ['apps','media'])elements.set(id,element());
+function element(){return {handlers:{},dataset:{},style:{setProperty(){}},hidden:true,value:0,disabled:true,setAttribute(name,value){this[name]=value;},contains(target){return target===this;},getBoundingClientRect(){return {height:140};},classList:{add(){},remove(){}},children:[],append(child){this.children.push(child);},replaceChildren(){this.children=[];},addEventListener(type,fn){this.handlers[type]=fn;},setPointerCapture(){},hasPointerCapture(){return true;},releasePointerCapture(){}};}
+for(const id of ['apps','media','volumePane','outputVolume','volumeValue'])elements.set(id,element());
 const win={ThreeEControl:{connected:()=>true,send:(type,data={})=>sent.push({type,...data}),release:()=>win.ThreeEDock?.cancel()},ThreeESurface:{openStudio(){win.ThreeEDock.cancel();sent.push({type:'studio'});}}};
-vm.runInNewContext(fs.readFileSync(path.join(__dirname,'../../Shared/PhoneControl/Web/dock.js'),'utf8'),{window:win,document:{getElementById:id=>elements.get(id),createElement:element},performance:{now:()=>now},setTimeout(fn,ms){timers.set(++next,{fn,ms});return next;},clearTimeout:id=>timers.delete(id)});
+vm.runInNewContext(fs.readFileSync(path.join(__dirname,'../../Shared/PhoneControl/Web/dock.js'),'utf8'),{window:win,document:{addEventListener(){},getElementById:id=>elements.get(id),createElement:element},performance:{now:()=>now},setTimeout(fn,ms){timers.set(++next,{fn,ms});return next;},clearTimeout:id=>timers.delete(id)});
 function event(kind,type,x=100,y=100,id=1){elements.get(kind).handlers[type]({pointerId:id,clientX:x,clientY:y,button:0,preventDefault(){}});}
 function hold(){now+=900;const entry=[...timers].find(([,t])=>t.ms===500);assert.ok(entry);timers.delete(entry[0]);entry[1].fn();}
 function commands(type){return sent.filter(c=>c.type===type);}
@@ -41,4 +41,21 @@ check(elements.get('media').children.length===1&&elements.get('media').dataset.i
 sent.length=0;
 for(const key of ['ArrowLeft','ArrowRight'])elements.get('apps').handlers.keydown({key,preventDefault(){}});
 check(JSON.stringify(commands('navigate').map(c=>c.direction))==='[-1,1]','Keyboard directions match left-previous and right-next swipes');
+win.ThreeEDock.describe({volume:{available:true,level:40}});
+sent.length=0;event('media','pointerdown');event('media','pointermove',100,70);
+check(!elements.get('volumePane').hidden&&+elements.get('outputVolume').value===40&&!commands('volume').length,'Upward swipe reveals the current volume without jumping');
+event('media','pointermove',100,42);event('media','pointerup',100,42);
+check(commands('volume').at(-1).level===60&&!commands('media').length,'Continued upward drag increases volume without changing playback');
+check(!elements.get('volumePane').hidden,'Volume stays available after lifting');
+win.ThreeEDock.describe({volume:{available:true,level:40}});
+check(+elements.get('outputVolume').value===60,'Delayed host state cannot jerk the slider during adjustment');
+win.ThreeEDock.cancel();check(elements.get('volumePane').hidden,'Disconnect or cancellation hides the volume overlay');
+now+=1500;win.ThreeEDock.describe({volume:{available:true,level:60}});
+sent.length=0;event('media','pointerdown');event('media','pointermove',100,70);event('media','pointermove',100,98);event('media','pointerup',100,98);
+check(commands('volume').at(-1).level===40,'Downward motion after opening lowers the volume');
+sent.length=0;event('media','pointerdown');event('media','pointermove',100,70);event('media','pointermove',100,-1000);event('media','pointerup',100,-1000);
+check(commands('volume').at(-1).level===100,'Volume input stays inside the 0–100 range');
+now+=1500;win.ThreeEDock.describe({volume:{available:false,level:null}});
+sent.length=0;event('media','pointerdown');event('media','pointermove',100,70);event('media','pointermove',100,40);event('media','pointerup',100,40);
+check(elements.get('outputVolume').disabled&&!commands('volume').length,'Unsupported audio outputs never receive fabricated volume values');
 console.log('PASS: '+checks+' dock gesture and icon-state checks.');

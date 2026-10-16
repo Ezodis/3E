@@ -18,6 +18,8 @@ async function wake(page){await page.evaluate(()=>{Object.defineProperty(documen
    console.log(name+' local page load + connection: '+(Date.now()-connectStart)+' ms (simulated input, loopback network)');
    assert.equal(await p.locator('#drag,#left,#right').count(),0);
    assert.deepEqual(await p.locator('#pad').boundingBox(),{x:0,y:0,width:390,height:844});
+   assert.equal(await p.locator('#pad').evaluate(el=>getComputedStyle(el).boxShadow),'none','full-screen pad has no square frame');
+   assert.deepEqual(await p.locator('#apps').evaluate(el=>({background:getComputedStyle(el).backgroundColor,border:getComputedStyle(el).borderTopWidth})),{background:'rgba(0, 0, 0, 0)',border:'0px'},'Apps artwork has no enclosing button bezel');
    await drag(p,p.locator('#apps'),70);await drag(p,p.locator('#apps'),-70);
    assert.deepEqual(commands.filter(c=>c.type==='navigate').map(c=>c.direction),[1,-1],'fast swipes issue one deliberate step each');
    assert.equal(commands.some(c=>c.type==='appsBegin'),false,'touching Apps must not switch before the swipe');
@@ -28,6 +30,14 @@ async function wake(page){await page.evaluate(()=>{Object.defineProperty(documen
    const beforeVertical=commands.filter(c=>['navigate','appsBegin','media'].includes(c.type)).length;
    await drag(p,p.locator('#apps'),5,-65);await drag(p,p.locator('#media'),5,-65);
    assert.equal(commands.filter(c=>['navigate','appsBegin','media'].includes(c.type)).length,beforeVertical,'vertical motion cancels instead of switching or playing');
+   assert.equal(await p.locator('#volumePane').isVisible(),true,'upward Media swipe reveals the volume slider');
+   await p.locator('#outputVolume').fill('37');await p.waitForTimeout(100);
+   assert.ok(commands.some(c=>c.type==='volume'&&c.level===37),'volume slider sends its absolute level');
+   await p.screenshot({path:path.join(out,'volume-phone-'+name+'.png')});
+   await drag(p,p.locator('#outputVolume'),0,-25);
+   assert.ok(+await p.locator('#outputVolume').inputValue()>50,'moving the vertical slider upward increases output volume');
+   await p.locator('#pad').click({position:{x:190,y:250}});
+   assert.equal(await p.locator('#volumePane').isVisible(),false);
    await p.evaluate(()=>window.ThreeEDock.describe({controls:{media:{playing:true,source:'spotify'}}}));
    assert.equal(await p.locator('#media').getAttribute('data-icon'),'pause');
    assert.equal(await p.locator('#media .dock-glyph').count(),1,'source without artwork shows only playback');
@@ -87,6 +97,12 @@ async function wake(page){await page.evaluate(()=>{Object.defineProperty(documen
    for(const id of ['apps','scrollMode','media']){const box=await w.locator('#'+id).boundingBox();assert.ok(box.x>=0&&box.x+box.width<=162,id+' fits watch');}
    await wake(w);assert.equal(posts.filter(p=>p.type==='connect').length,2);
    await w.screenshot({path:path.join(out,'trackpad-watch-'+name+'.png')});
+   await drag(w,w.locator('#media'),0,-50);
+   assert.equal(await w.locator('#volumePane').isVisible(),true);
+   const volumeBox=await w.locator('#volumePane').boundingBox();assert.ok(volumeBox.y>=0&&volumeBox.x+volumeBox.width<=162,'volume overlay fits Watch');
+   await w.locator('#outputVolume').fill('29');await w.waitForTimeout(150);
+   assert.ok(posts.filter(p=>p.type==='commands').flatMap(p=>p.commands).some(c=>c.type==='volume'&&c.level===29));
+   await w.screenshot({path:path.join(out,'volume-watch-'+name+'.png')});
    await drag(w,w.locator('#apps'),34);
    await drag(w,w.locator('#media'),0,0,650);
    assert.equal(await w.locator('#studio').isVisible(),true);

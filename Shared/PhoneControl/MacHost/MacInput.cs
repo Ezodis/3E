@@ -19,6 +19,9 @@ public sealed class MacInput : ITrackpadInput, IDisposable {
     [DllImport(CG)] private static extern void CGEventPost(uint tap,IntPtr e);
     [DllImport(CG)][return:MarshalAs(UnmanagedType.I1)] public static extern bool CGPreflightPostEventAccess();
     [DllImport(CF)] private static extern void CFRelease(IntPtr reference);
+    [DllImport("ThreeEPhoneNative")] public static extern int ThreeEGetOutputVolume();
+    [DllImport("ThreeEPhoneNative")] private static extern int ThreeESetOutputVolume(int level);
+    private readonly OutputVolume volume=new(()=>{int level=ThreeEGetOutputVolume();return level<0?(int?)null:level;},level=>{if(ThreeESetOutputVolume(level)!=1)throw new InvalidOperationException("Output volume unavailable");});
     private readonly MacMidi midi = new();
     private readonly Action<int> media;
     private bool held,switching;
@@ -28,8 +31,8 @@ public sealed class MacInput : ITrackpadInput, IDisposable {
     public MacInput(Action<int> media) { this.media=media; navigation=new(()=>ThreeEHasMultipleSpaces()>0,d=>Control(d<0?(ushort)123:(ushort)124),BeginApps,AppsStep,AppsEnd); midi.Select(0); }
     public void SetControls(object snapshot) => Volatile.Write(ref controls,snapshot);
     public string Platform => "macos";
-    public object GetConnectionInfo() => new {platform=Platform,inputPermission=CGPreflightPostEventAccess(),controls=Volatile.Read(ref controls)};
-    public object GetInfo() => new {platform=Platform,inputPermission=CGPreflightPostEventAccess(),controls=Volatile.Read(ref controls),midi=midi.Info()};
+    public object GetConnectionInfo() => new {platform=Platform,volume=volume.State,inputPermission=CGPreflightPostEventAccess(),controls=Volatile.Read(ref controls)};
+    public object GetInfo() => new {platform=Platform,volume=volume.State,inputPermission=CGPreflightPostEventAccess(),controls=Volatile.Read(ref controls),midi=midi.Info()};
     private static Point Location() { var e=CGEventCreate(IntPtr.Zero);if(e==IntPtr.Zero)throw new InvalidOperationException("macOS pointer event unavailable");try{return CGEventGetLocation(e);}finally{if(e!=IntPtr.Zero)CFRelease(e);} }
     private static void Post(IntPtr e) { if(e==IntPtr.Zero)throw new InvalidOperationException("macOS event unavailable");try{CGEventPost(0,e);}finally{CFRelease(e);} }
     private static void Key(ushort key,bool down,ulong flags=0) { var e=CGEventCreateKeyboardEvent(IntPtr.Zero,key,down);if(e==IntPtr.Zero)throw new InvalidOperationException("macOS keyboard event unavailable");CGEventSetFlags(e,flags);Post(e); }
@@ -53,11 +56,12 @@ public sealed class MacInput : ITrackpadInput, IDisposable {
     public void AppsStep(int direction){if(!switching||direction==0)return;ulong flags=(1UL<<20)|(direction<0?1UL<<17:0);Key(48,true,flags);Key(48,false,flags);}
     public void AppsEnd(){if(switching){switching=false;Key(55,false);}}
     public void Media(int action)=>media(action);
+    public void Volume(int level)=>volume.Set(level);
     public void MidiPort(int id)=>midi.Select(id);
     public void Midi(bool note,int channel,int number,int value)=>midi.Send(note,channel,number,value);
     public void MidiPanic()=>midi.Panic();
-    public void ReleaseAll(){try{Release();}finally{try{navigation.End();}finally{midi.Panic();}}}
-    public void Dispose(){try{ReleaseAll();}finally{midi.Dispose();}}
+    public void ReleaseAll(){volume.CancelPending();try{Release();}finally{try{navigation.End();}finally{midi.Panic();}}}
+    public void Dispose(){try{ReleaseAll();}finally{volume.Dispose();midi.Dispose();}}
 }
 
 public sealed class MacMidi : MidiOutput {

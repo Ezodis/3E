@@ -47,13 +47,15 @@ public sealed class NativeTrackpadInput : ITrackpadInput, IDisposable {
     private bool switching;
     private readonly NavigationGesture navigation;
     private readonly Func<object> controls;
-    private readonly Action<int> media;
-    public NativeTrackpadInput(Func<object> controls = null, Action<int> media = null) {
-        this.controls=controls;this.media=media;
+    private readonly Action<int> media,volume;
+    private readonly Func<object> volumeState;
+    private readonly Action cancelVolume;
+    public NativeTrackpadInput(Func<object> controls = null, Action<int> media = null, Func<object> volumeState = null, Action<int> volume = null, Action cancelVolume = null) {
+        this.controls=controls;this.media=media;this.volumeState=volumeState;this.volume=volume;this.cancelVolume=cancelVolume;
         navigation=new(HasMultipleDesktops,SendDesktopShortcut,BeginApps,AppsStep,AppsEnd);
     }
-    public object GetConnectionInfo() => new {platform="windows",controls=controls?.Invoke()};
-    public object GetInfo() => new {platform="windows",controls=controls?.Invoke(),midi=midi.Info()};
+    public object GetConnectionInfo() => new {platform="windows",volume=volumeState?.Invoke(),controls=controls?.Invoke()};
+    public object GetInfo() => new {platform="windows",volume=volumeState?.Invoke(),controls=controls?.Invoke(),midi=midi.Info()};
     public static bool HasMultipleDesktops() {
         // Explorer's list includes empty desktops that cannot be found by
         // enumerating windows. Missing/changed OS data falls back to windows.
@@ -64,7 +66,7 @@ public sealed class NativeTrackpadInput : ITrackpadInput, IDisposable {
     public void MidiPort(int id) => midi.Select(id);
     public void Midi(bool note,int channel,int number,int value) => midi.Send(note,channel,number,value);
     public void MidiPanic() => midi.Panic();
-    public void ReleaseAll() { try { Release(); } finally { try { navigation.End(); } finally { midi.Panic(); } } }
+    public void ReleaseAll() { cancelVolume?.Invoke(); try { Release(); } finally { try { navigation.End(); } finally { midi.Panic(); } } }
     public void Dispose() { try { ReleaseAll(); } finally { midi.Dispose(); } }
     [StructLayout(LayoutKind.Sequential)] private struct Mouse { public int X, Y; public uint Data, Flags, Time; public UIntPtr Extra; }
     [StructLayout(LayoutKind.Sequential)] private struct Keyboard { public ushort Key, Scan; public uint Flags, Time; public UIntPtr Extra; }
@@ -123,4 +125,5 @@ public sealed class NativeTrackpadInput : ITrackpadInput, IDisposable {
         finally { ReleaseKeys(arrow,0x11,0x5B); }
     }
     public void Media(int action) => media?.Invoke(action);
+    public void Volume(int level) => volume?.Invoke(level);
 }
