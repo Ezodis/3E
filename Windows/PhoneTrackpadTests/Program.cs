@@ -41,6 +41,7 @@ if (args.Length == 1 && args[0] == "--firewall-smoke") {
     return;
 }
 
+await MediaRouterTests.Run(Check);
 var fake = new FakeInput(); var firewall = new FakeFirewall();
 var navigationLog=new List<string>(); bool multiple=true;
 var navigation=new NavigationGesture(()=>multiple,d=>navigationLog.Add("desktop:"+d),d=>navigationLog.Add("begin:"+d),d=>navigationLog.Add("step:"+d),()=>navigationLog.Add("end"));
@@ -116,7 +117,7 @@ string page = await client.GetStringAsync(new Uri(firstUrl).GetLeftPart(UriParti
 Check(page.Contains("Trackpad") && !page.Contains(new Uri(firstUrl).Fragment[1..]), "Public page does not disclose the pairing secret");
 Check((await client.GetStringAsync(pad.DesktopUrl)).Contains("<svg"), "Desktop pairing page renders a local QR code");
 Check(!PhoneTrackpad.CanShowPairing(IPAddress.Parse("192.168.1.5"), IPAddress.Parse("192.168.1.4")), "Other LAN devices cannot request the desktop pairing secret");
-using (var headers = await client.GetAsync(new Uri(firstUrl).GetLeftPart(UriPartial.Path))) Check(headers.Headers.Contains("Content-Security-Policy"), "Browser resource has origin restrictions");
+using (var headers = await client.GetAsync(new Uri(firstUrl).GetLeftPart(UriPartial.Path))) Check(headers.Headers.GetValues("Content-Security-Policy").Single().Contains("img-src data:;"), "Browser resource allows embedded app icons without remote image access");
 Check((await client.GetAsync(new Uri(new Uri(firstUrl), "/not-a-file"))).StatusCode == HttpStatusCode.NotFound, "No arbitrary file access");
 using (var forged = new HttpRequestMessage(HttpMethod.Get, new Uri(firstUrl).GetLeftPart(UriPartial.Path))) {
     forged.Headers.Host = "attacker.example";

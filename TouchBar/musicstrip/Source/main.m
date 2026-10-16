@@ -368,14 +368,7 @@ static OSStatus SendSpotifyCommand(pid_t pid, int command) {
 - (void)applicationDidFinishLaunching:(NSNotification *)notification {
     self.phoneController=[ThreeEPhoneController new];
     __weak AppDelegate *phoneSelf=self;
-    self.phoneController.media=^(int action){
-        if(!phoneSelf.baseStatusItem){[phoneSelf performMediaCommand:action==1?5:action==2?4:2];return;}
-        int key=action==1?20:action==2?19:16;
-        for(int state=0;state<2;state++){
-            NSEvent *event=[NSEvent otherEventWithType:NSEventTypeSystemDefined location:NSZeroPoint modifierFlags:0 timestamp:0 windowNumber:0 context:nil subtype:8 data1:(key<<16)|((state?0xB:0xA)<<8) data2:-1];
-            if(event.CGEvent)CGEventPost(kCGHIDEventTap,event.CGEvent);
-        }
-    };
+    self.phoneController.media=^(int action){ [phoneSelf performMediaCommand:action==1?5:action==2?4:2]; };
     BOOL touchBarAvailable=LoadInterfaces();
     // Never summon the system permission dialog automatically. macOS can
     // re-display it on every launch when the TCC decision is still settling;
@@ -386,6 +379,7 @@ static OSStatus SendSpotifyCommand(pid_t pid, int command) {
     __weak AppDelegate *gestureSelf=self;
     self.gestureTimer=[NSTimer scheduledTimerWithTimeInterval:1 repeats:YES block:^(NSTimer *timer) { [gestureSelf refreshTouchTab]; }];
 #endif
+    self.playbackBook = [PlaybackBook new];
     if(!touchBarAvailable) {
         self.baseStatusItem=[NSStatusBar.systemStatusBar statusItemWithLength:NSVariableStatusItemLength];
         self.baseStatusItem.button.title=@"3£";
@@ -394,9 +388,10 @@ static OSStatus SendSpotifyCommand(pid_t pid, int command) {
 #else
         self.baseStatusItem.menu=StripBaseMenu(self,NO);
 #endif
+        [self startMediaTracking];
+        [self refresh];
         return;
     }
-    self.playbackBook = [PlaybackBook new];
     self.musicView = [[MusicView alloc] initWithFrame:NSMakeRect(0, 0, 70, 30)];
     self.musicView.translatesAutoresizingMaskIntoConstraints = NO;
     // The remote Touch Bar host owns final dimensions. Required size
@@ -421,6 +416,15 @@ static OSStatus SendSpotifyCommand(pid_t pid, int command) {
     [NSTouchBarItem addSystemTrayItem:self.item]; SetPresence(ItemID,YES);
     [self startApps];
     NSLog(@"Registered one tray item containing Apps and Music.");
+    [self startMediaTracking];
+    self.nativeTrayTerminations=[NSMutableSet set];
+    self.nativeTrayTimer=[NSTimer scheduledTimerWithTimeInterval:.2 repeats:YES block:^(NSTimer *timer){ [weakSelf suppressNativeMediaTray]; }];
+    [self suppressNativeMediaTray];
+    [self refresh];
+    [self startMidi];
+}
+- (void)startMediaTracking {
+    __weak AppDelegate *weakSelf=self;
     if (RegisterNotifications) RegisterNotifications(dispatch_get_main_queue());
     self.notificationToken = [NSNotificationCenter.defaultCenter addObserverForName:nil object:nil queue:nil usingBlock:^(NSNotification *note) {
         if ([note.name hasPrefix:@"kMR"] && ![note.name containsString:@"Volume"]) {
@@ -445,11 +449,6 @@ static OSStatus SendSpotifyCommand(pid_t pid, int command) {
     self.browserService = [NSUserDefaults.standardUserDefaults stringForKey:@"LastBrowserService"];
     self.siteIcons = [NSMutableDictionary dictionary];
     self.recoveryTimer = [NSTimer scheduledTimerWithTimeInterval:1 repeats:YES block:^(NSTimer *timer) { [weakSelf refresh]; }];
-    self.nativeTrayTerminations=[NSMutableSet set];
-    self.nativeTrayTimer=[NSTimer scheduledTimerWithTimeInterval:.2 repeats:YES block:^(NSTimer *timer){ [weakSelf suppressNativeMediaTray]; }];
-    [self suppressNativeMediaTray];
-    [self refresh];
-    [self startMidi];
 }
 - (void)openPhone:(id)sender { [self.phoneController show]; }
 - (void)copyPhone:(id)sender { [self.phoneController copyLink:sender]; }
@@ -678,6 +677,7 @@ static OSStatus SendSpotifyCommand(pid_t pid, int command) {
     if (self.commandPending) return;
     NSString *bundle = self.displayedPlayer ?: [self selectedPlayer];
     if (!IsAllowedPlayer(bundle)) { NSLog(@"No running media player; no command sent."); return; }
+    if (!SendCommandToApp && ![bundle isEqualToString:@"com.spotify.client"] && ![bundle isEqualToString:@"com.ableton.live"]) return;
     NSRunningApplication *app = [NSRunningApplication runningApplicationsWithBundleIdentifier:bundle].firstObject;
     if (!app || app.terminated) return;
     if (command==2) {
@@ -810,6 +810,7 @@ static OSStatus SendSpotifyCommand(pid_t pid, int command) {
     });
 }
 - (void)suppressNativeMediaTray {
+    if(!self.item)return; // A menu-only Mac must not manage Touch Bar providers.
     BOOL nativePresent=NO;
     for(NSRunningApplication *app in [NSRunningApplication runningApplicationsWithBundleIdentifier:@"com.apple.NowPlayingTouchUI"]) {
         if(app.terminated || ![app.bundleURL.path isEqualToString:@"/System/Library/CoreServices/NowPlayingTouchUI.app"]) continue;
@@ -878,7 +879,7 @@ static OSStatus SendSpotifyCommand(pid_t pid, int command) {
     NSInteger state=[self.playbackBook state:bundle];
     self.musicView.stopAction=[bundle isEqualToString:@"com.ableton.live"];
     self.musicView.nextAction=state<0 ? -1 : state==1 ? 1 : 0;
-    [self.phoneController updateArtwork:icon playing:state stop:self.musicView.stopAction];
+    [self.phoneController updateArtwork:icon playing:state stop:[bundle isEqualToString:@"com.ableton.live"]];
     [self.musicView updateIcon];
     if ([bundle isEqualToString:@"com.apple.Safari"] || [NSWorkspace.sharedWorkspace.frontmostApplication.bundleIdentifier isEqualToString:@"com.apple.Safari"]) [self updateBrowserService:NO];
     [self pollPlayback];

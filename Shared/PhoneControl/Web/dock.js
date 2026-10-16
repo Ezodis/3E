@@ -12,10 +12,6 @@
     previous:svg('<path d="M6 6h3v20H6zm20 0L11 16l15 10z" fill="currentColor"/>'),
     next:svg('<path d="M23 6h3v20h-3zM6 6l15 10L6 26z" fill="currentColor"/>'),
     piano:svg('<rect x="3" y="6" width="26" height="20" rx="2" fill="currentColor"/><path d="M10 7v18m6-18v18m6-18v18" stroke="#17222c"/><path d="M8 6h4v12H8zm12 0h4v12h-4z" fill="#17222c"/>'),
-    music:svg('<path d="M13 8v15c0 5-9 6-9 1 0-3 4-5 7-3V9l16-4v14c0 5-9 6-9 1 0-3 4-5 7-3V9z" fill="currentColor"/>'),
-    spotify:svg('<circle cx="16" cy="16" r="15" fill="#1ed760"/><path d="M7 12q10-4 19 1M8 17q9-3 16 1M10 22q7-2 12 1" stroke="#101a16" stroke-width="2.3" fill="none" stroke-linecap="round"/>'),
-    browser:svg('<circle cx="16" cy="16" r="13" fill="none" stroke="currentColor" stroke-width="2"/><ellipse cx="16" cy="16" rx="6" ry="13" fill="none" stroke="currentColor"/><path d="M3 16h26M6 9h20M6 23h20" stroke="currentColor"/>'),
-    ableton:svg('<path d="M3 7h3v18H3zm5 0h3v18H8zm5 0h3v18h-3zm7 0h10v3H20zm0 5h10v3H20zm0 5h10v3H20zm0 5h10v3H20z" fill="currentColor"/>'),
     play:svg('<path d="M9 5 27 16 9 27z" fill="currentColor"/>'),
     pause:svg('<path d="M8 6h6v20H8zm10 0h6v20h-6z" fill="currentColor"/>'),
     stop:svg('<rect x="6" y="6" width="20" height="20" rx="2" fill="currentColor"/>')
@@ -32,7 +28,8 @@
     if(feedback){button.innerHTML=icons[feedback];return;}
     if(kind==='apps'){picture(button,controls.appsIcon,'apps');return;}
     const media=controls.media||{};
-    picture(button,media.artwork,icons[media.source]?media.source:'music');
+    // An actual host-provided app icon is optional; no generic source placeholder.
+    if(validImage(media.artwork))picture(button,media.artwork);
     const action=media.playing===true?(media.stop?'stop':'pause'):'play';
     picture(button,null,action);button.dataset.icon=action;
   }
@@ -54,7 +51,7 @@
     if(a.kind==='media'){if(Math.abs(dx)>=24)paint('media',dx<0?'previous':'next');else paint('media');return;}
     const change=e.clientX-a.stepX,threshold=a.steps?48:26,now=performance.now();
     if(Math.abs(change)<threshold||now-a.lastStep<240)return;
-    const direction=change<0?1:-1;
+    const direction=change<0?-1:1;
     C.send(a.held?'appsStep':'navigate',{direction});
     a.steps++;a.stepX=e.clientX;a.lastStep=now;
     paint('apps',change<0?'left':'right');
@@ -101,7 +98,7 @@
     });
     button.addEventListener('keydown',e=>{
       if(!C.connected()||!['ArrowLeft','ArrowRight'].includes(e.key))return;e.preventDefault();
-      if(kind==='apps'){C.send('navigate',{direction:e.key==='ArrowLeft'?1:-1});C.send('navigateEnd');}
+      if(kind==='apps'){C.send('navigate',{direction:e.key==='ArrowLeft'?-1:1});C.send('navigateEnd');}
       else C.send('media',{action:e.key==='ArrowLeft'?1:2});
     });
   }

@@ -173,7 +173,7 @@ public sealed class PhoneTrackpad : IDisposable {
             response.Headers["Cache-Control"] = "no-store";
             response.Headers["Referrer-Policy"] = "no-referrer";
             response.Headers["X-Content-Type-Options"] = "nosniff";
-            response.Headers["Content-Security-Policy"] = "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src " + owner.Origin + " " + owner.Origin.Replace("http:", "ws:") + "; frame-ancestors 'none'; base-uri 'none'; form-action 'none'";
+            response.Headers["Content-Security-Policy"] = "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src data:; connect-src " + owner.Origin + " " + owner.Origin.Replace("http:", "ws:") + "; frame-ancestors 'none'; base-uri 'none'; form-action 'none'";
             using var stream = pairing
                 ? new MemoryStream(Encoding.UTF8.GetBytes(PairingPage(owner.Origin + "/#" + owner.Token)))
                 : resource == "host.js" ? new MemoryStream(Encoding.UTF8.GetBytes("window.ThreeEHost="+JsonSerializer.Serialize(new { platform=input.Platform, http=false })+";"))

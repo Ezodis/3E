@@ -47,8 +47,9 @@ public sealed class NativeTrackpadInput : ITrackpadInput, IDisposable {
     private bool switching;
     private readonly NavigationGesture navigation;
     private readonly Func<object> controls;
-    public NativeTrackpadInput(Func<object> controls = null) {
-        this.controls=controls;
+    private readonly Action<int> media;
+    public NativeTrackpadInput(Func<object> controls = null, Action<int> media = null) {
+        this.controls=controls;this.media=media;
         navigation=new(HasMultipleDesktops,SendDesktopShortcut,BeginApps,AppsStep,AppsEnd);
     }
     public object GetConnectionInfo() => new {platform="windows",controls=controls?.Invoke()};
@@ -121,5 +122,5 @@ public sealed class NativeTrackpadInput : ITrackpadInput, IDisposable {
         try { Keys(KeyEvent(0x5B),KeyEvent(0x11),KeyEvent(arrow),KeyEvent(arrow,true)); }
         finally { ReleaseKeys(arrow,0x11,0x5B); }
     }
-    public void Media(int action) { ushort key=action==1?(ushort)0xB1:action==2?(ushort)0xB0:(ushort)0xB3; try { Keys(KeyEvent(key)); } finally { ReleaseKeys(key); } }
+    public void Media(int action) => media?.Invoke(action);
 }

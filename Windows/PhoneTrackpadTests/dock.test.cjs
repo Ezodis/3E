@@ -1,6 +1,6 @@
 const fs=require('node:fs'),vm=require('node:vm'),assert=require('node:assert/strict'),path=require('node:path');
 let now=1000,next=0,checks=0;const timers=new Map(),sent=[],elements=new Map();
-function element(){return {handlers:{},dataset:{},classList:{add(){},remove(){}},append(){},replaceChildren(){},addEventListener(type,fn){this.handlers[type]=fn;},setPointerCapture(){},hasPointerCapture(){return true;},releasePointerCapture(){}};}
+function element(){return {handlers:{},dataset:{},classList:{add(){},remove(){}},children:[],append(child){this.children.push(child);},replaceChildren(){this.children=[];},addEventListener(type,fn){this.handlers[type]=fn;},setPointerCapture(){},hasPointerCapture(){return true;},releasePointerCapture(){}};}
 for(const id of ['apps','media'])elements.set(id,element());
 const win={ThreeEControl:{connected:()=>true,send:(type,data={})=>sent.push({type,...data}),release:()=>win.ThreeEDock?.cancel()},ThreeESurface:{openStudio(){win.ThreeEDock.cancel();sent.push({type:'studio'});}}};
 vm.runInNewContext(fs.readFileSync(path.join(__dirname,'../../Shared/PhoneControl/Web/dock.js'),'utf8'),{window:win,document:{getElementById:id=>elements.get(id),createElement:element},performance:{now:()=>now},setTimeout(fn,ms){timers.set(++next,{fn,ms});return next;},clearTimeout:id=>timers.delete(id)});
@@ -10,15 +10,15 @@ function commands(type){return sent.filter(c=>c.type===type);}
 function check(value,message){assert.ok(value,message);checks++;}
 event('apps','pointerdown');check(!sent.length,'Apps does not switch on touch-down');
 event('apps','pointermove',60);event('apps','pointermove',-200);
-check(commands('navigate').length===1&&commands('navigate')[0].direction===1,'A fast long left swipe sends one next-desktop step');
-now+=250;event('apps','pointermove',120);check(commands('navigate').at(-1).direction===-1,'Direction reversal works after the repeat interval');
+check(commands('navigate').length===1&&commands('navigate')[0].direction===-1,'A fast long left swipe sends one previous-desktop step');
+now+=250;event('apps','pointermove',120);check(commands('navigate').at(-1).direction===1,'Direction reversal works after the repeat interval');
 event('apps','lostpointercapture',0,0,99);now+=250;event('apps','pointermove',30);
 check(commands('navigate').length===3,'A different pointer cannot cancel the active contact');
 event('apps','pointerup',30);check(commands('navigateEnd').length===1,'Lift ends fallback app switching');
 sent.length=0;event('apps','pointerdown');event('apps','pointermove',104,30);event('apps','pointerup',104,30);
 check(!commands('navigate').length&&!commands('appsBegin').length,'Vertical Apps gestures do not switch anything');
 sent.length=0;event('apps','pointerdown');hold();event('apps','pointermove',60);event('apps','pointerup',60);
-check(commands('appsBegin').length===1&&commands('appsStep').length===1&&commands('appsEnd').length===1,'Holding Apps keeps the explicit native app chooser');
+check(commands('appsBegin').length===1&&commands('appsStep').length===1&&commands('appsStep')[0].direction===-1&&commands('appsEnd').length===1,'Holding Apps keeps the explicit native app chooser');
 sent.length=0;event('media','pointerdown');event('media','pointermove',150);check(elements.get('media').dataset.icon==='next','Media previews the same next-track symbol as Touch Bar');event('media','pointerup',150);
 check(commands('media').length===1&&commands('media')[0].action===2,'Swipe sends exactly one next-track action');
 sent.length=0;event('media','pointerdown');event('media','pointermove',104,30);event('media','pointerup',104,30);
@@ -29,4 +29,16 @@ sent.length=0;event('media','pointerdown');event('media','pointercancel');elemen
 win.ThreeEDock.describe({controls:{media:{playing:true,stop:false}}});check(elements.get('media').dataset.icon==='pause','Confirmed playing state shows Pause');
 win.ThreeEDock.describe({controls:{media:{playing:true,stop:true}}});check(elements.get('media').dataset.icon==='stop','Ableton playing state shows Stop');
 win.ThreeEDock.describe({controls:{media:{playing:false}}});check(elements.get('media').dataset.icon==='play','Paused state shows Play');
+win.ThreeEDock.describe({controls:{media:{playing:true,source:'browser'}}});
+check(elements.get('media').children.length===1,'Unknown browser source shows playback only, without a globe');
+const artwork='data:image/png;base64,iVBORw0KGgo=';
+win.ThreeEDock.describe({controls:{media:{playing:true,artwork}}});
+check(elements.get('media').children.length===2&&elements.get('media').children[0].children[0].src===artwork,'Actual host artwork appears beside playback');
+win.ThreeEDock.describe({controls:{media:{playing:false,artwork:'https://example.com/icon.png'}}});
+check(elements.get('media').children.length===1,'Untrusted remote source artwork is omitted');
+win.ThreeEDock.describe({controls:{}});
+check(elements.get('media').children.length===1&&elements.get('media').dataset.icon==='play','Clearing the media source removes stale artwork');
+sent.length=0;
+for(const key of ['ArrowLeft','ArrowRight'])elements.get('apps').handlers.keydown({key,preventDefault(){}});
+check(JSON.stringify(commands('navigate').map(c=>c.direction))==='[-1,1]','Keyboard directions match left-previous and right-next swipes');
 console.log('PASS: '+checks+' dock gesture and icon-state checks.');

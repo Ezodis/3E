@@ -17,7 +17,7 @@ public sealed class PhoneBarModule : IDisposable {
         ObjectDisposedException.ThrowIf(disposed, this);
         media ??= new();
         receiver ??= new(PhoneTrackpad.GetLocalAddress,
-            new NativeTrackpadInput(()=>new {media=media?.State}), new TrackpadFirewall(), PhoneTrackpad.Port);
+            new NativeTrackpadInput(()=>new {media=media?.State},action=>media?.Send(action)), new TrackpadFirewall(), PhoneTrackpad.Port);
         receiver.Start();
         popup ??= new(receiver);
         popup.Show();
