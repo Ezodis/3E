@@ -72,7 +72,7 @@
   function connected() {
     clearTimeout(connectTimeout); connecting = false; retryDelay = 250; lastReply = performance.now();
     ready = true; buttons.forEach(b => b.disabled = false); pad.classList.add('live');
-    status.textContent = 'Connected'; connectButton.textContent = 'Pause connection';
+    status.textContent = window.ThreeEControl?.info?.inputPermission===false ? 'Allow Accessibility on your Mac for pointer control.' : 'Connected'; connectButton.textContent = 'Pause connection';
     window.ThreeESurface?.state(true);
     heartbeat = setInterval(() => {
       if (performance.now()-lastReply > 4500) recover('Connection interrupted — reconnecting…');

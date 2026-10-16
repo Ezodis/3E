@@ -66,7 +66,7 @@ public sealed class NativeTrackpadInput : ITrackpadInput, IDisposable {
     }
     public void Down() { if (!held) { Send(0x0002); held = true; } }
     public void Release() { if (held) { try { Send(0x0004); } finally { held = false; } } }
-    // Only these two fixed Windows shortcuts are exposed, never arbitrary keys.
+    // The protocol exposes fixed actions, never arbitrary keyboard input.
     private static void WindowsShortcut(ushort key) {
         static Input Key(ushort code, bool up) => new() { Type = 1, Data = new InputData { Keyboard = new Keyboard { Key = code, Flags = (up ? 2u : 0u) | (code == 0x5B ? 1u : 0u) } } };
         var inputs = new[] { Key(0x5B,false), Key(key,false), Key(key,true), Key(0x5B,true) };
@@ -79,6 +79,7 @@ public sealed class NativeTrackpadInput : ITrackpadInput, IDisposable {
     public void ShowDesktop() => WindowsShortcut(0x44); // Windows + D
     private static Input KeyEvent(ushort key,bool up=false) => new() { Type=1,Data=new InputData { Keyboard=new Keyboard { Key=key,Flags=(up?2u:0u) | (key==0x5B || key==0x25 || key==0x27 ? 1u:0u) } } };
     private static void Keys(params Input[] keys) { if(SendInput((uint)keys.Length,keys,Marshal.SizeOf<Input>())!=keys.Length) throw new InvalidOperationException("Windows could not accept the shortcut."); }
+    private static void ReleaseKeys(params ushort[] keys) { foreach(var key in keys) SendInput(1,new[]{KeyEvent(key,true)},Marshal.SizeOf<Input>()); }
     public void AppsBegin() {
         if(switching) return;
         switching=true;
@@ -86,15 +87,15 @@ public sealed class NativeTrackpadInput : ITrackpadInput, IDisposable {
     }
     public void AppsStep(int direction) {
         if(!switching || direction==0) return;
-        try { if(direction<0) Keys(KeyEvent(0x10)); Keys(KeyEvent(0x09),KeyEvent(0x09,true)); }
-        finally { if(direction<0) Keys(KeyEvent(0x10,true)); }
+        try { if(direction<0) Keys(KeyEvent(0x10)); Keys(KeyEvent(0x09)); }
+        finally { ReleaseKeys(0x09); if(direction<0) ReleaseKeys(0x10); }
     }
-    public void AppsEnd() { if(switching) { switching=false; Keys(KeyEvent(0x12,true)); } }
+    public void AppsEnd() { if(switching) { switching=false; ReleaseKeys(0x09,0x12); } }
     public void Desktop(int direction) {
         if(direction==0) return;
         ReleaseAll(); ushort arrow=direction<0?(ushort)0x25:(ushort)0x27;
         try { Keys(KeyEvent(0x5B),KeyEvent(0x11),KeyEvent(arrow),KeyEvent(arrow,true)); }
-        finally { Keys(KeyEvent(0x11,true),KeyEvent(0x5B,true)); }
+        finally { ReleaseKeys(arrow,0x11,0x5B); }
     }
-    public void Media(int action) { ushort key=action==1?(ushort)0xB1:action==2?(ushort)0xB0:(ushort)0xB3; Keys(KeyEvent(key),KeyEvent(key,true)); }
+    public void Media(int action) { ushort key=action==1?(ushort)0xB1:action==2?(ushort)0xB0:(ushort)0xB3; try { Keys(KeyEvent(key)); } finally { ReleaseKeys(key); } }
 }

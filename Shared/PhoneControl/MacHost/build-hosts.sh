@@ -9,7 +9,7 @@ for phone_arch in arm64 x64; do
   phone_native_arch="$phone_arch"
   if [[ "$phone_arch" == x64 ]]; then phone_native_arch=x86_64; fi
   xcrun clang -arch "$phone_native_arch" -dynamiclib -Wall -Wextra -mmacosx-version-min=14.0 \
-    -framework CoreGraphics "$phone_source/PhoneNative.c" \
+    -framework CoreGraphics -framework CoreFoundation "$phone_source/PhoneNative.c" \
     -o "$phone_destination/Contents/Helpers/PhoneControl/$phone_arch/libThreeEPhoneNative.dylib"
   # Sign every native image before signing its containing app.
   while IFS= read -r -d '' phone_binary; do

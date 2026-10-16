@@ -89,7 +89,7 @@ public sealed class PhoneTrackpad : IDisposable {
             } catch (Exception ex) {
                 candidate?.Listener.Close();
                 try { firewall.Close(); } catch { }
-                status = "Trackpad unavailable: " + ex.Message + " Other 3£Windows features are unaffected.";
+                status = "Trackpad unavailable: " + ex.Message + " Other 3£ features are unaffected.";
                 return false;
             }
         }
@@ -392,7 +392,7 @@ input{width:100%;padding:13px;border:1px solid #415260;border-radius:10px;backgr
         }
     }
 
-    public void Dispose() { lock (gate) { StopLocked("Off"); if(input is IDisposable resource) resource.Dispose(); disposed = true; } }
+    public void Dispose() { lock (gate) { if(disposed)return; disposed = true; StopLocked("Off"); if(input is IDisposable resource) resource.Dispose(); } }
 }
 
 public interface ITrackpadInput {
@@ -411,4 +411,3 @@ public interface ITrackpadInput {
     void MidiPanic() { }
 }
 public interface ITrackpadFirewall { void Open(IPAddress address, int port); void Close(); }
-
