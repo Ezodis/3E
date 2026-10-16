@@ -174,7 +174,7 @@ public sealed class PhoneTrackpad : IDisposable {
             response.Headers["Content-Security-Policy"] = "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src " + owner.Origin + " " + owner.Origin.Replace("http:", "ws:") + "; frame-ancestors 'none'; base-uri 'none'; form-action 'none'";
             using var stream = pairing
                 ? new MemoryStream(Encoding.UTF8.GetBytes(PairingPage(owner.Origin + "/#" + owner.Token)))
-                : resource == "host.js" ? new MemoryStream(Encoding.UTF8.GetBytes("window.ThreeEHost="+JsonSerializer.Serialize(new { platform=input.Platform, http=input.Platform=="macos" })+";"))
+                : resource == "host.js" ? new MemoryStream(Encoding.UTF8.GetBytes("window.ThreeEHost="+JsonSerializer.Serialize(new { platform=input.Platform, http=false })+";"))
                 : typeof(PhoneTrackpad).Assembly.GetManifestResourceStream("ThreeE.PhoneControl.Web." + resource);
             response.ContentLength64 = stream.Length;
             await stream.CopyToAsync(response.OutputStream, owner.Cancel.Token);
