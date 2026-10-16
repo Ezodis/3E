@@ -45,6 +45,10 @@ public sealed class WindowsHub : IDisposable {
         public DateTime LastUpdateCheckUtc { get; set; }
         // Phone Bar keeps one saved link and stays reachable unless stopped from the menu.
         public bool PhoneBarAlwaysOn { get; set; } = true;
+        // New releases install by themselves when the computer is idle.
+        public bool AutoUpdate { get; set; } = true;
+        public string AutoUpdateTag { get; set; }
+        public int AutoUpdateAttempts { get; set; }
     }
 
     public WindowsHub(MenuFlyout menu) {
@@ -78,7 +82,7 @@ public sealed class WindowsHub : IDisposable {
     private async Task StartAsync() {
         try { ConfigureHiddenIcons(); await EnsureComponentsAsync(); ApplyTheme(); KeepPhoneBar(); WriteDiagnostics(); }
         catch (Exception ex) { Log(ex); }
-        if ((DateTime.UtcNow - settings.LastUpdateCheckUtc).TotalHours >= 24) await CheckUpdatesAsync(false);
+        if ((DateTime.UtcNow - settings.LastUpdateCheckUtc).TotalMinutes >= UpdateCheckMinutes) await CheckUpdatesAsync(false);
     }
 
     private static bool IsRunning(string name) {
@@ -158,7 +162,8 @@ public sealed class WindowsHub : IDisposable {
                 await EnsureComponentsAsync();
                 nextRecovery = now.AddSeconds(60);
             }
-            if ((DateTime.UtcNow - settings.LastUpdateCheckUtc).TotalHours >= 24) await CheckUpdatesAsync(false);
+            if ((DateTime.UtcNow - settings.LastUpdateCheckUtc).TotalMinutes >= UpdateCheckMinutes) await CheckUpdatesAsync(false);
+            await InstallPendingUpdateAsync();
         } catch (Exception ex) { Log(ex); }
         finally { busy = false; WriteDiagnostics(); }
     }
@@ -295,6 +300,7 @@ public sealed class WindowsHub : IDisposable {
         menu.Items.Add(new MenuFlyoutSeparator());
         Item("Restart input engines", () => { StopKeyboard(); Stop("PowerToys.KeyboardManagerEngine"); _ = EnsureComponentsAsync(); });
         Item(updateTag == null ? "Check for updates…" : "Update available: " + updateTag + "…", () => _ = CheckUpdatesAsync(true));
+        Toggle("Install updates automatically", settings.AutoUpdate, enabled => { settings.AutoUpdate = enabled; if (!enabled) pendingUpdate = null; else settings.LastUpdateCheckUtc = default; });
         Item("Open portable installer", () => Process.Start(new ProcessStartInfo("explorer.exe", "/select,\"" + Path.Combine(root, "3£Windows.ps1") + "\"") { UseShellExecute = true }));
         Item("Quit 3£Windows", () => App.Instance.Quit());
     }
@@ -351,6 +357,7 @@ public sealed class WindowsHub : IDisposable {
             settings.LastUpdateCheckUtc = DateTime.UtcNow;
             Save();
             updateTag = newest?.GetProperty("tag_name").GetString();
+            pendingUpdate = settings.AutoUpdate && newest != null ? newest.Value.Clone() : null;
             if (!interactive) { RefreshMenu(); return; }
             if (newest == null) { MessageBox(IntPtr.Zero, "3£Windows " + Version + " is up to date.", "3£Windows", 0x40 | ForegroundDialog); return; }
             if (MessageBox(IntPtr.Zero, "Install 3£Windows " + newestVersion + "?\n\nThe portable installer will be downloaded, its SHA-256 checksum verified, and Windows will request administrator approval.", "3£Windows update", 0x24 | ForegroundDialog) != 6) return;
@@ -375,13 +382,49 @@ public sealed class WindowsHub : IDisposable {
         throw new InvalidDataException("The release is missing " + name + ".");
     }
 
-    private async Task InstallUpdateAsync(JsonElement release) {
+    // Automatic updates: check every few minutes; install the newest release
+    // once the computer has been idle briefly, so nothing restarts mid-use.
+    // The app already runs elevated, so the verified installer runs without a
+    // prompt. A release that fails to install twice is left for a manual update.
+    private const int UpdateCheckMinutes = 10, UpdateIdleSeconds = 90, UpdateMaxAttempts = 2;
+    private JsonElement? pendingUpdate;
+    private bool installingUpdate;
+    [StructLayout(LayoutKind.Sequential)] private struct LastInput { public uint Size, Time; }
+    [DllImport("user32.dll")] private static extern bool GetLastInputInfo(ref LastInput info);
+    private static double IdleSeconds() {
+        var info = new LastInput { Size = (uint)Marshal.SizeOf<LastInput>() };
+        return GetLastInputInfo(ref info) ? unchecked((uint)Environment.TickCount - info.Time) / 1000.0 : 0;
+    }
+    private static bool Elevated() {
+        using var identity = System.Security.Principal.WindowsIdentity.GetCurrent();
+        return new System.Security.Principal.WindowsPrincipal(identity).IsInRole(System.Security.Principal.WindowsBuiltInRole.Administrator);
+    }
+    private async Task InstallPendingUpdateAsync() {
+        if (installingUpdate || pendingUpdate == null || !settings.AutoUpdate || IdleSeconds() < UpdateIdleSeconds || !Elevated()) return;
+        var release = pendingUpdate.Value;
+        var tag = release.GetProperty("tag_name").GetString();
+        if (settings.AutoUpdateTag == tag && settings.AutoUpdateAttempts >= UpdateMaxAttempts) return;
+        installingUpdate = true;
+        try {
+            settings.AutoUpdateAttempts = settings.AutoUpdateTag == tag ? settings.AutoUpdateAttempts + 1 : 1;
+            settings.AutoUpdateTag = tag;
+            Save();
+            await InstallUpdateAsync(release, silent: true);
+        } catch (Exception ex) { Log(ex); installingUpdate = false; }
+    }
+
+    private async Task InstallUpdateAsync(JsonElement release, bool silent = false) {
         const string name = "3£Windows.ps1";
         var contents = await ReadVerifiedInstallerAsync(release);
         var folder = Path.Combine(data, "Updates", Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(folder);
         var installer = Path.Combine(folder, name);
         await File.WriteAllBytesAsync(installer, contents);
+        if (silent && Elevated()) {
+            // Inherits this process's administrator token: no prompt, no window.
+            Process.Start(new ProcessStartInfo("powershell.exe", "-NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File \"" + installer + "\" -AppOnly") { UseShellExecute = false, CreateNoWindow = true })?.Dispose();
+            return;
+        }
         Process.Start(new ProcessStartInfo("powershell.exe", "-NoProfile -ExecutionPolicy Bypass -File \"" + installer + "\" -AppOnly") { UseShellExecute = true, Verb = "runas" })?.Dispose();
     }
 
