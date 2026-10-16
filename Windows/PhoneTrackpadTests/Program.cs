@@ -100,7 +100,9 @@ ApplyText("{\"type\":\"desktop\",\"direction\":1}");ApplyText("{\"type\":\"media
 Check(fake.Commands.Contains("desktop:1") && fake.Commands.Contains("media:2"),"Desktop and media commands use fixed whitelisted actions");
 ApplyText("{\"type\":\"shortcut\",\"id\":0}");ApplyText("{\"type\":\"shortcut\",\"id\":17}");
 Check(fake.Commands.Contains("shortcut:0") && fake.Commands.Contains("shortcut:17"),"Shortcut palette ids reach the native boundary");
-foreach(string invalid in new[]{"{\"type\":\"midiCC\",\"channel\":16,\"number\":1,\"value\":64}","{\"type\":\"midiCC\",\"channel\":0,\"number\":120,\"value\":64}","{\"type\":\"midiNote\",\"channel\":0,\"number\":1,\"value\":128}","{\"type\":\"desktop\",\"direction\":2}","{\"type\":\"shortcut\",\"id\":18}","{\"type\":\"shortcut\",\"id\":-1}"}) {
+ApplyText("{\"type\":\"dragStart\",\"x\":-1,\"y\":0}");
+Check(fake.Held && fake.Commands.Contains("dragStart:-1,0"),"Tap-drag start presses through the host's double-click-safe path");ApplyText("{\"type\":\"up\"}");
+foreach(string invalid in new[]{"{\"type\":\"midiCC\",\"channel\":16,\"number\":1,\"value\":64}","{\"type\":\"midiCC\",\"channel\":0,\"number\":120,\"value\":64}","{\"type\":\"midiNote\",\"channel\":0,\"number\":1,\"value\":128}","{\"type\":\"desktop\",\"direction\":2}","{\"type\":\"shortcut\",\"id\":18}","{\"type\":\"shortcut\",\"id\":-1}","{\"type\":\"dragStart\",\"x\":2,\"y\":0}"}) {
     bool refused=false;try{ApplyText(invalid);}catch(InvalidDataException){refused=true;}Check(refused,"Out-of-range MIDI/shortcut control rejected");
 }
 using(var midi=new TestMidi()) {midi.Select(0);midi.Send(false,15,1,64);midi.Send(true,15,36,100);midi.Panic();Check(midi.Messages.SequenceEqual(new[]{"191,1,64","159,36,100","143,36,0"}),"MIDI CC and note bytes are correct; panic releases only its own held note");}
@@ -287,6 +289,7 @@ sealed class FakeInput : ITrackpadInput {
     public void NavigateEnd(){Commands.Enqueue("navigateEnd");AppsEnd();}
     public void Media(int action)=>Commands.Enqueue($"media:{action}");
     public void Shortcut(int id)=>Commands.Enqueue($"shortcut:{id}");
+    public void DragStart(int x,int y){Commands.Enqueue($"dragStart:{x},{y}");Held=true;}
     public void MidiPort(int id){selected=id;Commands.Enqueue($"midiPort:{id}");}
     public void Midi(bool note,int channel,int number,int value){if(note)MidiNotes=value>0?1:0;Commands.Enqueue($"midi:{note},{channel},{number},{value}");}
     public void MidiPanic(){MidiNotes=0;}

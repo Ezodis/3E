@@ -386,6 +386,7 @@ input{width:100%;padding:13px;border:1px solid #415260;border-radius:10px;backgr
             case "left": sink.Click(false); break;
             case "right": sink.Click(true); break;
             case "down": sink.Down(); break;
+            case "dragStart": sink.DragStart(Range("x",-1,1),Range("y",-1,1)); break;
             case "up": sink.Release(); break;
             case "taskView": sink.Release(); sink.TaskView(); break;
             case "showDesktop": sink.Release(); sink.ShowDesktop(); break;
@@ -431,5 +432,7 @@ public interface ITrackpadInput {
     void Midi(bool note,int channel,int number,int value) { }
     void MidiPanic() { }
     void Shortcut(int id) { }
+    // Press for a tap-then-drag. Hosts must not let it complete a double-click.
+    void DragStart(int x, int y) => Down();
 }
 public interface ITrackpadFirewall { void Open(IPAddress address, int port); void Close(); }

@@ -8,7 +8,7 @@
   // Old ?watch=1 links still work, but normal links adapt without an extra route.
   const watchMode = new URLSearchParams(location.search).get('watch') === '1' || window.matchMedia('(max-width: 300px)').matches;
   document.documentElement.classList.toggle('watch', watchMode);
-  let scrollMode = false, singleContact = false, holdTimer, releaseTimer;
+  let scrollMode = false, singleContact = false, holdTimer, releaseTimer, pressTimer;
   try { singleContact = localStorage.getItem('3e-single-contact') === 'true'; } catch {}
   function contactControls() {
     document.documentElement.classList.toggle('single-contact',singleContact);
@@ -49,9 +49,12 @@
     try { socket.send(JSON.stringify({ type, ...data })); lastSentAt = performance.now(); return true; }
     catch { recover('Connection interrupted — reconnecting…'); return false; }
   }
-  function drag(value) {
+  function drag(value, direction = null) {
     if (value === dragging) return;
-    if (value && !send('down')) return;
+    // A tap-drag uses dragStart so the host can keep the press from being
+    // read as the second half of a double-click (which opens files or
+    // maximises windows instead of dragging them).
+    if (value && !(direction ? send('dragStart', direction) : send('down'))) return;
     if (!value) { flush(true); send('up'); }
     dragging = value;
     if(value) $('padHint').textContent='Dragging · lift to drop'; else hint();
@@ -63,7 +66,7 @@
     lastTap = null; tapCandidate = tapDrag = fourDone = false; gestureOrigin = fourOrigin = null;
     dx = dy = sx = sy = 0;
     clearInterval(heartbeat);
-    clearTimeout(holdTimer); clearTimeout(releaseTimer); releaseTimer=null; httpQueue = []; pendingTap = null;
+    clearTimeout(holdTimer); clearTimeout(pressTimer); clearTimeout(releaseTimer); releaseTimer=null; httpQueue = []; pendingTap = null;
     buttons.forEach(b => b.disabled = true); window.ThreeEDock?.commands(false);
     pad.classList.remove('live', 'dragging');
     hint(); window.ThreeESurface?.state(false);
@@ -152,7 +155,7 @@
     else { wanted = true; retryDelay = 250; connect(); }
   });
   $('tongueMode').addEventListener('click', () => {
-    drag(false); clearTimeout(holdTimer); singleContact = !singleContact; lastTap = null;
+    drag(false); clearTimeout(holdTimer); clearTimeout(pressTimer); tapCandidate = false; singleContact = !singleContact; lastTap = null;
     try { localStorage.setItem('3e-single-contact',String(singleContact)); } catch {}
     contactControls();
   });
@@ -183,9 +186,14 @@
       gestureOrigin = point; fourOrigin = null; fourDone = false;
       tapCandidate = count === 1 && !dragging && !scrollMode && lastTap && started - lastTap.time < (singleContact ? 650 : 500) && Math.hypot(point.x-lastTap.x,point.y-lastTap.y) < 80;
       lastTap = null;
-      if(tapCandidate) { drag(true); tapDrag=dragging; }
+      // Second contact: lifting without moving is a double-click; moving past
+      // the tap tolerance or holding still starts a drag.
+      if (tapCandidate) pressTimer = setTimeout(() => { if (tapCandidate && mode === 1) startTapDrag(0,0); }, 300);
     }
-    if (count > 1) { tapCandidate = false; if (tapDrag) { drag(false); tapDrag = false; cancelled=true; } }
+    if (count > 1) {
+      if (tapCandidate) { clearTimeout(pressTimer); cancelled = true; }
+      tapCandidate = false; if (tapDrag) { drag(false); tapDrag = false; cancelled=true; }
+    }
     mode = count; peak = Math.max(peak, count); last = point;
     if (singleContact && count === 1 && !dragging && !scrollMode && !tapCandidate) {
       holdTimer = setTimeout(() => {
@@ -223,9 +231,9 @@
         drag(true); threeDrag = dragging;
       }
       if (tapCandidate) {
-        if (distance < 2) { last = point; return; }
-        drag(true); tapDrag = dragging; tapCandidate = false;
+        if (distance < tapTolerance()) { last = point; return; }
         x = point.x-gestureOrigin.x; y = point.y-gestureOrigin.y;
+        startTapDrag(x,y);
       }
       const limited = n => Math.max(-8000,Math.min(8000,n));
       if ((mode === 2 || scrollMode) && !dragging) { sx = limited(sx+x*3); sy = limited(sy-y*3); }
@@ -234,6 +242,15 @@
     last = point; mode = e.touches.length;
     flush(); // First movement goes immediately; subsequent samples are capped at 125 Hz.
   }, { passive: false });
+  const tapTolerance = () => singleContact ? 14 : 9;
+  function startTapDrag(x, y) {
+    clearTimeout(pressTimer); tapCandidate = false;
+    // Only the dominant direction is sent; the host nudges the press just
+    // outside its double-click area in that direction.
+    const horizontal = Math.abs(x) >= Math.abs(y);
+    drag(true, { x: horizontal ? Math.sign(x) : 0, y: horizontal ? 0 : Math.sign(y) });
+    tapDrag = dragging;
+  }
   function flush(all = false) {
     // While a connection is being established, keep (bounded) motion so it is
     // applied on connect; otherwise discard it.
@@ -262,6 +279,10 @@
       return;
     }
     if (threeDrag && e.touches.length < 3) { drag(false); threeDrag = false; cancelled = true; }
+    if (tapCandidate && !e.touches.length) {
+      // Tap, tap: a native double-click (two clicks at the same spot).
+      clearTimeout(pressTimer); tapCandidate = false; send('left'); cancelled = true;
+    }
     if (tapDrag && !e.touches.length) {
       if(distance>=2) releaseTimer=setTimeout(()=>{drag(false);tapDrag=false;releaseTimer=null;},120);
       else { drag(false); tapDrag=false; }
@@ -317,7 +338,7 @@
     if (window.innerWidth !== viewportWidth) { viewportWidth = window.innerWidth; releaseControls(); }
   });
   function releaseControls() {
-    clearTimeout(holdTimer); clearTimeout(releaseTimer); releaseTimer=null;
+    clearTimeout(holdTimer); clearTimeout(pressTimer); clearTimeout(releaseTimer); releaseTimer=null;
     dx=dy=sx=sy=0; drag(false); send('releaseAll');
     threeDrag=tapDrag=tapCandidate=false; mode=peak=0; last=lastTap=null; cancelled=true;
     window.ThreeESurface?.cancel();

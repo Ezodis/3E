@@ -84,6 +84,28 @@ public sealed class NativeTrackpadInput : ITrackpadInput, IDisposable {
         if (held) return;
         uint down = right ? 0x0008u : 0x0002u, up = right ? 0x0010u : 0x0004u;
         try { Send(down); } finally { Send(up); }
+        if (!right && GetCursorPos(out var point)) { lastClick = point; lastClickTick = Environment.TickCount64; }
+    }
+    [StructLayout(LayoutKind.Sequential)] private struct CursorPoint { public int X, Y; }
+    [DllImport("user32.dll")] private static extern bool GetCursorPos(out CursorPoint point);
+    [DllImport("user32.dll")] private static extern bool SetCursorPos(int x, int y);
+    [DllImport("user32.dll")] private static extern uint GetDoubleClickTime();
+    [DllImport("user32.dll")] private static extern int GetSystemMetrics(int index);
+    private CursorPoint lastClick; private long lastClickTick = long.MinValue / 2;
+    // Tap then drag: Windows would treat a press at the tap's position within
+    // the double-click time as a double-click (opening files, maximising title
+    // bars, selecting words). Step just outside the double-click rectangle,
+    // in the drag direction, so the press is an ordinary drag start.
+    public void DragStart(int x, int y) {
+        if (held) return;
+        if (GetCursorPos(out var point) && Environment.TickCount64 - lastClickTick <= GetDoubleClickTime() + 100) {
+            int halfWidth = Math.Max(2, GetSystemMetrics(36) / 2 + 2), halfHeight = Math.Max(2, GetSystemMetrics(37) / 2 + 2);
+            if (Math.Abs(point.X - lastClick.X) < halfWidth && Math.Abs(point.Y - lastClick.Y) < halfHeight) {
+                if (x == 0 && y == 0) x = 1;
+                SetCursorPos(lastClick.X + x * halfWidth, lastClick.Y + y * halfHeight);
+            }
+        }
+        Down();
     }
     public void Down() { if (!held) { Send(0x0002); held = true; } }
     public void Release() { if (held) { try { Send(0x0004); } finally { held = false; } } }

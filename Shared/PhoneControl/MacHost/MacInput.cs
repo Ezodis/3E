@@ -44,6 +44,8 @@ public sealed class MacInput : ITrackpadInput, IDisposable {
         clicks=now-lastClick<550 && Math.Abs(p.X-lastClickPoint.X)<5 && Math.Abs(p.Y-lastClickPoint.Y)<5 ? Math.Min(2,clicks+1):1;
         lastClick=now;lastClickPoint=p;var e=CGEventCreateMouseEvent(IntPtr.Zero,1,p,0);if(e==IntPtr.Zero)throw new InvalidOperationException("macOS mouse event unavailable");CGEventSetIntegerValueField(e,1,clicks);held=true;Post(e);
     }
+    // A fresh click count keeps tap-then-drag from becoming a double-click drag.
+    public void DragStart(int x,int y){if(held)return;lastClick=0;Down();}
     public void Release() { if(held){held=false;var e=CGEventCreateMouseEvent(IntPtr.Zero,2,Location(),0);if(e==IntPtr.Zero)throw new InvalidOperationException("macOS mouse event unavailable");CGEventSetIntegerValueField(e,1,clicks);Post(e);} }
     public void Click(bool right) { if(held)return;if(!right){Down();Release();}else{var p=Location();Post(CGEventCreateMouseEvent(IntPtr.Zero,3,p,1));Post(CGEventCreateMouseEvent(IntPtr.Zero,4,p,1));} }
     public void TaskView(){ReleaseAll();Control(126);}

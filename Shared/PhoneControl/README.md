@@ -23,7 +23,7 @@ The receiver checks adapters outside the input lock, so a slow driver scan canno
 
 ## Trackpad
 
-Tap to click; two-finger tap right-clicks; two fingers scroll; three fingers drag. Tap, then touch again within 500 ms and move to drag: the second touch presses immediately. Lifting drops after a 120 ms grace period, allowing brief contact breaks. Quick double taps remain double-clicks. Single-contact mode in Settings lengthens the second-tap window to 650 ms, offers Scroll/Move, and supports holding still to right-click. Both orientations work.
+Tap to click; two-finger tap right-clicks; two fingers scroll; three fingers drag. Tap, then touch again within 500 ms and move (or hold still for 300 ms) to drag. A quick second tap that lifts without moving is a double-click. The drag press uses `dragStart`: Windows steps the pointer just outside its double-click rectangle (a few pixels, in the drag direction) so the press is not read as a double-click; macOS resets its click count. Lifting drops after a 120 ms grace period, allowing brief contact breaks. Quick double taps remain double-clicks. Single-contact mode in Settings lengthens the second-tap window to 650 ms, offers Scroll/Move, and supports holding still to right-click. Both orientations work.
 
 Four fingers left/right change desktops. Up opens Windows Task View / Mac Mission Control. Down opens Windows desktop / Mac application windows. Mac uses the standard Control+arrow shortcuts; these must remain enabled in System Settings. Hold **Apps**, swipe left/right through Alt+Tab / Command+Tab, then lift to select. Sleep, cancellation, disconnect and rotation release mouse buttons, held app-switcher modifiers and notes from this controller.
 
