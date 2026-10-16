@@ -1,4 +1,9 @@
-3£Windows 1.0.27 updates itself.
+3£Windows 1.0.28 fixes dragging in Task View and small pointer movements.
+
+- **Tap-hold-drag never clicks first:** like a laptop touchpad with tap-and-drag, a tap's click waits 0.3 s for a possible second touch. Tap, touch again and hold, then move is now a pure drag: Task View no longer opens the window before you can drag it, and menus stay open. A quick double tap is still a double-click, and moving or touching elsewhere sends the waiting click immediately, at the spot you tapped.
+- **Small movements register immediately:** the pointer now moves by exact pixels, so Windows' "Enhance pointer precision" no longer shrinks slow, small phone movements to nothing and then jumps. After a tap, a new movement starts after 6 px instead of 14 px. Pointer acceleration is gentler at slow speeds; adjust Pointer speed in Settings if the overall speed feels different.
+
+Includes everything from 1.0.27:
 
 - **Automatic updates:** 3£Windows checks for a new release every 10 minutes and installs it silently once the computer has been idle for 90 seconds, so it never restarts while you are using it. No prompt is needed because the app already runs with administrator rights; the installer is still verified against the release's SHA-256 checksum.
 - If a release fails to install twice, it is left for a manual "Check for updates".

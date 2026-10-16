@@ -91,7 +91,17 @@ public sealed class NativeTrackpadInput : ITrackpadInput, IDisposable {
         var inputs = new[] { new Input { Data = new InputData { Mouse = new Mouse { X = x, Y = y, Data = unchecked((uint)data), Flags = flags } } } };
         if (SendInput(1, inputs, Marshal.SizeOf<Input>()) != 1) throw new InvalidOperationException("Windows could not accept trackpad input.");
     }
-    public void Move(int x, int y) { if (x != 0 || y != 0) Send(0x0001, x, y); }
+    // Exact-pixel moves: absolute positioning is not reshaped by Windows'
+    // "Enhance pointer precision", which shrank small phone movements to
+    // nothing and then jumped. The phone's speed/acceleration sets the feel.
+    public void Move(int x, int y) {
+        if (x == 0 && y == 0) return;
+        if (!GetCursorPos(out var point)) { Send(0x0001, x, y); return; }
+        int left = GetSystemMetrics(76), top = GetSystemMetrics(77), width = Math.Max(2, GetSystemMetrics(78)), height = Math.Max(2, GetSystemMetrics(79));
+        long tx = Math.Clamp((long)point.X + x, left, left + width - 1), ty = Math.Clamp((long)point.Y + y, top, top + height - 1);
+        int ax = (int)(((tx - left) * 65535L + (width - 1) / 2) / (width - 1)), ay = (int)(((ty - top) * 65535L + (height - 1) / 2) / (height - 1));
+        Send(0x0001 | 0x8000 | 0x4000, ax, ay); // MOVE | ABSOLUTE | VIRTUALDESK
+    }
     public void Scroll(int x, int y) { if (y != 0) Send(0x0800, data: y); if (x != 0) Send(0x1000, data: x); }
     public void Click(bool right) {
         if (held) return;
