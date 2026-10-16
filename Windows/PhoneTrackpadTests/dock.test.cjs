@@ -16,7 +16,10 @@ event('apps','lostpointercapture',0,0,99);now+=250;event('apps','pointermove',30
 check(commands('navigate').length===3,'A different pointer cannot cancel the active contact');
 event('apps','pointerup',30);check(commands('navigateEnd').length===1,'Lift ends fallback app switching');
 sent.length=0;event('apps','pointerdown');event('apps','pointermove',104,30);event('apps','pointerup',104,30);
-check(!commands('navigate').length&&!commands('appsBegin').length,'Vertical Apps gestures do not switch anything');
+check(commands('taskView').length===1&&!commands('navigate').length&&!commands('appsBegin').length,'Swiping Apps up shows all windows once, without switching apps');
+sent.length=0;event('apps','pointerdown');event('apps','pointermove',100,150);event('apps','pointermove',100,220);event('apps','pointerup',100,220);
+check(commands('showDesktop').length===1&&!commands('taskView').length,'Swiping Apps down shows the desktop once');
+sent.length=0;event('apps','pointerdown');event('apps','pointermove',100,120);event('apps','pointerup',100,120);check(!commands('showDesktop').length&&!commands('taskView').length,'A short vertical nudge on Apps does nothing');
 sent.length=0;event('apps','pointerdown');hold();event('apps','pointermove',60);event('apps','pointerup',60);
 check(commands('appsBegin').length===1&&commands('appsStep').length===1&&commands('appsStep')[0].direction===-1&&commands('appsEnd').length===1,'Holding Apps keeps the explicit native app chooser');
 sent.length=0;event('media','pointerdown');event('media','pointermove',150);check(elements.get('media').dataset.icon==='next','Media previews the same next-track symbol as Touch Bar');event('media','pointerup',150);
