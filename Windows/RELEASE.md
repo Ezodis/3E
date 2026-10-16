@@ -1,4 +1,11 @@
-3£Windows 1.0.23 makes phone dragging deliberate and fixes the Apps swipe-down.
+3£Windows 1.0.24: a phone link that stays the same, drag that works on a real phone, and a better volume control.
+
+- **One link that keeps working:** the pairing link is saved, so it is the same after restarts, updates and network changes. Phone Bar now stays on and restarts itself after sleep or a network change. The tray has "Phone Bar — new link" to revoke the old link; "Stop Phone Bar" turns it off until you open the QR again.
+- **phonebar.local:** the receiver answers http://phonebar.local:17833. The QR still opens the IP address; the page switches to phonebar.local automatically when the network supports it, so a bookmark or home-screen icon keeps working when the laptop's IP changes. Networks that block .local names keep using the IP link.
+- **Double-tap-hold-drag fixed:** holding still now measures how far the finger actually moved, not the sum of tiny jitters, which made the drag almost impossible to arm on a real phone. The drag starts once the finger moves 6 px from where it rested.
+- **Volume:** the slider follows your finger directly (iPhone handled the old hidden vertical slider badly), and new ▲/▼ buttons press the laptop's own volume keys, with Windows' volume flyout.
+
+Includes everything from 1.0.23:
 
 - **No more accidental presses:** moving straight after a tap is always a plain pointer move. It never presses the button, so open menus stay open and Task View no longer picks a window while you move.
 - **Double-tap-hold-drag:** tap, touch again within 350 ms, hold still for a moment (the pad shows "Drag ready"), then move to drag. Lifting without moving cancels without clicking. A quick double tap is still a double-click.

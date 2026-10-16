@@ -34,21 +34,36 @@ public sealed class PhoneTrackpad : IDisposable {
     public string Status { get { lock (gate) return status; } }
     public bool Running { get { lock (gate) return session != null; } }
     public string PairingUrl { get { lock (gate) return session == null ? null : session.Origin + "/#" + session.Token; } }
+    // Stable name link (for example http://phonebar.local:17833/#token) when an alias is served.
+    public string NamedUrl { get { lock (gate) return session?.AliasOrigin == null ? null : session.AliasOrigin + "/#" + session.Token; } }
+    public IPAddress Address { get { lock (gate) return session?.Address; } }
+    // Optional: a persisted pairing secret keeps the phone's link valid across
+    // restarts and updates. It must return 48 hex characters; anything else
+    // falls back to a fresh random secret for this session.
+    public Func<string> TokenProvider { get; init; }
+    // Optional host name (for example "phonebar.local") also accepted for the
+    // page, WebSocket and control requests. Name resolution is the host's job.
+    public string AliasHost { get; init; }
     public string DesktopUrl { get { lock (gate) return session == null ? null : session.Origin + "/pair"; } }
 
     private sealed class Session {
         public readonly CancellationTokenSource Cancel = new();
         public readonly SemaphoreSlim Slots = new(4);
         public readonly HttpListener Listener = new();
-        public readonly string Token = Convert.ToHexString(RandomNumberGenerator.GetBytes(24));
-        public readonly string Origin;
+        public readonly string Token;
+        public readonly string Origin, AliasOrigin;
         public readonly IPAddress Address;
         public WebSocket Controller;
         public string ControllerClient;
         public string HttpController;
         public long HttpLastSeen, HttpSequence, HttpRateStart;
         public int HttpCount;
-        public Session(IPAddress address, int port) { Address = address; Origin = $"http://{address}:{port}"; }
+        public Session(IPAddress address, int port, string token, string alias) {
+            Address = address; Origin = $"http://{address}:{port}"; Token = token;
+            AliasOrigin = string.IsNullOrEmpty(alias) ? null : $"http://{alias}:{port}";
+        }
+        public bool IsOrigin(string origin) => origin != null && (origin == Origin || origin == AliasOrigin);
+        public bool IsHost(string host) => host != null && (host == new Uri(Origin).Authority || AliasOrigin != null && host.Equals(new Uri(AliasOrigin).Authority, StringComparison.OrdinalIgnoreCase));
     }
 
     // Injectable boundaries let tests exercise network loss without disabling Wi-Fi or moving the user's mouse.
@@ -80,9 +95,18 @@ public sealed class PhoneTrackpad : IDisposable {
             try {
                 var address = addressProvider();
                 if (address == null) { status = "No local network — connect to Wi-Fi, then try again."; return false; }
-                candidate = new Session(address, port);
+                var token = SessionToken();
+                candidate = new Session(address, port, token, AliasHost);
                 candidate.Listener.Prefixes.Add(candidate.Origin + "/");
-                candidate.Listener.Start();
+                if (candidate.AliasOrigin != null) candidate.Listener.Prefixes.Add(candidate.AliasOrigin + "/");
+                try { candidate.Listener.Start(); }
+                catch (HttpListenerException) when (candidate.AliasOrigin != null) {
+                    // The name prefix needs a URL reservation; keep the IP link working without it.
+                    candidate.Listener.Close();
+                    candidate = new Session(address, port, token, null);
+                    candidate.Listener.Prefixes.Add(candidate.Origin + "/");
+                    candidate.Listener.Start();
+                }
                 firewall.Open(address, port);
                 session = candidate;
                 status = "Ready — scan the QR code on your iPhone.";
@@ -96,6 +120,14 @@ public sealed class PhoneTrackpad : IDisposable {
                 return false;
             }
         }
+    }
+
+    private string SessionToken() {
+        try {
+            var stored = TokenProvider?.Invoke();
+            if (stored != null && stored.Length == 48 && stored.All(Uri.IsHexDigit)) return stored.ToUpperInvariant();
+        } catch { }
+        return Convert.ToHexString(RandomNumberGenerator.GetBytes(24));
     }
 
     public void Stop() { lock (gate) StopLocked("Off"); }
@@ -150,7 +182,7 @@ public sealed class PhoneTrackpad : IDisposable {
         try {
             var request = context.Request;
             // Literal bound host and same-origin WebSockets prevent DNS rebinding / cross-site control.
-            if (request.Headers["Host"] != new Uri(owner.Origin).Authority) {
+            if (!owner.IsHost(request.Headers["Host"])) {
                 context.Response.StatusCode = 403; context.Response.Close(); return;
             }
             if (request.Url.AbsolutePath == "/control" && request.HttpMethod == "POST") {
@@ -158,12 +190,20 @@ public sealed class PhoneTrackpad : IDisposable {
             }
             if (request.HttpMethod != "GET") { context.Response.StatusCode = 403; context.Response.Close(); return; }
             if (request.Url.AbsolutePath == "/ws" && request.IsWebSocketRequest) {
-                if (request.Headers["Origin"] != owner.Origin || request.Url.Query.Length != 0) {
+                if (!owner.IsOrigin(request.Headers["Origin"]) || request.Url.Query.Length != 0) {
                     context.Response.StatusCode = 403; context.Response.Close(); return;
                 }
                 using var ws = (await context.AcceptWebSocketAsync(null)).WebSocket;
                 await ControlAsync(owner, ws);
                 return;
+            }
+            if (request.Url.AbsolutePath == "/alive") {
+                // Lets a page opened by IP check that the stable name reaches this
+                // receiver before switching to it. Reveals no pairing data.
+                var origin = request.Headers["Origin"];
+                if (owner.IsOrigin(origin)) context.Response.Headers["Access-Control-Allow-Origin"] = origin;
+                context.Response.Headers["Cache-Control"] = "no-store";
+                context.Response.StatusCode = 204; context.Response.Close(); return;
             }
             bool pairing = request.Url.AbsolutePath == "/pair";
             if (pairing && !CanShowPairing(request.RemoteEndPoint.Address, owner.Address)) {
@@ -176,10 +216,10 @@ public sealed class PhoneTrackpad : IDisposable {
             response.Headers["Cache-Control"] = "no-store";
             response.Headers["Referrer-Policy"] = "no-referrer";
             response.Headers["X-Content-Type-Options"] = "nosniff";
-            response.Headers["Content-Security-Policy"] = "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src data:; connect-src " + owner.Origin + " " + owner.Origin.Replace("http:", "ws:") + "; frame-ancestors 'none'; base-uri 'none'; form-action 'none'";
+            response.Headers["Content-Security-Policy"] = "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src data:; connect-src " + string.Join(" ", new[] { owner.Origin, owner.AliasOrigin }.Where(o => o != null).SelectMany(o => new[] { o, o.Replace("http:", "ws:") })) + "; frame-ancestors 'none'; base-uri 'none'; form-action 'none'";
             using var stream = pairing
                 ? new MemoryStream(Encoding.UTF8.GetBytes(PairingPage(owner.Origin + "/#" + owner.Token)))
-                : resource == "host.js" ? new MemoryStream(Encoding.UTF8.GetBytes("window.ThreeEHost="+JsonSerializer.Serialize(new { platform=input.Platform, http=false })+";"))
+                : resource == "host.js" ? new MemoryStream(Encoding.UTF8.GetBytes("window.ThreeEHost="+JsonSerializer.Serialize(new { platform=input.Platform, http=false, alias=owner.AliasOrigin == null ? null : new Uri(owner.AliasOrigin).Authority })+";"))
                 : typeof(PhoneTrackpad).Assembly.GetManifestResourceStream("ThreeE.PhoneControl.Web." + resource);
             response.ContentLength64 = stream.Length;
             await stream.CopyToAsync(response.OutputStream, owner.Cancel.Token);
@@ -207,7 +247,7 @@ public sealed class PhoneTrackpad : IDisposable {
         bool describe = false, handshake = false;
         try {
             var supplied = Encoding.UTF8.GetBytes(request.Headers["X-Trackpad-Token"] ?? "");
-            if (request.Headers["Origin"] != owner.Origin || request.Url.Query.Length != 0 ||
+            if (!owner.IsOrigin(request.Headers["Origin"]) || request.Url.Query.Length != 0 ||
                 request.ContentType?.Split(';')[0] != "application/json") {
                 response.StatusCode = 403; response.Close(); return;
             }
@@ -398,6 +438,7 @@ input{width:100%;padding:13px;border:1px solid #415260;border-radius:10px;backgr
             case "appsEnd": sink.AppsEnd(); break;
             case "media": sink.Media(Range("action",0,2)); break;
             case "volume": sink.Volume(Range("level",0,100)); break;
+            case "volumeStep": sink.VolumeStep(Range("direction",-1,1)); break;
             case "midiPort": sink.MidiPort(Range("id",-1,1024)); break;
             case "midiCC": sink.Midi(false,Range("channel",0,15),Range("number",0,119),Range("value",0,127)); break;
             case "midiNote": sink.Midi(true,Range("channel",0,15),Range("number",0,127),Range("value",0,127)); break;
@@ -428,6 +469,8 @@ public interface ITrackpadInput {
     void AppsEnd() { }
     void Media(int action) { }
     void Volume(int level) { }
+    // One native volume step (Windows: the volume keys, which show the system OSD).
+    void VolumeStep(int direction) { }
     void MidiPort(int id) { }
     void Midi(bool note,int channel,int number,int value) { }
     void MidiPanic() { }

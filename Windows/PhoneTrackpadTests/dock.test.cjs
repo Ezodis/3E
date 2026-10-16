@@ -1,7 +1,7 @@
 const fs=require('node:fs'),vm=require('node:vm'),assert=require('node:assert/strict'),path=require('node:path');
 let now=1000,next=0,checks=0,pointTarget=null;const timers=new Map(),sent=[],elements=new Map();
 function element(){return {handlers:{},dataset:{},style:{setProperty(){}},hidden:true,value:0,disabled:true,setAttribute(name,value){this[name]=value;},contains(target){return target===this||this.children.includes(target);},querySelectorAll(){return [];},getBoundingClientRect(){return {height:140};},classList:{add(){},remove(){}},children:[],append(child){this.children.push(child);},replaceChildren(){this.children=[];},addEventListener(type,fn){this.handlers[type]=fn;},setPointerCapture(){},hasPointerCapture(){return true;},releasePointerCapture(){}};}
-for(const id of ['apps','media','volumePane','outputVolume','volumeValue','commands','commandsPane'])elements.set(id,element());
+for(const id of ['apps','media','volumePane','outputVolume','volumeValue','commands','commandsPane','volumeTrack','volumeUp','volumeDown'])elements.set(id,element());
 const win={ThreeEControl:{connected:()=>true,send:(type,data={})=>sent.push({type,...data}),release:()=>win.ThreeEDock?.cancel()},ThreeESurface:{openStudio(){win.ThreeEDock.cancel();sent.push({type:'studio'});}}};
 vm.runInNewContext(fs.readFileSync(path.join(__dirname,'../../Shared/PhoneControl/Web/dock.js'),'utf8'),{window:win,document:{addEventListener(){},getElementById:id=>elements.get(id),createElement:element,elementFromPoint:()=>pointTarget},performance:{now:()=>now},setTimeout(fn,ms){timers.set(++next,{fn,ms});return next;},clearTimeout:id=>timers.delete(id)});
 function event(kind,type,x=100,y=100,id=1){elements.get(kind).handlers[type]({pointerId:id,clientX:x,clientY:y,button:0,preventDefault(){}});}
@@ -86,4 +86,10 @@ win.ThreeEDock.describe({controls:{media:{playing:true}}});win.ThreeEDock.descri
 check(repaints===1,'Unchanged host state does not repaint dock artwork');
 win.ThreeEDock.describe({platform:'macos'});check(!commandsButton.hidden,'macOS shows the shortcut palette');
 win.ThreeEDock.describe({platform:'linux'});check(commandsButton.hidden,'Hosts without a mapping hide the shortcut button');
+win.ThreeEDock.describe({volume:{available:true,level:40}});now+=2000;sent.length=0;
+elements.get('volumeUp').handlers.click();elements.get('volumeDown').handlers.click();
+check(commands('volumeStep').map(c=>c.direction).join()==='1,-1','Volume up/down buttons press the laptop volume keys');
+const track=elements.get('volumeTrack');track.getBoundingClientRect=()=>({top:100,bottom:240,height:140});
+sent.length=0;event('volumeTrack','pointerdown',0,170);event('volumeTrack','pointermove',0,128);event('volumeTrack','pointerup',0,128);
+const levels=commands('volume').map(c=>c.level);check(levels.length>=1&&levels.at(-1)===80,'Dragging the volume track follows the finger (top = 100%)');
 console.log('PASS: '+checks+' dock gesture and icon-state checks.');

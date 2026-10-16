@@ -4,5 +4,6 @@
     <ProjectReference Include="../../Shared/PhoneControl/PhoneControlCore.csproj" />
     <Compile Include="../PhoneBar/PhoneTrackpadWindows.cs" />
     <Compile Include="../PhoneBar/PhoneMidiWindows.cs" />
+    <Compile Include="../PhoneBar/PhoneNameResponder.cs" />
   </ItemGroup>
 </Project>

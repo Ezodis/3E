@@ -24,7 +24,10 @@
   const controllerId = Array.from(clientBytes,b => b.toString(16).padStart(2,'0')).join('');
   let connectionAttempt = 0, connecting = false, wanted = true, reconnectTimer, connectTimeout;
   let retryDelay = 250, lastReply = 0, lastMotionSent = -Infinity, lastSentAt = -Infinity, pendingTap = null;
-  let mode = 0, peak = 0, started = 0, distance = 0, last = null, cancelled = false;
+  // distance = path length (for drags); offset = farthest point from where the
+  // touch began. Holds and taps use offset so natural finger jitter on a real
+  // phone does not count as movement.
+  let mode = 0, peak = 0, started = 0, distance = 0, offset = 0, armPoint = null, last = null, cancelled = false;
   let lastTap = null, tapCandidate = false, tapDrag = false, gestureOrigin = null, fourOrigin = null, fourDone = false;
   let lastTouchAt = -Infinity;
   let dx = 0, dy = 0, sx = 0, sy = 0;
@@ -179,15 +182,15 @@
     if(releaseTimer) { clearTimeout(releaseTimer); releaseTimer=null; }
     const point = center(e.touches), count = e.touches.length;
     if (!mode) {
-      started = performance.now(); distance = 0; peak = 0; cancelled = false;
+      started = performance.now(); distance = 0; offset = 0; peak = 0; cancelled = false;
       gestureOrigin = point; fourOrigin = null; fourDone = false;
       tapCandidate = count === 1 && !dragging && !scrollMode && lastTap && started - lastTap.time < SECOND_TAP && Math.hypot(point.x-lastTap.x,point.y-lastTap.y) < SECOND_TAP_DISTANCE;
       lastTap = null;
       // Second contact: lifting without moving is a double-click; moving past
       // the tap tolerance or holding still starts a drag.
       if (tapCandidate) pressTimer = setTimeout(() => {
-        if (!tapCandidate || mode !== 1 || distance >= TAP_TOLERANCE) return;
-        dragArmed = true; pad.classList.add('dragging'); $('padHint').textContent = 'Drag ready · move to drag';
+        if (!tapCandidate || mode !== 1 || offset >= TAP_TOLERANCE) return;
+        dragArmed = true; armPoint = last; pad.classList.add('dragging'); $('padHint').textContent = 'Drag ready · move to drag';
       }, DRAG_ARM);
     }
     if (count > 1) {
@@ -197,7 +200,7 @@
     mode = count; peak = Math.max(peak, count); last = point;
     if (count === 1 && !dragging && !scrollMode && !tapCandidate) {
       holdTimer = setTimeout(() => {
-        if (ready && mode === 1 && distance < 10 && !dragging && !document.hidden) { flush(true); send('right'); cancelled = true; }
+        if (ready && mode === 1 && offset < 10 && !dragging && !document.hidden) { flush(true); send('right'); cancelled = true; }
       },HOLD_RIGHT_CLICK);
     }
     if (count >= 4) {
@@ -224,14 +227,15 @@
     if (last && mode === e.touches.length) {
       let x = point.x - last.x, y = point.y - last.y;
       distance += Math.hypot(x, y);
-      if (distance >= 10) clearTimeout(holdTimer);
+      if (gestureOrigin) offset = Math.max(offset, Math.hypot(point.x-gestureOrigin.x, point.y-gestureOrigin.y));
+      if (offset >= 10) clearTimeout(holdTimer);
       if (mode === 3 && !dragging) {
         // Give a fourth finger time to land before any mouse-down is injected.
         if (performance.now()-started < 100 || distance < 4) { last = point; return; }
         drag(true); threeDrag = dragging;
       }
       if (tapCandidate) {
-        if (distance < (dragArmed ? 3 : tapTolerance())) { last = point; return; }
+        if (dragArmed ? Math.hypot(point.x-armPoint.x, point.y-armPoint.y) < 6 : offset < tapTolerance()) { last = point; return; }
         x = point.x-gestureOrigin.x; y = point.y-gestureOrigin.y;
         if (dragArmed) startTapDrag(x,y);
         else { clearTimeout(pressTimer); tapCandidate = false; } // just moving: never press
@@ -294,7 +298,7 @@
       cancelled = true;
     }
     if (!e.touches.length) {
-      if (!cancelled && !dragging && !scrollMode && peak <= 2 && distance < TAP_TOLERANCE && performance.now() - started < TAP_TIME) {
+      if (!cancelled && !dragging && !scrollMode && peak <= 2 && offset < TAP_TOLERANCE && performance.now() - started < TAP_TIME) {
         const type = peak === 2 ? 'right' : 'left';
         if (ready) send(type); else if (connecting) pendingTap = { type, at:performance.now() };
         if (peak === 1) lastTap = { ...gestureOrigin, time:performance.now() };
@@ -365,4 +369,14 @@
   function describe(info) { if(window.ThreeEControl) window.ThreeEControl.info=info; window.ThreeESurface?.describe(info); }
   window.ThreeEControl={send,release:releaseControls,connected:()=>ready,info:null};
   connect();
+  // The QR opens the IP address (always reachable). If the stable name also
+  // reaches this receiver, move there so a bookmark or home-screen icon keeps
+  // working when the laptop's IP changes. Networks that block .local stay on IP.
+  const alias = window.ThreeEHost?.alias;
+  if (alias && location.host !== alias && /^[0-9.]+(:\d+)?$/.test(location.host)) {
+    const abort = new AbortController(), timer = setTimeout(() => abort.abort(), 2000);
+    fetch('http://' + alias + '/alive', { mode:'cors', cache:'no-store', signal:abort.signal })
+      .then(response => { if (response.ok || response.status === 204) location.replace('http://' + alias + '/' + location.hash); })
+      .catch(() => {}).finally(() => clearTimeout(timer));
+  }
 })();

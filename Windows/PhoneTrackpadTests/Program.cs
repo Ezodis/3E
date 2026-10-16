@@ -100,9 +100,48 @@ ApplyText("{\"type\":\"desktop\",\"direction\":1}");ApplyText("{\"type\":\"media
 Check(fake.Commands.Contains("desktop:1") && fake.Commands.Contains("media:2"),"Desktop and media commands use fixed whitelisted actions");
 ApplyText("{\"type\":\"shortcut\",\"id\":0}");ApplyText("{\"type\":\"shortcut\",\"id\":17}");
 Check(fake.Commands.Contains("shortcut:0") && fake.Commands.Contains("shortcut:17"),"Shortcut palette ids reach the native boundary");
+ApplyText("{\"type\":\"volumeStep\",\"direction\":-1}");Check(fake.Commands.Contains("volumeStep:-1"),"Volume buttons reach the native volume keys");
+{
+    var saved = "0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF";
+    using var named = new PhoneTrackpad(() => IPAddress.Loopback, new FakeInput(), new FakeFirewall(), FreePort()) { TokenProvider = () => saved, AliasHost = "localhost" };
+    Check(named.Start() && named.PairingUrl.EndsWith("#" + saved), "A saved pairing secret is reused for the phone link");
+    named.Stop();
+    Check(named.Start() && named.PairingUrl.EndsWith("#" + saved) && named.NamedUrl.EndsWith("#" + saved), "The same link works after the receiver restarts");
+    var nameOrigin = new Uri(named.NamedUrl).GetLeftPart(UriPartial.Authority);
+    var ipOrigin = new Uri(named.PairingUrl).GetLeftPart(UriPartial.Authority);
+    using var web = new HttpClient();
+    Check((await web.GetStringAsync(nameOrigin + "/")).Contains("Trackpad"), "The page is served at the stable name");
+    using var probe = new HttpRequestMessage(HttpMethod.Get, nameOrigin + "/alive");
+    probe.Headers.Add("Origin", ipOrigin);
+    using var alive = await web.SendAsync(probe);
+    Check((int)alive.StatusCode == 204 && alive.Headers.GetValues("Access-Control-Allow-Origin").Single() == ipOrigin, "A page opened by IP can confirm the stable name before switching");
+    using var foreign = new HttpRequestMessage(HttpMethod.Get, nameOrigin + "/alive");
+    foreign.Headers.Add("Origin", "http://evil.example");
+    using var refused = await web.SendAsync(foreign);
+    Check(!refused.Headers.Contains("Access-Control-Allow-Origin"), "Other sites cannot probe the receiver");
+    using var badToken = new PhoneTrackpad(() => IPAddress.Loopback, new FakeInput(), new FakeFirewall(), FreePort()) { TokenProvider = () => "short" };
+    Check(badToken.Start() && badToken.PairingUrl.Split('#')[1].Length == 48, "An invalid saved secret falls back to a fresh one");
+}
+{
+    static byte[] Query(string name, ushort type, ushort klass, ushort id = 0) {
+        var q = new List<byte> { (byte)(id >> 8), (byte)id, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0 };
+        foreach (var label in name.Split('.')) { q.Add((byte)label.Length); q.AddRange(System.Text.Encoding.ASCII.GetBytes(label)); }
+        q.Add(0); q.Add((byte)(type >> 8)); q.Add((byte)type); q.Add((byte)(klass >> 8)); q.Add((byte)klass);
+        return q.ToArray();
+    }
+    var here = IPAddress.Parse("192.168.1.42");
+    var reply = ThreeE.PhoneBar.Windows.PhoneNameResponder.Answer(Query("phonebar.local", 1, 1), here, 5353);
+    Check(reply != null && !reply.Value.unicast && reply.Value.packet[^4..].SequenceEqual(here.GetAddressBytes()) && (reply.Value.packet[2] & 0x84) == 0x84, "phonebar.local answers with the receiver's address");
+    var upper = ThreeE.PhoneBar.Windows.PhoneNameResponder.Answer(Query("PhoneBar.LOCAL", 255, 0x8001), here, 5353);
+    Check(upper != null && upper.Value.unicast, "Name matching is case-insensitive and honours unicast-response questions");
+    var legacy = ThreeE.PhoneBar.Windows.PhoneNameResponder.Answer(Query("phonebar.local", 1, 1, 0x1234), here, 53000);
+    Check(legacy != null && legacy.Value.unicast && legacy.Value.packet[0] == 0x12 && legacy.Value.packet[1] == 0x34, "One-shot resolvers get a direct reply with their query id");
+    Check(ThreeE.PhoneBar.Windows.PhoneNameResponder.Answer(Query("otherpc.local", 1, 1), here, 5353) == null, "Other names are never answered");
+    Check(ThreeE.PhoneBar.Windows.PhoneNameResponder.Answer(new byte[] { 0, 0, 0x84, 0, 0, 1 }, here, 5353) == null && ThreeE.PhoneBar.Windows.PhoneNameResponder.Answer(new byte[3], here, 5353) == null, "Responses and malformed packets are ignored");
+}
 ApplyText("{\"type\":\"dragStart\",\"x\":-1,\"y\":0}");
 Check(fake.Held && fake.Commands.Contains("dragStart:-1,0"),"Tap-drag start presses through the host's double-click-safe path");ApplyText("{\"type\":\"up\"}");
-foreach(string invalid in new[]{"{\"type\":\"midiCC\",\"channel\":16,\"number\":1,\"value\":64}","{\"type\":\"midiCC\",\"channel\":0,\"number\":120,\"value\":64}","{\"type\":\"midiNote\",\"channel\":0,\"number\":1,\"value\":128}","{\"type\":\"desktop\",\"direction\":2}","{\"type\":\"shortcut\",\"id\":18}","{\"type\":\"shortcut\",\"id\":-1}","{\"type\":\"dragStart\",\"x\":2,\"y\":0}"}) {
+foreach(string invalid in new[]{"{\"type\":\"midiCC\",\"channel\":16,\"number\":1,\"value\":64}","{\"type\":\"midiCC\",\"channel\":0,\"number\":120,\"value\":64}","{\"type\":\"midiNote\",\"channel\":0,\"number\":1,\"value\":128}","{\"type\":\"desktop\",\"direction\":2}","{\"type\":\"shortcut\",\"id\":18}","{\"type\":\"shortcut\",\"id\":-1}","{\"type\":\"dragStart\",\"x\":2,\"y\":0}","{\"type\":\"volumeStep\",\"direction\":2}"}) {
     bool refused=false;try{ApplyText(invalid);}catch(InvalidDataException){refused=true;}Check(refused,"Out-of-range MIDI/shortcut control rejected");
 }
 using(var midi=new TestMidi()) {midi.Select(0);midi.Send(false,15,1,64);midi.Send(true,15,36,100);midi.Panic();Check(midi.Messages.SequenceEqual(new[]{"191,1,64","159,36,100","143,36,0"}),"MIDI CC and note bytes are correct; panic releases only its own held note");}
@@ -289,6 +328,7 @@ sealed class FakeInput : ITrackpadInput {
     public void NavigateEnd(){Commands.Enqueue("navigateEnd");AppsEnd();}
     public void Media(int action)=>Commands.Enqueue($"media:{action}");
     public void Shortcut(int id)=>Commands.Enqueue($"shortcut:{id}");
+    public void VolumeStep(int direction)=>Commands.Enqueue($"volumeStep:{direction}");
     public void DragStart(int x,int y){Commands.Enqueue($"dragStart:{x},{y}");Held=true;}
     public void MidiPort(int id){selected=id;Commands.Enqueue($"midiPort:{id}");}
     public void Midi(bool note,int channel,int number,int value){if(note)MidiNotes=value>0?1:0;Commands.Enqueue($"midi:{note},{channel},{number},{value}");}
