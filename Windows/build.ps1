@@ -1,4 +1,4 @@
-[CmdletBinding()]
+﻿[CmdletBinding()]
 param([switch]$SkipBuild)
 $ErrorActionPreference = 'Stop'
 $repository = Split-Path -Parent $PSScriptRoot
@@ -67,6 +67,7 @@ $kiroTriggers = @((New-ScheduledTaskTrigger -AtLogOn -User $user),(New-Scheduled
 Register-ScheduledTask -TaskName '3£Windows Kiro Theme' -Action $kiroAction -Trigger $kiroTriggers -Principal $taskPrincipal -Settings $taskSettings -Force | Out-Null
 '@
 $installer = [IO.File]::ReadAllText((Join-Path $PSScriptRoot 'Installer.template.ps1'))
+$installer = $installer.Replace('{{CLICKS_ACCENTS_SHA256}}',(Get-FileHash -LiteralPath (Join-Path $build 'keyboard\ClicksAccents.exe') -Algorithm SHA256).Hash)
 $installer = $installer.Replace('{{LAUNCHER}}',[IO.File]::ReadAllText((Join-Path $PSScriptRoot 'Launcher.ps1')))
 $installer = $installer.Replace('{{CLICKS_FUNCTIONS}}',[IO.File]::ReadAllText((Join-Path $PSScriptRoot 'Keyboard\ClicksScopedFunctions.ps1'))).Replace('{{CLICKS_ASSETS}}',($assetLines -join "`r`n"))
 $installer = $installer.Replace('{{VERSION}}',$version).Replace('{{POWERTOYS_CONFIG}}',[IO.File]::ReadAllText((Join-Path $PSScriptRoot 'PowerToys.json'))).Replace('{{KEYBOARD_CONFIG}}',[IO.File]::ReadAllText((Join-Path $PSScriptRoot 'Keyboard.template.kbd')))

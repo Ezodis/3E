@@ -2,6 +2,9 @@
 set -eu
 phone_source="${0:A:h}"
 phone_destination="${1:?Pass the destination app bundle}"
+mkdir -p "$phone_destination/Contents/Resources/PhoneControl"
+cp "$phone_source/../LICENSE" "$phone_destination/Contents/Resources/PhoneControl/LICENSE.txt"
+cp "$phone_source/../../../Windows/PhoneTrackpad-QRCoder-LICENSE.txt" "$phone_destination/Contents/Resources/PhoneControl/QRCoder-LICENSE.txt"
 for phone_arch in arm64 x64; do
   dotnet publish "$phone_source/ThreeE.PhoneHost.csproj" -c Release -r "osx-$phone_arch" --self-contained true \
     -p:UseAppHost=true -p:DebugType=None -o "$phone_destination/Contents/Resources/PhoneControl/$phone_arch"

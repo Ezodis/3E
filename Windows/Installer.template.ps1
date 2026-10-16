@@ -40,7 +40,11 @@ $EmbeddedLauncher = @'
 # app and existing Clicks components without resetting personal input settings.
 if (-not ($Down -or $KeyboardOnly -or $AppOnly -or $Install -or $RepairKeyboard) -and (Test-Path -LiteralPath (Join-Path $env:ProgramFiles '3EWindows\3£Windows.exe'))) {
     $assembly = Join-Path $env:ProgramFiles '3EWindows\ThreeEWindows.dll'
-    if ((Test-Path -LiteralPath $assembly) -and [Diagnostics.FileVersionInfo]::GetVersionInfo($assembly).ProductVersion.Split('+')[0] -eq $Version) {
+    # Keyboard helper fixes can ship without changing the main app version.
+    $accentExe = Join-Path $env:ProgramFiles '3EWindows\Keyboard\ClicksAccents.exe'
+    $accentCurrent = -not (Test-Path -LiteralPath (Join-Path $env:LOCALAPPDATA '3EWindows\ClicksDeviceMapping.json')) -or
+        ((Test-Path -LiteralPath $accentExe) -and (Get-FileHash -LiteralPath $accentExe -Algorithm SHA256).Hash -eq '{{CLICKS_ACCENTS_SHA256}}')
+    if ($accentCurrent -and (Test-Path -LiteralPath $assembly) -and [Diagnostics.FileVersionInfo]::GetVersionInfo($assembly).ProductVersion.Split('+')[0] -eq $Version) {
         & ([scriptblock]::Create($EmbeddedLauncher))
         exit
     }

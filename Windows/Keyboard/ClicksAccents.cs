@@ -82,9 +82,21 @@ public sealed class AccentEngine {
  }
 }
 
+public static class AccentPlacement {
+ public static Rectangle Place(Size size,Rectangle work,Rectangle target,Point? caret) {
+  Rectangle anchor=Rectangle.Intersect(work,target);
+  if(anchor.Width<=0 || anchor.Height<=0)anchor=work;
+  // Browsers and modern editors often have no Win32 caret. Keep the fallback
+  // over the active app instead of placing it at the far bottom of the monitor.
+  Point p=caret ?? new Point(anchor.Left+(anchor.Width-size.Width)/2,anchor.Top+(anchor.Height-size.Height)/2);
+  if(caret.HasValue && p.Y+size.Height>work.Bottom-8)p.Y=caret.Value.Y-size.Height-24;
+  return new Rectangle(Math.Max(work.Left+8,Math.Min(p.X,work.Right-size.Width-8)),Math.Max(work.Top+8,Math.Min(p.Y,work.Bottom-size.Height-8)),size.Width,size.Height);
+ }
+}
+
 sealed class AccentPopup : Form {
  readonly Font titleFont=new Font("Segoe UI",9), numberFont=new Font("Segoe UI",10), symbolFont=new Font("Segoe UI",21), emojiFont=new Font("Segoe UI Emoji",21);
- public AccentPopup() { FormBorderStyle=FormBorderStyle.None;ShowInTaskbar=false;TopMost=true;BackColor=Color.FromArgb(30,33,40);ForeColor=Color.White;StartPosition=FormStartPosition.Manual;AutoScaleMode=AutoScaleMode.Dpi;Padding=new Padding(12); }
+ public AccentPopup() { Text="Clicks accent choices";FormBorderStyle=FormBorderStyle.None;ShowInTaskbar=false;TopMost=true;BackColor=Color.FromArgb(30,33,40);ForeColor=Color.White;StartPosition=FormStartPosition.Manual;AutoScaleMode=AutoScaleMode.Dpi;Padding=new Padding(12); }
  protected override bool ShowWithoutActivation { get {return true;} }
  protected override CreateParams CreateParams { get {var cp=base.CreateParams;cp.ExStyle|=0x08000000|0x80;return cp;} }
  public void Display(string key,string[] choices,IntPtr target) {
@@ -101,17 +113,29 @@ sealed class AccentPopup : Form {
    Controls.Add(box);
   }
   ClientSize=new Size(Math.Max(420,24+choices.Length*57),116);
-  Rectangle area=Screen.FromHandle(target).WorkingArea;Point p=new Point(area.Left+(area.Width-Width)/2,area.Bottom-Height-65);
+  Rectangle area=Screen.FromHandle(target).WorkingArea;Point? caretPoint=null;
+  Native.RECT targetRect;Rectangle anchor=Native.GetWindowRect(target,out targetRect) ? Rectangle.FromLTRB(targetRect.Left,targetRect.Top,targetRect.Right,targetRect.Bottom) : area;
   Native.GUITHREADINFO info=new Native.GUITHREADINFO();info.cbSize=(uint)Marshal.SizeOf(typeof(Native.GUITHREADINFO));
   uint tid=Native.GetWindowThreadProcessId(target,IntPtr.Zero);
   if(Native.GetGUIThreadInfo(tid,ref info) && info.hwndCaret!=IntPtr.Zero) {
    Native.POINT caret=new Native.POINT {x=info.rcCaret.Left,y=info.rcCaret.Bottom+10};
-   if(Native.ClientToScreen(info.hwndCaret,ref caret))p=new Point(caret.x,caret.y);
+   if(Native.ClientToScreen(info.hwndCaret,ref caret))caretPoint=new Point(caret.x,caret.y);
   }
-  Location=new Point(Math.Max(area.Left+8,Math.Min(p.X,area.Right-Width-8)),Math.Max(area.Top+8,Math.Min(p.Y,area.Bottom-Height-8)));
-  ResumeLayout();Native.ShowWindow(Handle,4);Native.SetWindowPos(Handle,new IntPtr(-1),Left,Top,Width,Height,0x10|0x40);
+  Bounds=AccentPlacement.Place(Size,area,anchor,caretPoint);
+  ResumeLayout(true);
+  // Own the popup by the current app, rather than WinForms' hidden startup
+  // window. Keep native no-activation showing: managed Show can focus a form
+  // again on subsequent displays, which cancels the active accent selection.
+  if(target!=IntPtr.Zero)Native.SetWindowLongPtr(Handle,-8,target);
+  Native.ShowWindow(Handle,4);
+  Native.SetWindowPos(Handle,new IntPtr(-1),Left,Top,Width,Height,0x10|0x40);
+  Refresh();
  }
- public void HidePicker() { Native.ShowWindow(Handle,0); }
+ public void HidePicker() {
+  if(!IsHandleCreated)return;
+  Native.ShowWindow(Handle,0);
+  Native.SetWindowLongPtr(Handle,-8,IntPtr.Zero);
+ }
  protected override void Dispose(bool disposing) {base.Dispose(disposing);if(disposing){titleFont.Dispose();numberFont.Dispose();symbolFont.Dispose();emojiFont.Dispose();}}
 }
 
@@ -135,6 +159,8 @@ static class Native {
  [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr hwnd,IntPtr pid);
  [DllImport("user32.dll")] public static extern bool GetGUIThreadInfo(uint tid,ref GUITHREADINFO info);
  [DllImport("user32.dll")] public static extern bool ClientToScreen(IntPtr hwnd,ref POINT point);
+ [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr hwnd,out RECT rect);
+ [DllImport("user32.dll",EntryPoint="SetWindowLongPtrW",SetLastError=true)] public static extern IntPtr SetWindowLongPtr(IntPtr hwnd,int index,IntPtr value);
  [DllImport("user32.dll")] public static extern bool SetWindowPos(IntPtr hwnd,IntPtr after,int x,int y,int cx,int cy,uint flags);
  [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr hwnd,int cmd);
  [DllImport("user32.dll",SetLastError=true)] public static extern uint SendInput(uint count,INPUT[] inputs,int size);
@@ -151,16 +177,16 @@ static class Native {
 }
 
 sealed class AccentContext : ApplicationContext {
- readonly AccentEngine engine=new AccentEngine();readonly AccentPopup popup=new AccentPopup();
+ readonly AccentEngine engine=new AccentEngine();readonly AccentPopup popup=new AccentPopup();readonly Control dispatcher=new Control();
  readonly Stopwatch clock=Stopwatch.StartNew();readonly System.Windows.Forms.Timer timer=new System.Windows.Forms.Timer();
  readonly NotifyIcon tray=new NotifyIcon();readonly Native.Hook keyCb,mouseCb;readonly Native.WinEvent focusCb;
  IntPtr keyHook,mouseHook,focusHook;
  public AccentContext() {
-  // Create the UI dispatcher without showing or activating the popup.
-  IntPtr window=popup.Handle;
-  engine.Show=delegate(string s,string[] c,IntPtr h) { popup.BeginInvoke((Action)delegate {if(engine.Active)popup.Display(s,c,h);}); };
-  engine.Hide=delegate {popup.BeginInvoke((Action)delegate {popup.HidePicker();});};
-  engine.Insert=delegate(string s,IntPtr h) {popup.BeginInvoke((Action)delegate {Native.ReplaceLetter(s,h);});};
+  // Keep dispatch independent of the popup's current owner closing its window.
+  IntPtr window=dispatcher.Handle;
+  engine.Show=delegate(string s,string[] c,IntPtr h) { dispatcher.BeginInvoke((Action)delegate {if(engine.Active)popup.Display(s,c,h);}); };
+  engine.Hide=delegate {dispatcher.BeginInvoke((Action)delegate {popup.HidePicker();});};
+  engine.Insert=delegate(string s,IntPtr h) {dispatcher.BeginInvoke((Action)delegate {Native.ReplaceLetter(s,h);});};
   keyCb=OnKey;mouseCb=OnMouse;focusCb=delegate {engine.Cancel();};
   keyHook=Native.SetWindowsHookEx(13,keyCb,Native.GetModuleHandle(null),0);
   mouseHook=Native.SetWindowsHookEx(14,mouseCb,Native.GetModuleHandle(null),0);
@@ -185,7 +211,7 @@ sealed class AccentContext : ApplicationContext {
   long msg=wp.ToInt64();if(code>=0 && (msg==0x201||msg==0x204||msg==0x207||msg==0x20A||msg==0x20B||msg==0x20E))engine.Cancel();
   return Native.CallNextHookEx(mouseHook,code,wp,lp);
  }
- protected override void ExitThreadCore() {timer.Stop();if(keyHook!=IntPtr.Zero)Native.UnhookWindowsHookEx(keyHook);if(mouseHook!=IntPtr.Zero)Native.UnhookWindowsHookEx(mouseHook);if(focusHook!=IntPtr.Zero)Native.UnhookWinEvent(focusHook);tray.Dispose();popup.Dispose();base.ExitThreadCore();}
+ protected override void ExitThreadCore() {timer.Stop();if(keyHook!=IntPtr.Zero)Native.UnhookWindowsHookEx(keyHook);if(mouseHook!=IntPtr.Zero)Native.UnhookWindowsHookEx(mouseHook);if(focusHook!=IntPtr.Zero)Native.UnhookWinEvent(focusHook);tray.Dispose();popup.Dispose();dispatcher.Dispose();base.ExitThreadCore();}
 }
 
 static class AccentProgram {
