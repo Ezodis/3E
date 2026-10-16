@@ -4,7 +4,7 @@
   'use strict';
   const $=id=>document.getElementById(id), C=window.ThreeEControl;
   const values=new Map(), dirty=new Map(), notes=new Set();
-  let channel=15, output=-1, dirtyTimer, mediaTimer, active=null, lastPointer=-Infinity, epoch=0;
+  let channel=15, output=-1, dirtyTimer, epoch=0;
   const studio=$('studio');
   studio.innerHTML=`<header><h1><span>3£</span> Phone Bar</h1><div class="studio-tabs"><button id="decksTab" aria-pressed="true">Two decks</button><button id="mixerTab" aria-pressed="false">Mixer</button></div><button id="closeStudio">Trackpad</button></header>
   <div class="routing"><label>Output <select id="midiOutput" aria-label="MIDI output"><option value="-1">Choose MIDI output</option></select></label><label>Ch <select id="midiChannel" aria-label="MIDI channel"></select></label></div><p id="midiStatus" role="status">Choose a MIDI output, then map the controls in Ableton.</p>
@@ -76,25 +76,14 @@
   $('midiOutput').addEventListener('change',()=>{cancel();output=-1;C.send('midiPort',{id:+$('midiOutput').value});});
   $('midiChannel').addEventListener('change',()=>{cancel();C.send('midiPanic');channel=+$('midiChannel').value;});
   $('panic').addEventListener('click',()=>{cancel();C.send('midiPanic');});
-  function cancel(){epoch++;clearTimeout(mediaTimer);clearTimeout(dirtyTimer);dirtyTimer=null;dirty.clear();if(active?.kind==='apps')C.send('appsEnd');active=null;$('apps').classList.remove('active');for(const number of notes)C.send('midiNote',{channel,number,value:0});notes.clear();}
-  for(const kind of ['apps','media']){
-    const button=$(kind);button.addEventListener('contextmenu',e=>e.preventDefault());
-    button.addEventListener('pointerdown',e=>{
-      e.preventDefault();if(!C.connected())return;lastPointer=performance.now();C.release();button.setPointerCapture(e.pointerId);active={kind,id:e.pointerId,x:e.clientX,start:e.clientX,y:e.clientY};
-      if(kind==='apps'){C.send('appsBegin');button.classList.add('active');}
-      else mediaTimer=setTimeout(()=>{if(active?.kind==='media')openStudio();},500);
-    });
-    button.addEventListener('pointermove',e=>{if(!active||active.id!==e.pointerId)return;e.preventDefault();const dx=e.clientX-active.x;if(Math.abs(e.clientX-active.start)>12||Math.abs(e.clientY-active.y)>12)clearTimeout(mediaTimer);if(kind==='apps'&&Math.abs(dx)>=32){const count=Math.min(6,Math.floor(Math.abs(dx)/32));for(let i=0;i<count;i++)C.send('appsStep',{direction:dx>0?1:-1});active.x=e.clientX;}else if(kind==='media')active.x=e.clientX;});
-    button.addEventListener('pointerup',e=>{lastPointer=performance.now();if(!active||active.id!==e.pointerId)return;e.preventDefault();if(kind==='media'){const dx=e.clientX-active.start;C.send('media',{action:Math.abs(dx)<24?0:dx<0?1:2});}cancel();});
-    for(const type of ['pointercancel','lostpointercapture'])button.addEventListener(type,cancel);
-    button.addEventListener('click',()=>{if(performance.now()-lastPointer<600||!C.connected())return;if(kind==='apps'){C.send('appsBegin');C.send('appsEnd');}else C.send('media',{action:0});});
-  }
+  function cancel(){epoch++;window.ThreeEDock?.cancel();clearTimeout(dirtyTimer);dirtyTimer=null;dirty.clear();for(const number of notes)C.send('midiNote',{channel,number,value:0});notes.clear();}
   function describe(info){
+    window.ThreeEDock?.describe(info);
     if(!info?.midi)return;output=info.midi.selected;
     const select=$('midiOutput'),signature=JSON.stringify(info.midi.ports);
     if(select.dataset.ports!==signature){select.replaceChildren();const off=document.createElement('option');off.value=-1;off.textContent='MIDI off / choose output';select.append(off);for(const port of info.midi.ports){const item=document.createElement('option');item.value=port.id;item.textContent=port.name;select.append(item);}select.dataset.ports=signature;}
     select.value=output;$('midiStatus').textContent=output>=0?'Sending to '+info.midi.status+' · map controls in Ableton':info.platform==='windows'?'Choose a MIDI output. Ableton uses a loopback port such as loopMIDI.':info.midi.status;
   }
-  window.ThreeESurface={cancel,describe,state(ready){if(!ready){cancel();studio.querySelectorAll('.vinyl').forEach(v=>v.classList.remove('is-spinning'));$('midiStatus').textContent='Disconnected — controls paused';}else {if(C.info)describe(C.info);if(!studio.hidden)C.send('info');}}};
+  window.ThreeESurface={cancel,describe,openStudio,state(ready){if(!ready){cancel();studio.querySelectorAll('.vinyl').forEach(v=>v.classList.remove('is-spinning'));$('midiStatus').textContent='Disconnected — controls paused';}else {if(C.info)describe(C.info);if(!studio.hidden)C.send('info');}}};
   if(C.info)describe(C.info);
 })();

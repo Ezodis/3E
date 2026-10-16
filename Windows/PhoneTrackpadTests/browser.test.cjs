@@ -19,11 +19,23 @@ async function wake(page){await page.evaluate(()=>{Object.defineProperty(documen
    assert.equal(await p.locator('#drag,#left,#right').count(),0);
    assert.deepEqual(await p.locator('#pad').boundingBox(),{x:0,y:0,width:390,height:844});
    await drag(p,p.locator('#apps'),70);await drag(p,p.locator('#apps'),-70);
-   assert.ok(commands.some(c=>c.type==='appsBegin')&&commands.some(c=>c.type==='appsStep'&&c.direction===1)&&commands.some(c=>c.type==='appsStep'&&c.direction===-1)&&commands.some(c=>c.type==='appsEnd'));
+   assert.deepEqual(commands.filter(c=>c.type==='navigate').map(c=>c.direction),[-1,1],'fast swipes issue one deliberate step each');
+   assert.equal(commands.some(c=>c.type==='appsBegin'),false,'touching Apps must not switch before the swipe');
+   assert.ok(commands.some(c=>c.type==='navigateEnd'));
+   assert.equal((await p.locator('#apps').innerText()).trim(),'');assert.equal((await p.locator('#media').innerText()).trim(),'');
+   await drag(p,p.locator('#apps'),-65,0,600);
+   assert.ok(commands.some(c=>c.type==='appsBegin')&&commands.some(c=>c.type==='appsStep'&&c.direction===1)&&commands.some(c=>c.type==='appsEnd'));
+   const beforeVertical=commands.filter(c=>['navigate','appsBegin','media'].includes(c.type)).length;
+   await drag(p,p.locator('#apps'),5,-65);await drag(p,p.locator('#media'),5,-65);
+   assert.equal(commands.filter(c=>['navigate','appsBegin','media'].includes(c.type)).length,beforeVertical,'vertical motion cancels instead of switching or playing');
+   await p.evaluate(()=>window.ThreeEDock.describe({controls:{media:{playing:true,source:'spotify'}}}));
+   assert.equal(await p.locator('#media').getAttribute('data-icon'),'pause');
+   await p.evaluate(()=>window.ThreeEDock.describe({controls:{media:{playing:true,stop:true,source:'ableton'}}}));
+   assert.equal(await p.locator('#media').getAttribute('data-icon'),'stop');
    await drag(p,p.locator('#media'),0);await drag(p,p.locator('#media'),-45);await drag(p,p.locator('#media'),45);
    for(const action of [0,1,2])assert.ok(commands.some(c=>c.type==='media'&&c.action===action));
    const mediaCount=commands.filter(c=>c.type==='media').length;
-   await drag(p,p.locator('#media'),0,0,650);
+   await drag(p,p.locator('#media'),0,0,900);
    assert.equal(await p.locator('#studio').isVisible(),true);
    assert.equal(await p.locator('#studio h1').innerText(),'3£ Phone Bar');
    await p.waitForFunction(()=>document.getElementById('midiOutput').options.length>1);
@@ -69,7 +81,7 @@ async function wake(page){await page.evaluate(()=>{Object.defineProperty(documen
    assert.equal(await w.locator('#studio').isVisible(),true);
    await w.locator('#midiOutput').selectOption('0');await w.waitForFunction(()=>document.getElementById('midiStatus').textContent.startsWith('Sending to'));
    await w.screenshot({path:path.join(out,'studio-watch-'+name+'.png')});
-   assert.ok(posts.filter(p=>p.type==='commands').flatMap(p=>p.commands).some(c=>c.type==='appsEnd'));
+   assert.ok(posts.filter(p=>p.type==='commands').flatMap(p=>p.commands).some(c=>c.type==='navigateEnd'));
    await w.goto('about:blank');assert.deepEqual(errors,[]);
    console.log('PASS '+name+': Apps hold/swipe/release, Media tap/swipe/hold, linear/circular knobs, MIDI notes/CC/jogs, eight-channel mixer, wake/reconnect and watch HTTP layout.');
   }finally{await browser.close();}

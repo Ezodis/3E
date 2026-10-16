@@ -6,7 +6,8 @@ using ThreeE.PhoneHost;
 
 if(args.Contains("--native-self-test")) {
     if(MacInput.ThreeEValidateScrollEvent()!=1)throw new Exception("Quartz scroll event mismatch");
-    Console.WriteLine("PASS: native Quartz scroll event ABI (no posted input)");return;
+    if(MacInput.ThreeEHasMultipleSpaces() is <0 or >1)throw new Exception("Space discovery mismatch");
+    Console.WriteLine("PASS: native Quartz scroll event ABI and read-only Space discovery (no posted input)");return;
 }
 if(args.Contains("--midi-self-test")) {
     using var midi=new MacMidi();midi.Select(0);
@@ -22,7 +23,11 @@ void Announce(){Report(receiver.Running ? new {url=receiver.PairingUrl,error=(st
 receiver.Start();Announce();
 if(test){if(!receiver.Running)throw new Exception(receiver.Status);using var http=new HttpClient();var html=await http.GetStringAsync(receiver.PairingUrl.Split('#')[0]);if(!html.Contains("surface.js"))throw new Exception("Shared surface missing");Console.WriteLine("PASS: shared receiver and resources on this platform");return;}
 string line;
-while((line=await Console.In.ReadLineAsync())!=null){if(line=="STOP")break;if(line=="START"){receiver.Start();Announce();}}
+while((line=await Console.In.ReadLineAsync())!=null){
+    if(line=="STOP")break;
+    if(line=="START"){receiver.Start();Announce();}
+    else if(line.StartsWith("{"))try{using var json=JsonDocument.Parse(line);if(json.RootElement.TryGetProperty("controls",out var state)&&input is MacInput mac)mac.SetControls(state.Clone());}catch(JsonException){}
+}
 static void Report(object data){lock(Console.Out)Console.WriteLine(JsonSerializer.Serialize(data));}
 sealed class NoFirewall:ITrackpadFirewall{public void Open(IPAddress address,int port){}public void Close(){}}
 sealed class NullInput:ITrackpadInput{

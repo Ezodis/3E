@@ -33,7 +33,7 @@ button:active,button[aria-pressed=true]{background:#a8e5cd;color:#0e2420}button:
 <body>
 <div id="pad" role="application" aria-label="Trackpad. Tap to click. Double-tap and hold to drag. Two fingers scroll or tap to right-click. Four fingers up for Task View, down for desktop."><span id="padHint">Swipe to move · tap to click</span></div>
 <div class="top"><p id="status" role="status" aria-live="polite">Connecting…</p><button id="settings" aria-label="Settings" aria-expanded="false">⋯</button></div>
-<div class="dock"><button id="apps" aria-label="Hold and swipe to switch apps" disabled>▣ Apps</button><button id="scrollMode" class="watch-only" aria-pressed="false" disabled>Scroll</button><button id="media" aria-label="Media: tap to play or pause, swipe for tracks, hold for MIDI" disabled>♫ Media</button></div>
+<div class="dock"><button id="apps" aria-label="Apps: swipe for desktops or windows; hold for the app switcher; tap for the previous app" disabled></button><button id="scrollMode" class="watch-only" aria-pressed="false" aria-label="Switch between scrolling and pointer movement" disabled><svg viewBox="0 0 32 32" aria-hidden="true"><path d="M10 27V5m-6 6 6-6 6 6m6-6v22m-6-6 6 6 6-6" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg></button><button id="media" aria-label="Media: tap to play or pause, swipe for tracks, hold for MIDI" disabled></button></div>
 <section id="settingsPanel" class="panel" hidden aria-label="Trackpad settings">
 <header><h1>Trackpad</h1><button id="closeSettings">Done</button></header>
 <label for="speed">Pointer speed <strong id="speedValue">3.0×</strong></label><input id="speed" type="range" min="0.5" max="20" step="0.1" value="3">
@@ -41,7 +41,7 @@ button:active,button[aria-pressed=true]{background:#a8e5cd;color:#0e2420}button:
 <p>For tongue or one-contact use: swipe to move, tap to click, hold still briefly to right-click. Tap then touch again to drag; a brief contact break lets you keep dragging. Works upright or sideways.</p>
 <div class="row"><button id="connect">Connect</button><button id="fullscreen">Full screen</button></div>
 <p id="fullscreenHelp">On iPhone: Share → Add to Home Screen → Open as Web App to hide Safari’s bars. The watch’s browser controls are managed by watchOS.</p>
-<ul><li>Tap to click; two-finger tap to right-click.</li><li>Tap, then touch again and move to drag. Lift to drop.</li><li>Two fingers scroll; three fingers drag.</li><li>Four fingers left/right change desktops. Up opens all windows; down opens the desktop (Mac: app windows).</li><li>Hold Apps and slide left/right to choose an app. Lift to switch.</li><li>Tap Media to play/pause; swipe for tracks; hold to open the Phone Bar MIDI controls.</li></ul>
+<ul><li>Tap to click; two-finger tap to right-click.</li><li>Tap, then touch again and move to drag. Lift to drop.</li><li>Two fingers scroll; three fingers drag.</li><li>Four fingers left/right change desktops. Up opens all windows; down opens the desktop (Mac: app windows).</li><li>Swipe Apps left/right to move between desktops (Spaces on Mac). With only one desktop, swipe through recent windows instead; lift to choose. Hold still first to open the app switcher. Tap to return to the previous app.</li><li>Tap Media to play/pause; swipe for tracks; hold to open the Phone Bar MIDI controls.</li></ul>
 <details class="watch-only"><summary>Arrow controls</summary><div class="directions"><button id="stepUp" aria-label="Move up" disabled>↑</button><span></span><button id="stepLeft" aria-label="Move left" disabled>←</button><span></span><button id="stepRight" aria-label="Move right" disabled>→</button><button id="stepDown" aria-label="Move down" disabled>↓</button></div><p>Tap the pad to click. Arrows follow the current Move or Scroll mode.</p></details>
 <p>The same link works on iPhone and Apple Watch. It reconnects automatically after sleep or a brief interruption. Pause the connection here before switching devices. A new QR link is needed only if the laptop receiver restarts or changes networks.</p>
 </section>
@@ -50,5 +50,6 @@ button:active,button[aria-pressed=true]{background:#a8e5cd;color:#0e2420}button:
 <script defer src="/host.js"></script>
 <script defer src="/pad.js"></script>
 <script defer src="/surface.js"></script>
+<script defer src="/dock.js"></script>
 </body>
 </html>

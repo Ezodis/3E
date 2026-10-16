@@ -45,11 +45,25 @@ public sealed class NativeTrackpadInput : ITrackpadInput, IDisposable {
     private const uint ShortcutMarker = 0x101;
     private readonly PhoneMidiWindows midi = new();
     private bool switching;
-    public object GetInfo() => new {platform="windows",midi=midi.Info()};
+    private readonly NavigationGesture navigation;
+    private readonly Func<object> controls;
+    public NativeTrackpadInput(Func<object> controls = null) {
+        this.controls=controls;
+        navigation=new(HasMultipleDesktops,SendDesktopShortcut,BeginApps,AppsStep,AppsEnd);
+    }
+    public object GetConnectionInfo() => new {platform="windows",controls=controls?.Invoke()};
+    public object GetInfo() => new {platform="windows",controls=controls?.Invoke(),midi=midi.Info()};
+    public static bool HasMultipleDesktops() {
+        // Explorer's list includes empty desktops that cannot be found by
+        // enumerating windows. Missing/changed OS data falls back to windows.
+        using var key=Microsoft.Win32.Registry.CurrentUser.OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\Explorer\VirtualDesktops");
+        return HasMultipleDesktopIds(key?.GetValue("VirtualDesktopIDs") as byte[]);
+    }
+    public static bool HasMultipleDesktopIds(byte[] ids) => ids != null && ids.Length>=32 && ids.Length%16==0;
     public void MidiPort(int id) => midi.Select(id);
     public void Midi(bool note,int channel,int number,int value) => midi.Send(note,channel,number,value);
     public void MidiPanic() => midi.Panic();
-    public void ReleaseAll() { try { Release(); } finally { try { AppsEnd(); } finally { midi.Panic(); } } }
+    public void ReleaseAll() { try { Release(); } finally { try { navigation.End(); } finally { midi.Panic(); } } }
     public void Dispose() { try { ReleaseAll(); } finally { midi.Dispose(); } }
     [StructLayout(LayoutKind.Sequential)] private struct Mouse { public int X, Y; public uint Data, Flags, Time; public UIntPtr Extra; }
     [StructLayout(LayoutKind.Sequential)] private struct Keyboard { public ushort Key, Scan; public uint Flags, Time; public UIntPtr Extra; }
@@ -84,10 +98,11 @@ public sealed class NativeTrackpadInput : ITrackpadInput, IDisposable {
     private static Input KeyEvent(ushort key,bool up=false) => new() { Type=1,Data=new InputData { Keyboard=new Keyboard { Key=key,Extra=(UIntPtr)ShortcutMarker,Flags=(up?2u:0u) | (key==0x5B || key==0x25 || key==0x27 ? 1u:0u) } } };
     private static void Keys(params Input[] keys) { if(SendInput((uint)keys.Length,keys,Marshal.SizeOf<Input>())!=keys.Length) throw new InvalidOperationException("Windows could not accept the shortcut."); }
     private static void ReleaseKeys(params ushort[] keys) { foreach(var key in keys) SendInput(1,new[]{KeyEvent(key,true)},Marshal.SizeOf<Input>()); }
-    public void AppsBegin() {
+    public void AppsBegin() => BeginApps(1);
+    private void BeginApps(int direction) {
         if(switching) return;
         switching=true;
-        try { Keys(KeyEvent(0x12)); AppsStep(1); } catch { AppsEnd(); throw; }
+        try { Keys(KeyEvent(0x12)); AppsStep(direction); } catch { AppsEnd(); throw; }
     }
     public void AppsStep(int direction) {
         if(!switching || direction==0) return;
@@ -97,7 +112,12 @@ public sealed class NativeTrackpadInput : ITrackpadInput, IDisposable {
     public void AppsEnd() { if(switching) { switching=false; ReleaseKeys(0x09,0x12); } }
     public void Desktop(int direction) {
         if(direction==0) return;
-        ReleaseAll(); ushort arrow=direction<0?(ushort)0x25:(ushort)0x27;
+        ReleaseAll(); SendDesktopShortcut(direction);
+    }
+    public void Navigate(int direction) => navigation.Step(direction);
+    public void NavigateEnd() => navigation.End();
+    private void SendDesktopShortcut(int direction) {
+        ushort arrow=direction<0?(ushort)0x25:(ushort)0x27;
         try { Keys(KeyEvent(0x5B),KeyEvent(0x11),KeyEvent(arrow),KeyEvent(arrow,true)); }
         finally { ReleaseKeys(arrow,0x11,0x5B); }
     }

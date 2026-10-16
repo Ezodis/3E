@@ -57,6 +57,8 @@ dotnet run --project (Join-Path $PSScriptRoot 'PhoneTrackpadTests')
 if ($LASTEXITCODE -ne 0) { throw 'Phone trackpad network/disconnect tests failed.' }
 node (Join-Path $PSScriptRoot 'PhoneTrackpadTests\gestures.test.cjs')
 if ($LASTEXITCODE -ne 0) { throw 'Phone trackpad gesture tests failed.' }
+node (Join-Path $PSScriptRoot 'PhoneTrackpadTests\dock.test.cjs')
+if ($LASTEXITCODE) { throw 'Phone dock tests failed.' }
 node (Join-Path $PSScriptRoot 'PhoneTrackpadTests\watch.test.cjs')
 if ($LASTEXITCODE -ne 0) { throw 'Watch transport and handoff tests failed.' }
 

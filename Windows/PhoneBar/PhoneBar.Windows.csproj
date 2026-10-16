@@ -1,6 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <TargetFramework>net10.0-windows</TargetFramework>
+    <TargetFramework>net10.0-windows10.0.22000</TargetFramework>
     <AssemblyName>ThreeE.PhoneBar.Windows</AssemblyName>
     <ImplicitUsings>enable</ImplicitUsings>
   </PropertyGroup>

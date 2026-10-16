@@ -878,6 +878,7 @@ static OSStatus SendSpotifyCommand(pid_t pid, int command) {
     NSInteger state=[self.playbackBook state:bundle];
     self.musicView.stopAction=[bundle isEqualToString:@"com.ableton.live"];
     self.musicView.nextAction=state<0 ? -1 : state==1 ? 1 : 0;
+    [self.phoneController updateArtwork:icon playing:state stop:self.musicView.stopAction];
     [self.musicView updateIcon];
     if ([bundle isEqualToString:@"com.apple.Safari"] || [NSWorkspace.sharedWorkspace.frontmostApplication.bundleIdentifier isEqualToString:@"com.apple.Safari"]) [self updateBrowserService:NO];
     [self pollPlayback];

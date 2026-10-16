@@ -152,7 +152,7 @@
   $('scrollMode').addEventListener('click', () => {
     drag(false); flush(); scrollMode = !scrollMode; mode = peak = 0; last = null;
     $('scrollMode').setAttribute('aria-pressed', String(scrollMode));
-    $('scrollMode').textContent = scrollMode ? 'Move' : 'Scroll'; hint();
+    $('scrollMode').setAttribute('aria-label',scrollMode ? 'Switch to pointer movement' : 'Switch to scrolling'); hint();
   });
   [['stepUp',0,-1],['stepDown',0,1],['stepLeft',-1,0],['stepRight',1,0]].forEach(([id,x,y]) => {
     $(id).addEventListener('click', () => send(scrollMode ? 'scroll' : 'move', {x:x*(scrollMode ? 120 : 24),y:y*(scrollMode ? -120 : 24)}));

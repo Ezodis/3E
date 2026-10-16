@@ -1,0 +1,32 @@
+const fs=require('node:fs'),vm=require('node:vm'),assert=require('node:assert/strict'),path=require('node:path');
+let now=1000,next=0,checks=0;const timers=new Map(),sent=[],elements=new Map();
+function element(){return {handlers:{},dataset:{},classList:{add(){},remove(){}},append(){},replaceChildren(){},addEventListener(type,fn){this.handlers[type]=fn;},setPointerCapture(){},hasPointerCapture(){return true;},releasePointerCapture(){}};}
+for(const id of ['apps','media'])elements.set(id,element());
+const win={ThreeEControl:{connected:()=>true,send:(type,data={})=>sent.push({type,...data}),release:()=>win.ThreeEDock?.cancel()},ThreeESurface:{openStudio(){win.ThreeEDock.cancel();sent.push({type:'studio'});}}};
+vm.runInNewContext(fs.readFileSync(path.join(__dirname,'../../Shared/PhoneControl/Web/dock.js'),'utf8'),{window:win,document:{getElementById:id=>elements.get(id),createElement:element},performance:{now:()=>now},setTimeout(fn,ms){timers.set(++next,{fn,ms});return next;},clearTimeout:id=>timers.delete(id)});
+function event(kind,type,x=100,y=100,id=1){elements.get(kind).handlers[type]({pointerId:id,clientX:x,clientY:y,button:0,preventDefault(){}});}
+function hold(){now+=900;const entry=[...timers].find(([,t])=>t.ms===500);assert.ok(entry);timers.delete(entry[0]);entry[1].fn();}
+function commands(type){return sent.filter(c=>c.type===type);}
+function check(value,message){assert.ok(value,message);checks++;}
+event('apps','pointerdown');check(!sent.length,'Apps does not switch on touch-down');
+event('apps','pointermove',60);event('apps','pointermove',-200);
+check(commands('navigate').length===1&&commands('navigate')[0].direction===1,'A fast long left swipe sends one next-desktop step');
+now+=250;event('apps','pointermove',120);check(commands('navigate').at(-1).direction===-1,'Direction reversal works after the repeat interval');
+event('apps','lostpointercapture',0,0,99);now+=250;event('apps','pointermove',30);
+check(commands('navigate').length===3,'A different pointer cannot cancel the active contact');
+event('apps','pointerup',30);check(commands('navigateEnd').length===1,'Lift ends fallback app switching');
+sent.length=0;event('apps','pointerdown');event('apps','pointermove',104,30);event('apps','pointerup',104,30);
+check(!commands('navigate').length&&!commands('appsBegin').length,'Vertical Apps gestures do not switch anything');
+sent.length=0;event('apps','pointerdown');hold();event('apps','pointermove',60);event('apps','pointerup',60);
+check(commands('appsBegin').length===1&&commands('appsStep').length===1&&commands('appsEnd').length===1,'Holding Apps keeps the explicit native app chooser');
+sent.length=0;event('media','pointerdown');event('media','pointermove',150);check(elements.get('media').dataset.icon==='next','Media previews the same next-track symbol as Touch Bar');event('media','pointerup',150);
+check(commands('media').length===1&&commands('media')[0].action===2,'Swipe sends exactly one next-track action');
+sent.length=0;event('media','pointerdown');event('media','pointermove',104,30);event('media','pointerup',104,30);
+check(!commands('media').length,'Vertical Media gestures never toggle playback');
+sent.length=0;event('media','pointerdown');hold();event('media','pointerup');elements.get('media').handlers.click();
+check(commands('studio').length===1&&!commands('media').length,'Long MIDI hold and its synthetic click never toggle playback');
+sent.length=0;event('media','pointerdown');event('media','pointercancel');elements.get('media').handlers.click();check(!commands('media').length,'Cancelled touch never generates a fallback click');
+win.ThreeEDock.describe({controls:{media:{playing:true,stop:false}}});check(elements.get('media').dataset.icon==='pause','Confirmed playing state shows Pause');
+win.ThreeEDock.describe({controls:{media:{playing:true,stop:true}}});check(elements.get('media').dataset.icon==='stop','Ableton playing state shows Stop');
+win.ThreeEDock.describe({controls:{media:{playing:false}}});check(elements.get('media').dataset.icon==='play','Paused state shows Play');
+console.log('PASS: '+checks+' dock gesture and icon-state checks.');

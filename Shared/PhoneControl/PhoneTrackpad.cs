@@ -166,7 +166,7 @@ public sealed class PhoneTrackpad : IDisposable {
             if (pairing && !CanShowPairing(request.RemoteEndPoint.Address, owner.Address)) {
                 context.Response.StatusCode = 403; context.Response.Close(); return;
             }
-            var resource = request.Url.AbsolutePath switch { "/" => "PhoneTrackpad.html", "/pad.js" => "PhoneTrackpad.js", "/surface.js" => "surface.js", "/surface.css" => "surface.css", "/host.js" => "host.js", "/pair" => "pair", _ => null };
+            var resource = request.Url.AbsolutePath switch { "/" => "PhoneTrackpad.html", "/pad.js" => "PhoneTrackpad.js", "/surface.js" => "surface.js", "/dock.js" => "dock.js", "/surface.css" => "surface.css", "/host.js" => "host.js", "/pair" => "pair", _ => null };
             if (resource == null) { context.Response.StatusCode = 404; context.Response.Close(); return; }
             var response = context.Response;
             response.ContentType = resource.EndsWith(".js") ? "text/javascript; charset=utf-8" : resource.EndsWith(".css") ? "text/css; charset=utf-8" : "text/html; charset=utf-8";
@@ -252,7 +252,7 @@ public sealed class PhoneTrackpad : IDisposable {
                         if (now - owner.HttpRateStart >= 1000) { owner.HttpRateStart = now; owner.HttpCount = 0; }
                         owner.HttpCount += commands.GetArrayLength();
                         if (owner.HttpCount > 600) throw new InvalidDataException();
-                        foreach (var command in commands.EnumerateArray()) { Apply(command, input); if(command.GetProperty("type").GetString() is "info" or "midiPort") describe=true; }
+                        foreach (var command in commands.EnumerateArray()) { Apply(command, input); if(command.GetProperty("type").GetString() is "info" or "midiPort") describe=true; if(command.GetProperty("type").GetString()=="ping")handshake=true; }
                         owner.HttpLastSeen = now;
                     } else throw new InvalidDataException();
                 }
@@ -344,7 +344,7 @@ input{width:100%;padding:13px;border:1px solid #415260;border-radius:10px;backgr
                     Apply(message.RootElement, input);
                 }
                 if (message.RootElement.GetProperty("type").GetString() == "ping")
-                    await ws.SendAsync(Encoding.UTF8.GetBytes("{\"pong\":true}"), WebSocketMessageType.Text, true, owner.Cancel.Token);
+                    await ws.SendAsync(Encoding.UTF8.GetBytes(JsonSerializer.Serialize(new {pong=true,host=input.GetConnectionInfo()})), WebSocketMessageType.Text, true, owner.Cancel.Token);
                 if (message.RootElement.GetProperty("type").GetString() is "midiPort" or "info")
                     await ws.SendAsync(Encoding.UTF8.GetBytes(JsonSerializer.Serialize(new {host=input.GetInfo()})), WebSocketMessageType.Text, true, owner.Cancel.Token);
             }
@@ -381,6 +381,8 @@ input{width:100%;padding:13px;border:1px solid #415260;border-radius:10px;backgr
             case "taskView": sink.Release(); sink.TaskView(); break;
             case "showDesktop": sink.Release(); sink.ShowDesktop(); break;
             case "desktop": sink.Desktop(Range("direction",-1,1)); break;
+            case "navigate": sink.Navigate(Range("direction",-1,1)); break;
+            case "navigateEnd": sink.NavigateEnd(); break;
             case "appsBegin": sink.Release(); sink.AppsBegin(); break;
             case "appsStep": sink.AppsStep(Range("direction",-1,1)); break;
             case "appsEnd": sink.AppsEnd(); break;
@@ -407,6 +409,8 @@ public interface ITrackpadInput {
     object GetInfo() => new {platform=Platform,midi=new {ports=Array.Empty<MidiPort>(),selected=-1,status="No MIDI output"}};
     void ReleaseAll() => Release();
     void Desktop(int direction) { }
+    void Navigate(int direction) { }
+    void NavigateEnd() => AppsEnd();
     void AppsBegin() { }
     void AppsStep(int direction) { }
     void AppsEnd() { }

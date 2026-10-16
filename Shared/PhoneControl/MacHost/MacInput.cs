@@ -13,6 +13,7 @@ public sealed class MacInput : ITrackpadInput, IDisposable {
     [DllImport(CG)] private static extern IntPtr CGEventCreateKeyboardEvent(IntPtr source,ushort key,[MarshalAs(UnmanagedType.I1)] bool down);
     [DllImport("ThreeEPhoneNative")] private static extern IntPtr ThreeECreateScrollEvent(int y,int x);
     [DllImport("ThreeEPhoneNative")] public static extern int ThreeEValidateScrollEvent();
+    [DllImport("ThreeEPhoneNative")] public static extern int ThreeEHasMultipleSpaces();
     [DllImport(CG)] private static extern void CGEventSetFlags(IntPtr e,ulong flags);
     [DllImport(CG)] private static extern void CGEventSetIntegerValueField(IntPtr e,uint field,long value);
     [DllImport(CG)] private static extern void CGEventPost(uint tap,IntPtr e);
@@ -21,11 +22,14 @@ public sealed class MacInput : ITrackpadInput, IDisposable {
     private readonly MacMidi midi = new();
     private readonly Action<int> media;
     private bool held,switching;
+    private readonly NavigationGesture navigation;
+    private object controls;
     private long lastClick; private Point lastClickPoint; private int clicks;
-    public MacInput(Action<int> media) { this.media=media; midi.Select(0); }
+    public MacInput(Action<int> media) { this.media=media; navigation=new(()=>ThreeEHasMultipleSpaces()>0,d=>Control(d<0?(ushort)123:(ushort)124),BeginApps,AppsStep,AppsEnd); midi.Select(0); }
+    public void SetControls(object snapshot) => Volatile.Write(ref controls,snapshot);
     public string Platform => "macos";
-    public object GetConnectionInfo() => new {platform=Platform,inputPermission=CGPreflightPostEventAccess()};
-    public object GetInfo() => new {platform=Platform,inputPermission=CGPreflightPostEventAccess(),midi=midi.Info()};
+    public object GetConnectionInfo() => new {platform=Platform,inputPermission=CGPreflightPostEventAccess(),controls=Volatile.Read(ref controls)};
+    public object GetInfo() => new {platform=Platform,inputPermission=CGPreflightPostEventAccess(),controls=Volatile.Read(ref controls),midi=midi.Info()};
     private static Point Location() { var e=CGEventCreate(IntPtr.Zero);if(e==IntPtr.Zero)throw new InvalidOperationException("macOS pointer event unavailable");try{return CGEventGetLocation(e);}finally{if(e!=IntPtr.Zero)CFRelease(e);} }
     private static void Post(IntPtr e) { if(e==IntPtr.Zero)throw new InvalidOperationException("macOS event unavailable");try{CGEventPost(0,e);}finally{CFRelease(e);} }
     private static void Key(ushort key,bool down,ulong flags=0) { var e=CGEventCreateKeyboardEvent(IntPtr.Zero,key,down);if(e==IntPtr.Zero)throw new InvalidOperationException("macOS keyboard event unavailable");CGEventSetFlags(e,flags);Post(e); }
@@ -42,14 +46,17 @@ public sealed class MacInput : ITrackpadInput, IDisposable {
     public void TaskView(){ReleaseAll();Control(126);}
     public void ShowDesktop(){ReleaseAll();Control(125);}
     public void Desktop(int direction){if(direction!=0){ReleaseAll();Control(direction<0?(ushort)123:(ushort)124);}}
-    public void AppsBegin(){if(switching)return;switching=true;try{Key(55,true,1UL<<20);AppsStep(1);}catch{AppsEnd();throw;}}
+    public void AppsBegin()=>BeginApps(1);
+    private void BeginApps(int direction){if(switching)return;switching=true;try{Key(55,true,1UL<<20);AppsStep(direction);}catch{AppsEnd();throw;}}
+    public void Navigate(int direction)=>navigation.Step(direction);
+    public void NavigateEnd()=>navigation.End();
     public void AppsStep(int direction){if(!switching||direction==0)return;ulong flags=(1UL<<20)|(direction<0?1UL<<17:0);Key(48,true,flags);Key(48,false,flags);}
     public void AppsEnd(){if(switching){switching=false;Key(55,false);}}
     public void Media(int action)=>media(action);
     public void MidiPort(int id)=>midi.Select(id);
     public void Midi(bool note,int channel,int number,int value)=>midi.Send(note,channel,number,value);
     public void MidiPanic()=>midi.Panic();
-    public void ReleaseAll(){try{Release();}finally{try{AppsEnd();}finally{midi.Panic();}}}
+    public void ReleaseAll(){try{Release();}finally{try{navigation.End();}finally{midi.Panic();}}}
     public void Dispose(){try{ReleaseAll();}finally{midi.Dispose();}}
 }
 

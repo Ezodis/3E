@@ -11,11 +11,33 @@
 @property NSString *url;
 @property NSWindow *window;
 @property(copy) void (^media)(int);
+@property NSString *controlsJSON;
+@property NSString *appsIcon;
 - (void)show;
 - (void)copyLink:(id)sender;
 - (void)stop;
+- (void)updateArtwork:(NSImage *)image playing:(NSInteger)playing stop:(BOOL)stop;
 @end
 @implementation ThreeEPhoneController
+- (NSString *)iconData:(NSImage *)image {
+    if(!image)return @"";
+    NSBitmapImageRep *rep=[[NSBitmapImageRep alloc] initWithBitmapDataPlanes:NULL pixelsWide:48 pixelsHigh:48 bitsPerSample:8 samplesPerPixel:4 hasAlpha:YES isPlanar:NO colorSpaceName:NSDeviceRGBColorSpace bytesPerRow:0 bitsPerPixel:0];
+    [NSGraphicsContext saveGraphicsState];NSGraphicsContext.currentContext=[NSGraphicsContext graphicsContextWithBitmapImageRep:rep];
+    [image drawInRect:NSMakeRect(0,0,48,48) fromRect:NSZeroRect operation:NSCompositingOperationCopy fraction:1];[NSGraphicsContext restoreGraphicsState];
+    NSData *png=[rep representationUsingType:NSBitmapImageFileTypePNG properties:@{}];
+    return png ? [@"data:image/png;base64," stringByAppendingString:[png base64EncodedStringWithOptions:0]] : @"";
+}
+- (void)updateArtwork:(NSImage *)image playing:(NSInteger)playing stop:(BOOL)stop {
+    if(!self.task.running)return;
+    if(!self.appsIcon) {
+        NSString *path=@"/System/Applications/Apps.app";
+        if(![NSFileManager.defaultManager fileExistsAtPath:path])path=@"/System/Applications/Launchpad.app";
+        self.appsIcon=[NSFileManager.defaultManager fileExistsAtPath:path] ? [self iconData:[NSWorkspace.sharedWorkspace iconForFile:path]] : @"";
+    }
+    NSDictionary *controls=@{@"appsIcon":self.appsIcon,@"media":@{@"artwork":[self iconData:image],@"playing":playing<0 ? NSNull.null : @(playing==1),@"stop":@(stop)}};
+    NSString *json=[[NSString alloc] initWithData:[NSJSONSerialization dataWithJSONObject:@{@"controls":controls} options:0 error:nil] encoding:NSUTF8StringEncoding];
+    if(![json isEqual:self.controlsJSON]){self.controlsJSON=json;[self send:json];}
+}
 - (void)message:(NSString *)text {
     NSAlert *alert=[NSAlert new];alert.messageText=@"3£ Phone";alert.informativeText=text;[alert runModal];
 }
@@ -54,6 +76,7 @@
     NSTask *launch=self.task;
     self.task.terminationHandler=^(NSTask *finished){dispatch_async(dispatch_get_main_queue(),^{if(weak.task==finished){weak.task=nil;weak.url=nil;[weak.window close];weak.window=nil;if(finished.terminationStatus!=0)[weak message:@"The phone receiver could not start. This feature requires macOS 14 or later; the rest of 3£ is unaffected."];}});};
     NSError *error=nil;if(![launch launchAndReturnError:&error]){self.task=nil;[self message:error.localizedDescription];}
+    else {self.controlsJSON=nil;[self updateArtwork:nil playing:-1 stop:NO];}
 }
 - (void)showQR {
     [self.window close];self.window=[[NSWindow alloc] initWithContentRect:NSMakeRect(0,0,250,250) styleMask:NSWindowStyleMaskTitled|NSWindowStyleMaskClosable backing:NSBackingStoreBuffered defer:NO];self.window.title=@"3£ Phone Bar";self.window.releasedWhenClosed=NO;self.window.backgroundColor=NSColor.whiteColor;
