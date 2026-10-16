@@ -14,7 +14,8 @@ async function wake(page){await page.evaluate(()=>{Object.defineProperty(documen
    const p=await ctx.newPage();p.on('pageerror',e=>errors.push(e.message));
    p.on('websocket',s=>s.on('framesent',f=>{try{const c=JSON.parse(f.payload);if(c.type)commands.push(c);}catch{}}));
    await p.addInitScript(()=>{window.testSockets=[];const W=WebSocket;window.WebSocket=class extends W{constructor(...a){super(...a);window.testSockets.push(this);}};});
-   await p.goto(url);await p.waitForFunction(()=>document.getElementById('status').textContent==='Connected');
+   const connectStart=Date.now();await p.goto(url);await p.waitForFunction(()=>document.getElementById('status').textContent==='Connected');
+   console.log(name+' local page load + connection: '+(Date.now()-connectStart)+' ms (simulated input, loopback network)');
    assert.equal(await p.locator('#drag,#left,#right').count(),0);
    assert.deepEqual(await p.locator('#pad').boundingBox(),{x:0,y:0,width:390,height:844});
    await drag(p,p.locator('#apps'),70);await drag(p,p.locator('#apps'),-70);
@@ -24,6 +25,8 @@ async function wake(page){await page.evaluate(()=>{Object.defineProperty(documen
    const mediaCount=commands.filter(c=>c.type==='media').length;
    await drag(p,p.locator('#media'),0,0,650);
    assert.equal(await p.locator('#studio').isVisible(),true);
+   assert.equal(await p.locator('#studio h1').innerText(),'3£ Phone Bar');
+   await p.waitForFunction(()=>document.getElementById('midiOutput').options.length>1);
    assert.equal(commands.filter(c=>c.type==='media').length,mediaCount,'holding Media must not play/pause on release');
    await p.locator('#midiOutput').selectOption('0');await p.waitForFunction(()=>document.getElementById('midiStatus').textContent.startsWith('Sending to'));
    const low=p.locator('.deck-a .knob[data-cc="50"]');
@@ -47,6 +50,7 @@ async function wake(page){await page.evaluate(()=>{Object.defineProperty(documen
    await p.screenshot({path:path.join(out,'studio-mixer-'+name+'.png')});
    await p.setViewportSize({width:844,height:390});await p.screenshot({path:path.join(out,'studio-landscape-'+name+'.png')});
    await wake(p);
+   await p.waitForFunction(()=>document.getElementById('midiStatus').textContent.startsWith('Sending to'));
    await p.locator('#closeStudio').click();await p.evaluate(()=>window.testSockets.at(-1).close());
    await p.waitForFunction(()=>window.testSockets.length>=3&&document.getElementById('status').textContent==='Connected');
    await p.getByRole('button',{name:'Settings',exact:true}).click();await p.locator('#tongueMode').click();await p.locator('#closeSettings').click();

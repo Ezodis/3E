@@ -199,7 +199,7 @@ public sealed class PhoneTrackpad : IDisposable {
         response.Headers["X-Content-Type-Options"] = "nosniff";
         string client = null;
         int code = 200;
-        bool describe = false;
+        bool describe = false, handshake = false;
         try {
             var supplied = Encoding.UTF8.GetBytes(request.Headers["X-Trackpad-Token"] ?? "");
             if (request.Headers["Origin"] != owner.Origin || request.Url.Query.Length != 0 ||
@@ -227,7 +227,7 @@ public sealed class PhoneTrackpad : IDisposable {
             lock (gate) {
                 if (session != owner) code = 410;
                 else if (type == "connect") {
-                    describe = true;
+                    handshake = true;
                     if (owner.Controller != null || (owner.HttpController != null && owner.HttpController != client) ||
                         (owner.HttpController == client && sequence <= owner.HttpSequence)) code = 409;
                     else {
@@ -262,7 +262,7 @@ public sealed class PhoneTrackpad : IDisposable {
         response.StatusCode = code;
         response.ContentType = "application/json";
         byte[] result;
-        lock(gate) result = Encoding.UTF8.GetBytes(code == 200 ? (describe ? JsonSerializer.Serialize(new { ready=true, host=input.GetInfo() }) : "{\"ready\":true}") : "{\"ready\":false}");
+        lock(gate) result = Encoding.UTF8.GetBytes(code == 200 ? (describe || handshake ? JsonSerializer.Serialize(new { ready=true, host=describe ? input.GetInfo() : input.GetConnectionInfo() }) : "{\"ready\":true}") : "{\"ready\":false}");
         response.ContentLength64 = result.Length;
         await response.OutputStream.WriteAsync(result, owner.Cancel.Token);
         response.Close();
@@ -327,7 +327,9 @@ input{width:100%;padding:13px;border:1px solid #415260;border-radius:10px;backgr
                 }
             }
             if (!acquired) { await ws.SendAsync(Encoding.UTF8.GetBytes("{\"error\":\"busy\"}"), WebSocketMessageType.Text, true, owner.Cancel.Token); return; }
-            await ws.SendAsync(new ArraySegment<byte>(Encoding.UTF8.GetBytes(JsonSerializer.Serialize(new {ready=true,host=input.GetInfo()}))), WebSocketMessageType.Text, true, owner.Cancel.Token);
+            // Connecting the trackpad must not wait on native MIDI driver discovery.
+            // The MIDI surface requests the full description when it opens.
+            await ws.SendAsync(new ArraySegment<byte>(Encoding.UTF8.GetBytes(JsonSerializer.Serialize(new {ready=true,host=input.GetConnectionInfo()}))), WebSocketMessageType.Text, true, owner.Cancel.Token);
             var rateStart = Environment.TickCount64;
             var count = 0;
             while (ws.State == WebSocketState.Open) {
@@ -399,6 +401,7 @@ public interface ITrackpadInput {
     void Move(int x, int y); void Scroll(int x, int y); void Click(bool right); void Down(); void Release();
     void TaskView(); void ShowDesktop();
     string Platform => "windows";
+    object GetConnectionInfo() => new {platform=Platform};
     object GetInfo() => new {platform=Platform,midi=new {ports=Array.Empty<MidiPort>(),selected=-1,status="No MIDI output"}};
     void ReleaseAll() => Release();
     void Desktop(int direction) { }

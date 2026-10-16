@@ -17,15 +17,15 @@ Tap to click; two-finger tap right-clicks; two fingers scroll; three fingers dra
 
 Four fingers left/right change desktops. Up opens Windows Task View / Mac Mission Control. Down opens Windows desktop / Mac application windows. Mac uses the standard Control+arrow shortcuts; these must remain enabled in System Settings. Hold **Apps**, swipe left/right through Alt+Tab / Command+Tab, then lift to select. Sleep, cancellation, disconnect and rotation release mouse buttons, held app-switcher modifiers and notes from this controller.
 
-Tap **Media** to play/pause, swipe for previous/next, or hold for 500 ms to enter Studio. **Trackpad** returns to the pad. On iPhone, Safari's Add to Home Screen / Open as Web App hides the browser bars; watchOS manages its own browser chrome.
+Tap **Media** to play/pause, swipe for previous/next, or hold for 500 ms to enter Phone Bar. **Trackpad** returns to the pad. On iPhone, Safari's Add to Home Screen / Open as Web App hides the browser bars; watchOS manages its own browser chrome.
 
-## Ableton setup and Studio
+## Ableton setup and Phone Bar
 
-1. Windows: create a virtual MIDI loopback port, for example **3E Phone**, using [loopMIDI](https://www.tobias-erichsen.de/software/loopmidi.html), and choose it in Studio's Output list. The app does not install a driver. Use Refresh outputs after creating a port. Windows MIDI output starts off until selected.
+1. Windows: create a virtual MIDI loopback port, for example **3E Phone**, using [loopMIDI](https://www.tobias-erichsen.de/software/loopmidi.html), and choose it in Phone Bar's Output list. The app does not install a driver. Use Refresh outputs after creating a port. Windows MIDI output starts off until selected.
 2. Mac: the receiver creates its own **3E Phone** CoreMIDI source. No loopback driver is required.
 3. In Ableton's **Link, Tempo & MIDI** settings, enable **Remote** for that input. Enter **MIDI Map** (Ctrl+M / Cmd+M), select a Live control, and move its counterpart on the phone. Leave MIDI Map mode to perform. [Ableton mapping guide](https://help.ableton.com/hc/en-us/articles/360000038859-Making-custom-MIDI-Mappings) · [Virtual MIDI buses](https://help.ableton.com/hc/en-us/articles/209774225-Setting-up-a-virtual-MIDI-bus).
 
-Studio has two decks and an eight-track mixer. Drag through a knob's centre vertically (up increases / clockwise), or move around its rim to turn it. Double-tap a knob to reset. Drag a vinyl rim to send relative jog steps; keyboard arrows also work. Mixer and deck controls for the same track share their values.
+Phone Bar has two decks and an eight-track mixer. Drag through a knob's centre vertically (up increases / clockwise), or move around its rim to turn it. Double-tap a knob to reset. Drag a vinyl rim to send relative jog steps; keyboard arrows also work. Mixer and deck controls for the same track share their values.
 
 For a two-track mix, load audio into two Live tracks, assign them to crossfader sides A and B, and map Launch, Stop, Cue, level, EQ, sends and the crossfader. The jog wheels send Relative (Bin Offset) CC values; choose that mapping mode for a compatible parameter in Live. This is a MIDI control surface, not an audio player, stem separator, tempo-sync engine or automatic mashup generator. Vinyl animation reflects local Launch/Stop taps rather than playback feedback. Mute/solo highlights also show local taps, not Live's state. Mapping and actual audio performance require setup in your Live session.
 
@@ -60,3 +60,5 @@ Tests: `dotnet run --project Windows/PhoneTrackpadTests`, then `node Windows/Pho
 Automated checks cannot establish real iPhone/Watch gesture fidelity, Accessibility approval on a user's Mac, physical Intel/ARM hardware performance, Wi-Fi latency or end-to-end Ableton audio behavior. Those require testing on the intended devices and Live session.
 
 New phone-control source is MIT-licensed. QRCoder retains its bundled MIT license; existing repository components retain their licenses.
+
+The Windows tray popup shows only the QR and **3£ Phone Bar**. Click outside or press Escape to dismiss it; use **Stop Phone Bar** in the tray menu to stop the receiver. If no local network is available, the popup shows the reason instead of a QR. Pairing returns basic platform/permission information immediately; MIDI output discovery runs only when the MIDI controls open or refresh, including after reconnect.

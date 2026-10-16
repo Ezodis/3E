@@ -24,6 +24,7 @@ public sealed class MacInput : ITrackpadInput, IDisposable {
     private long lastClick; private Point lastClickPoint; private int clicks;
     public MacInput(Action<int> media) { this.media=media; midi.Select(0); }
     public string Platform => "macos";
+    public object GetConnectionInfo() => new {platform=Platform,inputPermission=CGPreflightPostEventAccess()};
     public object GetInfo() => new {platform=Platform,inputPermission=CGPreflightPostEventAccess(),midi=midi.Info()};
     private static Point Location() { var e=CGEventCreate(IntPtr.Zero);if(e==IntPtr.Zero)throw new InvalidOperationException("macOS pointer event unavailable");try{return CGEventGetLocation(e);}finally{if(e!=IntPtr.Zero)CFRelease(e);} }
     private static void Post(IntPtr e) { if(e==IntPtr.Zero)throw new InvalidOperationException("macOS event unavailable");try{CGEventPost(0,e);}finally{CFRelease(e);} }

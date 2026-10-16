@@ -102,10 +102,17 @@ using (var wrong = await Connect(firstUrl, "wrong")) {
     try { await Send(wrong, "{\"type\":\"down\"}"); await Receive(wrong); } catch (WebSocketException) { }
     Check(!fake.Held && fake.Commands.IsEmpty, "Wrong pairing token cannot inject input");
 }
+fake.FailMidiDiscovery = true;
 using (var ws = await Connect(firstUrl)) {
     Check((await Receive(ws)).Contains("ready"), "Valid QR pairing authorizes a controller");
     await Send(ws,"{\"type\":\"ping\"}");
     Check((await Receive(ws)).Contains("pong"), "Heartbeat confirms the server is receiving input");
+    await Send(ws,"{\"type\":\"move\",\"x\":1,\"y\":2}");
+    await Until(() => fake.Commands.Contains("move:1,2"));
+    Check(fake.FailMidiDiscovery,"Phone pairs and moves without calling an unavailable MIDI driver");
+    fake.FailMidiDiscovery = false;
+    await Send(ws,"{\"type\":\"info\"}");
+    Check((await Receive(ws)).Contains("Test MIDI"),"MIDI discovery is available on demand after pairing");
     using (var other = await Connect(firstUrl)) {
         bool secondReady = false;
         try { secondReady = (await Receive(other)).Contains("ready"); } catch (WebSocketException) { }
@@ -158,6 +165,7 @@ using (var ws = await Connect(pad.PairingUrl)) {
 }
 // Exercise watchOS HTTP control without sending native mouse input.
 const string watch = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA", otherWatch = "BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB";
+string httpReply = null;
 async Task<HttpStatusCode> Post(object payload, string origin = null, string key = null) {
     var uri = new Uri(pad.PairingUrl);
     using var request = new HttpRequestMessage(HttpMethod.Post, new Uri(uri, "/control"));
@@ -165,18 +173,23 @@ async Task<HttpStatusCode> Post(object payload, string origin = null, string key
     request.Headers.Add("X-Trackpad-Token", key ?? uri.Fragment[1..]);
     request.Content = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json");
     using var response = await client.SendAsync(request);
+    httpReply = await response.Content.ReadAsStringAsync();
     return response.StatusCode;
 }
 Check(await Post(new { client=watch,type="connect",sequence=1 }, origin:"https://other.example") == HttpStatusCode.Forbidden, "Watch POST rejects cross-site origins");
 Check(await Post(new { client=watch,type="connect",sequence=1 }, key:"wrong") == HttpStatusCode.Unauthorized, "Watch POST distinguishes an expired pairing link from a dropped lease");
+fake.FailMidiDiscovery = true;
 Check(await Post(new { client=watch,type="connect",sequence=1 }) == HttpStatusCode.OK, "Watch connects over HTTP without WebSockets");
+Check(httpReply.Contains("platform") && !httpReply.Contains("midi"), "Watch pairing returns platform information without MIDI driver discovery");
+fake.FailMidiDiscovery = false;
 Check(await Post(new { client=otherWatch,type="connect",sequence=1 }) == HttpStatusCode.Conflict, "A second watch cannot take over");
 using (var ws = await Connect(pad.PairingUrl)) {
     bool accepted = false; try { accepted = (await Receive(ws)).Contains("ready"); } catch (WebSocketException) { }
     Check(!accepted, "Phone WebSocket cannot take over an active watch");
 }
 fake.Commands.Clear();
-Check(await Post(new { client=watch,type="commands",sequence=2,commands=new object[]{new {type="down"},new {type="move",x=12,y=7},new {type="up"},new {type="left"}} }) == HttpStatusCode.OK && !fake.Held && fake.Commands.ToArray().SequenceEqual(new[]{"down","move:12,7","up","left"}), "Watch command batches preserve drag and click order");
+Check(await Post(new { client=watch,type="commands",sequence=2,commands=new object[]{new {type="down"},new {type="move",x=12,y=7},new {type="up"},new {type="left"},new {type="info"}} }) == HttpStatusCode.OK && !fake.Held && fake.Commands.ToArray().SequenceEqual(new[]{"down","move:12,7","up","left"}), "Watch command batches preserve drag and click order");
+Check(httpReply.Contains("Test MIDI"), "Watch MIDI controls can request output discovery after pairing");
 int beforeDuplicate = fake.Commands.Count;
 Check(await Post(new { client=watch,type="commands",sequence=2,commands=new[]{new {type="left"}} }) == HttpStatusCode.Conflict && fake.Commands.Count == beforeDuplicate, "Retried watch requests never replay clicks");
 await Post(new { client=watch,type="commands",sequence=3,commands=new[]{new {type="down"}} });
@@ -218,7 +231,8 @@ Console.WriteLine($"All {results.Count} checks passed.");
 sealed class FakeInput : ITrackpadInput {
     public readonly ConcurrentQueue<string> Commands = new(); public volatile bool Held;
     public volatile bool Switching;public int MidiNotes;private int selected=-1;
-    public object GetInfo()=>new {platform="windows",midi=new {ports=new[]{new MidiPort(0,"Test MIDI (no hardware)")},selected,status="Test MIDI"}};
+    public bool FailMidiDiscovery;
+    public object GetInfo(){if(FailMidiDiscovery)throw new InvalidOperationException("MIDI driver unavailable");return new {platform="windows",midi=new {ports=new[]{new MidiPort(0,"Test MIDI (no hardware)")},selected,status="Test MIDI"}};}
     public void ReleaseAll(){Release();AppsEnd();MidiPanic();}
     public void AppsBegin(){Switching=true;Commands.Enqueue("appsBegin");}
     public void AppsStep(int direction)=>Commands.Enqueue($"appsStep:{direction}");

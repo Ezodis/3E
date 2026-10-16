@@ -14,11 +14,11 @@ public sealed class PhoneTrackpadPopup : IDisposable {
     private const string ClassName = "3EWindows.PhoneTrackpadPopup";
     private readonly PhoneTrackpad receiver;
     private readonly WindowProc callback;
-    private IntPtr window, title, instructions, status, stop, close, font, headingFont;
-    private Bitmap qr;
-    private string displayedLink;
+    private IntPtr window;
+    private Bitmap card;
+    private string displayedLink, displayedStatus;
     private float scale = 1;
-    private int width, height, qrTop;
+    private int width, height;
     private bool visible;
     public PhoneTrackpadPopup(PhoneTrackpad receiver) { this.receiver = receiver; callback = HandleMessage; }
     private int Px(int value) => (int)Math.Round(value * scale);
@@ -35,7 +35,7 @@ public sealed class PhoneTrackpadPopup : IDisposable {
         SetWindowPos(window, new IntPtr(-1), x, y, width, height, 0x0040);
         visible = true;
         SetForegroundWindow(window);
-        SetFocus(close);
+        SetFocus(window);
         SetTimer(window, new UIntPtr(1), 1000, IntPtr.Zero);
     }
 
@@ -47,47 +47,51 @@ public sealed class PhoneTrackpadPopup : IDisposable {
             Background = new IntPtr(6), ClassName = ClassName
         };
         if (RegisterClassEx(ref wc) == 0) throw new Win32Exception(Marshal.GetLastWin32Error());
-        window = CreateWindowEx(0x00000080, ClassName, "3£Windows — iPhone trackpad", 0x80800000,
-            point.X, point.Y, 300, 400, IntPtr.Zero, IntPtr.Zero, wc.Instance, IntPtr.Zero);
+        window = CreateWindowEx(0x00000080, ClassName, "3£ Phone Bar", 0x80000000,
+            point.X, point.Y, 208, 240, IntPtr.Zero, IntPtr.Zero, wc.Instance, IntPtr.Zero);
         if (window == IntPtr.Zero) throw new Win32Exception(Marshal.GetLastWin32Error());
-        title = Child("STATIC", "iPhone trackpad", 0, 0);
-        instructions = Child("STATIC", "Scan on iPhone; open in Safari.\r\nEmail the same link to your watch.", 0, 0);
-        status = Child("STATIC", "", 0, 0);
-        stop = Child("BUTTON", "Stop trackpad", 0x00010000, 1);
-        close = Child("BUTTON", "Close", 0x00010000, 2);
+        int corners = 3; // Small native rounded corners on Windows 11; older Windows ignores this.
+        DwmSetWindowAttribute(window, 33, ref corners, sizeof(int));
     }
-
-    private IntPtr Child(string kind, string text, uint style, int id) =>
-        CreateWindowEx(0, kind, text, 0x50000000 | style, 0, 0, 0, 0, window, new IntPtr(id), GetModuleHandle(null), IntPtr.Zero);
 
     private void Refresh() {
         displayedLink = receiver.PairingUrl;
-        qr?.Dispose(); qr = null;
-        if (displayedLink != null) {
-            using var data = QRCodeGenerator.GenerateQrCode(displayedLink, QRCodeGenerator.ECCLevel.M);
-            using var code = new QRCode(data);
-            qr = code.GetGraphic(Math.Max(3, Px(216) / data.ModuleMatrix.Count), Color.Black, Color.White, true);
-        }
-        width = Px(300); height = Px(qr == null ? 230 : 408); qrTop = Px(88);
-        var oldFont = font; var oldHeading = headingFont;
-        font = CreateFont(-Px(13), 0, 0, 0, 400, 0, 0, 0, 1, 0, 0, 5, 0, "Segoe UI");
-        headingFont = CreateFont(-Px(18), 0, 0, 0, 600, 0, 0, 0, 1, 0, 0, 5, 0, "Segoe UI");
-        foreach (var control in new[] { instructions, status, stop, close }) SendMessage(control, 0x0030, font, new IntPtr(1));
-        SendMessage(title, 0x0030, headingFont, new IntPtr(1));
-        if (oldFont != IntPtr.Zero) DeleteObject(oldFont);
-        if (oldHeading != IntPtr.Zero) DeleteObject(oldHeading);
-        Place(title, 18, 14, 264, 28);
-        Place(instructions, 18, 47, 264, 40);
-        Place(status, 18, qr == null ? 98 : 310, 264, 52);
-        Place(stop, 18, qr == null ? 184 : 362, 144, 30);
-        Place(close, 172, qr == null ? 184 : 362, 110, 30);
-        EnableWindow(stop, receiver.Running);
-        SetWindowText(status, receiver.Status);
+        displayedStatus = receiver.Status;
+        var next = RenderCard(displayedLink, displayedStatus, scale);
+        card?.Dispose(); card = next;
+        width = card.Width; height = card.Height;
         SetWindowPos(window, IntPtr.Zero, 0, 0, width, height, 0x0006);
-        InvalidateRect(window, IntPtr.Zero, true);
+        InvalidateRect(window, IntPtr.Zero, false);
     }
 
-    private void Place(IntPtr handle, int x, int y, int w, int h) => MoveWindow(handle, Px(x), Px(y), Px(w), Px(h), true);
+    // Render once per link/DPI change. Integer-sized QR modules retain their quiet zone.
+    internal static Bitmap RenderCard(string link, string unavailable, float scale) {
+        int Px(int value) => (int)Math.Round(value * scale);
+        Bitmap qr = null;
+        if (link != null) {
+            using var data = QRCodeGenerator.GenerateQrCode(link, QRCodeGenerator.ECCLevel.M);
+            using var code = new QRCode(data);
+            qr = code.GetGraphic(Math.Max(3, Px(184) / data.ModuleMatrix.Count), Color.Black, Color.White, true);
+        }
+        using (qr) {
+            int width = Math.Max(Px(192), (qr?.Width ?? 0) + Px(20));
+            int height = qr == null ? Px(112) : qr.Height + Px(44);
+            var bitmap = new Bitmap(width, height);
+            using var graphics = Graphics.FromImage(bitmap);
+            graphics.Clear(Color.White);
+            using var border = new Pen(Color.FromArgb(226, 230, 232));
+            graphics.DrawRectangle(border, 0, 0, width - 1, height - 1);
+            if (qr != null) graphics.DrawImageUnscaled(qr, (width - qr.Width) / 2, Px(10));
+            graphics.TextRenderingHint = System.Drawing.Text.TextRenderingHint.AntiAliasGridFit;
+            using var font = new Font("Segoe UI", 11 * scale, FontStyle.Regular, GraphicsUnit.Pixel);
+            using var ink = new SolidBrush(Color.FromArgb(74, 84, 92));
+            using var format = new StringFormat { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Center };
+            graphics.DrawString("3£ Phone Bar", font, ink, new RectangleF(0, qr == null ? Px(10) : qr.Height + Px(10), width, Px(26)), format);
+            if (qr == null) graphics.DrawString(unavailable, font, ink, new RectangleF(Px(14), Px(40), width - Px(28), height - Px(48)), format);
+            return bitmap;
+        }
+    }
+
     private void Hide() {
         visible = false;
         KillTimer(window, new UIntPtr(1));
@@ -100,21 +104,21 @@ public sealed class PhoneTrackpadPopup : IDisposable {
                 case 0x0006: if ((wParam.ToInt64() & 0xffff) == 0 && visible) Hide(); break;
                 case 0x0010: Hide(); return IntPtr.Zero;
                 case 0x0100: if (wParam.ToInt32() == 27) { Hide(); return IntPtr.Zero; } break;
-                case 0x0111:
-                    int id = (int)(wParam.ToInt64() & 0xffff);
-                    if (id == 1) { receiver.Stop(); Hide(); return IntPtr.Zero; }
-                    if (id == 2) { Hide(); return IntPtr.Zero; }
-                    break;
                 case 0x0113:
-                    if (displayedLink != receiver.PairingUrl) Refresh();
-                    else SetWindowText(status, receiver.Status);
+                    if (displayedLink != receiver.PairingUrl || displayedLink == null && displayedStatus != receiver.Status) Refresh();
+                    return IntPtr.Zero;
+                case 0x02E0:
+                    scale = Math.Max(1, (wParam.ToInt64() & 0xffff) / 96f);
+                    Refresh();
+                    var bounds = Marshal.PtrToStructure<Rect>(lParam);
+                    SetWindowPos(hwnd, IntPtr.Zero, bounds.Left, bounds.Top, width, height, 0x0004);
                     return IntPtr.Zero;
                 case 0x000F:
                     var dc = BeginPaint(hwnd, out var paint);
                     try {
                         using var graphics = Graphics.FromHdc(dc);
-                        graphics.Clear(Color.White);
-                        if (qr != null) graphics.DrawImageUnscaled(qr, (width - qr.Width) / 2, qrTop);
+                        if (card != null) graphics.DrawImageUnscaled(card, 0, 0);
+                        else graphics.Clear(Color.White);
                     } finally { EndPaint(hwnd, ref paint); }
                     return IntPtr.Zero;
             }
@@ -124,9 +128,7 @@ public sealed class PhoneTrackpadPopup : IDisposable {
 
     public void Dispose() {
         if (window != IntPtr.Zero) { Hide(); DestroyWindow(window); window = IntPtr.Zero; }
-        qr?.Dispose(); qr = null;
-        if (font != IntPtr.Zero) { DeleteObject(font); font = IntPtr.Zero; }
-        if (headingFont != IntPtr.Zero) { DeleteObject(headingFont); headingFont = IntPtr.Zero; }
+        card?.Dispose(); card = null;
         UnregisterClass(ClassName, GetModuleHandle(null));
     }
 
@@ -153,19 +155,14 @@ public sealed class PhoneTrackpadPopup : IDisposable {
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] private static extern bool GetMonitorInfo(IntPtr monitor, ref MonitorInfo info);
     [DllImport("user32.dll")] private static extern uint GetDpiForWindow(IntPtr hwnd);
     [DllImport("user32.dll")] private static extern bool SetWindowPos(IntPtr hwnd, IntPtr after, int x, int y, int w, int h, uint flags);
-    [DllImport("user32.dll")] private static extern bool MoveWindow(IntPtr hwnd, int x, int y, int w, int h, bool repaint);
     [DllImport("user32.dll")] private static extern bool SetForegroundWindow(IntPtr hwnd);
     [DllImport("user32.dll")] private static extern IntPtr SetFocus(IntPtr hwnd);
     [DllImport("user32.dll")] private static extern bool ShowWindow(IntPtr hwnd, int cmd);
     [DllImport("user32.dll")] private static extern IntPtr LoadCursor(IntPtr instance, IntPtr name);
-    [DllImport("user32.dll")] private static extern IntPtr SendMessage(IntPtr hwnd, uint message, IntPtr w, IntPtr l);
-    [DllImport("user32.dll", CharSet = CharSet.Unicode)] private static extern bool SetWindowText(IntPtr hwnd, string text);
-    [DllImport("user32.dll")] private static extern bool EnableWindow(IntPtr hwnd, bool enable);
     [DllImport("user32.dll")] private static extern UIntPtr SetTimer(IntPtr hwnd, UIntPtr id, uint ms, IntPtr callback);
     [DllImport("user32.dll")] private static extern bool KillTimer(IntPtr hwnd, UIntPtr id);
     [DllImport("user32.dll")] private static extern IntPtr BeginPaint(IntPtr hwnd, out PaintStruct paint);
     [DllImport("user32.dll")] private static extern bool EndPaint(IntPtr hwnd, ref PaintStruct paint);
     [DllImport("user32.dll")] private static extern bool InvalidateRect(IntPtr hwnd, IntPtr rect, bool erase);
-    [DllImport("gdi32.dll", CharSet = CharSet.Unicode)] private static extern IntPtr CreateFont(int height, int width, int angle, int orientation, int weight, uint italic, uint underline, uint strike, uint charset, uint outPrecision, uint clipPrecision, uint quality, uint pitch, string face);
-    [DllImport("gdi32.dll")] private static extern bool DeleteObject(IntPtr obj);
+    [DllImport("dwmapi.dll")] private static extern int DwmSetWindowAttribute(IntPtr hwnd, int attribute, ref int value, int size);
 }

@@ -7,8 +7,8 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="theme-color" content="#111820">
 <meta name="disabled-adaptations" content="watch">
-<meta property="og:title" content="3£ Phone Trackpad & MIDI">
-<title>3£ Trackpad</title>
+<meta property="og:title" content="3£ Phone Bar">
+<title>3£ Phone Bar</title>
 <style>
 :root{color-scheme:dark;font-family:system-ui,-apple-system,"Segoe UI",sans-serif;background:#111820;color:#eef5fa}
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
@@ -41,14 +41,14 @@ button:active,button[aria-pressed=true]{background:#a8e5cd;color:#0e2420}button:
 <p>For tongue or one-contact use: swipe to move, tap to click, hold still briefly to right-click. Tap then touch again to drag; a brief contact break lets you keep dragging. Works upright or sideways.</p>
 <div class="row"><button id="connect">Connect</button><button id="fullscreen">Full screen</button></div>
 <p id="fullscreenHelp">On iPhone: Share → Add to Home Screen → Open as Web App to hide Safari’s bars. The watch’s browser controls are managed by watchOS.</p>
-<ul><li>Tap to click; two-finger tap to right-click.</li><li>Tap, then touch again and move to drag. Lift to drop.</li><li>Two fingers scroll; three fingers drag.</li><li>Four fingers left/right change desktops. Up opens all windows; down opens the desktop (Mac: app windows).</li><li>Hold Apps and slide left/right to choose an app. Lift to switch.</li><li>Tap Media to play/pause; swipe for tracks; hold to open the MIDI studio.</li></ul>
+<ul><li>Tap to click; two-finger tap to right-click.</li><li>Tap, then touch again and move to drag. Lift to drop.</li><li>Two fingers scroll; three fingers drag.</li><li>Four fingers left/right change desktops. Up opens all windows; down opens the desktop (Mac: app windows).</li><li>Hold Apps and slide left/right to choose an app. Lift to switch.</li><li>Tap Media to play/pause; swipe for tracks; hold to open the Phone Bar MIDI controls.</li></ul>
 <details class="watch-only"><summary>Arrow controls</summary><div class="directions"><button id="stepUp" aria-label="Move up" disabled>↑</button><span></span><button id="stepLeft" aria-label="Move left" disabled>←</button><span></span><button id="stepRight" aria-label="Move right" disabled>→</button><button id="stepDown" aria-label="Move down" disabled>↓</button></div><p>Tap the pad to click. Arrows follow the current Move or Scroll mode.</p></details>
 <p>The same link works on iPhone and Apple Watch. It reconnects automatically after sleep or a brief interruption. Pause the connection here before switching devices. A new QR link is needed only if the laptop receiver restarts or changes networks.</p>
 </section>
 <noscript>This trackpad needs JavaScript and the full web page view.</noscript>
-<section id="studio" hidden aria-label="MIDI studio"></section>
-<script src="/host.js"></script>
-<script src="/pad.js"></script>
-<script src="/surface.js"></script>
+<section id="studio" hidden aria-label="Phone Bar MIDI controls"></section>
+<script defer src="/host.js"></script>
+<script defer src="/pad.js"></script>
+<script defer src="/surface.js"></script>
 </body>
 </html>

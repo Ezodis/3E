@@ -54,7 +54,7 @@
     NSError *error=nil;if(![launch launchAndReturnError:&error]){self.task=nil;[self message:error.localizedDescription];}
 }
 - (void)showQR {
-    [self.window close];self.window=[[NSWindow alloc] initWithContentRect:NSMakeRect(0,0,300,390) styleMask:NSWindowStyleMaskTitled|NSWindowStyleMaskClosable backing:NSBackingStoreBuffered defer:NO];self.window.title=@"3£ Phone · Trackpad & MIDI";self.window.releasedWhenClosed=NO;
+    [self.window close];self.window=[[NSWindow alloc] initWithContentRect:NSMakeRect(0,0,300,390) styleMask:NSWindowStyleMaskTitled|NSWindowStyleMaskClosable backing:NSBackingStoreBuffered defer:NO];self.window.title=@"3£ Phone Bar";self.window.releasedWhenClosed=NO;
     CIFilter *filter=[CIFilter filterWithName:@"CIQRCodeGenerator"];[filter setValue:[self.url dataUsingEncoding:NSUTF8StringEncoding] forKey:@"inputMessage"];[filter setValue:@"M" forKey:@"inputCorrectionLevel"];
     CIImage *qr=filter.outputImage;CIContext *context=[CIContext contextWithOptions:nil];CGImageRef pixels=[context createCGImage:qr fromRect:qr.extent];
     NSImageView *view=[[NSImageView alloc] initWithFrame:NSMakeRect(35,110,230,230)];view.image=[[NSImage alloc] initWithCGImage:pixels size:NSMakeSize(230,230)];CGImageRelease(pixels);view.imageScaling=NSImageScaleProportionallyUpOrDown;[self.window.contentView addSubview:view];
