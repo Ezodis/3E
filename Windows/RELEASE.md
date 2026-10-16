@@ -1,4 +1,10 @@
-3£Windows 1.0.21 fixes the tray menu.
+3£Windows 1.0.22 adds vertical swipes to the phone's Apps button.
+
+- **Swipe Apps up** to show all windows (Windows Task View; Mac Mission Control).
+- **Swipe Apps down** to show the desktop.
+- Left/right swipes, hold for the app switcher and tap for the previous app are unchanged.
+
+Includes everything from 1.0.21:
 
 - **Tray menu items work again:** the right-click menu is shown as a native popup, which runs each item's command and never its click handler. Every hub item (Check for updates, Stop Phone Bar, theme and keyboard toggles, Restart input engines, Quit…) was wired to the click handler, so clicking did nothing. Items now use commands, and toggles update their own check state.
 - **Update dialogs come to the front:** "Check for updates" results and the install prompt open in the foreground instead of behind other windows.

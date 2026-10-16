@@ -7,6 +7,7 @@
   const icons={
     apps:svg('<rect x="1" y="1" width="30" height="30" rx="8" fill="#e8e9ed"/>'+['#ff605b','#ffbe43','#73c95d','#5fbcd9','#5689ef','#9975df','#ed7fab','#7fc7a0','#6c96d6'].map((color,i)=>`<rect x="${6+i%3*7.5}" y="${6+Math.floor(i/3)*7.5}" width="5" height="5" rx="1.4" fill="${color}"/>`).join('')),
     windows:svg('<rect x="3" y="5" width="18" height="15" rx="2" fill="none" stroke="currentColor" stroke-width="2"/><rect x="11" y="12" width="18" height="15" rx="2" fill="currentColor"/>'),
+    desktop:svg('<rect x="3" y="5" width="26" height="18" rx="2" fill="none" stroke="currentColor" stroke-width="2"/><path d="M12 27h8M16 23v4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>'),
     left:svg('<path d="M20 7 11 16l9 9" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>'),
     right:svg('<path d="m12 7 9 9-9 9" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>'),
     previous:svg('<path d="M6 6h3v20H6zm20 0L11 16l15 10z" fill="currentColor"/>'),
@@ -132,6 +133,11 @@
       else if(a.volumeLevel===null&&volume.available){a.volumeY=e.clientY;a.volumeLevel=+volumeSlider.value;}
       else if(a.volumeLevel!==null)changeVolume(a.volumeLevel+(a.volumeY-e.clientY)*100/Math.max(70,volumeSlider.getBoundingClientRect().height));
       return;
+    }
+    // Apps: swipe up shows all windows (Task View / Mission Control), swipe
+    // down shows the desktop. Fires once per contact, before lifting.
+    if(a.kind==='apps'&&a.axis==='vertical'&&!a.held&&!a.vertical&&Math.abs(dy)>=36){
+      a.vertical=true;C.send(dy<0?'taskView':'showDesktop');paint('apps',dy<0?'windows':'desktop');return;
     }
     if(a.axis!=='horizontal')return;
     if(a.kind==='media'){if(Math.abs(dx)>=24)paint('media',dx<0?'previous':'next');else paint('media');return;}
