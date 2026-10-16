@@ -10,8 +10,12 @@
   document.documentElement.classList.toggle('watch', watchMode);
   // One-contact controls are always on: generous tap/second-tap windows,
   // hold still to right-click, and contact-break tolerant dragging.
-  let scrollMode = false, holdTimer, releaseTimer, pressTimer;
-  const TAP_TOLERANCE = 14, TAP_TIME = 750, SECOND_TAP = 650, HOLD_RIGHT_CLICK = 800;
+  let scrollMode = false, holdTimer, releaseTimer, pressTimer, dragArmed = false;
+  // Double-tap-and-drag must be deliberate: tap, touch again within
+  // SECOND_TAP near the same spot, hold still for DRAG_ARM ("Drag ready"),
+  // then move. Moving straight after a tap is always a plain pointer move,
+  // so it can never press the button (closing menus or picking windows).
+  const TAP_TOLERANCE = 14, TAP_TIME = 750, SECOND_TAP = 350, SECOND_TAP_DISTANCE = 40, DRAG_ARM = 250, HOLD_RIGHT_CLICK = 800;
   function hint() { $('padHint').textContent = scrollMode ? 'Swipe to scroll' : 'Swipe to move · tap to click'; }
   hint();
   let socket, ready = false, heartbeat, dragging = false, threeDrag = false;
@@ -29,7 +33,9 @@
   const showSpeed = () => { $('speedValue').textContent = Number(speed.value).toFixed(1) + '×'; };
   speed.addEventListener('input', () => { showSpeed(); try { localStorage.setItem('3e-speed', speed.value); } catch {} });
   showSpeed();
+  const OVERVIEW_ENDING = new Set(['left','right','down','dragStart','appsBegin','navigate','desktop','shortcut']);
   function send(type, data = {}) {
+    if (OVERVIEW_ENDING.has(type)) window.ThreeEDock?.overviewEnded?.();
     if (ready && httpClient) {
       const previous = httpQueue[httpQueue.length-1];
       // Combine only adjacent motion: clicks and button edges remain ordered.
@@ -62,7 +68,7 @@
     lastTap = null; tapCandidate = tapDrag = fourDone = false; gestureOrigin = fourOrigin = null;
     dx = dy = sx = sy = 0;
     clearInterval(heartbeat);
-    clearTimeout(holdTimer); clearTimeout(pressTimer); clearTimeout(releaseTimer); releaseTimer=null; httpQueue = []; pendingTap = null;
+    clearTimeout(holdTimer); clearTimeout(pressTimer); clearTimeout(releaseTimer); releaseTimer=null; httpQueue = []; pendingTap = null; dragArmed = false;
     buttons.forEach(b => b.disabled = true); window.ThreeEDock?.commands(false);
     pad.classList.remove('live', 'dragging');
     hint(); window.ThreeESurface?.state(false);
@@ -175,14 +181,17 @@
     if (!mode) {
       started = performance.now(); distance = 0; peak = 0; cancelled = false;
       gestureOrigin = point; fourOrigin = null; fourDone = false;
-      tapCandidate = count === 1 && !dragging && !scrollMode && lastTap && started - lastTap.time < SECOND_TAP && Math.hypot(point.x-lastTap.x,point.y-lastTap.y) < 80;
+      tapCandidate = count === 1 && !dragging && !scrollMode && lastTap && started - lastTap.time < SECOND_TAP && Math.hypot(point.x-lastTap.x,point.y-lastTap.y) < SECOND_TAP_DISTANCE;
       lastTap = null;
       // Second contact: lifting without moving is a double-click; moving past
       // the tap tolerance or holding still starts a drag.
-      if (tapCandidate) pressTimer = setTimeout(() => { if (tapCandidate && mode === 1) startTapDrag(0,0); }, 300);
+      if (tapCandidate) pressTimer = setTimeout(() => {
+        if (!tapCandidate || mode !== 1 || distance >= TAP_TOLERANCE) return;
+        dragArmed = true; pad.classList.add('dragging'); $('padHint').textContent = 'Drag ready · move to drag';
+      }, DRAG_ARM);
     }
     if (count > 1) {
-      if (tapCandidate) { clearTimeout(pressTimer); cancelled = true; }
+      if (tapCandidate) { clearTimeout(pressTimer); disarm(); cancelled = true; }
       tapCandidate = false; if (tapDrag) { drag(false); tapDrag = false; cancelled=true; }
     }
     mode = count; peak = Math.max(peak, count); last = point;
@@ -222,9 +231,10 @@
         drag(true); threeDrag = dragging;
       }
       if (tapCandidate) {
-        if (distance < tapTolerance()) { last = point; return; }
+        if (distance < (dragArmed ? 3 : tapTolerance())) { last = point; return; }
         x = point.x-gestureOrigin.x; y = point.y-gestureOrigin.y;
-        startTapDrag(x,y);
+        if (dragArmed) startTapDrag(x,y);
+        else { clearTimeout(pressTimer); tapCandidate = false; } // just moving: never press
       }
       const limited = n => Math.max(-8000,Math.min(8000,n));
       if ((mode === 2 || scrollMode) && !dragging) { sx = limited(sx+x*3); sy = limited(sy-y*3); }
@@ -234,8 +244,9 @@
     flush(); // First movement goes immediately; subsequent samples are capped at 125 Hz.
   }, { passive: false });
   const tapTolerance = () => TAP_TOLERANCE;
+  function disarm() { dragArmed = false; if (!dragging) { pad.classList.remove('dragging'); hint(); } }
   function startTapDrag(x, y) {
-    clearTimeout(pressTimer); tapCandidate = false;
+    clearTimeout(pressTimer); tapCandidate = false; dragArmed = false;
     // Only the dominant direction is sent; the host nudges the press just
     // outside its double-click area in that direction.
     const horizontal = Math.abs(x) >= Math.abs(y);
@@ -272,7 +283,10 @@
     if (threeDrag && e.touches.length < 3) { drag(false); threeDrag = false; cancelled = true; }
     if (tapCandidate && !e.touches.length) {
       // Tap, tap: a native double-click (two clicks at the same spot).
-      clearTimeout(pressTimer); tapCandidate = false; send('left'); cancelled = true;
+      // An armed drag that never moved is cancelled without clicking.
+      clearTimeout(pressTimer); tapCandidate = false;
+      if (!dragArmed) send('left');
+      disarm(); cancelled = true;
     }
     if (tapDrag && !e.touches.length) {
       if(distance>=2) releaseTimer=setTimeout(()=>{drag(false);tapDrag=false;releaseTimer=null;},120);
@@ -330,7 +344,7 @@
   });
   function releaseControls() {
     clearTimeout(holdTimer); clearTimeout(pressTimer); clearTimeout(releaseTimer); releaseTimer=null;
-    dx=dy=sx=sy=0; drag(false); send('releaseAll');
+    dx=dy=sx=sy=0; drag(false); dragArmed=false; send('releaseAll'); pad.classList.remove('dragging'); hint();
     threeDrag=tapDrag=tapCandidate=false; mode=peak=0; last=lastTap=null; cancelled=true;
     window.ThreeESurface?.cancel();
   }
