@@ -214,17 +214,34 @@ public sealed class WindowsHub : IDisposable {
         ssmsRotationPeriod = period;
     }
 
-    private void Item(string label, Action click) {
-        var item = new MenuFlyoutItem { Text = label };
-        item.Click += (_, _) => { try { click(); } catch (Exception ex) { Log(ex); MessageBox(IntPtr.Zero, ex.Message, "3£Windows", 0x10); } };
-        menu.Items.Add(item);
+    // The tray shows these flyouts in H.NotifyIcon's default PopupMenu mode,
+    // which runs each item's Command and never raises Click. Items therefore
+    // use commands; toggles flip their own state because the native popup
+    // does not update IsChecked.
+    private sealed class MenuCommand : System.Windows.Input.ICommand {
+        private readonly Action action;
+        public MenuCommand(Action action) => this.action = action;
+        public event EventHandler CanExecuteChanged { add { } remove { } }
+        public bool CanExecute(object parameter) => true;
+        public void Execute(object parameter) => action();
     }
 
-    private void Toggle(string label, bool value, Action<bool> change) {
+    private MenuFlyoutItem ActionMenuItem(string label, Action click) => new() {
+        Text = label,
+        Command = new MenuCommand(() => { try { click(); } catch (Exception ex) { Log(ex); MessageBox(IntPtr.Zero, ex.Message, "3£Windows", 0x10); } })
+    };
+
+    private ToggleMenuFlyoutItem ToggleMenuItem(string label, bool value, Action<bool> change) {
         var item = new ToggleMenuFlyoutItem { Text = label, IsChecked = value };
-        item.Click += (_, _) => { try { change(item.IsChecked); Save(); } catch (Exception ex) { Log(ex); } };
-        menu.Items.Add(item);
+        item.Command = new MenuCommand(() => {
+            try { value = !value; item.IsChecked = value; change(value); Save(); } catch (Exception ex) { Log(ex); }
+        });
+        return item;
     }
+
+    private void Item(string label, Action click) => menu.Items.Add(ActionMenuItem(label, click));
+
+    private void Toggle(string label, bool value, Action<bool> change) => menu.Items.Add(ToggleMenuItem(label, value, change));
 
     public void RefreshControls() => RefreshMenu();
 
@@ -274,18 +291,8 @@ public sealed class WindowsHub : IDisposable {
     public MenuFlyout CreateLauncher(Action showAllControls) {
         var launcher = new MenuFlyout();
         launcher.Items.Add(new MenuFlyoutItem { Text = "3£Windows — choose controls", IsEnabled = false });
-        MenuFlyoutItem ActionItem(string text, Action action) {
-            var item = new MenuFlyoutItem { Text = text };
-            item.Click += (_, _) => {
-                try { action(); } catch (Exception ex) { Log(ex); MessageBox(IntPtr.Zero, ex.Message, "3£Windows", 0x10); }
-            };
-            return item;
-        }
-        ToggleMenuFlyoutItem Switch(string text, bool value, Action<bool> change) {
-            var item = new ToggleMenuFlyoutItem { Text = text, IsChecked = value };
-            item.Click += (_, _) => { try { change(item.IsChecked); Save(); } catch (Exception ex) { Log(ex); } };
-            return item;
-        }
+        MenuFlyoutItem ActionItem(string text, Action action) => ActionMenuItem(text, action);
+        ToggleMenuFlyoutItem Switch(string text, bool value, Action<bool> change) => ToggleMenuItem(text, value, change);
         void OpenPowerToys() => Start(Path.Combine(Path.GetDirectoryName(PowerToysPath), "WinUI3Apps", "PowerToys.Settings.exe"), "", true);
         launcher.Items.Add(ActionItem("Drag settings…", () => App.Instance.OpenSettingsWindow()));
         launcher.Items.Add(ActionItem("Phone Bar…", OpenPhoneTrackpad));
@@ -313,6 +320,8 @@ public sealed class WindowsHub : IDisposable {
     // Windows has its own release prefix; /latest could select a macOS release.
     public static Version WindowsReleaseVersion(string tag) => tag?.StartsWith("windows-v", StringComparison.Ordinal) == true && System.Version.TryParse(tag[9..], out var version) ? version : null;
 
+    // MB_SETFOREGROUND | MB_TOPMOST: a tray app's dialogs must not open behind other windows.
+    private const uint ForegroundDialog = 0x10000 | 0x40000;
     public async Task CheckUpdatesAsync(bool interactive) {
         try {
             JsonElement? newest = null;
@@ -332,15 +341,15 @@ public sealed class WindowsHub : IDisposable {
             Save();
             updateTag = newest?.GetProperty("tag_name").GetString();
             if (!interactive) { RefreshMenu(); return; }
-            if (newest == null) { MessageBox(IntPtr.Zero, "3£Windows " + Version + " is up to date.", "3£Windows", 0x40); return; }
-            if (MessageBox(IntPtr.Zero, "Install 3£Windows " + newestVersion + "?\n\nThe portable installer will be downloaded, its SHA-256 checksum verified, and Windows will request administrator approval.", "3£Windows update", 0x24) != 6) return;
+            if (newest == null) { MessageBox(IntPtr.Zero, "3£Windows " + Version + " is up to date.", "3£Windows", 0x40 | ForegroundDialog); return; }
+            if (MessageBox(IntPtr.Zero, "Install 3£Windows " + newestVersion + "?\n\nThe portable installer will be downloaded, its SHA-256 checksum verified, and Windows will request administrator approval.", "3£Windows update", 0x24 | ForegroundDialog) != 6) return;
             await InstallUpdateAsync(newest.Value);
         } catch (Exception ex) {
             Log(ex);
             // Throttle failures too, so an offline device never polls every 20 seconds.
             settings.LastUpdateCheckUtc = DateTime.UtcNow;
             Save();
-            if (interactive) MessageBox(IntPtr.Zero, "Could not check or install the update.\n\n" + ex.Message, "3£Windows", 0x10);
+            if (interactive) MessageBox(IntPtr.Zero, "Could not check or install the update.\n\n" + ex.Message, "3£Windows", 0x10 | ForegroundDialog);
         }
     }
 
