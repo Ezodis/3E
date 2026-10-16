@@ -1,4 +1,10 @@
-3£Windows 1.0.26 makes the phone feel like a real laptop trackpad.
+3£Windows 1.0.27 updates itself.
+
+- **Automatic updates:** 3£Windows checks for a new release every 10 minutes and installs it silently once the computer has been idle for 90 seconds, so it never restarts while you are using it. No prompt is needed because the app already runs with administrator rights; the installer is still verified against the release's SHA-256 checksum.
+- If a release fails to install twice, it is left for a manual "Check for updates".
+- Turn it off with "Install updates automatically" in the tray menu.
+
+Includes everything from 1.0.26:
 
 - **Two-finger swipe for Back/Forward:** a quick sideways two-finger swipe goes back (fingers right) or forward (fingers left) in Chrome, Edge, Firefox and File Explorer. A slower sideways slide scrolls horizontally instead.
 - **Smoother scrolling:** two-finger scrolls lock to their direction (small drift is ignored) and keep gliding after you lift; touching the pad stops the glide. The finger left behind after a two-finger gesture no longer jumps the pointer.
