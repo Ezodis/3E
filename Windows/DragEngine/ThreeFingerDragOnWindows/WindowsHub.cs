@@ -1,4 +1,4 @@
-using ThreeE.PhoneControl;
+using ThreeE.PhoneBar.Windows;
 using System;
 using System.Diagnostics;
 using System.IO;
@@ -19,14 +19,13 @@ namespace ThreeFingerDragOnWindows;
 
 // The drag engine and the hub share this process and its single notification icon.
 public sealed class WindowsHub : IDisposable {
-    public const string Version = "1.0.15";
+    public const string Version = "1.0.16";
     private const string ReleasesUrl = "https://api.github.com/repos/Ezodis/3E/releases";
     private readonly string root = AppContext.BaseDirectory;
     private readonly string data = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "3EWindows");
     private readonly DispatcherTimer timer = new() { Interval = TimeSpan.FromSeconds(20) };
     private readonly MenuFlyout menu;
-    private readonly PhoneTrackpad phoneTrackpad = new(PhoneTrackpad.GetLocalAddress, new NativeTrackpadInput(), new TrackpadFirewall(), PhoneTrackpad.Port);
-    private PhoneTrackpadPopup phonePopup;
+    private readonly PhoneBarModule phoneBar = new();
     private HubSettings settings;
     private bool busy, disposed;
     private int lastTheme = -1;
@@ -167,14 +166,14 @@ public sealed class WindowsHub : IDisposable {
             File.WriteAllText(Path.Combine(data, "status.json"), JsonSerializer.Serialize(new {
                 version = Version, timestampUtc = DateTime.UtcNow,
                 trayIconForeground = handler.TrayIconForeground,
-                trayLeftClick = "iPhone trackpad QR popup", trayRightClick = "all controls and iPhone QR",
+                trayLeftClick = "Phone Bar QR popup", trayRightClick = "all controls and Phone Bar QR",
                 ssmsThemeSync = settings.SsmsTheme, ssmsThemeProfiles,
                 ssmsThemes = SsmsTheme.CurrentThemeNames,
                 touchpadDetected = handler.TouchpadExists, inputReceiverInstalled = handler.InputReceiverInstalled,
                 keyboardInstalled = File.Exists(KeyboardPath), keyboardRunning = IsRunning("3EWindows.Keyboard"),
                 powerToysRunning = IsRunning("PowerToys"), shortcutsRunning = IsRunning("PowerToys.KeyboardManagerEngine"),
                 wallpaperRunning = IsRunning("WinDynamicDesktop"), autoDark = settings.AutoDark,
-                phoneTrackpadRunning = phoneTrackpad.Running, phoneTrackpadStatus = phoneTrackpad.Status,
+                phoneTrackpadRunning = phoneBar.Running, phoneTrackpadStatus = phoneBar.Status,
                 menu = menu.Items.Select(item => item switch {
                     ToggleMenuFlyoutItem toggle => toggle.Text,
                     MenuFlyoutItem command => command.Text,
@@ -231,9 +230,7 @@ public sealed class WindowsHub : IDisposable {
 
     public void OpenPhoneTrackpad() {
         try {
-            phoneTrackpad.Start();
-            phonePopup ??= new PhoneTrackpadPopup(phoneTrackpad);
-            phonePopup.Show();
+            phoneBar.Show();
             WriteDiagnostics();
         } catch (Exception ex) { Log(ex); }
     }
@@ -244,7 +241,7 @@ public sealed class WindowsHub : IDisposable {
         Toggle("Three-finger drag", App.SettingsData.ThreeFingerDrag, enabled => { App.SettingsData.ThreeFingerDrag = enabled; App.SettingsData.save(); });
         Item("Drag settings…", () => App.Instance.OpenSettingsWindow());
         Item("3£ Phone Bar — show QR…", OpenPhoneTrackpad);
-        if (phoneTrackpad.Running) Item("Stop Phone Bar", () => phoneTrackpad.Stop());
+        if (phoneBar.Running) Item("Stop Phone Bar", () => phoneBar.Stop());
         Toggle(File.Exists(KeyboardPath) ? "Clicks keyboard — " + (IsRunning("3EWindows.Keyboard") ? "running" : "stopped") : "Clicks keyboard — connect and run setup", settings.Keyboard, enabled => {
             settings.Keyboard = enabled;
             if (enabled) _ = EnsureComponentsAsync(); else StopKeyboard();
@@ -402,8 +399,7 @@ public sealed class WindowsHub : IDisposable {
     public void Dispose() {
         disposed = true;
         timer.Stop();
-        phonePopup?.Dispose();
-        phoneTrackpad.Dispose();
+        phoneBar.Dispose();
         Save();
         StopKeyboard(); Stop("PowerToys"); Stop("PowerToys.KeyboardManagerEngine"); Stop("WinDynamicDesktop");
     }

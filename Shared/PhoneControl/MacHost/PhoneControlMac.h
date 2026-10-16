@@ -12,6 +12,7 @@
 @property NSWindow *window;
 @property(copy) void (^media)(int);
 - (void)show;
+- (void)copyLink:(id)sender;
 - (void)stop;
 @end
 @implementation ThreeEPhoneController
@@ -22,6 +23,7 @@
     @try{[self.input.fileHandleForWriting writeData:[[line stringByAppendingString:@"\n"] dataUsingEncoding:NSUTF8StringEncoding]];}@catch(NSException *e){[self message:@"The phone receiver stopped. Open it again to reconnect."];}
 }
 - (void)show {
+    if (@available(macOS 14.0,*)) {} else { [self message:@"Phone Bar requires macOS 14 or later. Other 3£ modules remain available."]; return; }
     if(self.task.running){[self send:@"START"];return;}
     AXIsProcessTrustedWithOptions((__bridge CFDictionaryRef)@{(__bridge NSString *)kAXTrustedCheckOptionPrompt:@YES});
 #if defined(__arm64__)
@@ -54,17 +56,13 @@
     NSError *error=nil;if(![launch launchAndReturnError:&error]){self.task=nil;[self message:error.localizedDescription];}
 }
 - (void)showQR {
-    [self.window close];self.window=[[NSWindow alloc] initWithContentRect:NSMakeRect(0,0,300,390) styleMask:NSWindowStyleMaskTitled|NSWindowStyleMaskClosable backing:NSBackingStoreBuffered defer:NO];self.window.title=@"3£ Phone Bar";self.window.releasedWhenClosed=NO;
+    [self.window close];self.window=[[NSWindow alloc] initWithContentRect:NSMakeRect(0,0,250,250) styleMask:NSWindowStyleMaskTitled|NSWindowStyleMaskClosable backing:NSBackingStoreBuffered defer:NO];self.window.title=@"3£ Phone Bar";self.window.releasedWhenClosed=NO;self.window.backgroundColor=NSColor.whiteColor;
     CIFilter *filter=[CIFilter filterWithName:@"CIQRCodeGenerator"];[filter setValue:[self.url dataUsingEncoding:NSUTF8StringEncoding] forKey:@"inputMessage"];[filter setValue:@"M" forKey:@"inputCorrectionLevel"];
     CIImage *qr=filter.outputImage;CIContext *context=[CIContext contextWithOptions:nil];CGImageRef pixels=[context createCGImage:qr fromRect:qr.extent];
-    NSImageView *view=[[NSImageView alloc] initWithFrame:NSMakeRect(35,110,230,230)];view.image=[[NSImage alloc] initWithCGImage:pixels size:NSMakeSize(230,230)];CGImageRelease(pixels);view.imageScaling=NSImageScaleProportionallyUpOrDown;[self.window.contentView addSubview:view];
-    NSTextField *label=[NSTextField wrappingLabelWithString:@"Scan with iPhone Camera on the same Wi-Fi. Hold Media for MIDI. Allow Accessibility for pointer control."];label.frame=NSMakeRect(20,50,260,55);label.alignment=NSTextAlignmentCenter;[self.window.contentView addSubview:label];
-    NSButton *copy=[NSButton buttonWithTitle:@"Copy link" target:self action:@selector(copyLink:)];copy.frame=NSMakeRect(25,12,110,30);[self.window.contentView addSubview:copy];
-    NSButton *stop=[NSButton buttonWithTitle:@"Stop receiver" target:self action:@selector(stopClick:)];stop.frame=NSMakeRect(145,12,130,30);[self.window.contentView addSubview:stop];
+    NSImageView *view=[[NSImageView alloc] initWithFrame:NSMakeRect(15,15,220,220)];view.image=[[NSImage alloc] initWithCGImage:pixels size:NSMakeSize(220,220)];CGImageRelease(pixels);view.imageScaling=NSImageScaleProportionallyUpOrDown;[self.window.contentView addSubview:view];
     [self.window center];[NSApp activateIgnoringOtherApps:YES];[self.window makeKeyAndOrderFront:nil];
 }
 - (void)copyLink:(id)sender{if(self.url){[NSPasteboard.generalPasteboard clearContents];[NSPasteboard.generalPasteboard setString:self.url forType:NSPasteboardTypeString];}}
-- (void)stopClick:(id)sender{[self stop];}
 - (void)stop {
     [self.window close];self.window=nil;self.url=nil;
     NSTask *previous=self.task;self.task=nil;previous.terminationHandler=nil;

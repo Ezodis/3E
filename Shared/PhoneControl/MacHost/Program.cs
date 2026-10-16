@@ -17,7 +17,7 @@ if(args.Contains("--midi-self-test")) {
 }
 bool test=args.Contains("--self-test");
 ITrackpadInput input=test?new NullInput():new MacInput(action=>Report(new {media=action}));
-using var receiver=new PhoneTrackpad(test?()=>IPAddress.Loopback:PhoneTrackpad.GetLocalAddress,input,new NoFirewall(),test?17834:17833);
+using var receiver=new PhoneTrackpad(()=>test ? IPAddress.Loopback : PhoneTrackpad.GetLocalAddress(),input,new NoFirewall(),test?17834:17833);
 void Announce(){Report(receiver.Running ? new {url=receiver.PairingUrl,error=(string)null} : new {url=(string)null,error=receiver.Status});}
 receiver.Start();Announce();
 if(test){if(!receiver.Running)throw new Exception(receiver.Status);using var http=new HttpClient();var html=await http.GetStringAsync(receiver.PairingUrl.Split('#')[0]);if(!html.Contains("surface.js"))throw new Exception("Shared surface missing");Console.WriteLine("PASS: shared receiver and resources on this platform");return;}

@@ -15,7 +15,7 @@ using System.Threading.Tasks;
 using QRCoder;
 
 using ThreeE.PhoneControl;
-namespace ThreeFingerDragOnWindows;
+namespace ThreeE.PhoneBar.Windows;
 
 public sealed class TrackpadFirewall : ITrackpadFirewall {
     public void Open(IPAddress address, int port) {

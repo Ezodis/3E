@@ -112,13 +112,15 @@ public sealed class PhoneTrackpad : IDisposable {
         try {
             while (!owner.Cancel.IsCancellationRequested) {
                 await Task.Delay(1500, owner.Cancel.Token);
+                // Adapter enumeration can block on a driver. It must never hold
+                // the lock used for incoming pointer/keyboard/MIDI commands.
+                var address = addressProvider();
                 lock (gate) {
                     if (session != owner) return;
                     if (owner.HttpController != null && Environment.TickCount64 - owner.HttpLastSeen > 6000) {
                         ReleaseHttpLocked(owner);
                         status = "Watch asleep — reconnects when its page returns.";
                     }
-                    var address = addressProvider();
                     if (!owner.Address.Equals(address)) {
                         StopLocked("Network changed or disconnected — reconnect to Wi-Fi, then start again.");
                         return;

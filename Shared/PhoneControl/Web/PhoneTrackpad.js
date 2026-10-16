@@ -224,6 +224,10 @@
   }, { passive: false });
   function flush(all = false) {
     if (!ready) { dx = dy = sx = sy = 0; return; }
+    // Keep unsent motion coalesced here during a brief radio stall, instead of
+    // filling the socket with old positions and forcing a full reconnect.
+    // Button edges still flush immediately to preserve drag/click ordering.
+    if (!all && socket?.bufferedAmount > 512) return;
     const now = performance.now();
     if (!all && now-lastMotionSent < 8) return;
     const bounded = n => Math.max(-1000, Math.min(1000, Math.trunc(n)));
@@ -291,7 +295,12 @@
   window.addEventListener('pagehide', () => suspend('Sleeping — reconnects when you return.'));
   ['pageshow','online','focus'].forEach(event => window.addEventListener(event,wake));
   window.addEventListener('offline', () => recover('Wi-Fi unavailable — retrying…'));
-  window.addEventListener('resize', releaseControls);
+  let viewportWidth = window.innerWidth;
+  window.addEventListener('resize', () => {
+    // Safari's address bar can resize height mid-gesture. Only a layout-width
+    // change (including rotation) requires cancelling the current contact.
+    if (window.innerWidth !== viewportWidth) { viewportWidth = window.innerWidth; releaseControls(); }
+  });
   function releaseControls() {
     clearTimeout(holdTimer); clearTimeout(releaseTimer); releaseTimer=null;
     dx=dy=sx=sy=0; drag(false); send('releaseAll');

@@ -1,5 +1,6 @@
 #define STRIP3_RECORD_TESTING 1
 #import "../Source/MidiBridge.m"
+#import "../Source/BaseMenu.h"
 @interface TestStatus : NSObject
 @property NSMenu *menu;
 @end
@@ -20,7 +21,12 @@ int main(void) { @autoreleasepool {
     CleanMenu(delegate.theItem.menu);
     NSCAssert(delegate.theItem.menu.numberOfItems==3,@"Add gesture, App and phone controls to the existing menu");
     NSMenuItem *phone=delegate.theItem.menu.itemArray[2];
-    NSCAssert([phone.identifier isEqual:@"local.musicstrip.phone"] && phone.target==MusicStripMidiBridge.class && phone.action==@selector(openPhone:),@"Phone opens through the existing parent/helper pipe");
+    NSCAssert([phone.identifier isEqual:@"local.musicstrip.phone"] && [phone.title isEqual:@"Phone Bar"] && phone.submenu.numberOfItems==3,@"Phone Bar is a bundled module in the existing menu");
+    NSArray *actions=@[@"openPhone:",@"copyPhone:",@"stopPhone:"];
+    for(NSUInteger i=0;i<actions.count;i++)NSCAssert(phone.submenu.itemArray[i].target==MusicStripMidiBridge.class && phone.submenu.itemArray[i].action==NSSelectorFromString(actions[i]),@"Module controls use the existing parent/helper pipe");
+    NSMenu *base=StripBaseMenu(delegate,YES);
+    NSCAssert([base.itemArray[0].identifier isEqual:@"local.musicstrip.touchTabToggle"] && [base.itemArray[1].identifier isEqual:@"local.musicstrip.phone"],@"Base menu retains gestures and Phone Bar without Touch Bar interfaces");
+    NSCAssert(!base.itemArray[2].enabled,@"Only the unavailable Touch Bar module is disabled");
     NSMenuItem *toggle=delegate.theItem.menu.itemArray.firstObject;
     NSCAssert(toggle.target==MusicStripMidiBridge.class && toggle.action==@selector(toggleTouchTab:),@"Use the existing parent/helper pipe action");
     combinedGestureState=@"on"; CleanMenu(delegate.theItem.menu);

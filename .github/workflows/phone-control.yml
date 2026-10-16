@@ -37,7 +37,11 @@ jobs:
       - name: Build integrated Combined edition
         env:
           STRIP_SIGNING_IDENTITY: '-'
-        run: zsh TouchBar/musicstrip/Source/build.sh --combined
+        run: |
+          zsh TouchBar/musicstrip/Source/build.sh
+          python3 -m unittest discover -s scripts -p test_release.py
+          python3 -c 'import sys; from pathlib import Path; sys.path.insert(0,"scripts"); from release import verify_modules; verify_modules(Path("TouchBar/build/musicstrip/3£.app"),"combined")'
+          ditto -c -k --sequesterRsrc --keepParent 'TouchBar/build/musicstrip/3£.app' build/phone/3E-Combined.zip
       - name: Existing native menu and app-switcher regression tests
         run: |
           xcrun clang -fobjc-arc -framework AppKit -framework Carbon -framework ApplicationServices -framework QuartzCore -framework CoreImage TouchBar/musicstrip/Tests/window_chooser.m -o /tmp/window-test
@@ -50,4 +54,9 @@ jobs:
         with:
           name: 3E-Phone-Mac
           path: build/phone/3E-Phone-Mac.zip
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        with:
+          name: 3E-Combined-Mac
+          path: build/phone/3E-Combined.zip
           if-no-files-found: error

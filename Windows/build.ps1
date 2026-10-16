@@ -37,8 +37,10 @@ foreach ($arch in @('x64','arm64')) {
     Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'PhoneTrackpad-QRCoder-LICENSE.txt') -Destination (Join-Path $output 'THIRD-PARTY-LICENSE-QRCoder.txt') -Force
     $phoneSource = Join-Path $output 'PhoneTrackpadSource'
     New-Item -ItemType Directory -Path $phoneSource -Force | Out-Null
-    Get-ChildItem -LiteralPath (Split-Path -Parent $project) -Filter 'PhoneTrackpad*' -File | Copy-Item -Destination $phoneSource -Force
-    Copy-Item -LiteralPath (Join-Path (Split-Path -Parent $project) 'PhoneMidiWindows.cs') -Destination $phoneSource -Force
+    Get-ChildItem -LiteralPath (Join-Path $PSScriptRoot 'PhoneBar') -File | Copy-Item -Destination $phoneSource -Force
+    foreach ($module in @('ThreeE.PhoneBar.Windows.dll','ThreeE.PhoneControl.dll','QRCoder.dll')) {
+        if (-not (Test-Path -LiteralPath (Join-Path $output $module))) { throw "Base app is missing bundled Phone Bar module: $module" }
+    }
     $sharedPhoneSource = Join-Path $repository 'Shared\PhoneControl'
     Get-ChildItem -LiteralPath $sharedPhoneSource -File | Copy-Item -Destination $phoneSource -Force
     Copy-Item -LiteralPath (Join-Path $sharedPhoneSource 'Web') -Destination $phoneSource -Recurse -Force

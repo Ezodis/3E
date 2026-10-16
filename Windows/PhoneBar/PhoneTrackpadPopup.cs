@@ -6,7 +6,7 @@ using System.Drawing;
 using System.Runtime.InteropServices;
 using QRCoder;
 
-namespace ThreeFingerDragOnWindows;
+namespace ThreeE.PhoneBar.Windows;
 
 // Small native tray popup. It shares the app's UI message loop without creating
 // another XAML window or an additional process. Dismissing it keeps pairing active.

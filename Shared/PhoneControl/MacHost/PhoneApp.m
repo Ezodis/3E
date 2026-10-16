@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 #import "PhoneControlMac.h"
+#import "PhoneBarMenu.h"
 @interface PhoneAppDelegate:NSObject<NSApplicationDelegate>
 @property ThreeEPhoneController *phone;
 @property NSStatusItem *item;
@@ -14,14 +15,16 @@
             if(e.CGEvent)CGEventPost(kCGHIDEventTap,e.CGEvent);
         }
     };
-    self.item=[NSStatusBar.systemStatusBar statusItemWithLength:NSVariableStatusItemLength];self.item.button.title=@"3£ Phone";
+    self.item=[NSStatusBar.systemStatusBar statusItemWithLength:NSVariableStatusItemLength];self.item.button.title=@"3£";
     NSMenu *menu=[NSMenu new];
-    for(NSArray *row in @[@[@"Show pairing QR…",@"openPhone:"],@[@"Stop receiver",@"stopPhone:"],@[@"Quit",@"quit:"]]){
+    [menu addItem:ThreeEPhoneBarMenu(self)];
+    for(NSArray *row in @[@[@"Quit Phone Bar",@"quit:"]]){
         NSMenuItem *item=[[NSMenuItem alloc] initWithTitle:row[0] action:NSSelectorFromString(row[1]) keyEquivalent:@""];item.target=self;[menu addItem:item];
     }
     self.item.menu=menu;
 }
 - (void)openPhone:(id)sender{[self.phone show];}
+- (void)copyPhone:(id)sender{[self.phone copyLink:sender];}
 - (void)stopPhone:(id)sender{[self.phone stop];}
 - (void)quit:(id)sender{[NSApp terminate:nil];}
 - (void)applicationWillTerminate:(NSNotification *)notification{[self.phone stop];}

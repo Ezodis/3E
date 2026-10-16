@@ -30,7 +30,7 @@ jobs:
         run: |
           case "$EDITION" in
             combined) zsh TouchBar/musicstrip/Source/build.sh --combined ;;
-            touchbar) zsh TouchBar/musicstrip/Source/build.sh ;;
+            touchbar) zsh TouchBar/musicstrip/Source/build.sh --touchbar-only ;;
             touchtab) zsh TouchTab/build.sh ;;
           esac
       - name: Test maintained functionality without live app control

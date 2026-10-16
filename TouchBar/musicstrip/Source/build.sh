@@ -4,8 +4,13 @@ cd "${0:A:h}"
 strip_repo="${PWD:h:h}"
 strip_identity="${STRIP_SIGNING_IDENTITY:-EDA0E1C9F0DD46BE3437CD2733933E31D3A8623D}"
 mkdir -p "$strip_repo/build/musicstrip"
+strip_edition="${1:---combined}"
+case "$strip_edition" in
+  --combined|--combined-main-only|--touchbar-only|--bridge-only) ;;
+  *) printf 'Usage: build.sh [--combined | --touchbar-only | --combined-main-only | --bridge-only]\n' >&2; exit 2 ;;
+esac
 strip_combined=NO
-if [[ "${1:-}" == --combined || "${1:-}" == --combined-main-only ]]; then
+if [[ "$strip_edition" == --combined || "$strip_edition" == --combined-main-only ]]; then
   strip_combined=YES
   for strip_arch in arm64 x86_64; do
   xcrun swiftc -emit-library -O -target "$strip_arch-apple-macosx12.0" -module-name ThreeEGestureEngine \
@@ -20,13 +25,13 @@ fi
 strip_main_flags=()
 strip_minimum=11.0
 if [[ "$strip_combined" == YES ]]; then strip_main_flags=(-DSTRIP_COMBINED_TOUCHTAB=1); strip_minimum=12.0; fi
-if [[ "${1:-}" == --combined-main-only ]]; then
+if [[ "$strip_edition" == --combined-main-only ]]; then
   xcrun clang -arch arm64 -arch x86_64 -fobjc-arc -Wall -Wextra -Wno-unused-parameter -O2 \
     -mmacosx-version-min=12.0 "${strip_main_flags[@]}" -framework AppKit -framework Carbon \
     -framework ApplicationServices -framework QuartzCore -framework CoreImage main.m -o "$strip_repo/build/musicstrip/MusicStripCombinedMain"
   exit 0
 fi
-if [[ "${1:-}" == --bridge-only ]]; then
+if [[ "$strip_edition" == --bridge-only ]]; then
   xcrun clang -arch arm64 -arch x86_64 -dynamiclib -fobjc-arc -Wall -Wextra -Wno-unused-parameter -O2 \
     -mmacosx-version-min=11.0 -framework AppKit -framework CoreMIDI MidiBridge.m \
     -o "$strip_repo/build/musicstrip/MusicStripMidiBridge.dylib"

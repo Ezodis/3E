@@ -3,7 +3,7 @@ using System;
 using System.Linq;
 using System.Runtime.InteropServices;
 using ThreeE.PhoneControl;
-namespace ThreeFingerDragOnWindows;
+namespace ThreeE.PhoneBar.Windows;
 
 public sealed class PhoneMidiWindows : MidiOutput {
     [StructLayout(LayoutKind.Sequential, CharSet=CharSet.Unicode)] private struct Caps {

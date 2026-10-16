@@ -5,7 +5,7 @@ using System.Net.WebSockets;
 using System.Text;
 using System.Collections.Concurrent;
 using System.Text.Json;
-using ThreeFingerDragOnWindows;
+using ThreeE.PhoneBar.Windows;
 
 var results = new List<string>();
 void Check(bool value, string name) { if (!value) throw new Exception("FAIL: " + name); results.Add(name); Console.WriteLine("PASS: " + name); }
@@ -42,6 +42,24 @@ if (args.Length == 1 && args[0] == "--firewall-smoke") {
 }
 
 var fake = new FakeInput(); var firewall = new FakeFirewall();
+using (var unblockProbe = new ManualResetEventSlim(false)) {
+    var probeEntered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+    int probes = 0;
+    var probeInput = new FakeInput();
+    using var slowProbe = new PhoneTrackpad(() => {
+        if (Interlocked.Increment(ref probes) > 1) { probeEntered.TrySetResult(); unblockProbe.Wait(TimeSpan.FromSeconds(8)); }
+        return IPAddress.Loopback;
+    }, probeInput, new FakeFirewall(), FreePort());
+    Check(slowProbe.Start(), "Receiver starts before adapter-monitor test");
+    try {
+        using var ws = await Connect(slowProbe.PairingUrl);
+        await Receive(ws);
+        await probeEntered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        await Send(ws,"{\"type\":\"move\",\"x\":27,\"y\":-9}");
+        await Send(ws,"{\"type\":\"ping\"}");
+        Check((await Receive(ws)).Contains("pong") && probeInput.Commands.Contains("move:27,-9"), "A stalled network-adapter check cannot freeze pointer input or heartbeat replies");
+    } finally { unblockProbe.Set(); }
+}
 var keyFactory=typeof(NativeTrackpadInput).GetMethod("KeyEvent",System.Reflection.BindingFlags.NonPublic|System.Reflection.BindingFlags.Static);
 bool marked=true;
 foreach(ushort key in new ushort[]{0x12,0x09,0x10,0x11,0x5B,0x25,0x27,0xB3}) foreach(bool up in new[]{false,true}) {

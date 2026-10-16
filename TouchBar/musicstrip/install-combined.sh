@@ -14,6 +14,7 @@ zsh musicstrip/install-record.sh
 mkdir -p "$strip_app/Contents/Frameworks"
 cp build/musicstrip/ThreeEGestureEngine.dylib "$strip_app/Contents/Frameworks/"
 cp build/musicstrip/MusicStripCombinedMain "$strip_app/Contents/MacOS/MusicStrip"
+zsh "$PWD/../Shared/PhoneControl/MacHost/build-hosts.sh" "$strip_app"
 if /usr/libexec/PlistBuddy -c 'Print ThreeEIncludesTouchTab' "$strip_app/Contents/Info.plist" >/dev/null 2>&1; then
   /usr/libexec/PlistBuddy -c 'Set ThreeEIncludesTouchTab true' "$strip_app/Contents/Info.plist"
 else

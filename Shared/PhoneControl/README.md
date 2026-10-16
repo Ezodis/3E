@@ -1,15 +1,25 @@
-# 3£ Phone: trackpad and MIDI
+# 3£ Phone Bar: trackpad and MIDI
 
 The same browser UI, gestures, pairing, reconnect logic and MIDI protocol run on Windows and macOS. The host adapters supply native mouse/keyboard input and MIDI output. No phone app, account or internet connection is required once installed. Both devices must be able to reach each other on a trusted local network; a hotspot can work without an internet connection.
 
 ## Open the controller
 
 - **Windows:** left-click the 3£Windows tray icon for its QR popup. The right-click menu also opens or stops the receiver.
-- **Mac Combined / TouchBar:** choose **iPhone trackpad & MIDI** in the 3£ menu.
-- **Mac without a Touch Bar:** open **3E Phone.app** and choose **Show QR** in its menu. Requires macOS 14+. Allow Accessibility for pointer and app-switching control, and Local Network / firewall access if macOS asks. If a managed helper is listed separately in Accessibility, enable that helper too.
+- **Mac base app / TouchBar edition:** choose **Phone Bar → Show pairing QR** in the 3£ menu. This module is included in the base app; a separate Phone app is optional.
+- **Mac without a Touch Bar:** the base app keeps its 3£ menu for Phone Bar and TouchTab. The optional **3E Phone.app** offers the same **Phone Bar → Show pairing QR** menu. Requires macOS 14+. Allow Accessibility for pointer and app-switching control, and Local Network / firewall access if macOS asks. If a managed helper is listed separately in Accessibility, enable that helper too.
 - Scan the QR with iPhone Camera. For Apple Watch, send the same link to yourself and open it in its web viewer. Watch uses a compact layout and ordered HTTP transport.
 
 The receiver starts only on request. Wi-Fi loss stops only the receiver; start it again after reconnecting. Every receiver restart creates a new link. A phone waking from sleep reconnects automatically while the receiver remains running. Pause one device before switching to another. HTTP stays on the LAN and is not encrypted; there is no cloud relay or router forwarding.
+
+### Connection choices
+
+Use the QR option for Wi-Fi/Ethernet, including a reachable local Wi-Fi hotspot. Phone Bar does not need internet. Bluetooth is not offered: phone-to-host compatibility has not been verified on either platform. There is no native iPhone Bluetooth implementation.
+
+The receiver checks adapters outside the input lock, so a slow driver scan cannot block cursor commands. The browser coalesces unsent motion during short WebSocket stalls, preserves button ordering, and ignores Safari toolbar-height changes during drags. Sustained failure still releases controls and reconnects. These changes have deterministic protocol/browser tests; they are not a measurement of real iPhone radio latency.
+
+### Module ownership
+
+`Shared/PhoneControl` owns the receiver, gesture protocol, browser UI and MIDI mapping. `Windows/PhoneBar` supplies a separately compiled native module (`ThreeE.PhoneBar.Windows.dll`) and a lazy start/stop lifecycle; the Windows base app always references and bundles it. `MacHost` supplies the same module to the full 3£ app and the optional standalone wrapper. The base Mac build defaults to Combined and includes TouchBar, TouchTab and Phone Bar. Release checks reject incomplete base bundles. Adding or updating shared phone controls updates both hosts.
 
 ## Trackpad
 
@@ -47,7 +57,7 @@ Triggers send a note-on followed by note-off. **Release notes** sends releases o
 
 ## Source and builds
 
-- `Web/`: shared HTML, CSS, trackpad gestures and studio controls.
+- `Web/`: shared HTML, CSS, trackpad gestures and Phone Bar controls.
 - `PhoneTrackpad.cs`: bounded/authenticated listener, one-controller lease and cleanup.
 - `MidiOutput.cs`: shared MIDI lifecycle and note tracking.
 - `MacHost/`: CoreGraphics/CoreMIDI adapters, bundled .NET helper and native menu/QR UI.
