@@ -29,7 +29,7 @@
 #else
     NSString *arch=@"x64";
 #endif
-    NSString *relative=[NSString stringWithFormat:@"Contents/Helpers/PhoneControl/%@/ThreeE.PhoneHost",arch];
+    NSString *relative=[NSString stringWithFormat:@"Contents/Resources/PhoneControl/%@/ThreeE.PhoneHost",arch];
     NSString *path=[NSBundle.mainBundle.bundlePath stringByAppendingPathComponent:relative];
     if(![NSFileManager.defaultManager isExecutableFileAtPath:path]){[self message:@"This build does not include the phone receiver."];return;}
     self.task=[NSTask new];self.task.executableURL=[NSURL fileURLWithPath:path];self.input=[NSPipe pipe];self.output=[NSPipe pipe];self.buffer=[NSMutableData new];self.task.standardInput=self.input;self.task.standardOutput=self.output;self.task.standardError=[NSFileHandle fileHandleWithNullDevice];
