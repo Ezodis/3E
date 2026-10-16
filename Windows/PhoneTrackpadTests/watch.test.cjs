@@ -15,7 +15,7 @@ const doc={hidden:false,handlers:{},documentElement:element('html'),getElementBy
 const win={handlers:{},matchMedia(){return {matches:true};},addEventListener(type,fn){this.handlers[type]=fn;}};
 vm.runInNewContext(source,{document:doc,window:win,URLSearchParams,Uint8Array,crypto:require('node:crypto').webcrypto,AbortController,
   location:{protocol:'http:',host:'127.0.0.1:17834',search:'',hash:'#'+'A'.repeat(48)},
-  localStorage:{getItem(){return null;},setItem(){}},performance:{now:()=>time},requestAnimationFrame(fn){frame=fn;},
+  localStorage:{getItem(key){return key==='3e-acceleration'?'false':null;},setItem(){}},performance:{now:()=>time},requestAnimationFrame(fn){frame=fn;},
   setInterval(fn,ms){const id=++timerId;timers.set(id,{fn,ms});return id;},clearInterval(id){timers.delete(id);},
   setTimeout(fn,ms){const id=++timerId;timers.set(id,{fn,ms,once:true});return id;},clearTimeout(id){timers.delete(id);},
   async fetch(url,options){

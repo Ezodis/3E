@@ -34,14 +34,14 @@ public sealed class PhoneTrackpad : IDisposable {
     public string Status { get { lock (gate) return status; } }
     public bool Running { get { lock (gate) return session != null; } }
     public string PairingUrl { get { lock (gate) return session == null ? null : session.Origin + "/#" + session.Token; } }
-    // Stable name link (for example http://phonebar.local:17833/#token) when an alias is served.
+    // Stable name link (for example http://3e.local:17833/#token) when an alias is served.
     public string NamedUrl { get { lock (gate) return session?.AliasOrigin == null ? null : session.AliasOrigin + "/#" + session.Token; } }
     public IPAddress Address { get { lock (gate) return session?.Address; } }
     // Optional: a persisted pairing secret keeps the phone's link valid across
     // restarts and updates. It must return 48 hex characters; anything else
     // falls back to a fresh random secret for this session.
     public Func<string> TokenProvider { get; init; }
-    // Optional host name (for example "phonebar.local") also accepted for the
+    // Optional host name (for example "3e.local") also accepted for the
     // page, WebSocket and control requests. Name resolution is the host's job.
     public string AliasHost { get; init; }
     public string DesktopUrl { get { lock (gate) return session == null ? null : session.Origin + "/pair"; } }
@@ -439,6 +439,8 @@ input{width:100%;padding:13px;border:1px solid #415260;border-radius:10px;backgr
             case "media": sink.Media(Range("action",0,2)); break;
             case "volume": sink.Volume(Range("level",0,100)); break;
             case "volumeStep": sink.VolumeStep(Range("direction",-1,1)); break;
+            case "history": sink.History(Range("direction",-1,1)); break;
+            case "zoom": sink.Zoom(Range("direction",-1,1)); break;
             case "midiPort": sink.MidiPort(Range("id",-1,1024)); break;
             case "midiCC": sink.Midi(false,Range("channel",0,15),Range("number",0,119),Range("value",0,127)); break;
             case "midiNote": sink.Midi(true,Range("channel",0,15),Range("number",0,127),Range("value",0,127)); break;
@@ -471,6 +473,10 @@ public interface ITrackpadInput {
     void Volume(int level) { }
     // One native volume step (Windows: the volume keys, which show the system OSD).
     void VolumeStep(int direction) { }
+    // Two-finger sideways swipe: -1 back, 1 forward (browser/Explorer history).
+    void History(int direction) { }
+    // Pinch: 1 zoom in, -1 zoom out (one step).
+    void Zoom(int direction) { }
     void MidiPort(int id) { }
     void Midi(bool note,int channel,int number,int value) { }
     void MidiPanic() { }

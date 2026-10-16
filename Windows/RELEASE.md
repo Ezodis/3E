@@ -1,4 +1,15 @@
-3£Windows 1.0.25: volume buttons use speaker icons.
+3£Windows 1.0.26 makes the phone feel like a real laptop trackpad.
+
+- **Two-finger swipe for Back/Forward:** a quick sideways two-finger swipe goes back (fingers right) or forward (fingers left) in Chrome, Edge, Firefox and File Explorer. A slower sideways slide scrolls horizontally instead.
+- **Smoother scrolling:** two-finger scrolls lock to their direction (small drift is ignored) and keep gliding after you lift; touching the pad stops the glide. The finger left behind after a two-finger gesture no longer jumps the pointer.
+- **Pinch to zoom** (Ctrl + wheel on Windows).
+- **Pointer acceleration:** slow movements are precise and quick flicks cross the screen, like a laptop trackpad (switch it off in Settings for the old linear feel).
+- **No more hold-to-right-click:** holding still never clicks. Use a two-finger tap to right-click.
+- **3e.local:** the stable name is now http://3e.local:17833 (was phonebar.local).
+
+Gesture handling was informed by KDE Connect's phone touchpad (speed-based acceleration and scroll direction lock); this is an independent implementation.
+
+Includes everything from 1.0.25:
 
 - The top volume button is the speaker-with-sound-waves icon (volume up) and the bottom one is a speaker with a single small wave (volume down). Both press the laptop's volume keys. The separate speaker icon above the slider is gone.
 
