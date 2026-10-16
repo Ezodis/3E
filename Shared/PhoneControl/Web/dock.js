@@ -18,6 +18,9 @@
     stop:svg('<rect x="6" y="6" width="20" height="20" rx="2" fill="currentColor"/>')
   };
   let active=null, holdTimer, restoreTimer, lastPointer=-Infinity, controls={}, controlsSignature='';
+  // Task View / Mission Control is treated as open until it is closed here,
+  // any click or other navigation happens, or a minute passes.
+  const OVERVIEW_TIMEOUT=60000;let overviewUntil=0;
   // Fixed palette: ids match PhoneTrackpad.ShortcutCount and the host mapping.
   // Rows are listed top to bottom; the most used sit nearest the thumb.
   const shortcuts=[[12,'⌘R','Refresh'],[16,'⌘Space','Search'],[17,'⌘Q','Quit app'],
@@ -136,8 +139,14 @@
     }
     // Apps: swipe up shows all windows (Task View / Mission Control), swipe
     // down shows the desktop. Fires once per contact, before lifting.
+    // Swipe down closes an open all-windows view first; otherwise it shows
+    // the desktop, and swiping down again brings the windows back (toggle).
     if(a.kind==='apps'&&a.axis==='vertical'&&!a.held&&!a.vertical&&Math.abs(dy)>=36){
-      a.vertical=true;C.send(dy<0?'taskView':'showDesktop');paint('apps',dy<0?'windows':'desktop');return;
+      a.vertical=true;const now=performance.now(),open=now<overviewUntil;
+      if(dy<0){if(!open)C.send('taskView');overviewUntil=now+OVERVIEW_TIMEOUT;paint('apps','windows');}
+      else if(open){C.send('taskView');overviewUntil=0;paint('apps','windows');}
+      else{C.send('showDesktop');paint('apps','desktop');}
+      return;
     }
     if(a.axis!=='horizontal')return;
     if(a.kind==='media'){if(Math.abs(dx)>=24)paint('media',dx<0?'previous':'next');else paint('media');return;}
@@ -200,7 +209,7 @@
   $('media').addEventListener('wheel',e=>{
     if(!C.connected()||!e.deltaY)return;e.preventDefault();showVolume();changeVolume(+volumeSlider.value+(e.deltaY<0?2:-2));finishVolume();
   },{passive:false});
-  window.ThreeEDock={cancel,commands:showCommands,describe(info){
+  window.ThreeEDock={cancel,commands:showCommands,overviewEnded(){overviewUntil=0;},describe(info){
     // Windows and macOS hosts map the shortcut palette; unknown hosts hide it.
     if(info?.platform){commandsButton.hidden=!['windows','macos'].includes(info.platform);if(commandsButton.hidden)showCommands(false);}
     // Repaint artwork only when the host state actually changed. Rebuilding

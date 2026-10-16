@@ -18,7 +18,11 @@ event('apps','pointerup',30);check(commands('navigateEnd').length===1,'Lift ends
 sent.length=0;event('apps','pointerdown');event('apps','pointermove',104,30);event('apps','pointerup',104,30);
 check(commands('taskView').length===1&&!commands('navigate').length&&!commands('appsBegin').length,'Swiping Apps up shows all windows once, without switching apps');
 sent.length=0;event('apps','pointerdown');event('apps','pointermove',100,150);event('apps','pointermove',100,220);event('apps','pointerup',100,220);
-check(commands('showDesktop').length===1&&!commands('taskView').length,'Swiping Apps down shows the desktop once');
+check(commands('taskView').length===1&&!commands('showDesktop').length,'Swiping Apps down while all windows are shown closes that view, not the desktop');
+sent.length=0;event('apps','pointerdown');event('apps','pointermove',100,150);event('apps','pointermove',100,220);event('apps','pointerup',100,220);check(commands('showDesktop').length===1,'The next swipe down shows the desktop');
+sent.length=0;event('apps','pointerdown');event('apps','pointermove',100,150);event('apps','pointermove',100,220);event('apps','pointerup',100,220);check(commands('showDesktop').length===1&&!commands('taskView').length,'Swiping down again brings the windows back (toggle)');
+sent.length=0;event('apps','pointerdown');event('apps','pointermove',100,60);event('apps','pointermove',100,20);event('apps','pointerup',100,20);event('apps','pointerdown');event('apps','pointermove',100,60);event('apps','pointermove',100,20);event('apps','pointerup',100,20);check(commands('taskView').length===1,'A second swipe up while the view is open does not close it');
+win.ThreeEDock.overviewEnded();sent.length=0;event('apps','pointerdown');event('apps','pointermove',100,150);event('apps','pointermove',100,220);event('apps','pointerup',100,220);check(commands('showDesktop').length===1&&!commands('taskView').length,'After a click picks a window, swipe down shows the desktop');
 sent.length=0;event('apps','pointerdown');event('apps','pointermove',100,120);event('apps','pointerup',100,120);check(!commands('showDesktop').length&&!commands('taskView').length,'A short vertical nudge on Apps does nothing');
 sent.length=0;event('apps','pointerdown');hold();event('apps','pointermove',60);event('apps','pointerup',60);
 check(commands('appsBegin').length===1&&commands('appsStep').length===1&&commands('appsStep')[0].direction===-1&&commands('appsEnd').length===1,'Holding Apps keeps the explicit native app chooser');

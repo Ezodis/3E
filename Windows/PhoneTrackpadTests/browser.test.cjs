@@ -40,7 +40,7 @@ async function wake(page){await page.evaluate(()=>{Object.defineProperty(documen
    assert.ok(commands.some(c=>c.type==='appsBegin')&&commands.some(c=>c.type==='appsStep'&&c.direction===-1)&&commands.some(c=>c.type==='appsEnd'));
    {const before=commands.length;await drag(p,p.locator('#apps'),0,-80);await drag(p,p.locator('#apps'),0,80);
     const vertical=commands.slice(before).filter(c=>['taskView','showDesktop'].includes(c.type)).map(c=>c.type);
-    assert.deepEqual(vertical,['taskView','showDesktop'],'Apps swipe up shows all windows and swipe down shows the desktop');}
+    assert.deepEqual(vertical,['taskView','taskView'],'Apps swipe up opens all windows and swipe down closes them');}
    const beforeVertical=commands.filter(c=>['navigate','appsBegin','media'].includes(c.type)).length;
    await drag(p,p.locator('#apps'),5,-65);await drag(p,p.locator('#media'),5,-65);
    assert.equal(commands.filter(c=>['navigate','appsBegin','media'].includes(c.type)).length,beforeVertical,'vertical motion cancels instead of switching or playing');

@@ -1,4 +1,10 @@
-3£Windows 1.0.22 adds vertical swipes to the phone's Apps button.
+3£Windows 1.0.23 makes phone dragging deliberate and fixes the Apps swipe-down.
+
+- **No more accidental presses:** moving straight after a tap is always a plain pointer move. It never presses the button, so open menus stay open and Task View no longer picks a window while you move.
+- **Double-tap-hold-drag:** tap, touch again within 350 ms, hold still for a moment (the pad shows "Drag ready"), then move to drag. Lifting without moving cancels without clicking. A quick double tap is still a double-click.
+- **Apps swipe down:** closes the all-windows view if it is open; otherwise shows the desktop, and swiping down again brings the windows back.
+
+Includes everything from 1.0.22:
 
 - **Swipe Apps up** to show all windows (Windows Task View; Mac Mission Control).
 - **Swipe Apps down** to show the desktop.
