@@ -1,7 +1,7 @@
 const fs=require('node:fs'),vm=require('node:vm'),assert=require('node:assert/strict'),path=require('node:path');
 let now=1000,next=0,checks=0;const timers=new Map(),sent=[],elements=new Map();
-function element(){return {handlers:{},dataset:{},style:{setProperty(){}},hidden:true,value:0,disabled:true,setAttribute(name,value){this[name]=value;},contains(target){return target===this;},getBoundingClientRect(){return {height:140};},classList:{add(){},remove(){}},children:[],append(child){this.children.push(child);},replaceChildren(){this.children=[];},addEventListener(type,fn){this.handlers[type]=fn;},setPointerCapture(){},hasPointerCapture(){return true;},releasePointerCapture(){}};}
-for(const id of ['apps','media','volumePane','outputVolume','volumeValue'])elements.set(id,element());
+function element(){return {handlers:{},dataset:{},style:{setProperty(){}},hidden:true,value:0,disabled:true,setAttribute(name,value){this[name]=value;},contains(target){return target===this||this.children.includes(target);},querySelectorAll(){return [];},getBoundingClientRect(){return {height:140};},classList:{add(){},remove(){}},children:[],append(child){this.children.push(child);},replaceChildren(){this.children=[];},addEventListener(type,fn){this.handlers[type]=fn;},setPointerCapture(){},hasPointerCapture(){return true;},releasePointerCapture(){}};}
+for(const id of ['apps','media','volumePane','outputVolume','volumeValue','commands','commandsPane'])elements.set(id,element());
 const win={ThreeEControl:{connected:()=>true,send:(type,data={})=>sent.push({type,...data}),release:()=>win.ThreeEDock?.cancel()},ThreeESurface:{openStudio(){win.ThreeEDock.cancel();sent.push({type:'studio'});}}};
 vm.runInNewContext(fs.readFileSync(path.join(__dirname,'../../Shared/PhoneControl/Web/dock.js'),'utf8'),{window:win,document:{addEventListener(){},getElementById:id=>elements.get(id),createElement:element},performance:{now:()=>now},setTimeout(fn,ms){timers.set(++next,{fn,ms});return next;},clearTimeout:id=>timers.delete(id)});
 function event(kind,type,x=100,y=100,id=1){elements.get(kind).handlers[type]({pointerId:id,clientX:x,clientY:y,button:0,preventDefault(){}});}
@@ -58,4 +58,15 @@ check(commands('volume').at(-1).level===100,'Volume input stays inside the 0–1
 now+=1500;win.ThreeEDock.describe({volume:{available:false,level:null}});
 sent.length=0;event('media','pointerdown');event('media','pointermove',100,70);event('media','pointermove',100,40);event('media','pointerup',100,40);
 check(elements.get('outputVolume').disabled&&!commands('volume').length,'Unsupported audio outputs never receive fabricated volume values');
+const pane=elements.get('commandsPane'),commandsButton=elements.get('commands');
+check(pane.children.length===18,'Shortcut palette has 18 fixed buttons');
+commandsButton.handlers.click();check(!pane.hidden,'Command button opens the shortcut palette');
+sent.length=0;pane.children.find(b=>b['aria-label'].startsWith('Area shot')).handlers.click();
+check(commands('shortcut').length===1&&commands('shortcut')[0].id===14,'A palette button sends only its fixed id');
+const delay=[...timers].find(([,t])=>t.ms===160);timers.delete(delay[0]);delay[1].fn();check(pane.hidden,'Palette closes after sending');
+let repaints=0;const replace=elements.get('media').replaceChildren;elements.get('media').replaceChildren=function(){repaints++;return replace.call(this);};
+win.ThreeEDock.describe({controls:{media:{playing:true}}});win.ThreeEDock.describe({controls:{media:{playing:true}}});win.ThreeEDock.describe({controls:{media:{playing:true}}});
+check(repaints===1,'Unchanged host state does not repaint dock artwork');
+win.ThreeEDock.describe({platform:'macos'});check(!commandsButton.hidden,'macOS shows the shortcut palette');
+win.ThreeEDock.describe({platform:'linux'});check(commandsButton.hidden,'Hosts without a mapping hide the shortcut button');
 console.log('PASS: '+checks+' dock gesture and icon-state checks.');

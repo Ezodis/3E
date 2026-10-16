@@ -74,12 +74,17 @@ using (var unblockProbe = new ManualResetEventSlim(false)) {
         await probeEntered.Task.WaitAsync(TimeSpan.FromSeconds(5));
         await Send(ws,"{\"type\":\"move\",\"x\":27,\"y\":-9}");
         await Send(ws,"{\"type\":\"ping\"}");
-        Check((await Receive(ws)).Contains("pong") && probeInput.Commands.Contains("move:27,-9"), "A stalled network-adapter check cannot freeze pointer input or heartbeat replies");
+        var firstPong = await Receive(ws);
+        Check(firstPong.Contains("pong") && probeInput.Commands.Contains("move:27,-9"), "A stalled network-adapter check cannot freeze pointer input or heartbeat replies");
+        Check(firstPong == "{\"pong\":true}", "Heartbeat replies omit unchanged host state");
+        await Send(ws,"{\"type\":\"volume\",\"level\":12}");
+        await Send(ws,"{\"type\":\"ping\"}");
+        Check((await Receive(ws)).Contains("\"level\":12"), "Heartbeat replies resend host state after it changes");
     } finally { unblockProbe.Set(); }
 }
 var keyFactory=typeof(NativeTrackpadInput).GetMethod("KeyEvent",System.Reflection.BindingFlags.NonPublic|System.Reflection.BindingFlags.Static);
 bool marked=true;
-foreach(ushort key in new ushort[]{0x12,0x09,0x10,0x11,0x5B,0x25,0x27,0xB3}) foreach(bool up in new[]{false,true}) {
+foreach(ushort key in new ushort[]{0x12,0x09,0x10,0x11,0x5B,0x25,0x27,0xB3,0x2C,0x43,0x73}) foreach(bool up in new[]{false,true}) {
     object native=keyFactory.Invoke(null,new object[]{key,up});
     object data=native.GetType().GetField("Data").GetValue(native),keyboard=data.GetType().GetField("Keyboard").GetValue(data);
     marked &= ((UIntPtr)keyboard.GetType().GetField("Extra").GetValue(keyboard)).ToUInt64()==0x101;
@@ -93,7 +98,9 @@ ApplyText("{\"type\":\"releaseAll\"}");
 Check(!fake.Switching && fake.MidiNotes==0,"Release-all clears app modifiers and MIDI notes");
 ApplyText("{\"type\":\"desktop\",\"direction\":1}");ApplyText("{\"type\":\"media\",\"action\":2}");
 Check(fake.Commands.Contains("desktop:1") && fake.Commands.Contains("media:2"),"Desktop and media commands use fixed whitelisted actions");
-foreach(string invalid in new[]{"{\"type\":\"midiCC\",\"channel\":16,\"number\":1,\"value\":64}","{\"type\":\"midiCC\",\"channel\":0,\"number\":120,\"value\":64}","{\"type\":\"midiNote\",\"channel\":0,\"number\":1,\"value\":128}","{\"type\":\"desktop\",\"direction\":2}"}) {
+ApplyText("{\"type\":\"shortcut\",\"id\":0}");ApplyText("{\"type\":\"shortcut\",\"id\":17}");
+Check(fake.Commands.Contains("shortcut:0") && fake.Commands.Contains("shortcut:17"),"Shortcut palette ids reach the native boundary");
+foreach(string invalid in new[]{"{\"type\":\"midiCC\",\"channel\":16,\"number\":1,\"value\":64}","{\"type\":\"midiCC\",\"channel\":0,\"number\":120,\"value\":64}","{\"type\":\"midiNote\",\"channel\":0,\"number\":1,\"value\":128}","{\"type\":\"desktop\",\"direction\":2}","{\"type\":\"shortcut\",\"id\":18}","{\"type\":\"shortcut\",\"id\":-1}"}) {
     bool refused=false;try{ApplyText(invalid);}catch(InvalidDataException){refused=true;}Check(refused,"Out-of-range MIDI/shortcut control rejected");
 }
 using(var midi=new TestMidi()) {midi.Select(0);midi.Send(false,15,1,64);midi.Send(true,15,36,100);midi.Panic();Check(midi.Messages.SequenceEqual(new[]{"191,1,64","159,36,100","143,36,0"}),"MIDI CC and note bytes are correct; panic releases only its own held note");}
@@ -279,6 +286,7 @@ sealed class FakeInput : ITrackpadInput {
     public void Navigate(int direction){Switching=true;Commands.Enqueue($"navigate:{direction}");}
     public void NavigateEnd(){Commands.Enqueue("navigateEnd");AppsEnd();}
     public void Media(int action)=>Commands.Enqueue($"media:{action}");
+    public void Shortcut(int id)=>Commands.Enqueue($"shortcut:{id}");
     public void MidiPort(int id){selected=id;Commands.Enqueue($"midiPort:{id}");}
     public void Midi(bool note,int channel,int number,int value){if(note)MidiNotes=value>0?1:0;Commands.Enqueue($"midi:{note},{channel},{number},{value}");}
     public void MidiPanic(){MidiNotes=0;}

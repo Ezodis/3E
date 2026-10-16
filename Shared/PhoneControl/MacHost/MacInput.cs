@@ -55,6 +55,16 @@ public sealed class MacInput : ITrackpadInput, IDisposable {
     public void NavigateEnd()=>navigation.End();
     public void AppsStep(int direction){if(!switching||direction==0)return;ulong flags=(1UL<<20)|(direction<0?1UL<<17:0);Key(48,true,flags);Key(48,false,flags);}
     public void AppsEnd(){if(switching){switching=false;Key(55,false);}}
+    // Same palette ids as Web/dock.js and PhoneTrackpad.ShortcutCount; real Command keys on macOS.
+    private const ulong Cmd=1UL<<20,Shift=1UL<<17;
+    private static readonly (ushort key,ulong flags)[] shortcuts={
+        (8,Cmd),(9,Cmd),(7,Cmd),(0,Cmd),(6,Cmd),(6,Cmd|Shift),(17,Cmd),(17,Cmd|Shift),(13,Cmd),(45,Cmd),(3,Cmd),(1,Cmd),
+        (15,Cmd),(20,Cmd|Shift),(21,Cmd|Shift),(23,Cmd|Shift),(49,Cmd),(12,Cmd)};
+    public void Shortcut(int id){
+        if((uint)id>=(uint)shortcuts.Length)return;
+        Release();AppsEnd();var (key,flags)=shortcuts[id];
+        try{Key(key,true,flags);}finally{Key(key,false,flags);}
+    }
     public void Media(int action)=>media(action);
     public void Volume(int level)=>volume.Set(level);
     public void MidiPort(int id)=>midi.Select(id);

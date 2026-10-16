@@ -28,7 +28,7 @@ vm.runInNewContext(source,{document:doc,window:win,URLSearchParams,Uint8Array,cr
 const touch=(x,y)=>({clientX:x,clientY:y});
 function fire(type,touches){element('pad').handlers[type]({touches,preventDefault(){}});time+=15;}
 async function pump(){await idle();await idle();}
-function commands(){return requests.filter(r=>r.payload.type==='commands').flatMap(r=>r.payload.commands);}
+function commands(){return requests.filter(r=>r.payload.type==='commands').flatMap(r=>r.payload.commands).filter(c=>c.type!=='ping');}
 (async()=>{
   await idle();
   assert.equal(requests[0].payload.type,'connect');

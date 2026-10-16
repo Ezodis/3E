@@ -20,6 +20,9 @@ namespace ThreeE.PhoneControl;
 public sealed class PhoneTrackpad : IDisposable {
     public const int Port = 17833;
     public const string FirewallName = "3EWindows Phone Trackpad";
+    // Shortcut ids are a fixed palette shared with Web/dock.js; hosts map each id
+    // to a native key combination. The protocol never carries arbitrary keys.
+    public const int ShortcutCount = 18;
     private readonly object gate = new();
     private readonly Func<IPAddress> addressProvider;
     private readonly ITrackpadInput input;
@@ -331,7 +334,8 @@ input{width:100%;padding:13px;border:1px solid #415260;border-radius:10px;backgr
             if (!acquired) { await ws.SendAsync(Encoding.UTF8.GetBytes("{\"error\":\"busy\"}"), WebSocketMessageType.Text, true, owner.Cancel.Token); return; }
             // Connecting the trackpad must not wait on native MIDI driver discovery.
             // The MIDI surface requests the full description when it opens.
-            await ws.SendAsync(new ArraySegment<byte>(Encoding.UTF8.GetBytes(JsonSerializer.Serialize(new {ready=true,host=input.GetConnectionInfo()}))), WebSocketMessageType.Text, true, owner.Cancel.Token);
+            string lastHost = JsonSerializer.Serialize(input.GetConnectionInfo());
+            await ws.SendAsync(Encoding.UTF8.GetBytes("{\"ready\":true,\"host\":" + lastHost + "}"), WebSocketMessageType.Text, true, owner.Cancel.Token);
             var rateStart = Environment.TickCount64;
             var count = 0;
             while (ws.State == WebSocketState.Open) {
@@ -343,8 +347,13 @@ input{width:100%;padding:13px;border:1px solid #415260;border-radius:10px;backgr
                     if (session != owner || owner.Controller != ws) return;
                     Apply(message.RootElement, input);
                 }
-                if (message.RootElement.GetProperty("type").GetString() == "ping")
-                    await ws.SendAsync(Encoding.UTF8.GetBytes(JsonSerializer.Serialize(new {pong=true,host=input.GetConnectionInfo()})), WebSocketMessageType.Text, true, owner.Cancel.Token);
+                if (message.RootElement.GetProperty("type").GetString() == "ping") {
+                    // Heartbeats stay a few bytes; host state is resent only when it changed.
+                    var host = JsonSerializer.Serialize(input.GetConnectionInfo());
+                    var reply = host == lastHost ? "{\"pong\":true}" : "{\"pong\":true,\"host\":" + host + "}";
+                    lastHost = host;
+                    await ws.SendAsync(Encoding.UTF8.GetBytes(reply), WebSocketMessageType.Text, true, owner.Cancel.Token);
+                }
                 if (message.RootElement.GetProperty("type").GetString() is "midiPort" or "info")
                     await ws.SendAsync(Encoding.UTF8.GetBytes(JsonSerializer.Serialize(new {host=input.GetInfo()})), WebSocketMessageType.Text, true, owner.Cancel.Token);
             }
@@ -392,6 +401,7 @@ input{width:100%;padding:13px;border:1px solid #415260;border-radius:10px;backgr
             case "midiCC": sink.Midi(false,Range("channel",0,15),Range("number",0,119),Range("value",0,127)); break;
             case "midiNote": sink.Midi(true,Range("channel",0,15),Range("number",0,127),Range("value",0,127)); break;
             case "midiPanic": sink.MidiPanic(); break;
+            case "shortcut": sink.Shortcut(Range("id",0,ShortcutCount-1)); break;
             case "releaseAll": sink.ReleaseAll(); break;
             case "info": break;
             case "ping": break;
@@ -420,5 +430,6 @@ public interface ITrackpadInput {
     void MidiPort(int id) { }
     void Midi(bool note,int channel,int number,int value) { }
     void MidiPanic() { }
+    void Shortcut(int id) { }
 }
 public interface ITrackpadFirewall { void Open(IPAddress address, int port); void Close(); }

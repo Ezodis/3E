@@ -19,6 +19,13 @@ async function wake(page){await page.evaluate(()=>{Object.defineProperty(documen
    assert.equal(await p.locator('#drag,#left,#right').count(),0);
    assert.deepEqual(await p.locator('#pad').boundingBox(),{x:0,y:0,width:390,height:844});
    assert.equal(await p.locator('#pad').evaluate(el=>getComputedStyle(el).boxShadow),'none','full-screen pad has no square frame');
+   const dockBox=async id=>p.locator(id).boundingBox();
+   const [commandsBox,appsBox,mediaBox]=[await dockBox('#commands'),await dockBox('#apps'),await dockBox('#media')];
+   assert.ok(Math.abs(appsBox.x+appsBox.width/2-195)<=1,'Apps is centred in the dock');
+   assert.ok(commandsBox.x<=16&&mediaBox.x+mediaBox.width>=374,'Shortcuts sit in the left corner and Media on the right');
+   await p.locator('#commands').tap();assert.equal(await p.locator('#commandsPane button').count(),18);
+   await p.locator('#commandsPane button[aria-label^="Copy"]').tap();await p.waitForTimeout(250);
+   assert.ok(commands.some(c=>c.type==='shortcut'&&c.id===0),'Copy sends its fixed shortcut id');assert.equal(await p.locator('#commandsPane').isVisible(),false);
    assert.deepEqual(await p.locator('#apps').evaluate(el=>({background:getComputedStyle(el).backgroundColor,border:getComputedStyle(el).borderTopWidth})),{background:'rgba(0, 0, 0, 0)',border:'0px'},'Apps artwork has no enclosing button bezel');
    await drag(p,p.locator('#apps'),70);await drag(p,p.locator('#apps'),-70);
    assert.deepEqual(commands.filter(c=>c.type==='navigate').map(c=>c.direction),[1,-1],'fast swipes issue one deliberate step each');

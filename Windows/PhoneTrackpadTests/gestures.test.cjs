@@ -1,10 +1,10 @@
 const assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm'),path=require('node:path');
 const source=fs.readFileSync(path.join(__dirname,'../../Shared/PhoneControl/Web/PhoneTrackpad.js'),'utf8');
-const elements=new Map(),sent=[],timers=new Map();let time=1000,frame,ws,heartbeat,checks=0,nextTimer=0;
+const elements=new Map(),sent=[],pings=[],timers=new Map();let time=1000,frame,ws,heartbeat,checks=0,nextTimer=0;
 function element(id){if(!elements.has(id))elements.set(id,{value:'3',handlers:{},disabled:true,hidden:true,classList:{add(){},remove(){},toggle(){}},addEventListener(type,fn){this.handlers[type]=fn;},setAttribute(){}});return elements.get(id);}
 const doc={hidden:false,handlers:{},documentElement:element('html'),getElementById:element,addEventListener(type,fn){this.handlers[type]=fn;}};
 const win={innerWidth:390,handlers:{},matchMedia(){return{matches:false};},addEventListener(type,fn){this.handlers[type]=fn;}};
-class Socket{static OPEN=1;constructor(){ws=this;this.readyState=1;this.bufferedAmount=0;}send(text){sent.push(JSON.parse(text));}close(){this.readyState=3;this.onclose?.();}}
+class Socket{static OPEN=1;constructor(){ws=this;this.readyState=1;this.bufferedAmount=0;}send(text){const command=JSON.parse(text);(command.type==='ping'?pings:sent).push(command);}close(){this.readyState=3;this.onclose?.();}}
 vm.runInNewContext(source,{document:doc,window:win,URLSearchParams,Uint8Array,crypto:require('node:crypto').webcrypto,location:{hash:'#'+'A'.repeat(48),host:'127.0.0.1:17834',search:''},WebSocket:Socket,localStorage:{getItem(){return null;},setItem(){}},performance:{now:()=>time},requestAnimationFrame(fn){frame=fn;},setInterval(fn){heartbeat=fn;return 1;},clearInterval(){},setTimeout(fn,ms){const id=++nextTimer;timers.set(id,{fn,ms});return id;},clearTimeout(id){timers.delete(id);}});
 function connected(){ws.onopen();ws.onmessage({data:'{"ready":true}'});sent.length=0;}connected();
 const touch=(x,y)=>({clientX:x,clientY:y}),fingers=(n,x,y)=>Array.from({length:n},(_,i)=>touch(x+i*20,y));
@@ -41,6 +41,10 @@ element('scrollMode').handlers.click();fire('touchstart',[touch(10,10)]);fire('t
 begin();win.handlers.resize();assert.deepEqual(sent,[{type:'left'},{type:'down'}],'Safari chrome height changes must not release a drag');checks++;win.innerWidth=844;win.handlers.resize();expect([{type:'left'},{type:'down'},{type:'up'},{type:'releaseAll'}],'rotation releases all controls');
 fire('touchstart',[touch(10,10)]);ws.bufferedAmount=600;fire('touchmove',[touch(20,10)]);fire('touchmove',[touch(30,10)]);frame();assert.deepEqual(sent,[],'brief backpressure keeps unsent motion out of the socket');assert.equal(ws.readyState,1);ws.bufferedAmount=0;frame();fire('touchend',[]);expect([{type:'move',x:60,y:0}],'coalesced motion resumes without a reconnect or a backlog of old packets');
 begin();ws.bufferedAmount=600;fire('touchmove',[touch(30,10)]);fire('touchend',[]);timer(120);ws.bufferedAmount=0;expect([{type:'left'},{type:'down'},{type:'move',x:60,y:0},{type:'up'}],'backpressure preserves motion before a drag release');
-const failed=ws;ws.close();timer(250);assert.notEqual(ws,failed);connected();checks++;time+=1500;heartbeat();assert.deepEqual(sent.splice(0),[{type:'ping'}]);ws.onmessage({data:'{"pong":true}'});time+=1500;heartbeat();assert.equal(ws.readyState,1);sent.length=0;checks++;
+const failed=ws;ws.close();timer(250);assert.notEqual(ws,failed);connected();checks++;time+=1500;pings.length=0;heartbeat();assert.deepEqual(pings.splice(0),[{type:'ping'}]);ws.onmessage({data:'{"pong":true}'});time+=1500;heartbeat();assert.equal(ws.readyState,1);sent.length=0;checks++;
 time+=5000;heartbeat();assert.equal(ws.readyState,3);timer(250);connected();checks++;doc.hidden=true;doc.handlers.visibilitychange();doc.hidden=false;win.handlers.pageshow();const waking=ws;win.handlers.focus();doc.handlers.visibilitychange();assert.equal(ws,waking);connected();checks++;
+sent.length=0;time+=2000;pings.length=0;fire('touchstart',[touch(10,10)]);assert.equal(pings.length,1,'a touch after a pause sends one wake packet');fire('touchend',[]);sent.length=0;checks++;
+doc.hidden=true;doc.handlers.visibilitychange();doc.hidden=false;doc.handlers.visibilitychange();const reconnecting=ws;
+fire('touchstart',[touch(10,10)]);fire('touchmove',[touch(30,10)]);fire('touchend',[]);fire('touchstart',[touch(50,50)]);fire('touchend',[]);
+reconnecting.onopen();sent.length=0;assert.equal(ws,reconnecting);reconnecting.onmessage({data:'{"ready":true}'});expect([{type:'move',x:60,y:0},{type:'left'}],'motion and a tap made while waking are delivered on connect');
 ws.onmessage({data:'{"error":"pairing"}'});assert.equal(element('connect').textContent,'Connect');assert.ok(![...timers.values()].some(t=>t.ms===250));checks++;console.log('PASS: '+checks+' shared gesture and connection checks.');

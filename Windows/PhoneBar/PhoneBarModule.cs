@@ -20,7 +20,7 @@ public sealed class PhoneBarModule : IDisposable {
         volume ??= new(WindowsOutputVolume.Read,WindowsOutputVolume.Write);
         receiver ??= new(PhoneTrackpad.GetLocalAddress,
             new NativeTrackpadInput(()=>new {media=media?.State},action=>media?.Send(action),()=>volume?.State,level=>volume?.Set(level),()=>volume?.CancelPending()), new TrackpadFirewall(), PhoneTrackpad.Port);
-        receiver.Start();
+        if (receiver.Start()) PhonePowerTuning.Begin(); else PhonePowerTuning.End();
         popup ??= new(receiver);
         popup.Show();
     }
@@ -28,6 +28,7 @@ public sealed class PhoneBarModule : IDisposable {
     public void Stop() {
         popup?.Dispose(); popup = null;
         receiver?.Stop();
+        PhonePowerTuning.End();
         media?.Dispose(); media=null;
         volume?.Dispose(); volume=null;
     }
@@ -37,5 +38,6 @@ public sealed class PhoneBarModule : IDisposable {
         disposed = true;
         Stop();
         receiver?.Dispose(); receiver = null;
+        PhonePowerTuning.End();
     }
 }

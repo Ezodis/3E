@@ -16,7 +16,31 @@
     pause:svg('<path d="M8 6h6v20H8zm10 0h6v20h-6z" fill="currentColor"/>'),
     stop:svg('<rect x="6" y="6" width="20" height="20" rx="2" fill="currentColor"/>')
   };
-  let active=null, holdTimer, restoreTimer, lastPointer=-Infinity, controls={};
+  let active=null, holdTimer, restoreTimer, lastPointer=-Infinity, controls={}, controlsSignature='';
+  // Fixed palette: ids match PhoneTrackpad.ShortcutCount and the host mapping.
+  const shortcuts=[[0,'⌘C','Copy'],[1,'⌘V','Paste'],[2,'⌘X','Cut'],[3,'⌘A','Select all'],[4,'⌘Z','Undo'],[5,'⇧⌘Z','Redo'],
+    [6,'⌘T','New tab'],[7,'⇧⌘T','Reopen tab'],[8,'⌘W','Close tab'],[9,'⌘N','New window'],[10,'⌘F','Find'],[11,'⌘S','Save'],
+    [12,'⌘R','Refresh'],[16,'⌘Space','Search'],[17,'⌘Q','Quit app'],[13,'⇧⌘3','Screenshot'],[14,'⇧⌘4','Area shot'],[15,'⇧⌘5','Record']];
+  const commandsButton=$('commands'),commandsPane=$('commandsPane');
+  let commandsTimer;
+  function showCommands(show){
+    clearTimeout(commandsTimer);commandsPane.hidden=!show;commandsButton.setAttribute('aria-expanded',String(show));
+    commandsPane.querySelectorAll('.sent').forEach(b=>b.classList.remove('sent'));
+  }
+  for(const [id,keys,label] of shortcuts){
+    const button=document.createElement('button');button.type='button';
+    button.setAttribute('aria-label',label+' ('+keys+')');
+    const kbd=document.createElement('kbd'),small=document.createElement('small');kbd.textContent=keys;small.textContent=label;button.append(kbd,small);
+    button.addEventListener('click',()=>{
+      if(!C.connected()||!C.send('shortcut',{id}))return;
+      // Close after a short confirmation so the shortcut lands in the app underneath.
+      button.classList.add('sent');clearTimeout(commandsTimer);commandsTimer=setTimeout(()=>showCommands(false),160);
+    });
+    commandsPane.append(button);
+  }
+  commandsButton.addEventListener('click',()=>{if(!C.connected())return;C.release();hideVolume(true);showCommands(commandsPane.hidden);});
+  commandsButton.addEventListener('contextmenu',e=>e.preventDefault());
+  document.addEventListener('pointerdown',e=>{if(!commandsPane.hidden&&!commandsPane.contains(e.target)&&!commandsButton.contains(e.target))showCommands(false);});
   let volume={available:false,level:null},volumeEditing=false,volumePending=null,volumeSendTimer,volumeHideTimer,volumeQuiet=0;
   const volumePane=$('volumePane'),volumeSlider=$('outputVolume');
   function showVolume(){clearTimeout(volumeHideTimer);volumePane.hidden=false;$('media').setAttribute('aria-expanded','true');}
@@ -94,7 +118,7 @@
     button.addEventListener('pointerdown',e=>{
       e.preventDefault();if(!C.connected()||e.button>0)return;
       if(active){cancel();return;}
-      C.release();lastPointer=performance.now();clearTimeout(restoreTimer);
+      C.release();showCommands(false);lastPointer=performance.now();clearTimeout(restoreTimer);
       button.setPointerCapture(e.pointerId);
       active={kind,id:e.pointerId,startX:e.clientX,startY:e.clientY,stepX:e.clientX,start:performance.now(),lastStep:-Infinity,steps:0,max:0,axis:null,held:false};
       button.classList.add('active');
@@ -140,8 +164,12 @@
   $('media').addEventListener('wheel',e=>{
     if(!C.connected()||!e.deltaY)return;e.preventDefault();showVolume();changeVolume(+volumeSlider.value+(e.deltaY<0?2:-2));finishVolume();
   },{passive:false});
-  window.ThreeEDock={cancel,describe(info){
-    if(info?.controls){controls=info.controls;if(!active)restore();}
+  window.ThreeEDock={cancel,commands:showCommands,describe(info){
+    // Windows and macOS hosts map the shortcut palette; unknown hosts hide it.
+    if(info?.platform){commandsButton.hidden=!['windows','macos'].includes(info.platform);if(commandsButton.hidden)showCommands(false);}
+    // Repaint artwork only when the host state actually changed. Rebuilding
+    // images on every heartbeat stalled touch handling on the phone.
+    if(info?.controls){const signature=JSON.stringify(info.controls);if(signature!==controlsSignature){controlsSignature=signature;controls=info.controls;if(!active)restore();}}
     if(info?.volume){
       volume=info.volume;volumeSlider.disabled=!volume.available;
       if(!volume.available){$('volumeValue').textContent='—';volumeSlider.setAttribute('aria-label','Output volume unavailable for this device');}

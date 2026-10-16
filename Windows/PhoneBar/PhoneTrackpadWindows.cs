@@ -98,7 +98,7 @@ public sealed class NativeTrackpadInput : ITrackpadInput, IDisposable {
     }
     public void TaskView() => WindowsShortcut(0x09); // Windows + Tab
     public void ShowDesktop() => WindowsShortcut(0x44); // Windows + D
-    private static Input KeyEvent(ushort key,bool up=false) => new() { Type=1,Data=new InputData { Keyboard=new Keyboard { Key=key,Extra=(UIntPtr)ShortcutMarker,Flags=(up?2u:0u) | (key==0x5B || key==0x25 || key==0x27 ? 1u:0u) } } };
+    private static Input KeyEvent(ushort key,bool up=false) => new() { Type=1,Data=new InputData { Keyboard=new Keyboard { Key=key,Extra=(UIntPtr)ShortcutMarker,Flags=(up?2u:0u) | (key==0x5B || key==0x25 || key==0x27 || key==0x2C ? 1u:0u) } } };
     private static void Keys(params Input[] keys) { if(SendInput((uint)keys.Length,keys,Marshal.SizeOf<Input>())!=keys.Length) throw new InvalidOperationException("Windows could not accept the shortcut."); }
     private static void ReleaseKeys(params ushort[] keys) { foreach(var key in keys) SendInput(1,new[]{KeyEvent(key,true)},Marshal.SizeOf<Input>()); }
     public void AppsBegin() => BeginApps(1);
@@ -124,6 +124,109 @@ public sealed class NativeTrackpadInput : ITrackpadInput, IDisposable {
         try { Keys(KeyEvent(0x5B),KeyEvent(0x11),KeyEvent(arrow),KeyEvent(arrow,true)); }
         finally { ReleaseKeys(arrow,0x11,0x5B); }
     }
+    // Fixed Mac-style palette (ids match Web/dock.js). Command maps to Ctrl, and
+    // the screenshot trio maps to the Windows capture shortcuts.
+    private static readonly ushort[][] shortcuts = {
+        new ushort[]{0x11,0x43},      // 0  ⌘C  copy
+        new ushort[]{0x11,0x56},      // 1  ⌘V  paste
+        new ushort[]{0x11,0x58},      // 2  ⌘X  cut
+        new ushort[]{0x11,0x41},      // 3  ⌘A  select all
+        new ushort[]{0x11,0x5A},      // 4  ⌘Z  undo
+        new ushort[]{0x11,0x59},      // 5  ⌘⇧Z redo (Ctrl+Y)
+        new ushort[]{0x11,0x54},      // 6  ⌘T  new tab
+        new ushort[]{0x11,0x10,0x54}, // 7  ⌘⇧T reopen closed tab
+        new ushort[]{0x11,0x57},      // 8  ⌘W  close tab
+        new ushort[]{0x11,0x4E},      // 9  ⌘N  new window
+        new ushort[]{0x11,0x46},      // 10 ⌘F  find
+        new ushort[]{0x11,0x53},      // 11 ⌘S  save
+        new ushort[]{0x74},           // 12 ⌘R  refresh (F5)
+        new ushort[]{0x5B,0x2C},      // 13 ⌘⇧3 full screenshot (Win+PrtSc)
+        new ushort[]{0x5B,0x10,0x53}, // 14 ⌘⇧4 area screenshot (Win+Shift+S)
+        new ushort[]{0x5B,0x10,0x52}, // 15 ⌘⇧5 screen recording (Win+Shift+R)
+        new ushort[]{0x5B,0x53},      // 16 ⌘Space search (Win+S)
+        new ushort[]{0x12,0x73},      // 17 ⌘Q  quit app (Alt+F4)
+    };
+    public void Shortcut(int id) {
+        if ((uint)id >= (uint)shortcuts.Length) return;
+        // A held drag button or app switcher must never combine with a shortcut.
+        Release(); AppsEnd();
+        var keys = shortcuts[id];
+        var sequence = keys.Select(k => KeyEvent(k)).Concat(keys.Reverse().Select(k => KeyEvent(k, true))).ToArray();
+        // A rejected injection (for example a secure desktop) must not drop the
+        // phone connection or leave a modifier held.
+        if (SendInput((uint)sequence.Length, sequence, Marshal.SizeOf<Input>()) != sequence.Length) ReleaseKeys(keys.Reverse().ToArray());
+    }
     public void Media(int action) => media?.Invoke(action);
     public void Volume(int level) => volume?.Invoke(level);
+}
+
+// While the receiver runs, Windows must not throttle this background tray
+// process or let the Wi-Fi adapter doze between packets: both add a visible
+// delay to the first touch after a pause and cause stutter during motion.
+// Original values are saved to disk first, so a crash is repaired next start.
+internal static class PhonePowerTuning {
+    private static readonly Guid WirelessGroup = new("19cadd1a-b7ca-4b0f-8dfa-cf6b0a1e5ea1");
+    private static readonly Guid WirelessPowerSaving = new("12bbebe6-58d6-4636-95bb-3217ef867c1a");
+    private static readonly object gate = new();
+    private static bool active;
+    private static string StatePath => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "3EWindows", "phone-wifi-power.txt");
+    [StructLayout(LayoutKind.Sequential)] private struct Throttling { public uint Version, ControlMask, StateMask; }
+    [DllImport("kernel32.dll")] private static extern IntPtr GetCurrentProcess();
+    [DllImport("kernel32.dll", SetLastError = true)] private static extern bool SetProcessInformation(IntPtr process, int cls, ref Throttling info, int size);
+    [DllImport("powrprof.dll")] private static extern uint PowerGetActiveScheme(IntPtr root, out IntPtr scheme);
+    [DllImport("powrprof.dll")] private static extern uint PowerSetActiveScheme(IntPtr root, ref Guid scheme);
+    [DllImport("powrprof.dll")] private static extern uint PowerReadACValueIndex(IntPtr root, ref Guid scheme, ref Guid group, ref Guid setting, out uint value);
+    [DllImport("powrprof.dll")] private static extern uint PowerReadDCValueIndex(IntPtr root, ref Guid scheme, ref Guid group, ref Guid setting, out uint value);
+    [DllImport("powrprof.dll")] private static extern uint PowerWriteACValueIndex(IntPtr root, ref Guid scheme, ref Guid group, ref Guid setting, uint value);
+    [DllImport("powrprof.dll")] private static extern uint PowerWriteDCValueIndex(IntPtr root, ref Guid scheme, ref Guid group, ref Guid setting, uint value);
+    [DllImport("kernel32.dll")] private static extern IntPtr LocalFree(IntPtr memory);
+
+    private static void ProcessThrottling(bool allow) {
+        // EXECUTION_SPEED | IGNORE_TIMER_RESOLUTION. ControlMask 0 returns control to Windows.
+        var state = new Throttling { Version = 1, ControlMask = allow ? 0u : 0x5u, StateMask = 0 };
+        SetProcessInformation(GetCurrentProcess(), 4, ref state, Marshal.SizeOf<Throttling>());
+    }
+    private static bool ActiveScheme(out Guid scheme) {
+        scheme = Guid.Empty;
+        if (PowerGetActiveScheme(IntPtr.Zero, out var pointer) != 0 || pointer == IntPtr.Zero) return false;
+        try { scheme = Marshal.PtrToStructure<Guid>(pointer); return true; } finally { LocalFree(pointer); }
+    }
+    private static void Write(Guid scheme, uint ac, uint dc) {
+        Guid group = WirelessGroup, setting = WirelessPowerSaving;
+        PowerWriteACValueIndex(IntPtr.Zero, ref scheme, ref group, ref setting, ac);
+        PowerWriteDCValueIndex(IntPtr.Zero, ref scheme, ref group, ref setting, dc);
+        PowerSetActiveScheme(IntPtr.Zero, ref scheme);
+    }
+    private static void RestoreSaved() {
+        var text = File.Exists(StatePath) ? File.ReadAllText(StatePath).Split(' ') : null;
+        if (text is { Length: 3 } && Guid.TryParse(text[0], out var scheme) && uint.TryParse(text[1], out var ac) && uint.TryParse(text[2], out var dc) && ac <= 3 && dc <= 3)
+            Write(scheme, ac, dc);
+        File.Delete(StatePath);
+    }
+    public static void Begin() {
+        lock (gate) {
+            if (active) return;
+            active = true;
+            try { ProcessThrottling(false); } catch { }
+            try {
+                RestoreSaved(); // Repairs a previous session that ended without cleanup.
+                if (!ActiveScheme(out var scheme)) return;
+                Guid group = WirelessGroup, setting = WirelessPowerSaving;
+                if (PowerReadACValueIndex(IntPtr.Zero, ref scheme, ref group, ref setting, out var ac) != 0 ||
+                    PowerReadDCValueIndex(IntPtr.Zero, ref scheme, ref group, ref setting, out var dc) != 0) return;
+                if (ac == 0 && dc == 0) return; // Already Maximum Performance.
+                Directory.CreateDirectory(Path.GetDirectoryName(StatePath));
+                File.WriteAllText(StatePath, $"{scheme} {ac} {dc}");
+                Write(scheme, 0, 0); // 0 = Maximum Performance
+            } catch { /* Power tuning is best effort; the trackpad works without it. */ }
+        }
+    }
+    public static void End() {
+        lock (gate) {
+            if (!active) return;
+            active = false;
+            try { RestoreSaved(); } catch { }
+            try { ProcessThrottling(true); } catch { }
+        }
+    }
 }

@@ -3,7 +3,7 @@
   'use strict';
   const $ = id => document.getElementById(id);
   const pad = $('pad'), status = $('status'), connectButton = $('connect');
-  const buttons = ['apps','media','scrollMode','stepUp','stepDown','stepLeft','stepRight'].map($);
+  const buttons = ['commands','apps','media','scrollMode','stepUp','stepDown','stepLeft','stepRight'].map($);
   const token = location.hash.slice(1);
   // Old ?watch=1 links still work, but normal links adapt without an extra route.
   const watchMode = new URLSearchParams(location.search).get('watch') === '1' || window.matchMedia('(max-width: 300px)').matches;
@@ -23,7 +23,7 @@
   const clientBytes = new Uint8Array(16); crypto.getRandomValues(clientBytes);
   const controllerId = Array.from(clientBytes,b => b.toString(16).padStart(2,'0')).join('');
   let connectionAttempt = 0, connecting = false, wanted = true, reconnectTimer, connectTimeout;
-  let retryDelay = 250, lastReply = 0, lastMotionSent = -Infinity;
+  let retryDelay = 250, lastReply = 0, lastMotionSent = -Infinity, lastSentAt = -Infinity, pendingTap = null;
   let mode = 0, peak = 0, started = 0, distance = 0, last = null, cancelled = false;
   let lastTap = null, tapCandidate = false, tapDrag = false, gestureOrigin = null, fourOrigin = null, fourDone = false;
   let lastTouchAt = -Infinity;
@@ -42,11 +42,11 @@
         previous.x += data.x; previous.y += data.y;
       } else httpQueue.push({ type, ...data });
       if (httpQueue.length > 32) { recover('Connection is slow — reconnecting…'); return false; }
-      pump(); return true;
+      lastSentAt = performance.now(); pump(); return true;
     }
     if (!ready || socket?.readyState !== WebSocket.OPEN) return false;
     if (socket.bufferedAmount > 8192) { recover('Connection is slow — reconnecting…'); return false; }
-    try { socket.send(JSON.stringify({ type, ...data })); return true; }
+    try { socket.send(JSON.stringify({ type, ...data })); lastSentAt = performance.now(); return true; }
     catch { recover('Connection interrupted — reconnecting…'); return false; }
   }
   function drag(value) {
@@ -63,8 +63,8 @@
     lastTap = null; tapCandidate = tapDrag = fourDone = false; gestureOrigin = fourOrigin = null;
     dx = dy = sx = sy = 0;
     clearInterval(heartbeat);
-    clearTimeout(holdTimer); clearTimeout(releaseTimer); releaseTimer=null; httpQueue = [];
-    buttons.forEach(b => b.disabled = true);
+    clearTimeout(holdTimer); clearTimeout(releaseTimer); releaseTimer=null; httpQueue = []; pendingTap = null;
+    buttons.forEach(b => b.disabled = true); window.ThreeEDock?.commands(false);
     pad.classList.remove('live', 'dragging');
     hint(); window.ThreeESurface?.state(false);
     status.textContent = message; connectButton.textContent = wanted ? 'Pause connection' : 'Connect';
@@ -74,10 +74,17 @@
     ready = true; buttons.forEach(b => b.disabled = false); pad.classList.add('live');
     status.textContent = window.ThreeEControl?.info?.inputPermission===false ? 'Allow Accessibility on your Mac for pointer control.' : 'Connected'; connectButton.textContent = 'Pause connection';
     window.ThreeESurface?.state(true);
+    // Motion and a tap made while the link was waking are delivered now
+    // instead of being lost, so the first touch after a pause still counts.
+    flush(true);
+    if (pendingTap && performance.now()-pendingTap.at < 2000) send(pendingTap.type);
+    pendingTap = null;
+    // A short heartbeat (tiny now) keeps phone and laptop Wi-Fi out of deep
+    // power-save, which otherwise delays the first movement after a pause.
     heartbeat = setInterval(() => {
       if (performance.now()-lastReply > 4500) recover('Connection interrupted — reconnecting…');
       else send('ping');
-    }, 1500);
+    }, 1000);
   }
   async function post(client, type, extra = {}, keepalive = false) {
     const sequence = ++httpSequence;
@@ -162,7 +169,12 @@
              y: Array.from(touches).reduce((n, t) => n + t.clientY, 0) / touches.length };
   }
   pad.addEventListener('touchstart', e => {
-    e.preventDefault(); lastTouchAt = performance.now(); if (!ready || !e.touches.length) { wake(); return; }
+    e.preventDefault(); lastTouchAt = performance.now(); if (!e.touches.length) return;
+    // Keep the gesture even while (re)connecting; flush() holds its motion.
+    if (!ready) wake();
+    // After a pause the radios doze; a tiny packet now wakes the path before
+    // the first movement sample arrives.
+    else if (lastTouchAt-lastSentAt > 400) send('ping');
     clearTimeout(holdTimer);
     if(releaseTimer) { clearTimeout(releaseTimer); releaseTimer=null; }
     const point = center(e.touches), count = e.touches.length;
@@ -188,7 +200,7 @@
     }
   }, { passive: false });
   pad.addEventListener('touchmove', e => {
-    e.preventDefault(); lastTouchAt = performance.now(); if (!ready || cancelled || !e.touches.length) return;
+    e.preventDefault(); lastTouchAt = performance.now(); if (cancelled || !e.touches.length) return;
     const point = center(e.touches), count = e.touches.length;
     if (peak >= 4) {
       if (count === 4 && fourOrigin && !fourDone) {
@@ -223,7 +235,9 @@
     flush(); // First movement goes immediately; subsequent samples are capped at 125 Hz.
   }, { passive: false });
   function flush(all = false) {
-    if (!ready) { dx = dy = sx = sy = 0; return; }
+    // While a connection is being established, keep (bounded) motion so it is
+    // applied on connect; otherwise discard it.
+    if (!ready) { if (!connecting) dx = dy = sx = sy = 0; return; }
     // Keep unsent motion coalesced here during a brief radio stall, instead of
     // filling the socket with old positions and forcing a full reconnect.
     // Button edges still flush immediately to preserve drag/click ordering.
@@ -254,8 +268,9 @@
       cancelled = true;
     }
     if (!e.touches.length) {
-      if (ready && !cancelled && !dragging && !scrollMode && peak <= 2 && distance < (singleContact ? 14 : 9) && performance.now() - started < (singleContact ? 750 : 300)) {
-        send(peak === 2 ? 'right' : 'left');
+      if (!cancelled && !dragging && !scrollMode && peak <= 2 && distance < (singleContact ? 14 : 9) && performance.now() - started < (singleContact ? 750 : 300)) {
+        const type = peak === 2 ? 'right' : 'left';
+        if (ready) send(type); else if (connecting) pendingTap = { type, at:performance.now() };
         if (peak === 1) lastTap = { ...gestureOrigin, time:performance.now() };
       }
       mode = peak = 0; last = null; cancelled = false; tapCandidate = false;
