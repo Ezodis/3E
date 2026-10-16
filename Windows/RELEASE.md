@@ -4,7 +4,8 @@
 - **Responsive first touch:** a touch made while the page is waking or reconnecting is kept and delivered once connected instead of being dropped, and a touch after a pause sends an immediate wake packet.
 - **Laptop side:** while Phone Bar runs, the app opts out of Windows background power throttling and sets the active power plan's Wi-Fi adapter power saving to Maximum Performance. The previous values are saved and restored when Phone Bar stops, or on the next start after a crash.
 - **Tap-then-drag fixed:** tap, then touch and move (or hold) now drags instead of double-clicking. Windows previously read the second press as a double-click, so files opened, title bars maximised and text selected whole words. The press now starts just outside Windows' double-click area (a few pixels), and a quick double tap sends a true double-click. macOS starts the drag with a fresh click count.
-- **New dock layout:** ⌘ Shortcuts in the left corner, Apps centred, Media on the right. Apple Watch keeps its compact row.
+- **New dock layout:** ⌘ Shortcuts in the left corner, Apps centred, Media on the right; the phone's scroll button is removed. Press ⌘ and slide onto a shortcut, then release to send it, or tap ⌘ to pick from the palette. Apple Watch keeps its compact row.
+- **One-contact controls always on:** the Settings toggle is gone; hold still to right-click, longer second-tap window and generous tap tolerance now always apply.
 - **⌘ Shortcuts:** ⌘C/V/X/A, ⌘Z, ⇧⌘Z (Ctrl+Y), ⌘T, ⇧⌘T, ⌘W, ⌘N, ⌘F, ⌘S, ⌘R (F5), ⌘Space (Win+S), ⌘Q (Alt+F4), ⇧⌘3 (Win+PrtSc), ⇧⌘4 (Win+Shift+S) and ⇧⌘5 (Win+Shift+R). macOS hosts send the real ⌘ shortcuts. The protocol carries only a fixed palette id, never arbitrary keys.
 - Includes the Phone Bar work from 1.0.10–1.0.19: MIDI surface, media source tracking, Apps/Media swipes, output volume swipe and the borderless layout.
 

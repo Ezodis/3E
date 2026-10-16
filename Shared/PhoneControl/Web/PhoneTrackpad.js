@@ -8,14 +8,10 @@
   // Old ?watch=1 links still work, but normal links adapt without an extra route.
   const watchMode = new URLSearchParams(location.search).get('watch') === '1' || window.matchMedia('(max-width: 300px)').matches;
   document.documentElement.classList.toggle('watch', watchMode);
-  let scrollMode = false, singleContact = false, holdTimer, releaseTimer, pressTimer;
-  try { singleContact = localStorage.getItem('3e-single-contact') === 'true'; } catch {}
-  function contactControls() {
-    document.documentElement.classList.toggle('single-contact',singleContact);
-    $('tongueMode').setAttribute('aria-pressed',String(singleContact));
-    $('tongueMode').textContent = 'Single-contact controls: ' + (singleContact ? 'on' : 'off');
-  }
-  contactControls();
+  // One-contact controls are always on: generous tap/second-tap windows,
+  // hold still to right-click, and contact-break tolerant dragging.
+  let scrollMode = false, holdTimer, releaseTimer, pressTimer;
+  const TAP_TOLERANCE = 14, TAP_TIME = 750, SECOND_TAP = 650, HOLD_RIGHT_CLICK = 800;
   function hint() { $('padHint').textContent = scrollMode ? 'Swipe to scroll' : 'Swipe to move · tap to click'; }
   hint();
   let socket, ready = false, heartbeat, dragging = false, threeDrag = false;
@@ -154,11 +150,6 @@
     if (wanted) { wanted = false; suspend('Paused — tap Connect to resume.'); }
     else { wanted = true; retryDelay = 250; connect(); }
   });
-  $('tongueMode').addEventListener('click', () => {
-    drag(false); clearTimeout(holdTimer); clearTimeout(pressTimer); tapCandidate = false; singleContact = !singleContact; lastTap = null;
-    try { localStorage.setItem('3e-single-contact',String(singleContact)); } catch {}
-    contactControls();
-  });
   $('scrollMode').addEventListener('click', () => {
     drag(false); flush(); scrollMode = !scrollMode; mode = peak = 0; last = null;
     $('scrollMode').setAttribute('aria-pressed', String(scrollMode));
@@ -184,7 +175,7 @@
     if (!mode) {
       started = performance.now(); distance = 0; peak = 0; cancelled = false;
       gestureOrigin = point; fourOrigin = null; fourDone = false;
-      tapCandidate = count === 1 && !dragging && !scrollMode && lastTap && started - lastTap.time < (singleContact ? 650 : 500) && Math.hypot(point.x-lastTap.x,point.y-lastTap.y) < 80;
+      tapCandidate = count === 1 && !dragging && !scrollMode && lastTap && started - lastTap.time < SECOND_TAP && Math.hypot(point.x-lastTap.x,point.y-lastTap.y) < 80;
       lastTap = null;
       // Second contact: lifting without moving is a double-click; moving past
       // the tap tolerance or holding still starts a drag.
@@ -195,10 +186,10 @@
       tapCandidate = false; if (tapDrag) { drag(false); tapDrag = false; cancelled=true; }
     }
     mode = count; peak = Math.max(peak, count); last = point;
-    if (singleContact && count === 1 && !dragging && !scrollMode && !tapCandidate) {
+    if (count === 1 && !dragging && !scrollMode && !tapCandidate) {
       holdTimer = setTimeout(() => {
         if (ready && mode === 1 && distance < 10 && !dragging && !document.hidden) { flush(true); send('right'); cancelled = true; }
-      },800);
+      },HOLD_RIGHT_CLICK);
     }
     if (count >= 4) {
       // Four fingers must never become an accidental three-finger drag.
@@ -242,7 +233,7 @@
     last = point; mode = e.touches.length;
     flush(); // First movement goes immediately; subsequent samples are capped at 125 Hz.
   }, { passive: false });
-  const tapTolerance = () => singleContact ? 14 : 9;
+  const tapTolerance = () => TAP_TOLERANCE;
   function startTapDrag(x, y) {
     clearTimeout(pressTimer); tapCandidate = false;
     // Only the dominant direction is sent; the host nudges the press just
@@ -289,7 +280,7 @@
       cancelled = true;
     }
     if (!e.touches.length) {
-      if (!cancelled && !dragging && !scrollMode && peak <= 2 && distance < (singleContact ? 14 : 9) && performance.now() - started < (singleContact ? 750 : 300)) {
+      if (!cancelled && !dragging && !scrollMode && peak <= 2 && distance < TAP_TOLERANCE && performance.now() - started < TAP_TIME) {
         const type = peak === 2 ? 'right' : 'left';
         if (ready) send(type); else if (connecting) pendingTap = { type, at:performance.now() };
         if (peak === 1) lastTap = { ...gestureOrigin, time:performance.now() };

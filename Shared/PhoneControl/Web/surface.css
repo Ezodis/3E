@@ -30,12 +30,13 @@
 
 .dock{display:grid;grid-template-columns:minmax(0,1fr) auto minmax(0,1fr);align-items:center;justify-content:stretch}
 .dock-side{display:flex;align-items:center;gap:10px;min-width:0;pointer-events:none}.dock-end{justify-content:flex-end}
-#commands{touch-action:manipulation;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;width:76px;min-width:76px;height:56px;padding:10px;display:flex;align-items:center;justify-content:center;border-radius:19px}
+#commands{touch-action:none;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;width:76px;min-width:76px;height:56px;padding:10px;display:flex;align-items:center;justify-content:center;border-radius:19px}
 #commands[aria-expanded=true],#commands:active{background:#a8e5cd;color:#0e2420}
 #commandsPane{position:fixed;z-index:2;left:max(12px,env(safe-area-inset-left));bottom:calc(max(12px,env(safe-area-inset-bottom)) + 66px);width:min(360px,calc(100vw - 24px));display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px;padding:8px;border-radius:20px;background:#17222cf2;border:1px solid #405462;box-shadow:0 10px 30px #0008}
 #commandsPane button{min-height:52px;padding:6px 4px;border-radius:13px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;line-height:1.15;touch-action:manipulation;-webkit-user-select:none;user-select:none}
 #commandsPane kbd{font:700 16px/1.1 system-ui,-apple-system,"Segoe UI",sans-serif;letter-spacing:.02em}#commandsPane small{font-size:11px;font-weight:500;color:#9fb6c2}
-#commandsPane button.sent{background:#a8e5cd;color:#0e2420}#commandsPane button.sent small{color:#0e2420}
+#commandsPane::before{content:'Slide to a shortcut · release to send';grid-column:1/-1;text-align:center;font-size:11px;color:#8da69f;padding:2px 0 4px}
+#commandsPane button.sent,#commandsPane button.picking{background:#a8e5cd;color:#0e2420}#commandsPane button.sent small,#commandsPane button.picking small{color:#0e2420}
 .watch #commands,.watch #commandsPane{display:none!important}
 /* Watch keeps its original compact row: Apps, scroll toggle, Media. */
 .watch .dock{display:flex}.watch .dock-side{display:contents}

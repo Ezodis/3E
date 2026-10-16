@@ -26,6 +26,10 @@ async function wake(page){await page.evaluate(()=>{Object.defineProperty(documen
    await p.locator('#commands').tap();assert.equal(await p.locator('#commandsPane button').count(),18);
    await p.locator('#commandsPane button[aria-label^="Copy"]').tap();await p.waitForTimeout(250);
    assert.ok(commands.some(c=>c.type==='shortcut'&&c.id===0),'Copy sends its fixed shortcut id');assert.equal(await p.locator('#commandsPane').isVisible(),false);
+   {const c=await p.locator('#commands').boundingBox();await p.mouse.move(c.x+c.width/2,c.y+c.height/2);await p.mouse.down();
+    const target=await p.locator('#commandsPane button[aria-label^="Area shot"]').boundingBox();
+    await p.mouse.move(target.x+target.width/2,target.y+target.height/2,{steps:6});await p.mouse.up();await p.waitForTimeout(250);
+    assert.ok(commands.some(c=>c.type==='shortcut'&&c.id===14),'press ⌘, slide to ⇧⌘4 and release sends it');assert.equal(await p.locator('#commandsPane').isVisible(),false);}
    assert.deepEqual(await p.locator('#apps').evaluate(el=>({background:getComputedStyle(el).backgroundColor,border:getComputedStyle(el).borderTopWidth})),{background:'rgba(0, 0, 0, 0)',border:'0px'},'Apps artwork has no enclosing button bezel');
    await drag(p,p.locator('#apps'),70);await drag(p,p.locator('#apps'),-70);
    assert.deepEqual(commands.filter(c=>c.type==='navigate').map(c=>c.direction),[1,-1],'fast swipes issue one deliberate step each');
@@ -93,8 +97,8 @@ async function wake(page){await page.evaluate(()=>{Object.defineProperty(documen
    await p.waitForFunction(()=>document.getElementById('midiStatus').textContent.startsWith('Sending to'));
    await p.locator('#closeStudio').click();await p.evaluate(()=>window.testSockets.at(-1).close());
    await p.waitForFunction(()=>window.testSockets.length>=3&&document.getElementById('status').textContent==='Connected');
-   await p.getByRole('button',{name:'Settings',exact:true}).click();await p.locator('#tongueMode').click();await p.locator('#closeSettings').click();
-   assert.equal(await p.locator('#scrollMode').isVisible(),true);
+   assert.equal(await p.locator('#tongueMode').count(),0,'one-contact controls have no toggle');
+   assert.equal(await p.locator('#scrollMode').isVisible(),false,'phone dock has no scroll button');
    await p.screenshot({path:path.join(out,'trackpad-landscape-'+name+'.png')});
    await p.getByRole('button',{name:'Settings',exact:true}).click();await p.locator('#connect').click();
    const watchCtx=await browser.newContext({viewport:{width:162,height:197},hasTouch:true,isMobile:true});

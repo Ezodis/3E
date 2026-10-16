@@ -18,27 +18,57 @@
   };
   let active=null, holdTimer, restoreTimer, lastPointer=-Infinity, controls={}, controlsSignature='';
   // Fixed palette: ids match PhoneTrackpad.ShortcutCount and the host mapping.
-  const shortcuts=[[0,'⌘C','Copy'],[1,'⌘V','Paste'],[2,'⌘X','Cut'],[3,'⌘A','Select all'],[4,'⌘Z','Undo'],[5,'⇧⌘Z','Redo'],
-    [6,'⌘T','New tab'],[7,'⇧⌘T','Reopen tab'],[8,'⌘W','Close tab'],[9,'⌘N','New window'],[10,'⌘F','Find'],[11,'⌘S','Save'],
-    [12,'⌘R','Refresh'],[16,'⌘Space','Search'],[17,'⌘Q','Quit app'],[13,'⇧⌘3','Screenshot'],[14,'⇧⌘4','Area shot'],[15,'⇧⌘5','Record']];
+  // Rows are listed top to bottom; the most used sit nearest the thumb.
+  const shortcuts=[[12,'⌘R','Refresh'],[16,'⌘Space','Search'],[17,'⌘Q','Quit app'],
+    [9,'⌘N','New window'],[10,'⌘F','Find'],[11,'⌘S','Save'],
+    [13,'⇧⌘3','Screenshot'],[14,'⇧⌘4','Area shot'],[15,'⇧⌘5','Record'],
+    [6,'⌘T','New tab'],[7,'⇧⌘T','Reopen tab'],[8,'⌘W','Close tab'],
+    [3,'⌘A','Select all'],[4,'⌘Z','Undo'],[5,'⇧⌘Z','Redo'],
+    [0,'⌘C','Copy'],[1,'⌘V','Paste'],[2,'⌘X','Cut']];
   const commandsButton=$('commands'),commandsPane=$('commandsPane');
-  let commandsTimer;
+  let commandsTimer,picking=null,commandsPointerAt=-Infinity;
   function showCommands(show){
     clearTimeout(commandsTimer);commandsPane.hidden=!show;commandsButton.setAttribute('aria-expanded',String(show));
-    commandsPane.querySelectorAll('.sent').forEach(b=>b.classList.remove('sent'));
+    commandsPane.querySelectorAll('.sent,.picking').forEach(b=>b.classList.remove('sent','picking'));
   }
+  function fireShortcut(button,id){
+    if(!C.connected()||!C.send('shortcut',{id}))return;
+    // Close after a short confirmation so the shortcut lands in the app underneath.
+    button.classList.add('sent');clearTimeout(commandsTimer);commandsTimer=setTimeout(()=>showCommands(false),160);
+  }
+  const shortcutAt=(x,y)=>{const hit=document.elementFromPoint?.(x,y);const button=hit?.closest?.('#commandsPane button')||(hit?.parentElement?.closest?.('#commandsPane button'));return button&&commandsPane.contains(button)?button:null;};
   for(const [id,keys,label] of shortcuts){
     const button=document.createElement('button');button.type='button';
     button.setAttribute('aria-label',label+' ('+keys+')');
     const kbd=document.createElement('kbd'),small=document.createElement('small');kbd.textContent=keys;small.textContent=label;button.append(kbd,small);
-    button.addEventListener('click',()=>{
-      if(!C.connected()||!C.send('shortcut',{id}))return;
-      // Close after a short confirmation so the shortcut lands in the app underneath.
-      button.classList.add('sent');clearTimeout(commandsTimer);commandsTimer=setTimeout(()=>showCommands(false),160);
-    });
+    button.dataset.shortcut=id;
+    button.addEventListener('click',()=>fireShortcut(button,id));
     commandsPane.append(button);
   }
-  commandsButton.addEventListener('click',()=>{if(!C.connected())return;C.release();hideVolume(true);showCommands(commandsPane.hidden);});
+  // Press ⌘ and slide onto a shortcut, then release to send it. A plain tap
+  // opens (or closes) the palette for tapping instead.
+  commandsButton.addEventListener('pointerdown',e=>{
+    e.preventDefault();if(!C.connected()||e.button>0)return;
+    C.release();hideVolume(true);commandsPointerAt=performance.now();
+    picking={id:e.pointerId,x:e.clientX,y:e.clientY,moved:false,wasOpen:!commandsPane.hidden,target:null};
+    showCommands(true);commandsButton.setPointerCapture?.(e.pointerId);
+  });
+  commandsButton.addEventListener('pointermove',e=>{
+    if(!picking||picking.id!==e.pointerId)return;e.preventDefault();
+    if(Math.hypot(e.clientX-picking.x,e.clientY-picking.y)>10)picking.moved=true;
+    const target=shortcutAt(e.clientX,e.clientY);
+    if(target!==picking.target){picking.target?.classList.remove('picking');target?.classList.add('picking');picking.target=target;}
+  });
+  commandsButton.addEventListener('pointerup',e=>{
+    if(!picking||picking.id!==e.pointerId)return;
+    const p=picking;picking=null;commandsPointerAt=performance.now();
+    const target=shortcutAt(e.clientX,e.clientY)||p.target;target?.classList.remove('picking');
+    if(target&&p.moved)fireShortcut(target,+target.dataset.shortcut);
+    else if(p.moved||p.wasOpen)showCommands(false);
+  });
+  commandsButton.addEventListener('pointercancel',()=>{picking?.target?.classList.remove('picking');picking=null;showCommands(false);});
+  // Keyboard / assistive activation (no pointer) toggles the palette.
+  commandsButton.addEventListener('click',()=>{if(performance.now()-commandsPointerAt<700||!C.connected())return;C.release();hideVolume(true);showCommands(commandsPane.hidden);});
   commandsButton.addEventListener('contextmenu',e=>e.preventDefault());
   document.addEventListener('pointerdown',e=>{if(!commandsPane.hidden&&!commandsPane.contains(e.target)&&!commandsButton.contains(e.target))showCommands(false);});
   let volume={available:false,level:null},volumeEditing=false,volumePending=null,volumeSendTimer,volumeHideTimer,volumeQuiet=0;
