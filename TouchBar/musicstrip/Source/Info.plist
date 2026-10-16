@@ -24,6 +24,8 @@
 	<true/>
 	<key>NSAppleEventsUsageDescription</key>
 	<string>3£ controls your running Spotify player and reads Safari’s current tab URL to display its media service icon. It will not launch Apple Music or a closed player.</string>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>Connect your iPhone to this Mac as a trackpad and MIDI controller.</string>
 	<key>NSPrincipalClass</key>
 	<string>NSApplication</string>
 </dict>

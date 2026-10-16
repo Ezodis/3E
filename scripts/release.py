@@ -52,6 +52,21 @@ def verify_architectures(executable):
     architectures = set(run("xcrun", "lipo", "-archs", str(executable)).split())
     assert {"arm64", "x86_64"} <= architectures, f"Not a universal binary: {architectures}"
 
+def required_module_files(edition):
+    files = []
+    if edition == "combined":
+        files.append("Contents/Frameworks/ThreeEGestureEngine.dylib")
+    if edition in ("combined", "touchbar"):
+        files.append("Contents/Helpers/MIDI Touchbar.app/Contents/MacOS/MIDI Touchbar")
+        for arch in ("arm64", "x64"):
+            for name in ("ThreeE.PhoneHost", "ThreeE.PhoneHost.dll", "ThreeE.PhoneControl.dll", "libThreeEPhoneNative.dylib"):
+                files.append(f"Contents/Resources/PhoneControl/{arch}/{name}")
+    return files
+
+def verify_modules(app, edition):
+    for relative in required_module_files(edition):
+        assert (app / relative).is_file(), f"Missing bundled module: {relative}"
+
 def package(edition, values):
     destination = ROOT / "build/releases"
     destination.mkdir(parents=True, exist_ok=True)
@@ -60,6 +75,7 @@ def package(edition, values):
     info = plistlib.loads((app / "Contents/Info.plist").read_bytes())
     assert info["CFBundleShortVersionString"] == values[edition], "Stale app version"
     assert bool(info.get("ThreeEIncludesTouchTab")) == (edition == "combined"), "Wrong edition"
+    verify_modules(app, edition)
     executable = app / "Contents/MacOS" / info["CFBundleExecutable"]
     verify_architectures(executable)
     run("codesign", "--verify", "--deep", "--strict", str(app))

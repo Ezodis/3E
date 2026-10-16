@@ -1,4 +1,4 @@
-[CmdletBinding()]
+﻿[CmdletBinding()]
 param([switch]$SkipBuild)
 $ErrorActionPreference = 'Stop'
 $repository = Split-Path -Parent $PSScriptRoot
@@ -37,7 +37,13 @@ foreach ($arch in @('x64','arm64')) {
     Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'PhoneTrackpad-QRCoder-LICENSE.txt') -Destination (Join-Path $output 'THIRD-PARTY-LICENSE-QRCoder.txt') -Force
     $phoneSource = Join-Path $output 'PhoneTrackpadSource'
     New-Item -ItemType Directory -Path $phoneSource -Force | Out-Null
-    Get-ChildItem -LiteralPath (Split-Path -Parent $project) -Filter 'PhoneTrackpad*' -File | Copy-Item -Destination $phoneSource -Force
+    Get-ChildItem -LiteralPath (Join-Path $PSScriptRoot 'PhoneBar') -File | Copy-Item -Destination $phoneSource -Force
+    foreach ($module in @('ThreeE.PhoneBar.Windows.dll','ThreeE.PhoneControl.dll','QRCoder.dll')) {
+        if (-not (Test-Path -LiteralPath (Join-Path $output $module))) { throw "Base app is missing bundled Phone Bar module: $module" }
+    }
+    $sharedPhoneSource = Join-Path $repository 'Shared\PhoneControl'
+    Get-ChildItem -LiteralPath $sharedPhoneSource -File | Copy-Item -Destination $phoneSource -Force
+    Copy-Item -LiteralPath (Join-Path $sharedPhoneSource 'Web') -Destination $phoneSource -Recurse -Force
     $archive = Join-Path $build "3EWindows-$arch.zip"
     Compress-Archive -Path (Join-Path $output '*') -DestinationPath $archive -Force
     $payloads[$arch] = [Convert]::ToBase64String([IO.File]::ReadAllBytes($archive))
@@ -51,6 +57,10 @@ dotnet run --project (Join-Path $PSScriptRoot 'PhoneTrackpadTests')
 if ($LASTEXITCODE -ne 0) { throw 'Phone trackpad network/disconnect tests failed.' }
 node (Join-Path $PSScriptRoot 'PhoneTrackpadTests\gestures.test.cjs')
 if ($LASTEXITCODE -ne 0) { throw 'Phone trackpad gesture tests failed.' }
+node (Join-Path $PSScriptRoot 'PhoneTrackpadTests\dock.test.cjs')
+if ($LASTEXITCODE) { throw 'Phone dock tests failed.' }
+node (Join-Path $PSScriptRoot 'PhoneTrackpadTests\watch.test.cjs')
+if ($LASTEXITCODE -ne 0) { throw 'Watch transport and handoff tests failed.' }
 
 $kiroSource = [IO.File]::ReadAllText((Join-Path $PSScriptRoot 'KiroTheme.ps1'))
 $kiroEncoded = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($kiroSource))
@@ -61,6 +71,7 @@ $kiroTriggers = @((New-ScheduledTaskTrigger -AtLogOn -User $user),(New-Scheduled
 Register-ScheduledTask -TaskName '3£Windows Kiro Theme' -Action $kiroAction -Trigger $kiroTriggers -Principal $taskPrincipal -Settings $taskSettings -Force | Out-Null
 '@
 $installer = [IO.File]::ReadAllText((Join-Path $PSScriptRoot 'Installer.template.ps1'))
+$installer = $installer.Replace('{{CLICKS_ACCENTS_SHA256}}',(Get-FileHash -LiteralPath (Join-Path $build 'keyboard\ClicksAccents.exe') -Algorithm SHA256).Hash)
 $installer = $installer.Replace('{{LAUNCHER}}',[IO.File]::ReadAllText((Join-Path $PSScriptRoot 'Launcher.ps1')))
 $installer = $installer.Replace('{{CLICKS_FUNCTIONS}}',[IO.File]::ReadAllText((Join-Path $PSScriptRoot 'Keyboard\ClicksScopedFunctions.ps1'))).Replace('{{CLICKS_ASSETS}}',($assetLines -join "`r`n"))
 $installer = $installer.Replace('{{VERSION}}',$version).Replace('{{POWERTOYS_CONFIG}}',[IO.File]::ReadAllText((Join-Path $PSScriptRoot 'PowerToys.json'))).Replace('{{KEYBOARD_CONFIG}}',[IO.File]::ReadAllText((Join-Path $PSScriptRoot 'Keyboard.template.kbd')))

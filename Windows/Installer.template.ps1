@@ -3,9 +3,10 @@
 3£Windows: one tray menu for three-finger drag, Clicks keyboard, PowerToys,
 automatic light/dark mode and dynamic wallpaper.
 .NOTES
-iPhone trackpad is optional and off at startup. Open it from the tray menu,
-then scan its QR code on the same trusted Wi-Fi. No internet is needed.
-Missing Wi-Fi or a disconnected phone never stops other suite components.
+Phone/watch trackpad is optional and off at startup. Left-click the tray icon
+and scan its QR code on iPhone. Email the same link to open it on Apple Watch.
+The devices use the same trusted Wi-Fi; the trackpad needs no internet.
+Missing Wi-Fi or a disconnected device never stops other suite components.
 .DESCRIPTION
 Portable single-file installer. The application and keyboard rules are embedded.
 Copy this .ps1 alone to another Windows PC. Internet is needed to install signed
@@ -39,7 +40,11 @@ $EmbeddedLauncher = @'
 # app and existing Clicks components without resetting personal input settings.
 if (-not ($Down -or $KeyboardOnly -or $AppOnly -or $Install -or $RepairKeyboard) -and (Test-Path -LiteralPath (Join-Path $env:ProgramFiles '3EWindows\3£Windows.exe'))) {
     $assembly = Join-Path $env:ProgramFiles '3EWindows\ThreeEWindows.dll'
-    if ((Test-Path -LiteralPath $assembly) -and [Diagnostics.FileVersionInfo]::GetVersionInfo($assembly).ProductVersion.Split('+')[0] -eq $Version) {
+    # Keyboard helper fixes can ship without changing the main app version.
+    $accentExe = Join-Path $env:ProgramFiles '3EWindows\Keyboard\ClicksAccents.exe'
+    $accentCurrent = -not (Test-Path -LiteralPath (Join-Path $env:LOCALAPPDATA '3EWindows\ClicksDeviceMapping.json')) -or
+        ((Test-Path -LiteralPath $accentExe) -and (Get-FileHash -LiteralPath $accentExe -Algorithm SHA256).Hash -eq '{{CLICKS_ACCENTS_SHA256}}')
+    if ($accentCurrent -and (Test-Path -LiteralPath $assembly) -and [Diagnostics.FileVersionInfo]::GetVersionInfo($assembly).ProductVersion.Split('+')[0] -eq $Version) {
         & ([scriptblock]::Create($EmbeddedLauncher))
         exit
     }

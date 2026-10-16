@@ -1,9 +1,8 @@
 <Project Sdk="Microsoft.NET.Sdk">
-  <PropertyGroup><OutputType>Exe</OutputType><TargetFramework>net10.0-windows</TargetFramework><ImplicitUsings>enable</ImplicitUsings></PropertyGroup>
+  <PropertyGroup><OutputType>Exe</OutputType><TargetFramework>net10.0</TargetFramework><ImplicitUsings>enable</ImplicitUsings></PropertyGroup>
   <ItemGroup>
-    <PackageReference Include="QRCoder" Version="1.8.1" />
-    <Compile Include="../DragEngine/ThreeFingerDragOnWindows/PhoneTrackpad.cs" Link="PhoneTrackpad.cs" />
-    <EmbeddedResource Include="../DragEngine/ThreeFingerDragOnWindows/PhoneTrackpad.html" LogicalName="ThreeFingerDragOnWindows.PhoneTrackpad.html" />
-    <EmbeddedResource Include="../DragEngine/ThreeFingerDragOnWindows/PhoneTrackpad.js" LogicalName="ThreeFingerDragOnWindows.PhoneTrackpad.js" />
+    <ProjectReference Include="../../Shared/PhoneControl/PhoneControlCore.csproj" />
+    <Compile Include="../PhoneBar/PhoneTrackpadWindows.cs" />
+    <Compile Include="../PhoneBar/PhoneMidiWindows.cs" />
   </ItemGroup>
 </Project>

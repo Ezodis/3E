@@ -2,7 +2,7 @@ name: Build and publish 3£Windows
 on:
   push:
     branches: [main]
-    paths: ['Windows/**', '.github/workflows/windows-releases.yml']
+    paths: ['Windows/**', 'Shared/PhoneControl/**', '.github/workflows/windows-releases.yml']
   workflow_dispatch:
 permissions:
   contents: read

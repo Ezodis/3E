@@ -14,12 +14,15 @@ using System.Threading;
 using System.Threading.Tasks;
 using QRCoder;
 
-namespace ThreeFingerDragOnWindows;
+namespace ThreeE.PhoneControl;
 
 // Optional, session-only LAN receiver. It is never started by normal app startup.
 public sealed class PhoneTrackpad : IDisposable {
     public const int Port = 17833;
     public const string FirewallName = "3EWindows Phone Trackpad";
+    // Shortcut ids are a fixed palette shared with Web/dock.js; hosts map each id
+    // to a native key combination. The protocol never carries arbitrary keys.
+    public const int ShortcutCount = 18;
     private readonly object gate = new();
     private readonly Func<IPAddress> addressProvider;
     private readonly ITrackpadInput input;
@@ -41,10 +44,13 @@ public sealed class PhoneTrackpad : IDisposable {
         public readonly string Origin;
         public readonly IPAddress Address;
         public WebSocket Controller;
+        public string ControllerClient;
+        public string HttpController;
+        public long HttpLastSeen, HttpSequence, HttpRateStart;
+        public int HttpCount;
         public Session(IPAddress address, int port) { Address = address; Origin = $"http://{address}:{port}"; }
     }
 
-    public PhoneTrackpad() : this(GetLocalAddress, new NativeTrackpadInput(), new TrackpadFirewall(), Port) { }
     // Injectable boundaries let tests exercise network loss without disabling Wi-Fi or moving the user's mouse.
     public PhoneTrackpad(Func<IPAddress> addressProvider, ITrackpadInput input, ITrackpadFirewall firewall, int port) {
         this.addressProvider = addressProvider; this.input = input; this.firewall = firewall; this.port = port;
@@ -86,7 +92,7 @@ public sealed class PhoneTrackpad : IDisposable {
             } catch (Exception ex) {
                 candidate?.Listener.Close();
                 try { firewall.Close(); } catch { }
-                status = "Trackpad unavailable: " + ex.Message + " Other 3£Windows features are unaffected.";
+                status = "Trackpad unavailable: " + ex.Message + " Other 3£ features are unaffected.";
                 return false;
             }
         }
@@ -101,7 +107,7 @@ public sealed class PhoneTrackpad : IDisposable {
         previous.Cancel.Cancel();
         previous.Listener.Close();
         previous.Controller?.Abort();
-        try { input.Release(); } catch { }
+        try { input.ReleaseAll(); } catch { }
         try { firewall.Close(); } catch { status += " — Windows could not remove the trackpad firewall rule."; }
     }
 
@@ -109,9 +115,15 @@ public sealed class PhoneTrackpad : IDisposable {
         try {
             while (!owner.Cancel.IsCancellationRequested) {
                 await Task.Delay(1500, owner.Cancel.Token);
+                // Adapter enumeration can block on a driver. It must never hold
+                // the lock used for incoming pointer/keyboard/MIDI commands.
+                var address = addressProvider();
                 lock (gate) {
                     if (session != owner) return;
-                    var address = addressProvider();
+                    if (owner.HttpController != null && Environment.TickCount64 - owner.HttpLastSeen > 6000) {
+                        ReleaseHttpLocked(owner);
+                        status = "Watch asleep — reconnects when its page returns.";
+                    }
                     if (!owner.Address.Equals(address)) {
                         StopLocked("Network changed or disconnected — reconnect to Wi-Fi, then start again.");
                         return;
@@ -138,9 +150,13 @@ public sealed class PhoneTrackpad : IDisposable {
         try {
             var request = context.Request;
             // Literal bound host and same-origin WebSockets prevent DNS rebinding / cross-site control.
-            if (request.HttpMethod != "GET" || request.Headers["Host"] != new Uri(owner.Origin).Authority) {
+            if (request.Headers["Host"] != new Uri(owner.Origin).Authority) {
                 context.Response.StatusCode = 403; context.Response.Close(); return;
             }
+            if (request.Url.AbsolutePath == "/control" && request.HttpMethod == "POST") {
+                await HttpControlAsync(owner, context); return;
+            }
+            if (request.HttpMethod != "GET") { context.Response.StatusCode = 403; context.Response.Close(); return; }
             if (request.Url.AbsolutePath == "/ws" && request.IsWebSocketRequest) {
                 if (request.Headers["Origin"] != owner.Origin || request.Url.Query.Length != 0) {
                     context.Response.StatusCode = 403; context.Response.Close(); return;
@@ -153,17 +169,18 @@ public sealed class PhoneTrackpad : IDisposable {
             if (pairing && !CanShowPairing(request.RemoteEndPoint.Address, owner.Address)) {
                 context.Response.StatusCode = 403; context.Response.Close(); return;
             }
-            var resource = request.Url.AbsolutePath switch { "/" => "PhoneTrackpad.html", "/pad.js" => "PhoneTrackpad.js", "/pair" => "pair", _ => null };
+            var resource = request.Url.AbsolutePath switch { "/" => "PhoneTrackpad.html", "/pad.js" => "PhoneTrackpad.js", "/surface.js" => "surface.js", "/dock.js" => "dock.js", "/surface.css" => "surface.css", "/host.js" => "host.js", "/pair" => "pair", _ => null };
             if (resource == null) { context.Response.StatusCode = 404; context.Response.Close(); return; }
             var response = context.Response;
-            response.ContentType = resource.EndsWith(".js") ? "text/javascript; charset=utf-8" : "text/html; charset=utf-8";
+            response.ContentType = resource.EndsWith(".js") ? "text/javascript; charset=utf-8" : resource.EndsWith(".css") ? "text/css; charset=utf-8" : "text/html; charset=utf-8";
             response.Headers["Cache-Control"] = "no-store";
             response.Headers["Referrer-Policy"] = "no-referrer";
             response.Headers["X-Content-Type-Options"] = "nosniff";
-            response.Headers["Content-Security-Policy"] = "default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; connect-src " + owner.Origin.Replace("http:", "ws:") + "; frame-ancestors 'none'; base-uri 'none'; form-action 'none'";
+            response.Headers["Content-Security-Policy"] = "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src data:; connect-src " + owner.Origin + " " + owner.Origin.Replace("http:", "ws:") + "; frame-ancestors 'none'; base-uri 'none'; form-action 'none'";
             using var stream = pairing
                 ? new MemoryStream(Encoding.UTF8.GetBytes(PairingPage(owner.Origin + "/#" + owner.Token)))
-                : typeof(PhoneTrackpad).Assembly.GetManifestResourceStream("ThreeFingerDragOnWindows." + resource);
+                : resource == "host.js" ? new MemoryStream(Encoding.UTF8.GetBytes("window.ThreeEHost="+JsonSerializer.Serialize(new { platform=input.Platform, http=false })+";"))
+                : typeof(PhoneTrackpad).Assembly.GetManifestResourceStream("ThreeE.PhoneControl.Web." + resource);
             response.ContentLength64 = stream.Length;
             await stream.CopyToAsync(response.OutputStream, owner.Cancel.Token);
             response.Close();
@@ -172,6 +189,89 @@ public sealed class PhoneTrackpad : IDisposable {
     }
 
     public static bool CanShowPairing(IPAddress remote, IPAddress local) => IPAddress.IsLoopback(remote) || remote.Equals(local);
+
+    private void ReleaseHttpLocked(Session owner) {
+        owner.HttpController = null;
+        try { input.ReleaseAll(); } catch { }
+    }
+
+    // watchOS WebKit disables WebSockets by default. Short authenticated POSTs
+    // share the same single-controller lock and disconnect watchdog as the phone.
+    private async Task HttpControlAsync(Session owner, HttpListenerContext context) {
+        var request = context.Request;
+        var response = context.Response;
+        response.Headers["Cache-Control"] = "no-store";
+        response.Headers["X-Content-Type-Options"] = "nosniff";
+        string client = null;
+        int code = 200;
+        bool describe = false, handshake = false;
+        try {
+            var supplied = Encoding.UTF8.GetBytes(request.Headers["X-Trackpad-Token"] ?? "");
+            if (request.Headers["Origin"] != owner.Origin || request.Url.Query.Length != 0 ||
+                request.ContentType?.Split(';')[0] != "application/json") {
+                response.StatusCode = 403; response.Close(); return;
+            }
+            if (!CryptographicOperations.FixedTimeEquals(supplied, Encoding.UTF8.GetBytes(owner.Token))) {
+                response.StatusCode = 401; response.Close(); return;
+            }
+            using var timeout = CancellationTokenSource.CreateLinkedTokenSource(owner.Cancel.Token);
+            timeout.CancelAfter(3000);
+            var bytes = new byte[4097];
+            int count = 0, read;
+            while ((read = await request.InputStream.ReadAsync(bytes.AsMemory(count), timeout.Token)) > 0) {
+                count += read;
+                if (count > 4096) { response.StatusCode = 413; response.Close(); return; }
+            }
+            using var json = JsonDocument.Parse(bytes.AsMemory(0, count), new JsonDocumentOptions { MaxDepth = 5 });
+            var root = json.RootElement;
+            client = root.GetProperty("client").GetString();
+            if (client == null || client.Length != 32 || !client.All(Uri.IsHexDigit)) throw new InvalidDataException();
+            string type = root.GetProperty("type").GetString();
+            long sequence = root.GetProperty("sequence").GetInt64();
+            if (sequence < 0) throw new InvalidDataException();
+            lock (gate) {
+                if (session != owner) code = 410;
+                else if (type == "connect") {
+                    handshake = true;
+                    if (owner.Controller != null || (owner.HttpController != null && owner.HttpController != client) ||
+                        (owner.HttpController == client && sequence <= owner.HttpSequence)) code = 409;
+                    else {
+                        // The same page can reclaim its sleeping connection immediately.
+                        // A larger sequence prevents late commands/disconnects from the old connection.
+                        if (owner.HttpController == client) input.ReleaseAll();
+                        owner.HttpController = client; owner.HttpSequence = sequence;
+                        owner.HttpLastSeen = owner.HttpRateStart = Environment.TickCount64; owner.HttpCount = 0;
+                        status = "Connected to your watch";
+                    }
+                } else if (owner.HttpController != client) code = 403;
+                else if (sequence <= owner.HttpSequence) code = 409;
+                else {
+                    owner.HttpSequence = sequence;
+                    if (type == "disconnect") { ReleaseHttpLocked(owner); status = "Watch disconnected — reconnects when its page returns."; }
+                    else if (type == "commands") {
+                        var commands = root.GetProperty("commands");
+                        if (commands.ValueKind != JsonValueKind.Array || commands.GetArrayLength() > 24) throw new InvalidDataException();
+                        long now = Environment.TickCount64;
+                        if (now - owner.HttpRateStart >= 1000) { owner.HttpRateStart = now; owner.HttpCount = 0; }
+                        owner.HttpCount += commands.GetArrayLength();
+                        if (owner.HttpCount > 600) throw new InvalidDataException();
+                        foreach (var command in commands.EnumerateArray()) { Apply(command, input); if(command.GetProperty("type").GetString() is "info" or "midiPort") describe=true; if(command.GetProperty("type").GetString()=="ping")handshake=true; }
+                        owner.HttpLastSeen = now;
+                    } else throw new InvalidDataException();
+                }
+            }
+        } catch {
+            code = 400;
+            lock (gate) { if (session == owner && client != null && owner.HttpController == client) ReleaseHttpLocked(owner); }
+        }
+        response.StatusCode = code;
+        response.ContentType = "application/json";
+        byte[] result;
+        lock(gate) result = Encoding.UTF8.GetBytes(code == 200 ? (describe || handshake ? JsonSerializer.Serialize(new { ready=true, host=describe ? input.GetInfo() : input.GetConnectionInfo() }) : "{\"ready\":true}") : "{\"ready\":false}");
+        response.ContentLength64 = result.Length;
+        await response.OutputStream.WriteAsync(result, owner.Cancel.Token);
+        response.Close();
+    }
 
     private static string PairingPage(string link) {
         using var data = QRCodeGenerator.GenerateQrCode(link, QRCodeGenerator.ECCLevel.M);
@@ -219,31 +319,52 @@ input{width:100%;padding:13px;border:1px solid #415260;border-radius:10px;backgr
             using var auth = await ReceiveAsync(ws, owner.Cancel.Token, 5);
             if (!auth.RootElement.TryGetProperty("token", out var token) || token.ValueKind != JsonValueKind.String) return;
             var supplied = Encoding.UTF8.GetBytes(token.GetString());
-            if (!CryptographicOperations.FixedTimeEquals(supplied, Encoding.UTF8.GetBytes(owner.Token))) return;
-            lock (gate) {
-                if (session != owner || owner.Controller != null) return;
-                owner.Controller = ws; acquired = true; status = "Connected to your iPhone";
+            if (!CryptographicOperations.FixedTimeEquals(supplied, Encoding.UTF8.GetBytes(owner.Token))) {
+                await ws.SendAsync(Encoding.UTF8.GetBytes("{\"error\":\"pairing\"}"), WebSocketMessageType.Text, true, owner.Cancel.Token); return;
             }
-            await ws.SendAsync(new ArraySegment<byte>(Encoding.UTF8.GetBytes("{\"ready\":true}")), WebSocketMessageType.Text, true, owner.Cancel.Token);
+            string client = auth.RootElement.TryGetProperty("client",out var clientProperty) ? clientProperty.GetString() : null;
+            if (client != null && (client.Length != 32 || !client.All(Uri.IsHexDigit))) return;
+            lock (gate) {
+                if (session != owner) return;
+                if (owner.HttpController == null && (owner.Controller == null || client != null && owner.ControllerClient == client)) {
+                    if (owner.Controller != null) { input.ReleaseAll(); owner.Controller.Abort(); }
+                    owner.Controller = ws; owner.ControllerClient = client; acquired = true; status = "Connected to your phone";
+                }
+            }
+            if (!acquired) { await ws.SendAsync(Encoding.UTF8.GetBytes("{\"error\":\"busy\"}"), WebSocketMessageType.Text, true, owner.Cancel.Token); return; }
+            // Connecting the trackpad must not wait on native MIDI driver discovery.
+            // The MIDI surface requests the full description when it opens.
+            string lastHost = JsonSerializer.Serialize(input.GetConnectionInfo());
+            await ws.SendAsync(Encoding.UTF8.GetBytes("{\"ready\":true,\"host\":" + lastHost + "}"), WebSocketMessageType.Text, true, owner.Cancel.Token);
             var rateStart = Environment.TickCount64;
             var count = 0;
             while (ws.State == WebSocketState.Open) {
                 using var message = await ReceiveAsync(ws, owner.Cancel.Token, 6);
                 var now = Environment.TickCount64;
                 if (now - rateStart >= 1000) { rateStart = now; count = 0; }
-                if (++count > 300) throw new InvalidDataException("Too many commands.");
+                if (++count > 600) throw new InvalidDataException("Too many commands.");
                 lock (gate) {
-                    if (session != owner) return;
+                    if (session != owner || owner.Controller != ws) return;
                     Apply(message.RootElement, input);
                 }
+                if (message.RootElement.GetProperty("type").GetString() == "ping") {
+                    // Heartbeats stay a few bytes; host state is resent only when it changed.
+                    var host = JsonSerializer.Serialize(input.GetConnectionInfo());
+                    var reply = host == lastHost ? "{\"pong\":true}" : "{\"pong\":true,\"host\":" + host + "}";
+                    lastHost = host;
+                    await ws.SendAsync(Encoding.UTF8.GetBytes(reply), WebSocketMessageType.Text, true, owner.Cancel.Token);
+                }
+                if (message.RootElement.GetProperty("type").GetString() is "midiPort" or "info")
+                    await ws.SendAsync(Encoding.UTF8.GetBytes(JsonSerializer.Serialize(new {host=input.GetInfo()})), WebSocketMessageType.Text, true, owner.Cancel.Token);
             }
         } catch { /* Disconnects, sleep and malformed packets affect only this controller. */ }
         finally {
             lock (gate) {
                 if (acquired && session == owner && owner.Controller == ws) {
-                    try { input.Release(); } catch { }
+                    try { input.ReleaseAll(); } catch { }
                     owner.Controller = null;
-                    status = "Phone disconnected — reopen the trackpad to reconnect.";
+                    owner.ControllerClient = null;
+                    status = "Phone disconnected — reconnects when its page returns.";
                 }
             }
             ws.Abort();
@@ -253,68 +374,65 @@ input{width:100%;padding:13px;border:1px solid #415260;border-radius:10px;backgr
     public static void Apply(JsonElement command, ITrackpadInput sink) {
         if (command.ValueKind != JsonValueKind.Object || !command.TryGetProperty("type", out var type) || type.ValueKind != JsonValueKind.String)
             throw new InvalidDataException("Invalid command.");
-        int Number(string name) {
-            if (!command.TryGetProperty(name, out var value) || !value.TryGetInt32(out var number) || number < -1000 || number > 1000)
+        int Number(string name, int limit = 1000) {
+            if (!command.TryGetProperty(name, out var value) || !value.TryGetInt32(out var number) || number < -limit || number > limit)
                 throw new InvalidDataException("Invalid movement.");
             return number;
         }
+        int Range(string name,int min,int max) { int n=Number(name,Math.Max(Math.Abs(min),max)); if(n<min || n>max) throw new InvalidDataException("Invalid control value."); return n; }
         switch (type.GetString()) {
-            case "move": sink.Move(Number("x"), Number("y")); break;
+            case "move": sink.Move(Number("x",8000), Number("y",8000)); break;
             case "scroll": sink.Scroll(Number("x"), Number("y")); break;
             case "left": sink.Click(false); break;
             case "right": sink.Click(true); break;
             case "down": sink.Down(); break;
+            case "dragStart": sink.DragStart(Range("x",-1,1),Range("y",-1,1)); break;
             case "up": sink.Release(); break;
+            case "taskView": sink.Release(); sink.TaskView(); break;
+            case "showDesktop": sink.Release(); sink.ShowDesktop(); break;
+            case "desktop": sink.Desktop(Range("direction",-1,1)); break;
+            case "navigate": sink.Navigate(Range("direction",-1,1)); break;
+            case "navigateEnd": sink.NavigateEnd(); break;
+            case "appsBegin": sink.Release(); sink.AppsBegin(); break;
+            case "appsStep": sink.AppsStep(Range("direction",-1,1)); break;
+            case "appsEnd": sink.AppsEnd(); break;
+            case "media": sink.Media(Range("action",0,2)); break;
+            case "volume": sink.Volume(Range("level",0,100)); break;
+            case "midiPort": sink.MidiPort(Range("id",-1,1024)); break;
+            case "midiCC": sink.Midi(false,Range("channel",0,15),Range("number",0,119),Range("value",0,127)); break;
+            case "midiNote": sink.Midi(true,Range("channel",0,15),Range("number",0,127),Range("value",0,127)); break;
+            case "midiPanic": sink.MidiPanic(); break;
+            case "shortcut": sink.Shortcut(Range("id",0,ShortcutCount-1)); break;
+            case "releaseAll": sink.ReleaseAll(); break;
+            case "info": break;
             case "ping": break;
             default: throw new InvalidDataException("Unknown command.");
         }
     }
 
-    public void Dispose() { lock (gate) { StopLocked("Off"); disposed = true; } }
+    public void Dispose() { lock (gate) { if(disposed)return; disposed = true; StopLocked("Off"); if(input is IDisposable resource) resource.Dispose(); } }
 }
 
 public interface ITrackpadInput {
     void Move(int x, int y); void Scroll(int x, int y); void Click(bool right); void Down(); void Release();
+    void TaskView(); void ShowDesktop();
+    string Platform => "windows";
+    object GetConnectionInfo() => new {platform=Platform};
+    object GetInfo() => new {platform=Platform,midi=new {ports=Array.Empty<MidiPort>(),selected=-1,status="No MIDI output"}};
+    void ReleaseAll() => Release();
+    void Desktop(int direction) { }
+    void Navigate(int direction) { }
+    void NavigateEnd() => AppsEnd();
+    void AppsBegin() { }
+    void AppsStep(int direction) { }
+    void AppsEnd() { }
+    void Media(int action) { }
+    void Volume(int level) { }
+    void MidiPort(int id) { }
+    void Midi(bool note,int channel,int number,int value) { }
+    void MidiPanic() { }
+    void Shortcut(int id) { }
+    // Press for a tap-then-drag. Hosts must not let it complete a double-click.
+    void DragStart(int x, int y) => Down();
 }
 public interface ITrackpadFirewall { void Open(IPAddress address, int port); void Close(); }
-
-public sealed class TrackpadFirewall : ITrackpadFirewall {
-    public void Open(IPAddress address, int port) {
-        dynamic policy = Activator.CreateInstance(Type.GetTypeFromProgID("HNetCfg.FwPolicy2"));
-        dynamic rule = Activator.CreateInstance(Type.GetTypeFromProgID("HNetCfg.FWRule"));
-        try {
-            policy.Rules.Remove(PhoneTrackpad.FirewallName);
-            rule.Name = PhoneTrackpad.FirewallName;
-            rule.Description = "Optional local iPhone trackpad. Open only during a manually started session.";
-            rule.Protocol = 6; rule.LocalPorts = port.ToString();
-            rule.LocalAddresses = address.ToString(); rule.RemoteAddresses = "LocalSubnet";
-            rule.Direction = 1; rule.Action = 1; rule.Profiles = int.MaxValue;
-            rule.EdgeTraversal = false; rule.Enabled = true;
-            policy.Rules.Add(rule);
-        } finally { Marshal.FinalReleaseComObject(rule); Marshal.FinalReleaseComObject(policy); }
-    }
-    public void Close() {
-        dynamic policy = Activator.CreateInstance(Type.GetTypeFromProgID("HNetCfg.FwPolicy2"));
-        try { policy.Rules.Remove(PhoneTrackpad.FirewallName); } finally { Marshal.FinalReleaseComObject(policy); }
-    }
-}
-
-public sealed class NativeTrackpadInput : ITrackpadInput {
-    [StructLayout(LayoutKind.Sequential)] private struct Mouse { public int X, Y; public uint Data, Flags, Time; public UIntPtr Extra; }
-    [StructLayout(LayoutKind.Sequential)] private struct Input { public uint Type; public Mouse Mouse; }
-    [DllImport("user32.dll", SetLastError = true)] private static extern uint SendInput(uint count, Input[] inputs, int size);
-    private bool held;
-    private static void Send(uint flags, int x = 0, int y = 0, int data = 0) {
-        var inputs = new[] { new Input { Mouse = new Mouse { X = x, Y = y, Data = unchecked((uint)data), Flags = flags } } };
-        if (SendInput(1, inputs, Marshal.SizeOf<Input>()) != 1) throw new InvalidOperationException("Windows could not accept trackpad input.");
-    }
-    public void Move(int x, int y) { if (x != 0 || y != 0) Send(0x0001, x, y); }
-    public void Scroll(int x, int y) { if (y != 0) Send(0x0800, data: y); if (x != 0) Send(0x1000, data: x); }
-    public void Click(bool right) {
-        if (held) return;
-        uint down = right ? 0x0008u : 0x0002u, up = right ? 0x0010u : 0x0004u;
-        try { Send(down); } finally { Send(up); }
-    }
-    public void Down() { if (!held) { Send(0x0002); held = true; } }
-    public void Release() { if (held) { try { Send(0x0004); } finally { held = false; } } }
-}

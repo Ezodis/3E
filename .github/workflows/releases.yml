@@ -17,6 +17,9 @@ jobs:
         edition: [combined, touchbar, touchtab]
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
       - name: Stamp monotonically increasing versions
         run: python3 scripts/release.py stamp --offset "$GITHUB_RUN_NUMBER"
       - name: Build edition without installing or launching
@@ -27,7 +30,7 @@ jobs:
         run: |
           case "$EDITION" in
             combined) zsh TouchBar/musicstrip/Source/build.sh --combined ;;
-            touchbar) zsh TouchBar/musicstrip/Source/build.sh ;;
+            touchbar) zsh TouchBar/musicstrip/Source/build.sh --touchbar-only ;;
             touchtab) zsh TouchTab/build.sh ;;
           esac
       - name: Test maintained functionality without live app control
@@ -36,9 +39,9 @@ jobs:
           python3 -m unittest discover -s scripts -p test_release.py
           xcrun clang -fobjc-arc -framework AppKit -framework ApplicationServices TouchBar/musicstrip/Tests/gesture_capabilities.m -o /tmp/gesture-test
           /tmp/gesture-test
-          xcrun clang -fobjc-arc -framework AppKit -framework Carbon -framework ApplicationServices -framework QuartzCore TouchBar/musicstrip/Tests/window_chooser.m -o /tmp/window-test
+          xcrun clang -fobjc-arc -framework AppKit -framework Carbon -framework ApplicationServices -framework QuartzCore -framework CoreImage TouchBar/musicstrip/Tests/window_chooser.m -o /tmp/window-test
           /tmp/window-test
-          xcrun clang -fobjc-arc -Wno-deprecated-declarations -framework AppKit -framework Carbon -framework ApplicationServices -framework QuartzCore TouchBar/musicstrip/Tests/apps_launcher_hold.m -o /tmp/apps-hold-test
+          xcrun clang -fobjc-arc -Wno-deprecated-declarations -framework AppKit -framework Carbon -framework ApplicationServices -framework QuartzCore -framework CoreImage TouchBar/musicstrip/Tests/apps_launcher_hold.m -o /tmp/apps-hold-test
           /tmp/apps-hold-test
           xcrun clang -fobjc-arc -framework AppKit -framework CoreMIDI TouchBar/musicstrip/Tests/combined_menu.m -o /tmp/menu-test
           STRIP_COMBINED_TOUCHTAB=1 /tmp/menu-test

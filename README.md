@@ -1,15 +1,23 @@
 # 3E
 
-Choose the combined macOS app, either Mac app individually, or **3£Windows** for Windows.
+The **3£ base app includes all modules available for its platform**: install **3£ Combined** on macOS or **3£Windows** on Windows. Modules can be enabled or used independently from the same menu. Smaller standalone editions are optional alternatives; Phone Bar is already included in the base app.
 
 | App | Source | Purpose |
 | --- | --- | --- |
 | 3£Windows | [Windows](Windows/) · [portable installer](3%C2%A3Windows.ps1) | One Windows tray menu for drag, Clicks keyboard, PowerToys, optional iPhone trackpad, auto dark and wallpaper |
-| 3£ Combined | [TouchBar](TouchBar/) + [TouchTab gesture module](TouchTab/CombinedModule.swift) | Both feature sets in one installed app and one menu-bar icon |
+| 3£ Combined (Mac base app) | [TouchBar](TouchBar/) + [TouchTab](TouchTab/CombinedModule.swift) + [Phone Bar](Shared/PhoneControl/) | All three modules in one installed app and one menu-bar icon |
 | TouchBar (3£) | [TouchBar](TouchBar/) | Custom Touch Bar MIDI keyboards, Ableton live-performance controls, app/window and media control |
 | TouchTab | [TouchTab](TouchTab/) | Four-finger trackpad app switching, pinch copy/paste and force-click window switching |
 
 Windows setup and releases now live here, moved from `Ezodis/eduu`. Download **3£Windows.ps1** from a [`windows-v…` release](https://github.com/Ezodis/3E/releases) and copy that single file to another Windows PC. Missing third-party dependencies require internet and administrator approval. See [Windows installation, controls and update details](Windows/README.md).
+
+## Phone Bar module
+
+Windows and macOS use one [shared phone interface and receiver](Shared/PhoneControl/README.md): reconnecting Wi-Fi trackpad, double-tap dragging, four-finger desktop gestures, Apps hold/swipe switching, and a Media button that opens two decks or an eight-track MIDI mixer. Knobs support vertical and circular dragging. Ableton performs the audio mixing through your MIDI mappings.
+
+Windows always bundles the [Phone Bar module](Windows/PhoneBar/) and shared receiver. On Mac, **3£ → Phone Bar** provides pairing, copying the Watch link and stopping the receiver. The base app embeds the module, so a separate Phone app is unnecessary. The optional standalone **3E Phone.app** uses the same module and can be built with `zsh Shared/PhoneControl/MacHost/build-app.sh`. The phone feature requires macOS 14+ and bundles its runtime; older supported systems retain the other modules. If Touch Bar interfaces are unavailable, the base app retains a menu for Phone Bar and TouchTab. Feature-branch builds appear as **3E-Combined-Mac** and **3E-Phone-Mac** artifacts in the [phone workflow](.github/workflows/phone-control.yml), independently of published releases.
+
+Included does not mean automatically running: Phone Bar starts only when selected and has its own stop/cleanup lifecycle. Windows' keyboard, shortcuts, themes and wallpaper retain their independent toggles. Platform-specific hardware and permissions still apply. There is no separate plugin download or duplicate copy of the phone web interface to keep updated.
 
 ## Downloads
 
@@ -34,7 +42,7 @@ Install `3£.app` from a `combined-v…` release. Its existing 3£ menu contains
 
 Four-finger left/right switches applications; four-finger pinch in/out copies/pastes; force-click switches windows in the active app (Command + force-click reverses direction). Direct Touch Bar piano touches are excluded. Quit stops the gesture tap, pressure monitor and existing internal helpers. Do not also run standalone TouchTab, or gestures could execute twice.
 
-Build from the repo root: `zsh TouchBar/musicstrip/Source/build.sh --combined`. Without that flag, the existing build remains TouchBar-only. On the development Mac, quit 3£ and use `zsh TouchBar/musicstrip/install-combined.sh` to update the canonical app in place while retaining the original MIDI engine and installed app-picker helper. The combined edition requires macOS 12+. Physical gestures should be tested on the intended trackpad; automated tests do not synthesize app-switching keystrokes.
+Build from the repo root: `zsh TouchBar/musicstrip/Source/build.sh`. The default is the full Combined base app; `--combined` remains an explicit alias, and `--touchbar-only` builds the smaller edition. On the development Mac, quit 3£ and use `zsh TouchBar/musicstrip/install-combined.sh` to update the canonical app in place while retaining the original MIDI engine and installed app-picker helper. The combined edition requires macOS 12+. Physical gestures should be tested on the intended trackpad; automated tests do not synthesize app-switching keystrokes. Packaging verifies the gesture engine, MIDI helper and both architectures of Phone Bar before accepting a base release.
 
 ## Development and provenance
 

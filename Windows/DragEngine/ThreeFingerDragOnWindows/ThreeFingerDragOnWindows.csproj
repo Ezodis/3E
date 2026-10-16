@@ -110,7 +110,6 @@
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="H.NotifyIcon.WinUI" Version="2.3.2" />
-    <PackageReference Include="QRCoder" Version="1.8.1" />
     <PackageReference Include="Microsoft.Windows.SDK.BuildTools" Version="10.0.26100.4654" />
     <PackageReference Include="Microsoft.WindowsAppSDK" Version="1.8.251106002" />
     <PackageReference Include="TaskScheduler" Version="2.11.0" />
@@ -121,8 +120,7 @@
     <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
   </ItemGroup>
   <ItemGroup>
-    <EmbeddedResource Include="PhoneTrackpad.html" />
-    <EmbeddedResource Include="PhoneTrackpad.js" />
+    <ProjectReference Include="../../PhoneBar/PhoneBar.Windows.csproj" />
   </ItemGroup>
   <!--
       Defining the "Msix" ProjectCapability here allows the Single-project MSIX Packaging

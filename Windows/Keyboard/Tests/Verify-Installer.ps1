@@ -29,6 +29,10 @@ foreach($name in @('EmbeddedAppX64','EmbeddedAppArm64')) {
     $bytes=[Convert]::FromBase64String((Read-EmbeddedValue $name))
     $memory=[IO.MemoryStream]::new($bytes,$false)
     $zip=[IO.Compression.ZipArchive]::new($memory,[IO.Compression.ZipArchiveMode]::Read)
-    try {if(-not $zip.GetEntry('3£Windows.exe') -or -not $zip.GetEntry('ThreeEWindows.dll')) {throw "Incomplete application archive: $name"}} finally {$zip.Dispose();$memory.Dispose()}
+    try {
+        foreach($module in @('3£Windows.exe','ThreeEWindows.dll','ThreeE.PhoneBar.Windows.dll','ThreeE.PhoneControl.dll','QRCoder.dll')) {
+            if(-not $zip.GetEntry($module)) {throw "Base application archive $name is missing $module"}
+        }
+    } finally {$zip.Dispose();$memory.Dispose()}
 }
 Write-Host "PASS: PowerShell $($PSVersionTable.PSVersion); 14 verified embedded assets, both app archives, portable key rules and final hold menus."
