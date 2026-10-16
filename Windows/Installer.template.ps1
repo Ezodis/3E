@@ -3,9 +3,10 @@
 3£Windows: one tray menu for three-finger drag, Clicks keyboard, PowerToys,
 automatic light/dark mode and dynamic wallpaper.
 .NOTES
-iPhone trackpad is optional and off at startup. Open it from the tray menu,
-then scan its QR code on the same trusted Wi-Fi. No internet is needed.
-Missing Wi-Fi or a disconnected phone never stops other suite components.
+Phone/watch trackpad is optional and off at startup. Left-click the tray icon
+and scan its QR code on iPhone. Email the same link to open it on Apple Watch.
+The devices use the same trusted Wi-Fi; the trackpad needs no internet.
+Missing Wi-Fi or a disconnected device never stops other suite components.
 .DESCRIPTION
 Portable single-file installer. The application and keyboard rules are embedded.
 Copy this .ps1 alone to another Windows PC. Internet is needed to install signed

@@ -1,19 +1,21 @@
+using ThreeE.PhoneControl;
 using System.Net;
 using System.Net.Sockets;
 using System.Net.WebSockets;
 using System.Text;
 using System.Collections.Concurrent;
+using System.Text.Json;
 using ThreeFingerDragOnWindows;
 
 var results = new List<string>();
 void Check(bool value, string name) { if (!value) throw new Exception("FAIL: " + name); results.Add(name); Console.WriteLine("PASS: " + name); }
 int FreePort() { var socket = new TcpListener(IPAddress.Loopback, 0); socket.Start(); int port = ((IPEndPoint)socket.LocalEndpoint).Port; socket.Stop(); return port; }
 async Task Until(Func<bool> condition) { for (int i=0;i<100;i++) { if (condition()) return; await Task.Delay(50); } throw new Exception("Timed out waiting for state."); }
-async Task<ClientWebSocket> Connect(string url, string token = null, string origin = null) {
+async Task<ClientWebSocket> Connect(string url, string token = null, string origin = null, string controller = null) {
     var ws = new ClientWebSocket(); var uri = new Uri(url);
     ws.Options.SetRequestHeader("Origin", origin ?? uri.GetLeftPart(UriPartial.Authority));
     await ws.ConnectAsync(new Uri("ws://" + uri.Authority + "/ws"), CancellationToken.None);
-    await ws.SendAsync(Encoding.UTF8.GetBytes("{\"token\":\"" + (token ?? uri.Fragment[1..]) + "\"}"), WebSocketMessageType.Text, true, CancellationToken.None);
+    await ws.SendAsync(Encoding.UTF8.GetBytes(JsonSerializer.Serialize(new { token = token ?? uri.Fragment[1..], client = controller })), WebSocketMessageType.Text, true, CancellationToken.None);
     return ws;
 }
 async Task Send(ClientWebSocket ws, string text) => await ws.SendAsync(Encoding.UTF8.GetBytes(text), WebSocketMessageType.Text, true, CancellationToken.None);
@@ -40,6 +42,33 @@ if (args.Length == 1 && args[0] == "--firewall-smoke") {
 }
 
 var fake = new FakeInput(); var firewall = new FakeFirewall();
+void ApplyText(string command) { using var parsed=JsonDocument.Parse(command); PhoneTrackpad.Apply(parsed.RootElement,fake); }
+ApplyText("{\"type\":\"appsBegin\"}"); ApplyText("{\"type\":\"appsStep\",\"direction\":-1}");
+Check(fake.Switching && fake.Commands.Contains("appsStep:-1"),"App switcher begins and steps through the native boundary");
+ApplyText("{\"type\":\"midiNote\",\"channel\":15,\"number\":36,\"value\":127}");
+ApplyText("{\"type\":\"releaseAll\"}");
+Check(!fake.Switching && fake.MidiNotes==0,"Release-all clears app modifiers and MIDI notes");
+ApplyText("{\"type\":\"desktop\",\"direction\":1}");ApplyText("{\"type\":\"media\",\"action\":2}");
+Check(fake.Commands.Contains("desktop:1") && fake.Commands.Contains("media:2"),"Desktop and media commands use fixed whitelisted actions");
+foreach(string invalid in new[]{"{\"type\":\"midiCC\",\"channel\":16,\"number\":1,\"value\":64}","{\"type\":\"midiCC\",\"channel\":0,\"number\":120,\"value\":64}","{\"type\":\"midiNote\",\"channel\":0,\"number\":1,\"value\":128}","{\"type\":\"desktop\",\"direction\":2}"}) {
+    bool refused=false;try{ApplyText(invalid);}catch(InvalidDataException){refused=true;}Check(refused,"Out-of-range MIDI/shortcut control rejected");
+}
+using(var midi=new TestMidi()) {midi.Select(0);midi.Send(false,15,1,64);midi.Send(true,15,36,100);midi.Panic();Check(midi.Messages.SequenceEqual(new[]{"191,1,64","159,36,100","143,36,0"}),"MIDI CC and note bytes are correct; panic releases only its own held note");}
+fake.Commands.Clear();
+using (var gesture = JsonDocument.Parse("{\"type\":\"taskView\"}")) {
+    fake.Down(); PhoneTrackpad.Apply(gesture.RootElement, fake);
+    Check(!fake.Held && fake.Commands.Contains("taskView"), "Task View releases any held drag before opening windows");
+}
+using (var gesture = JsonDocument.Parse("{\"type\":\"showDesktop\"}")) {
+    fake.Down(); PhoneTrackpad.Apply(gesture.RootElement, fake);
+    Check(!fake.Held && fake.Commands.Contains("showDesktop"), "Show Desktop releases dragging before its fixed shortcut");
+}
+using (var unknown = JsonDocument.Parse("{\"type\":\"key\",\"key\":\"A\"}")) {
+    bool rejected = false;
+    try { PhoneTrackpad.Apply(unknown.RootElement, fake); } catch (InvalidDataException) { rejected = true; }
+    Check(rejected, "Arbitrary keyboard input remains unsupported");
+}
+fake.Commands.Clear();
 IPAddress address = null;
 using var pad = new PhoneTrackpad(() => address, fake, firewall, FreePort());
 Check(!pad.Running && pad.PairingUrl == null, "Startup is off with no listener or pairing key");
@@ -67,6 +96,8 @@ using (var wrong = await Connect(firstUrl, "wrong")) {
 }
 using (var ws = await Connect(firstUrl)) {
     Check((await Receive(ws)).Contains("ready"), "Valid QR pairing authorizes a controller");
+    await Send(ws,"{\"type\":\"ping\"}");
+    Check((await Receive(ws)).Contains("pong"), "Heartbeat confirms the server is receiving input");
     using (var other = await Connect(firstUrl)) {
         bool secondReady = false;
         try { secondReady = (await Receive(other)).Contains("ready"); } catch (WebSocketException) { }
@@ -78,9 +109,22 @@ using (var ws = await Connect(firstUrl)) {
     await Send(ws, "{\"type\":\"down\"}");
     await Until(() => fake.Held);
     Check(fake.Commands.Contains("move:13,-8") && fake.Commands.Contains("scroll:2,30") && fake.Commands.Contains("right"), "Movement, scrolling and right-click reach the input boundary");
-    ws.Abort(); await Until(() => !fake.Held);
-    Check(!fake.Held, "Unexpected phone disconnect releases a held drag");
+    await Send(ws,"{\"type\":\"appsBegin\"}");await Send(ws,"{\"type\":\"midiNote\",\"channel\":15,\"number\":36,\"value\":127}");await Until(()=>fake.Switching&&fake.MidiNotes>0);
+    ws.Abort(); await Until(() => !fake.Held && !fake.Switching && fake.MidiNotes==0);
+    Check(!fake.Held && !fake.Switching && fake.MidiNotes==0, "Unexpected disconnect releases drag, app switcher and MIDI notes");
 }
+using (var sleeping = await Connect(firstUrl, controller:"CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC")) {
+    await Receive(sleeping); await Send(sleeping,"{\"type\":\"down\"}"); await Until(() => fake.Held);
+    using var resumed = await Connect(firstUrl, controller:"CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC");
+    Check((await Receive(resumed)).Contains("ready") && !fake.Held, "The same phone reclaims its sleeping socket without waiting for timeout");
+    await Send(resumed,"{\"type\":\"down\"}"); await Until(() => fake.Held);
+    sleeping.Abort(); await Task.Delay(100);
+    Check(fake.Held,"Old socket cleanup cannot release the resumed phone's drag");
+    await Send(resumed,"{\"type\":\"move\",\"x\":8000,\"y\":-8000}");
+    await Until(() => fake.Commands.Contains("move:8000,-8000"));
+    Check(fake.Held,"Fast movement fits one bounded packet without dropping the controller");
+}
+await Until(() => !fake.Held);
 using (var ws = await Connect(firstUrl)) {
     await Receive(ws); await Send(ws, "{\"type\":\"down\"}"); await Until(() => fake.Held);
     await Send(ws, "{\"type\":\"move\",\"x\":999999,\"y\":0}");
@@ -104,6 +148,56 @@ using (var ws = await Connect(pad.PairingUrl)) {
     await Task.Delay(6500);
     Check(!fake.Held && pad.Running, "A suspended phone releases drag after the heartbeat timeout");
 }
+// Exercise watchOS HTTP control without sending native mouse input.
+const string watch = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA", otherWatch = "BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB";
+async Task<HttpStatusCode> Post(object payload, string origin = null, string key = null) {
+    var uri = new Uri(pad.PairingUrl);
+    using var request = new HttpRequestMessage(HttpMethod.Post, new Uri(uri, "/control"));
+    request.Headers.Add("Origin", origin ?? uri.GetLeftPart(UriPartial.Authority));
+    request.Headers.Add("X-Trackpad-Token", key ?? uri.Fragment[1..]);
+    request.Content = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json");
+    using var response = await client.SendAsync(request);
+    return response.StatusCode;
+}
+Check(await Post(new { client=watch,type="connect",sequence=1 }, origin:"https://other.example") == HttpStatusCode.Forbidden, "Watch POST rejects cross-site origins");
+Check(await Post(new { client=watch,type="connect",sequence=1 }, key:"wrong") == HttpStatusCode.Unauthorized, "Watch POST distinguishes an expired pairing link from a dropped lease");
+Check(await Post(new { client=watch,type="connect",sequence=1 }) == HttpStatusCode.OK, "Watch connects over HTTP without WebSockets");
+Check(await Post(new { client=otherWatch,type="connect",sequence=1 }) == HttpStatusCode.Conflict, "A second watch cannot take over");
+using (var ws = await Connect(pad.PairingUrl)) {
+    bool accepted = false; try { accepted = (await Receive(ws)).Contains("ready"); } catch (WebSocketException) { }
+    Check(!accepted, "Phone WebSocket cannot take over an active watch");
+}
+fake.Commands.Clear();
+Check(await Post(new { client=watch,type="commands",sequence=2,commands=new object[]{new {type="down"},new {type="move",x=12,y=7},new {type="up"},new {type="left"}} }) == HttpStatusCode.OK && !fake.Held && fake.Commands.ToArray().SequenceEqual(new[]{"down","move:12,7","up","left"}), "Watch command batches preserve drag and click order");
+int beforeDuplicate = fake.Commands.Count;
+Check(await Post(new { client=watch,type="commands",sequence=2,commands=new[]{new {type="left"}} }) == HttpStatusCode.Conflict && fake.Commands.Count == beforeDuplicate, "Retried watch requests never replay clicks");
+await Post(new { client=watch,type="commands",sequence=3,commands=new[]{new {type="down"}} });
+Check(await Post(new { client=watch,type="disconnect",sequence=5 }) == HttpStatusCode.OK && !fake.Held, "Watch handoff releases held dragging immediately");
+Check(await Post(new { client=watch,type="commands",sequence=4,commands=new[]{new {type="down"}} }) == HttpStatusCode.Forbidden && !fake.Held, "In-flight input cannot arrive after a watch disconnect");
+using (var ws = await Connect(pad.PairingUrl)) {
+    await Receive(ws);
+    Check(await Post(new { client=watch,type="connect",sequence=6 }) == HttpStatusCode.Conflict, "Watch cannot take over a connected phone");
+}
+await Until(() => pad.Status.Contains("disconnected"));
+await Post(new { client=watch,type="connect",sequence=7 });
+await Post(new { client=watch,type="commands",sequence=8,commands=new[]{new {type="down"}} });
+Check(await Post(new { client=watch,type="commands",sequence=9,commands=new[]{new {type="move",x=999999,y=0}} }) == HttpStatusCode.BadRequest && !fake.Held, "Malformed watch input revokes control and releases dragging");
+await Post(new { client=watch,type="connect",sequence=10 });
+await Post(new { client=watch,type="commands",sequence=11,commands=new[]{new {type="down"}} });
+await Task.Delay(6500); await Until(() => !fake.Held);
+Check(!fake.Held && pad.Running, "Sleeping watch releases dragging after its heartbeat expires");
+await Post(new { client=watch,type="connect",sequence=20 });
+await Post(new { client=watch,type="commands",sequence=21,commands=new[]{new {type="down"}} });
+Check(await Post(new { client=watch,type="connect",sequence=23 }) == HttpStatusCode.OK && !fake.Held, "The same watch resumes immediately and releases old dragging");
+int beforeLate = fake.Commands.Count;
+Check(await Post(new { client=watch,type="commands",sequence=22,commands=new[]{new {type="down"}} }) == HttpStatusCode.Conflict && fake.Commands.Count == beforeLate, "Commands from before wake cannot reach the resumed watch session");
+Check(await Post(new { client=watch,type="disconnect",sequence=22 }) == HttpStatusCode.Conflict, "A late sleep disconnect cannot close the resumed watch session");
+await Post(new { client=watch,type="disconnect",sequence=24 });
+await Post(new { client=watch,type="connect",sequence=12 });
+await Post(new { client=watch,type="commands",sequence=13,commands=new[]{new {type="down"}} });
+address = null; await Until(() => !pad.Running);
+Check(!fake.Held && !firewall.IsOpen, "Network loss releases watch control and closes only the receiver");
+address = IPAddress.Loopback; pad.Start();
 pad.Stop(); Check(!firewall.IsOpen && !pad.Running, "Explicit stop closes the optional service");
 using var failing = new PhoneTrackpad(() => throw new NetworkInformationExceptionForTest(), fake, firewall, FreePort());
 Check(!failing.Start(), "Network enumeration failure is contained");
@@ -115,11 +209,24 @@ Console.WriteLine($"All {results.Count} checks passed.");
 
 sealed class FakeInput : ITrackpadInput {
     public readonly ConcurrentQueue<string> Commands = new(); public volatile bool Held;
+    public volatile bool Switching;public int MidiNotes;private int selected=-1;
+    public object GetInfo()=>new {platform="windows",midi=new {ports=new[]{new MidiPort(0,"Test MIDI (no hardware)")},selected,status="Test MIDI"}};
+    public void ReleaseAll(){Release();AppsEnd();MidiPanic();}
+    public void AppsBegin(){Switching=true;Commands.Enqueue("appsBegin");}
+    public void AppsStep(int direction)=>Commands.Enqueue($"appsStep:{direction}");
+    public void AppsEnd(){if(Switching)Commands.Enqueue("appsEnd");Switching=false;}
+    public void Desktop(int direction)=>Commands.Enqueue($"desktop:{direction}");
+    public void Media(int action)=>Commands.Enqueue($"media:{action}");
+    public void MidiPort(int id){selected=id;Commands.Enqueue($"midiPort:{id}");}
+    public void Midi(bool note,int channel,int number,int value){if(note)MidiNotes=value>0?1:0;Commands.Enqueue($"midi:{note},{channel},{number},{value}");}
+    public void MidiPanic(){MidiNotes=0;}
     public void Move(int x,int y) => Commands.Enqueue($"move:{x},{y}");
     public void Scroll(int x,int y) => Commands.Enqueue($"scroll:{x},{y}");
     public void Click(bool right) => Commands.Enqueue(right ? "right" : "left");
     public void Down() { Commands.Enqueue("down"); Held=true; }
     public void Release() { Commands.Enqueue("up"); Held=false; }
+    public void TaskView() => Commands.Enqueue("taskView");
+    public void ShowDesktop() => Commands.Enqueue("showDesktop");
 }
 sealed class FakeFirewall : ITrackpadFirewall {
     public int OpenCount; public bool IsOpen, FailOpen;
@@ -127,3 +234,9 @@ sealed class FakeFirewall : ITrackpadFirewall {
     public void Close() { IsOpen=false; }
 }
 sealed class NetworkInformationExceptionForTest : Exception { }
+sealed class TestMidi:MidiOutput {
+    public readonly List<string> Messages=new();
+    public override MidiPort[] Ports()=>new[]{new MidiPort(0,"test")};
+    protected override void Open(int id){}protected override void Close(){}
+    protected override void Write(byte status,byte number,byte value)=>Messages.Add($"{status},{number},{value}");
+}

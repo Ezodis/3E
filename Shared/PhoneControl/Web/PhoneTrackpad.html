@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#111820">
+<meta name="disabled-adaptations" content="watch">
+<meta property="og:title" content="3£ Phone Trackpad & MIDI">
+<title>3£ Trackpad</title>
+<style>
+:root{color-scheme:dark;font-family:system-ui,-apple-system,"Segoe UI",sans-serif;background:#111820;color:#eef5fa}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;width:100%;height:100%;overflow:hidden;overscroll-behavior:none}
+body{height:100vh;height:100dvh}
+button{font-family:inherit;font-size:15px;font-weight:600;color:#eef5fa;background:#243340;border:1px solid #405462;border-radius:14px;padding:12px;min-height:44px;touch-action:manipulation}
+button:active,button[aria-pressed=true]{background:#a8e5cd;color:#0e2420}button:disabled{opacity:.45}
+[hidden]{display:none!important}.watch-only{display:none}.single-contact #scrollMode{display:block}
+#pad{position:fixed;inset:0;background:radial-gradient(ellipse at center,#1b2b35,#111820);touch-action:none;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;display:grid;place-items:center;outline:none}
+#pad.live{box-shadow:inset 0 0 0 1px #42695e}#pad.dragging{background:#17332e;box-shadow:inset 0 0 0 2px #a8e5cd}
+#padHint{pointer-events:none;text-align:center;color:#8da69f;font-size:15px;padding:32px;opacity:.7}
+.top{position:fixed;top:max(10px,env(safe-area-inset-top));left:max(12px,env(safe-area-inset-left));right:max(12px,env(safe-area-inset-right));display:flex;align-items:flex-start;justify-content:space-between;gap:10px;pointer-events:none}
+#status{margin:0;padding:8px 9px;font-size:12px;line-height:1.35;max-width:calc(100% - 54px);background:#111820c9;border-radius:12px;max-height:66px;overflow:hidden;color:#bfd4cb}
+#settings{pointer-events:auto;padding:6px;min-width:44px;font-size:22px;background:#1b2b35df}
+.dock{position:fixed;bottom:max(12px,env(safe-area-inset-bottom));left:max(12px,env(safe-area-inset-left));right:max(12px,env(safe-area-inset-right));display:flex;justify-content:space-between;gap:10px;pointer-events:none}.dock button{pointer-events:auto;min-width:96px;background:#243340ed}.dock button[aria-pressed=true]{background:#a8e5cd}
+.panel{position:fixed;inset:8px;z-index:3;max-width:480px;margin:auto;padding:20px;border-radius:20px;background:#17222c;border:1px solid #56736e;overflow:auto;overscroll-behavior:contain;line-height:1.5}
+.panel header{display:flex;justify-content:space-between;align-items:center;gap:10px}.panel h1{font-size:22px;margin:0}.panel p{color:#c0d0da;font-size:14px}.panel button{margin-top:10px}.panel label{display:block;margin-top:18px}.panel input{width:100%;accent-color:#a8e5cd;min-height:36px}.panel .row{display:flex;gap:8px;flex-wrap:wrap}.panel .row button{flex:1}.panel ul{padding-left:20px;font-size:14px;line-height:1.7}.panel summary{padding:12px 0;cursor:pointer}.directions{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:5px}.directions button{margin:0}#stepUp{grid-column:2}#stepDown{grid-column:2}
+.watch .watch-only{display:block}.watch .top{top:5px;left:5px;right:5px;gap:4px}.watch #status{font-size:10px;padding:6px;max-height:40px;max-width:calc(100% - 39px)}.watch #settings{min-width:34px;min-height:32px;padding:2px;font-size:20px}.watch .dock{bottom:6px;left:6px;right:6px;gap:5px}.watch .dock button{min-width:0;min-height:36px;padding:7px 13px;font-size:12px}.watch #padHint{font-size:12px;padding:30px 20px}.watch .panel{inset:2px;padding:10px;border-radius:14px}.watch .panel h1{font-size:16px}.watch .panel button{font-size:12px;padding:8px;min-height:36px}.watch .panel p,.watch .panel ul{font-size:12px}.watch .panel header{align-items:start}.watch .panel .row{display:block}.watch .panel .row button{width:100%}
+</style>
+<link rel="stylesheet" href="/surface.css">
+</head>
+<body>
+<div id="pad" role="application" aria-label="Trackpad. Tap to click. Double-tap and hold to drag. Two fingers scroll or tap to right-click. Four fingers up for Task View, down for desktop."><span id="padHint">Swipe to move · tap to click</span></div>
+<div class="top"><p id="status" role="status" aria-live="polite">Connecting…</p><button id="settings" aria-label="Settings" aria-expanded="false">⋯</button></div>
+<div class="dock"><button id="apps" aria-label="Hold and swipe to switch apps" disabled>▣ Apps</button><button id="scrollMode" class="watch-only" aria-pressed="false" disabled>Scroll</button><button id="media" aria-label="Media: tap to play or pause, swipe for tracks, hold for MIDI" disabled>♫ Media</button></div>
+<section id="settingsPanel" class="panel" hidden aria-label="Trackpad settings">
+<header><h1>Trackpad</h1><button id="closeSettings">Done</button></header>
+<label for="speed">Pointer speed <strong id="speedValue">3.0×</strong></label><input id="speed" type="range" min="0.5" max="20" step="0.1" value="3">
+<button id="tongueMode" aria-pressed="false">Single-contact controls: off</button>
+<p>For tongue or one-contact use: swipe to move, tap to click, hold still briefly to right-click. Tap then touch again to drag; a brief contact break lets you keep dragging. Works upright or sideways.</p>
+<div class="row"><button id="connect">Connect</button><button id="fullscreen">Full screen</button></div>
+<p id="fullscreenHelp">On iPhone: Share → Add to Home Screen → Open as Web App to hide Safari’s bars. The watch’s browser controls are managed by watchOS.</p>
+<ul><li>Tap to click; two-finger tap to right-click.</li><li>Tap, then touch again and move to drag. Lift to drop.</li><li>Two fingers scroll; three fingers drag.</li><li>Four fingers left/right change desktops. Up opens all windows; down opens the desktop (Mac: app windows).</li><li>Hold Apps and slide left/right to choose an app. Lift to switch.</li><li>Tap Media to play/pause; swipe for tracks; hold to open the MIDI studio.</li></ul>
+<details class="watch-only"><summary>Arrow controls</summary><div class="directions"><button id="stepUp" aria-label="Move up" disabled>↑</button><span></span><button id="stepLeft" aria-label="Move left" disabled>←</button><span></span><button id="stepRight" aria-label="Move right" disabled>→</button><button id="stepDown" aria-label="Move down" disabled>↓</button></div><p>Tap the pad to click. Arrows follow the current Move or Scroll mode.</p></details>
+<p>The same link works on iPhone and Apple Watch. It reconnects automatically after sleep or a brief interruption. Pause the connection here before switching devices. A new QR link is needed only if the laptop receiver restarts or changes networks.</p>
+</section>
+<noscript>This trackpad needs JavaScript and the full web page view.</noscript>
+<section id="studio" hidden aria-label="MIDI studio"></section>
+<script src="/host.js"></script>
+<script src="/pad.js"></script>
+<script src="/surface.js"></script>
+</body>
+</html>

@@ -38,6 +38,10 @@ foreach ($arch in @('x64','arm64')) {
     $phoneSource = Join-Path $output 'PhoneTrackpadSource'
     New-Item -ItemType Directory -Path $phoneSource -Force | Out-Null
     Get-ChildItem -LiteralPath (Split-Path -Parent $project) -Filter 'PhoneTrackpad*' -File | Copy-Item -Destination $phoneSource -Force
+    Copy-Item -LiteralPath (Join-Path (Split-Path -Parent $project) 'PhoneMidiWindows.cs') -Destination $phoneSource -Force
+    $sharedPhoneSource = Join-Path $repository 'Shared\PhoneControl'
+    Get-ChildItem -LiteralPath $sharedPhoneSource -File | Copy-Item -Destination $phoneSource -Force
+    Copy-Item -LiteralPath (Join-Path $sharedPhoneSource 'Web') -Destination $phoneSource -Recurse -Force
     $archive = Join-Path $build "3EWindows-$arch.zip"
     Compress-Archive -Path (Join-Path $output '*') -DestinationPath $archive -Force
     $payloads[$arch] = [Convert]::ToBase64String([IO.File]::ReadAllBytes($archive))
@@ -51,6 +55,8 @@ dotnet run --project (Join-Path $PSScriptRoot 'PhoneTrackpadTests')
 if ($LASTEXITCODE -ne 0) { throw 'Phone trackpad network/disconnect tests failed.' }
 node (Join-Path $PSScriptRoot 'PhoneTrackpadTests\gestures.test.cjs')
 if ($LASTEXITCODE -ne 0) { throw 'Phone trackpad gesture tests failed.' }
+node (Join-Path $PSScriptRoot 'PhoneTrackpadTests\watch.test.cjs')
+if ($LASTEXITCODE -ne 0) { throw 'Watch transport and handoff tests failed.' }
 
 $kiroSource = [IO.File]::ReadAllText((Join-Path $PSScriptRoot 'KiroTheme.ps1'))
 $kiroEncoded = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($kiroSource))

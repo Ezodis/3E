@@ -1,3 +1,4 @@
+﻿using ThreeE.PhoneControl;
 using System;
 using System.Diagnostics;
 using System.IO;
@@ -18,13 +19,13 @@ namespace ThreeFingerDragOnWindows;
 
 // The drag engine and the hub share this process and its single notification icon.
 public sealed class WindowsHub : IDisposable {
-    public const string Version = "1.0.9";
+    public const string Version = "1.0.14";
     private const string ReleasesUrl = "https://api.github.com/repos/Ezodis/3E/releases";
     private readonly string root = AppContext.BaseDirectory;
     private readonly string data = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "3EWindows");
     private readonly DispatcherTimer timer = new() { Interval = TimeSpan.FromSeconds(20) };
     private readonly MenuFlyout menu;
-    private readonly PhoneTrackpad phoneTrackpad = new();
+    private readonly PhoneTrackpad phoneTrackpad = new(PhoneTrackpad.GetLocalAddress, new NativeTrackpadInput(), new TrackpadFirewall(), PhoneTrackpad.Port);
     private PhoneTrackpadPopup phonePopup;
     private HubSettings settings;
     private bool busy, disposed;
@@ -242,7 +243,7 @@ public sealed class WindowsHub : IDisposable {
         menu.Items.Add(new MenuFlyoutItem { Text = "3£Windows " + Version, IsEnabled = false });
         Toggle("Three-finger drag", App.SettingsData.ThreeFingerDrag, enabled => { App.SettingsData.ThreeFingerDrag = enabled; App.SettingsData.save(); });
         Item("Drag settings…", () => App.Instance.OpenSettingsWindow());
-        Item("iPhone trackpad — show QR…", OpenPhoneTrackpad);
+        Item("iPhone / Watch trackpad — show QR…", OpenPhoneTrackpad);
         if (phoneTrackpad.Running) Item("Stop iPhone trackpad", () => phoneTrackpad.Stop());
         Toggle(File.Exists(KeyboardPath) ? "Clicks keyboard — " + (IsRunning("3EWindows.Keyboard") ? "running" : "stopped") : "Clicks keyboard — connect and run setup", settings.Keyboard, enabled => {
             settings.Keyboard = enabled;

@@ -1,0 +1,73 @@
+// Run against Program.cs --preview: real shared server, simulated native input.
+const {webkit,chromium}=require(process.env.PLAYWRIGHT_MODULE||'playwright-core');
+const fs=require('node:fs'),assert=require('node:assert/strict'),path=require('node:path');
+const url=fs.readFileSync(process.argv[2],'utf8').trim(),out=process.argv[3]||'.';
+fs.mkdirSync(out,{recursive:true});
+async function drag(page,locator,dx,dy=0,hold=0){const r=await locator.boundingBox();await page.mouse.move(r.x+r.width/2,r.y+r.height/2);await page.mouse.down();if(hold)await page.waitForTimeout(hold);await page.mouse.move(r.x+r.width/2+dx,r.y+r.height/2+dy,{steps:5});await page.mouse.up();await page.waitForTimeout(150);}
+async function wake(page){await page.evaluate(()=>{Object.defineProperty(document,'hidden',{configurable:true,value:true});document.dispatchEvent(new Event('visibilitychange'));});assert.equal(await page.locator('#apps').isDisabled(),true);await page.evaluate(()=>{Object.defineProperty(document,'hidden',{configurable:true,value:false});document.dispatchEvent(new Event('visibilitychange'));window.dispatchEvent(new Event('pageshow'));});await page.waitForFunction(()=>document.getElementById('status').textContent==='Connected');await page.evaluate(()=>delete document.hidden);}
+(async()=>{
+ for(const [name,engine] of [['webkit',webkit],['chromium',chromium]]){
+  const browser=await engine.launch({headless:true});
+  try{
+   const errors=[],commands=[];
+   const ctx=await browser.newContext({viewport:{width:390,height:844},hasTouch:true,isMobile:true});
+   const p=await ctx.newPage();p.on('pageerror',e=>errors.push(e.message));
+   p.on('websocket',s=>s.on('framesent',f=>{try{const c=JSON.parse(f.payload);if(c.type)commands.push(c);}catch{}}));
+   await p.addInitScript(()=>{window.testSockets=[];const W=WebSocket;window.WebSocket=class extends W{constructor(...a){super(...a);window.testSockets.push(this);}};});
+   await p.goto(url);await p.waitForFunction(()=>document.getElementById('status').textContent==='Connected');
+   assert.equal(await p.locator('#drag,#left,#right').count(),0);
+   assert.deepEqual(await p.locator('#pad').boundingBox(),{x:0,y:0,width:390,height:844});
+   await drag(p,p.locator('#apps'),70);await drag(p,p.locator('#apps'),-70);
+   assert.ok(commands.some(c=>c.type==='appsBegin')&&commands.some(c=>c.type==='appsStep'&&c.direction===1)&&commands.some(c=>c.type==='appsStep'&&c.direction===-1)&&commands.some(c=>c.type==='appsEnd'));
+   await drag(p,p.locator('#media'),0);await drag(p,p.locator('#media'),-45);await drag(p,p.locator('#media'),45);
+   for(const action of [0,1,2])assert.ok(commands.some(c=>c.type==='media'&&c.action===action));
+   const mediaCount=commands.filter(c=>c.type==='media').length;
+   await drag(p,p.locator('#media'),0,0,650);
+   assert.equal(await p.locator('#studio').isVisible(),true);
+   assert.equal(commands.filter(c=>c.type==='media').length,mediaCount,'holding Media must not play/pause on release');
+   await p.locator('#midiOutput').selectOption('0');await p.waitForFunction(()=>document.getElementById('midiStatus').textContent.startsWith('Sending to'));
+   const low=p.locator('.deck-a .knob[data-cc="50"]');
+   await drag(p,low,0,-30);
+   assert.ok(+await low.getAttribute('aria-valuenow')>64);
+   const before=+await low.getAttribute('aria-valuenow'),r=await low.boundingBox();
+   await p.mouse.move(r.x+r.width*.90,r.y+r.height/2);await p.mouse.down();await p.mouse.move(r.x+r.width/2,r.y+r.height*.90,{steps:4});await p.mouse.up();await p.waitForTimeout(60);
+   assert.ok(+await low.getAttribute('aria-valuenow')>before,'clockwise rim movement increases knob');
+   await p.locator('.deck-a').getByRole('button',{name:'Launch',exact:true}).click();
+   assert.equal(await p.locator('.deck-a .vinyl').evaluate(el=>el.classList.contains('is-spinning')),true);
+   await p.locator('.deck-a .vinyl').focus();await p.keyboard.press('ArrowRight');await p.keyboard.press('ArrowLeft');
+   await p.locator('#crossfader').fill('100');await p.waitForTimeout(50);
+   assert.ok(commands.some(c=>c.type==='midiCC'&&c.channel===15&&c.number===50&&c.value>64));
+   assert.ok(commands.some(c=>c.type==='midiNote'&&c.number===36&&c.value===127)&&commands.some(c=>c.type==='midiNote'&&c.number===36&&c.value===0));
+   assert.ok(commands.some(c=>c.type==='midiCC'&&c.number===40&&c.value===65)&&commands.some(c=>c.type==='midiCC'&&c.number===40&&c.value===63));
+   assert.ok(commands.some(c=>c.type==='midiCC'&&c.number===1&&c.value===100));
+   await p.screenshot({path:path.join(out,'studio-decks-'+name+'.png')});
+   await p.locator('#mixerTab').click();assert.equal(await p.locator('.strip').count(),8);
+   await p.locator('.strip .fader').first().fill('80');await p.waitForTimeout(50);
+   assert.equal(await p.locator('.deck-a .knob[data-cc="16"]').getAttribute('aria-valuenow'),'80');
+   await p.screenshot({path:path.join(out,'studio-mixer-'+name+'.png')});
+   await p.setViewportSize({width:844,height:390});await p.screenshot({path:path.join(out,'studio-landscape-'+name+'.png')});
+   await wake(p);
+   await p.locator('#closeStudio').click();await p.evaluate(()=>window.testSockets.at(-1).close());
+   await p.waitForFunction(()=>window.testSockets.length>=3&&document.getElementById('status').textContent==='Connected');
+   await p.getByRole('button',{name:'Settings',exact:true}).click();await p.locator('#tongueMode').click();await p.locator('#closeSettings').click();
+   assert.equal(await p.locator('#scrollMode').isVisible(),true);
+   await p.screenshot({path:path.join(out,'trackpad-landscape-'+name+'.png')});
+   await p.getByRole('button',{name:'Settings',exact:true}).click();await p.locator('#connect').click();
+   const watchCtx=await browser.newContext({viewport:{width:162,height:197},hasTouch:true,isMobile:true});
+   const w=await watchCtx.newPage(),posts=[];w.on('pageerror',e=>errors.push(e.message));w.on('request',r=>{if(r.url().endsWith('/control'))posts.push(JSON.parse(r.postData()));});
+   await w.goto(url);await w.waitForFunction(()=>document.getElementById('status').textContent==='Connected');
+   assert.equal(await w.evaluate(()=>document.documentElement.classList.contains('watch')),true);
+   for(const id of ['apps','scrollMode','media']){const box=await w.locator('#'+id).boundingBox();assert.ok(box.x>=0&&box.x+box.width<=162,id+' fits watch');}
+   await wake(w);assert.equal(posts.filter(p=>p.type==='connect').length,2);
+   await w.screenshot({path:path.join(out,'trackpad-watch-'+name+'.png')});
+   await drag(w,w.locator('#apps'),34);
+   await drag(w,w.locator('#media'),0,0,650);
+   assert.equal(await w.locator('#studio').isVisible(),true);
+   await w.locator('#midiOutput').selectOption('0');await w.waitForFunction(()=>document.getElementById('midiStatus').textContent.startsWith('Sending to'));
+   await w.screenshot({path:path.join(out,'studio-watch-'+name+'.png')});
+   assert.ok(posts.filter(p=>p.type==='commands').flatMap(p=>p.commands).some(c=>c.type==='appsEnd'));
+   await w.goto('about:blank');assert.deepEqual(errors,[]);
+   console.log('PASS '+name+': Apps hold/swipe/release, Media tap/swipe/hold, linear/circular knobs, MIDI notes/CC/jogs, eight-channel mixer, wake/reconnect and watch HTTP layout.');
+  }finally{await browser.close();}
+ }
+})().catch(e=>{console.error(e);process.exitCode=1;});

@@ -693,6 +693,9 @@ static void CleanMenu(NSMenu *menu) {
         if(index<menu.numberOfItems && [menu.itemArray[index].identifier isEqual:@"local.musicstrip.touchTabToggle"]) index++;
         [menu insertItem:apps atIndex:index];
         apps.state=appsMenuVisible ? NSControlStateValueOn : NSControlStateValueOff;
+        BOOL hasPhone=NO;
+        for(NSMenuItem *item in menu.itemArray)if([item.identifier isEqual:@"local.musicstrip.phone"])hasPhone=YES;
+        if(!hasPhone){NSMenuItem *phone=[[NSMenuItem alloc] initWithTitle:@"iPhone / Watch · Trackpad & MIDI…" action:NSSelectorFromString(@"openPhone:") keyEquivalent:@""];phone.identifier=@"local.musicstrip.phone";phone.target=NSClassFromString(@"MusicStripMidiBridge");[menu insertItem:phone atIndex:index+1];}
     }
 }
 static void ApplyBranding(void) {
@@ -712,6 +715,7 @@ static NSArray *MenuTitles(NSMenu *menu) {
 + (void)toggleSurfaceMode:(id)sender;
 + (void)toggleMidi:(id)sender;
 + (void)toggleApps:(id)sender;
++ (void)openPhone:(id)sender;
 @end
 static void SuppressTray(id cls, SEL sel, id item) { Report("TRAY_SUPPRESSED\n"); }
 static void Open(id self, SEL sel, NSTouchBar *bar, id identifier) {
@@ -2042,6 +2046,7 @@ static void Command(NSString *command) {
 @implementation MusicStripMidiBridge
 + (void)toggleTouchTab:(id)sender { Report("TOUCHTAB_TOGGLE\n"); }
 + (void)toggleApps:(id)sender { Report("APPS_TOGGLE\n"); }
++ (void)openPhone:(id)sender { Report("PHONE_OPEN\n"); }
 + (void)toggleMidi:(id)sender { Command([[(id)NSApp.delegate valueForKey:@"touchbarShown"] boolValue] ? @"HIDE" : @"SHOW"); ApplyBranding(); }
 + (void)toggleSurfaceMode:(id)sender { ChangeMode(NSApp.delegate,NSSelectorFromString(@"changeMode:"),sender); }
 + (BOOL)validateMenuItem:(NSMenuItem *)item {

@@ -1,49 +1,44 @@
-const assert = require('node:assert/strict');
-const fs = require('node:fs');
-const vm = require('node:vm');
-const path = require('node:path');
-const source = fs.readFileSync(path.join(__dirname, '../DragEngine/ThreeFingerDragOnWindows/PhoneTrackpad.js'), 'utf8');
-const elements = new Map(), sent = [];
-let time = 1000, frame, ws;
-function element(id) {
-  if (!elements.has(id)) elements.set(id, { value: '1.4', handlers: {}, disabled: true,
-    classList: { add(){}, remove(){}, toggle(){} },
-    addEventListener(type, fn) { this.handlers[type] = fn; }, setAttribute(){} });
-  return elements.get(id);
-}
-const doc = { hidden:false, handlers:{}, getElementById:element, addEventListener(type,fn){this.handlers[type]=fn;} };
-const win = { handlers:{}, addEventListener(type,fn){this.handlers[type]=fn;} };
-class Socket {
-  static OPEN=1;
-  constructor(){ws=this;this.readyState=1;this.bufferedAmount=0;}
-  send(text){sent.push(JSON.parse(text));}
-  close(){this.readyState=3;this.onclose?.();}
-}
-vm.runInNewContext(source, { document:doc, window:win, location:{hash:'#'+'A'.repeat(48),host:'127.0.0.1:17834'},
-  WebSocket:Socket, localStorage:{getItem(){return null;},setItem(){}},
-  performance:{now:()=>time}, requestAnimationFrame(fn){frame=fn;}, setInterval(){return 1;}, clearInterval(){} });
-ws.onopen(); ws.onmessage({data:'{"ready":true}'}); sent.length=0;
-const touch=(x,y)=>({clientX:x,clientY:y});
+const assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm'),path=require('node:path');
+const source=fs.readFileSync(path.join(__dirname,'../../Shared/PhoneControl/Web/PhoneTrackpad.js'),'utf8');
+const elements=new Map(),sent=[],timers=new Map();let time=1000,frame,ws,heartbeat,checks=0,nextTimer=0;
+function element(id){if(!elements.has(id))elements.set(id,{value:'3',handlers:{},disabled:true,hidden:true,classList:{add(){},remove(){},toggle(){}},addEventListener(type,fn){this.handlers[type]=fn;},setAttribute(){}});return elements.get(id);}
+const doc={hidden:false,handlers:{},documentElement:element('html'),getElementById:element,addEventListener(type,fn){this.handlers[type]=fn;}};
+const win={handlers:{},matchMedia(){return{matches:false};},addEventListener(type,fn){this.handlers[type]=fn;}};
+class Socket{static OPEN=1;constructor(){ws=this;this.readyState=1;this.bufferedAmount=0;}send(text){sent.push(JSON.parse(text));}close(){this.readyState=3;this.onclose?.();}}
+vm.runInNewContext(source,{document:doc,window:win,URLSearchParams,Uint8Array,crypto:require('node:crypto').webcrypto,location:{hash:'#'+'A'.repeat(48),host:'127.0.0.1:17834',search:''},WebSocket:Socket,localStorage:{getItem(){return null;},setItem(){}},performance:{now:()=>time},requestAnimationFrame(fn){frame=fn;},setInterval(fn){heartbeat=fn;return 1;},clearInterval(){},setTimeout(fn,ms){const id=++nextTimer;timers.set(id,{fn,ms});return id;},clearTimeout(id){timers.delete(id);}});
+function connected(){ws.onopen();ws.onmessage({data:'{"ready":true}'});sent.length=0;}connected();
+const touch=(x,y)=>({clientX:x,clientY:y}),fingers=(n,x,y)=>Array.from({length:n},(_,i)=>touch(x+i*20,y));
 function fire(type,touches){element('pad').handlers[type]({touches,preventDefault(){}});time+=15;}
-function take(){return sent.splice(0);}
-fire('touchstart',[touch(10,10)]);fire('touchend',[]);
-assert.deepEqual(take(),[{type:'left'}]);
-fire('touchstart',[touch(10,10),touch(30,10)]);fire('touchend',[touch(10,10)]);fire('touchend',[]);
-assert.deepEqual(take(),[{type:'right'}]);
-fire('touchstart',[touch(10,10)]);fire('touchmove',[touch(30,20)]);frame();fire('touchend',[]);
-assert.deepEqual(take(),[{type:'move',x:28,y:14}]);
-fire('touchstart',[touch(10,10),touch(30,10)]);fire('touchmove',[touch(10,30),touch(30,30)]);frame();fire('touchend',[]);
-assert.deepEqual(take(),[{type:'scroll',x:0,y:60}]);
-fire('touchstart',[touch(10,10),touch(30,10),touch(50,10)]);
-fire('touchmove',[touch(30,10),touch(50,10),touch(70,10)]);frame();
-fire('touchend',[touch(30,10),touch(50,10)]);fire('touchmove',[touch(50,30),touch(70,30)]);fire('touchend',[]);
-assert.deepEqual(take(),[{type:'down'},{type:'move',x:28,y:0},{type:'up'}]);
-element('drag').handlers.click();fire('touchstart',[touch(10,10)]);fire('touchcancel',[]);
-assert.deepEqual(take(),[{type:'down'},{type:'up'}]);
-element('drag').handlers.click();doc.hidden=true;doc.handlers.visibilitychange();
-assert.deepEqual(take(),[{type:'down'},{type:'up'}]);
-assert.equal(ws.readyState,3);
-fire('touchstart',[touch(10,10)]);fire('touchmove',[touch(30,10)]);frame();fire('touchend',[]);
-assert.deepEqual(take(),[]);
-assert.equal(element('left').disabled,true);
-console.log('PASS: tap, right-click, movement, natural scroll, three-finger drag, touch cancellation, background release, disconnected input.');
+function expect(commands,label){assert.deepEqual(sent.splice(0),commands,label);checks++;time+=700;}
+function timer(ms){const t=[...timers.entries()].find(([,t])=>t.ms===ms);assert.ok(t,'timer '+ms);timers.delete(t[0]);t[1].fn();}
+function tap(x=10,y=10){fire('touchstart',[touch(x,y)]);fire('touchend',[]);}
+function begin(){tap();fire('touchstart',[touch(10,10)]);}
+tap();expect([{type:'left'}],'single tap');
+fire('touchstart',fingers(2,10,10));fire('touchend',[]);expect([{type:'right'}],'two-finger tap');
+fire('touchstart',[touch(10,10)]);fire('touchmove',[touch(30,20)]);assert.deepEqual(sent,[{type:'move',x:60,y:30}],'first movement does not wait for animation frame');frame();fire('touchend',[]);expect([{type:'move',x:60,y:30}],'relative movement');
+fire('touchstart',fingers(2,10,10));fire('touchmove',fingers(2,30,30));fire('touchend',[]);expect([{type:'scroll',x:60,y:-60}],'reversed scroll on both axes');
+tap();tap();expect([{type:'left'},{type:'down'},{type:'up'}],'quick double tap completes a second native click');
+begin();assert.deepEqual(sent,[{type:'left'},{type:'down'}],'second contact presses immediately');fire('touchmove',[touch(11,10)]);fire('touchmove',[touch(30,20)]);fire('touchend',[]);assert.ok(!sent.some(c=>c.type==='up'),'brief contact loss keeps drag');timer(120);expect([{type:'left'},{type:'down'},{type:'move',x:60,y:30},{type:'up'}],'double-tap drag releases after contact grace');
+begin();fire('touchmove',[touch(30,10)]);fire('touchend',[]);time+=50;fire('touchstart',[touch(100,100)]);fire('touchmove',[touch(110,100)]);fire('touchend',[]);timer(120);expect([{type:'left'},{type:'down'},{type:'move',x:60,y:0},{type:'move',x:30,y:0},{type:'up'}],'contact break continues one drag without another click');
+tap();time+=600;fire('touchstart',[touch(10,10)]);fire('touchmove',[touch(30,20)]);fire('touchend',[]);expect([{type:'left'},{type:'move',x:60,y:30}],'late second contact moves normally');
+tap();fire('touchstart',[touch(100,100)]);fire('touchmove',[touch(120,110)]);fire('touchend',[]);expect([{type:'left'},{type:'move',x:60,y:30}],'distant touch does not start a drag');
+fire('touchstart',fingers(3,10,10));time+=120;fire('touchmove',fingers(3,30,10));fire('touchend',fingers(2,30,10));fire('touchmove',fingers(2,50,30));fire('touchend',[]);expect([{type:'down'},{type:'move',x:60,y:0},{type:'up'}],'three-finger drag remains isolated');
+fire('touchstart',fingers(3,10,10));fire('touchend',[]);expect([],'three-finger tap never clicks');
+for(let n=1;n<=4;n++)fire('touchstart',fingers(n,10,100));fire('touchmove',fingers(4,10,40));fire('touchmove',fingers(4,10,-40));fire('touchend',fingers(3,10,0));fire('touchmove',fingers(3,50,30));fire('touchend',[]);expect([{type:'taskView'}],'four up fires once without drag');
+fire('touchstart',fingers(4,10,10));fire('touchmove',fingers(4,10,70));fire('touchend',[]);expect([{type:'showDesktop'}],'four down');
+fire('touchstart',fingers(4,10,10));fire('touchmove',fingers(4,80,20));fire('touchmove',fingers(4,140,20));fire('touchend',[]);expect([{type:'desktop',direction:-1}],'four right goes to previous desktop once');
+fire('touchstart',fingers(4,100,10));fire('touchmove',fingers(4,20,10));fire('touchend',[]);expect([{type:'desktop',direction:1}],'four left goes to next desktop');
+fire('touchstart',fingers(5,10,10));fire('touchmove',fingers(5,10,90));fire('touchend',[]);expect([],'five contacts ignored');
+element('speed').value='20';begin();fire('touchmove',[touch(210,10)]);fire('touchend',[]);timer(120);expect([{type:'left'},{type:'down'},{type:'move',x:4000,y:0},{type:'up'}],'20x motion uses one packet');element('speed').value='3';
+begin();fire('touchcancel',[]);expect([{type:'left'},{type:'down'},{type:'up'},{type:'releaseAll'}],'cancel immediately releases all held controls');
+begin();element('settings').handlers.click();expect([{type:'left'},{type:'down'},{type:'up'},{type:'releaseAll'}],'settings release dragging');element('closeSettings').handlers.click();
+begin();doc.hidden=true;doc.handlers.visibilitychange();expect([{type:'left'},{type:'down'},{type:'releaseAll'}],'backgrounding releases all controls');assert.equal(ws.readyState,3);
+fire('touchstart',[touch(10,10)]);fire('touchmove',[touch(30,10)]);fire('touchend',[]);expect([],'sleeping touches do not replay');
+doc.hidden=false;doc.handlers.visibilitychange();connected();element('connect').handlers.click();assert.equal(ws.readyState,3);checks++;doc.hidden=true;doc.handlers.visibilitychange();doc.hidden=false;doc.handlers.visibilitychange();assert.equal(ws.readyState,3);checks++;
+element('connect').handlers.click();connected();element('tongueMode').handlers.click();fire('touchstart',[touch(10,10)]);time+=500;fire('touchend',[]);expect([{type:'left'}],'tongue mode accepts slower taps');
+fire('touchstart',[touch(10,10)]);time+=800;timer(800);fire('touchend',[]);expect([{type:'right'}],'hold right-clicks once');
+element('scrollMode').handlers.click();fire('touchstart',[touch(10,10)]);fire('touchmove',[touch(30,30)]);fire('touchend',[]);expect([{type:'scroll',x:60,y:-60}],'one contact scrolls');element('scrollMode').handlers.click();
+begin();win.handlers.resize();expect([{type:'left'},{type:'down'},{type:'up'},{type:'releaseAll'}],'rotation releases all controls');
+const failed=ws;ws.close();timer(250);assert.notEqual(ws,failed);connected();checks++;time+=1500;heartbeat();assert.deepEqual(sent.splice(0),[{type:'ping'}]);ws.onmessage({data:'{"pong":true}'});time+=1500;heartbeat();assert.equal(ws.readyState,1);sent.length=0;checks++;
+time+=5000;heartbeat();assert.equal(ws.readyState,3);timer(250);connected();checks++;doc.hidden=true;doc.handlers.visibilitychange();doc.hidden=false;win.handlers.pageshow();const waking=ws;win.handlers.focus();doc.handlers.visibilitychange();assert.equal(ws,waking);connected();checks++;
+ws.onmessage({data:'{"error":"pairing"}'});assert.equal(element('connect').textContent,'Connect');assert.ok(![...timers.values()].some(t=>t.ms===250));checks++;console.log('PASS: '+checks+' shared gesture and connection checks.');

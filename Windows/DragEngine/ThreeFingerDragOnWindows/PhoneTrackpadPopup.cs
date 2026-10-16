@@ -1,3 +1,4 @@
+using ThreeE.PhoneControl;
 // SPDX-License-Identifier: MIT
 using System;
 using System.ComponentModel;
@@ -50,7 +51,7 @@ public sealed class PhoneTrackpadPopup : IDisposable {
             point.X, point.Y, 300, 400, IntPtr.Zero, IntPtr.Zero, wc.Instance, IntPtr.Zero);
         if (window == IntPtr.Zero) throw new Win32Exception(Marshal.GetLastWin32Error());
         title = Child("STATIC", "iPhone trackpad", 0, 0);
-        instructions = Child("STATIC", "Scan with Camera, then open in Safari.\r\nUse the same Wi-Fi as this laptop.", 0, 0);
+        instructions = Child("STATIC", "Scan on iPhone; open in Safari.\r\nEmail the same link to your watch.", 0, 0);
         status = Child("STATIC", "", 0, 0);
         stop = Child("BUTTON", "Stop trackpad", 0x00010000, 1);
         close = Child("BUTTON", "Close", 0x00010000, 2);

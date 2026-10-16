@@ -7,6 +7,7 @@
 #import <signal.h>
 #import <unistd.h>
 #import <QuartzCore/QuartzCore.h>
+#import "../../../Shared/PhoneControl/MacHost/PhoneControlMac.h"
 
 
 @interface StripApplication : NSApplication
@@ -306,6 +307,7 @@ static OSStatus SendSpotifyCommand(pid_t pid, int command) {
 #import "AppsTrayHelper.h"
 
 @interface AppDelegate : NSObject <NSApplicationDelegate>
+@property ThreeEPhoneController *phoneController;
 #ifdef STRIP_COMBINED_TOUCHTAB
 @property NSTimer *gestureTimer;
 @property NSString *gestureState;
@@ -362,6 +364,9 @@ static OSStatus SendSpotifyCommand(pid_t pid, int command) {
 
 @implementation AppDelegate
 - (void)applicationDidFinishLaunching:(NSNotification *)notification {
+    self.phoneController=[ThreeEPhoneController new];
+    __weak AppDelegate *phoneSelf=self;
+    self.phoneController.media=^(int action){[phoneSelf performMediaCommand:action==1?5:action==2?4:2];};
     if (!LoadInterfaces()) {
         NSAlert *alert = [NSAlert new];
         alert.messageText = @"This macOS version does not expose the required Touch Bar interfaces.";
@@ -594,6 +599,8 @@ static OSStatus SendSpotifyCommand(pid_t pid, int command) {
 #endif
                 } else if ([line isEqualToString:@"APPS_TOGGLE"]) {
                     [self appsLauncherCommand:2];
+                } else if ([line isEqualToString:@"PHONE_OPEN"]) {
+                    [self.phoneController show];
                 } else if ([line isEqualToString:@"VISIBLE"]) {
                     self.midiVisible=YES;
                     if(self.appsVisible || self.appsRequested) [self sendMidi:@"HIDE"];
@@ -846,6 +853,7 @@ static OSStatus SendSpotifyCommand(pid_t pid, int command) {
     return NO;
 }
 - (void)applicationWillTerminate:(NSNotification *)notification {
+    [self.phoneController stop];
 #ifdef STRIP_COMBINED_TOUCHTAB
     [self.gestureTimer invalidate]; StripStopGestures();
     [NSUserDefaults.standardUserDefaults removeObjectForKey:@"TouchTabRuntimeState"];

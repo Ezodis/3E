@@ -11,6 +11,12 @@ Choose the combined macOS app, either Mac app individually, or **3£Windows** fo
 
 Windows setup and releases now live here, moved from `Ezodis/eduu`. Download **3£Windows.ps1** from a [`windows-v…` release](https://github.com/Ezodis/3E/releases) and copy that single file to another Windows PC. Missing third-party dependencies require internet and administrator approval. See [Windows installation, controls and update details](Windows/README.md).
 
+## iPhone trackpad and MIDI studio
+
+Windows and macOS use one [shared phone interface and receiver](Shared/PhoneControl/README.md): reconnecting Wi-Fi trackpad, double-tap dragging, four-finger desktop gestures, Apps hold/swipe switching, and a Media button that opens two decks or an eight-track MIDI mixer. Knobs support vertical and circular dragging. Ableton performs the audio mixing through your MIDI mappings.
+
+Windows includes the receiver in its tray app. Combined and TouchBar builds include an **iPhone trackpad & MIDI** menu item. Macs without a Touch Bar can use the standalone **3E Phone.app**, built with `zsh Shared/PhoneControl/MacHost/build-app.sh`. The phone feature requires macOS 14+ and bundles its runtime; older supported systems can continue using the other app features. Feature-branch builds appear as **3E-Phone-Mac** artifacts in the [phone workflow](.github/workflows/phone-control.yml), independently of published release downloads.
+
 ## Downloads
 
 Get the current **Combined**, **TouchBar only**, or **TouchTab only** download from [Releases](https://github.com/Ezodis/3E/releases). Each is a universal Intel/Apple Silicon build; see hardware and permission requirements below. The app's update check selects the newest version for its own edition.

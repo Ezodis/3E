@@ -23,7 +23,7 @@ if [[ "$strip_combined" == YES ]]; then strip_main_flags=(-DSTRIP_COMBINED_TOUCH
 if [[ "${1:-}" == --combined-main-only ]]; then
   xcrun clang -arch arm64 -arch x86_64 -fobjc-arc -Wall -Wextra -Wno-unused-parameter -O2 \
     -mmacosx-version-min=12.0 "${strip_main_flags[@]}" -framework AppKit -framework Carbon \
-    -framework ApplicationServices -framework QuartzCore main.m -o "$strip_repo/build/musicstrip/MusicStripCombinedMain"
+    -framework ApplicationServices -framework QuartzCore -framework CoreImage main.m -o "$strip_repo/build/musicstrip/MusicStripCombinedMain"
   exit 0
 fi
 if [[ "${1:-}" == --bridge-only ]]; then
@@ -49,7 +49,8 @@ mkdir -p "$strip_app/Contents/Resources/Ableton/_3E"
 cp "$strip_repo/musicstrip/Ableton/_3E/"*.py "$strip_app/Contents/Resources/Ableton/_3E/"
 xcrun clang -arch arm64 -arch x86_64 -fobjc-arc -Wall -Wextra -Wno-unused-parameter -O2 \
   -mmacosx-version-min="$strip_minimum" "${strip_main_flags[@]}" -framework AppKit -framework Carbon \
-  -framework ApplicationServices -framework QuartzCore main.m -o "$strip_app/Contents/MacOS/MusicStrip"
+  -framework ApplicationServices -framework QuartzCore -framework CoreImage main.m -o "$strip_app/Contents/MacOS/MusicStrip"
+zsh "$strip_repo/../Shared/PhoneControl/MacHost/build-hosts.sh" "$strip_app"
 strip_apps_helper="$strip_app/Contents/Helpers/MusicStrip Apps.app"
 cp "$strip_app/Contents/MacOS/MusicStrip" "$strip_apps_helper/Contents/MacOS/MusicStripApps"
 strip_midi="$strip_app/Contents/Helpers/MIDI Touchbar.app"

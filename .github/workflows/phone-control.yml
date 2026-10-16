@@ -1,0 +1,51 @@
+name: Phone trackpad and MIDI
+on:
+  push:
+    branches: [phone-trackpad-midi]
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  mac:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Shared receiver, gestures and reconnect tests (no native input)
+        run: |
+          dotnet run --project Windows/PhoneTrackpadTests
+          node Windows/PhoneTrackpadTests/gestures.test.cjs
+          node Windows/PhoneTrackpadTests/watch.test.cjs
+      - name: Build standalone universal Mac app
+        run: zsh Shared/PhoneControl/MacHost/build-app.sh
+      - name: Run receiver and CoreMIDI smoke tests
+        run: |
+          arch=$(uname -m)
+          if [[ "$arch" == x86_64 ]]; then arch=x64; fi
+          host="build/phone/3E Phone.app/Contents/Helpers/PhoneControl/$arch/ThreeE.PhoneHost"
+          "$host" --self-test
+          "$host" --native-self-test
+          "$host" --midi-self-test
+      - name: Build integrated Combined edition
+        env:
+          STRIP_SIGNING_IDENTITY: '-'
+        run: zsh TouchBar/musicstrip/Source/build.sh --combined
+      - name: Existing native menu and app-switcher regression tests
+        run: |
+          xcrun clang -fobjc-arc -framework AppKit -framework Carbon -framework ApplicationServices -framework QuartzCore -framework CoreImage TouchBar/musicstrip/Tests/window_chooser.m -o /tmp/window-test
+          /tmp/window-test
+          xcrun clang -fobjc-arc -Wno-deprecated-declarations -framework AppKit -framework Carbon -framework ApplicationServices -framework QuartzCore -framework CoreImage TouchBar/musicstrip/Tests/apps_launcher_hold.m -o /tmp/apps-test
+          /tmp/apps-test
+          xcrun clang -fobjc-arc -framework AppKit -framework CoreMIDI TouchBar/musicstrip/Tests/combined_menu.m -o /tmp/menu-test
+          STRIP_COMBINED_TOUCHTAB=1 /tmp/menu-test
+      - uses: actions/upload-artifact@v4
+        with:
+          name: 3E-Phone-Mac
+          path: build/phone/3E-Phone-Mac.zip
+          if-no-files-found: error

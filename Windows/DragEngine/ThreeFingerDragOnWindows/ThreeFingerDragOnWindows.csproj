@@ -121,8 +121,7 @@
     <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
   </ItemGroup>
   <ItemGroup>
-    <EmbeddedResource Include="PhoneTrackpad.html" />
-    <EmbeddedResource Include="PhoneTrackpad.js" />
+    <ProjectReference Include="../../../Shared/PhoneControl/PhoneControlCore.csproj" />
   </ItemGroup>
   <!--
       Defining the "Msix" ProjectCapability here allows the Single-project MSIX Packaging
