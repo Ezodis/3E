@@ -143,7 +143,7 @@ public sealed class NativeTrackpadInput : ITrackpadInput, IDisposable {
     }
     public void TaskView() => WindowsShortcut(0x09); // Windows + Tab
     public void ShowDesktop() => WindowsShortcut(0x44); // Windows + D
-    private static Input KeyEvent(ushort key,bool up=false) => new() { Type=1,Data=new InputData { Keyboard=new Keyboard { Key=key,Extra=(UIntPtr)ShortcutMarker,Flags=(up?2u:0u) | (key==0x5B || key==0x25 || key==0x27 || key==0x2C || key==0xAE || key==0xAF ? 1u:0u) } } };
+    private static Input KeyEvent(ushort key,bool up=false) => new() { Type=1,Data=new InputData { Keyboard=new Keyboard { Key=key,Extra=(UIntPtr)ShortcutMarker,Flags=(up?2u:0u) | (key==0x5B || key==0x25 || key==0x27 || key==0x2C || key==0xAE || key==0xAF || key==0xB0 || key==0xB1 ? 1u:0u) } } };
     private static void Keys(params Input[] keys) { if(SendInput((uint)keys.Length,keys,Marshal.SizeOf<Input>())!=keys.Length) throw new InvalidOperationException("Windows could not accept the shortcut."); }
     private static void ReleaseKeys(params ushort[] keys) { foreach(var key in keys) SendInput(1,new[]{KeyEvent(key,true)},Marshal.SizeOf<Input>()); }
     public void AppsBegin() => BeginApps(1);
@@ -214,6 +214,11 @@ public sealed class NativeTrackpadInput : ITrackpadInput, IDisposable {
         var wheel = new Input { Data = new InputData { Mouse = new Mouse { Data = unchecked((uint)(direction > 0 ? 120 : -120)), Flags = 0x0800 } } };
         var inputs = new[] { KeyEvent(0x11), wheel, KeyEvent(0x11, true) };
         if (SendInput(3, inputs, Marshal.SizeOf<Input>()) != 3) ReleaseKeys(0x11);
+    }
+    // Hardware Next/Previous media keys (used as a skip fallback).
+    internal static bool MediaKey(bool next) {
+        ushort key = next ? (ushort)0xB0 : (ushort)0xB1;
+        return SendInput(2, new[] { KeyEvent(key), KeyEvent(key, true) }, Marshal.SizeOf<Input>()) == 2;
     }
     public void Media(int action) => media?.Invoke(action);
     public void Volume(int level) => volume?.Invoke(level);

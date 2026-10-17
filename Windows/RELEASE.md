@@ -1,3 +1,8 @@
+3£Windows 1.0.30 makes Media's previous/next swipe work even when YouTube is in the background.
+
+- **Skips reach an unfocused YouTube:** when Chrome's media session refuses the skip (common when its window isn't focused), 3£Windows sends the hardware Next/Previous media key, which Chrome and Edge handle in the background. If Previous still can't go back, the current video restarts from the beginning.
+- **Diagnostics:** each skip is logged to `%LOCALAPPDATA%\3EWindows\media.log` (app, whether skip was available, which route worked).
+
 3£Windows 1.0.29 makes Media's previous/next swipe reliable.
 
 - **Curved thumb swipes skip:** a swipe that starts slightly up or down no longer turns into the volume control; the skip is decided from where your finger ends up. The volume opens only for a clearly vertical swipe.
