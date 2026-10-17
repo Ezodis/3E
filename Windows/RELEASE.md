@@ -1,4 +1,10 @@
-3£Windows 1.0.28 fixes dragging in Task View and small pointer movements.
+3£Windows 1.0.29 makes Media's previous/next swipe reliable.
+
+- **Curved thumb swipes skip:** a swipe that starts slightly up or down no longer turns into the volume control; the skip is decided from where your finger ends up. The volume opens only for a clearly vertical swipe.
+- **Quick repeated skips are not lost:** swipes made while the music app is still answering the previous command are queued and delivered in order (play/pause double-taps are still ignored so playback never toggles twice).
+- **Slow starts skip instead of opening the MIDI controls**, and a touch the browser never finished no longer swallows the next swipe.
+
+Includes everything from 1.0.28:
 
 - **Tap-hold-drag never clicks first:** like a laptop touchpad with tap-and-drag, a tap's click waits 0.3 s for a possible second touch. Tap, touch again and hold, then move is now a pure drag: Task View no longer opens the window before you can drag it, and menus stay open. A quick double tap is still a double-click, and moving or touching elsewhere sends the waiting click immediately, at the spot you tapped.
 - **Small movements register immediately:** the pointer now moves by exact pixels, so Windows' "Enhance pointer precision" no longer shrinks slow, small phone movements to nothing and then jumps. After a tap, a new movement starts after 6 px instead of 14 px. Pointer acceleration is gentler at slow speeds; adjust Pointer speed in Settings if the overall speed feels different.

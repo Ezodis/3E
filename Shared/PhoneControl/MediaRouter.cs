@@ -18,6 +18,10 @@ public sealed class MediaRouter {
     private long sequence;
     private object last,preferred;
     private int pending;
+    // Skips are cumulative: swipes made while a slow provider is still answering
+    // are queued (a few at most) instead of dropped. Play/pause taps that arrive
+    // while one is pending are still ignored so a source never toggles twice.
+    private readonly System.Collections.Concurrent.ConcurrentQueue<int> queuedSkips=new();
     private Display display=new(null,-1,new {playing=(bool?)null,artwork="",stop=false});
     public object State=>Volatile.Read(ref display).View;
     public MediaRouter(Func<MediaSources> read,Func<string,string> icon,Func<long> clock=null) {
@@ -53,7 +57,8 @@ public sealed class MediaRouter {
         // Capture the displayed source before scheduling; never route to a different
         // player just because the OS's preferred session changed during this tap.
         var selected=Volatile.Read(ref display);
-        if(action<0||action>2||selected.Session==null||Interlocked.CompareExchange(ref pending,1,0)!=0)return;
+        if(action<0||action>2||selected.Session==null)return;
+        if(Interlocked.CompareExchange(ref pending,1,0)!=0) { if(action!=0&&queuedSkips.Count<4)queuedSkips.Enqueue(action); return; }
         try {
             await Task.Yield(); // Native providers must never run inside the input lock.
             await gate.WaitAsync(token);
@@ -70,6 +75,9 @@ public sealed class MediaRouter {
                 }
                 Refresh();
             } finally { gate.Release(); }
-        } finally { Volatile.Write(ref pending,0); }
+        } finally {
+            Volatile.Write(ref pending,0);
+            if(queuedSkips.TryDequeue(out var next))_=SendAsync(next,token);
+        }
     }
 }
