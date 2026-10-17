@@ -55,5 +55,17 @@ static class MediaRouterTests {
         await blocked.SendAsync(0);
         check(slowCalls==1&&JsonSerializer.SerializeToElement(blocked.State).GetProperty("playing").GetBoolean(),"A pending provider keeps cached state responsive and ignores duplicate taps");
         release.SetResult(false);await pending;
+
+        // Skips swiped while a slow player is still answering are queued, not lost.
+        var gateOpen=new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var firstCall=new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var skips=new List<MediaAction>();
+        var lagging=new MediaSession("lag","player",1,async(a,t)=>{lock(skips)skips.Add(a);firstCall.TrySetResult();return await gateOpen.Task.WaitAsync(t);});
+        var skipping=new MediaRouter(()=>new(new[]{lagging},"lag"),_=>"");await skipping.RefreshAsync();
+        var firstSkip=skipping.SendAsync(2);await firstCall.Task;
+        await skipping.SendAsync(2);await skipping.SendAsync(1);
+        gateOpen.SetResult(true);await firstSkip;
+        for(int i=0;i<50&&skips.Count<3;i++)await Task.Delay(20);
+        check(skips.SequenceEqual(new[]{MediaAction.Next,MediaAction.Next,MediaAction.Previous}),"Quick swipes while the player is slow are all delivered, in order");
     }
 }

@@ -92,4 +92,14 @@ check(commands('volumeStep').map(c=>c.direction).join()==='1,-1','Volume up/down
 const track=elements.get('volumeTrack');track.getBoundingClientRect=()=>({top:100,bottom:240,height:140});
 sent.length=0;event('volumeTrack','pointerdown',0,170);event('volumeTrack','pointermove',0,128);event('volumeTrack','pointerup',0,128);
 const levels=commands('volume').map(c=>c.level);check(levels.length>=1&&levels.at(-1)===80,'Dragging the volume track follows the finger (top = 100%)');
+win.ThreeEDock.describe({volume:{available:false,level:null}});
+sent.length=0;event('media','pointerdown',200,100);event('media','pointermove',203,88);event('media','pointermove',240,80);event('media','pointerup',262,78);
+check(commands('media').length===1&&commands('media')[0].action===2,'A thumb swipe that starts slightly upward still skips forward');
+sent.length=0;event('media','pointerdown',200,100);event('media','pointermove',196,110);event('media','pointermove',150,118);event('media','pointerup',140,122);
+check(commands('media').length===1&&commands('media')[0].action===1,'A swipe that dips downward still goes to the previous track');
+sent.length=0;event('media','pointerdown',200,100);event('media','pointermove',207,101);now+=200;
+check(![...timers.values()].some(t=>t.ms===500),'A slow start past 6 px cannot turn into the MIDI hold');event('media','pointermove',250,102);event('media','pointerup',250,102);
+check(commands('media').length===1&&commands('media')[0].action===2&&!commands('studio').length,'A slow-starting swipe still skips');
+sent.length=0;event('media','pointerdown',200,100,7);event('media','pointerdown',200,100,8);event('media','pointermove',240,100,8);event('media','pointerup',240,100,8);
+check(commands('media').length===1&&commands('media')[0].action===2,'A touch the browser never finished does not swallow the next swipe');
 console.log('PASS: '+checks+' dock gesture and icon-state checks.');

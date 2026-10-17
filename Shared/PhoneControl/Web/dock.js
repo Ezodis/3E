@@ -146,8 +146,12 @@
     if(!active||active.id!==e.pointerId)return;e.preventDefault();
     const a=active,dx=e.clientX-a.startX,dy=e.clientY-a.startY;
     a.max=Math.max(a.max,Math.hypot(dx,dy));
-    if(a.max>10)clearTimeout(holdTimer);
-    if(!a.axis&&Math.max(Math.abs(dx),Math.abs(dy))>=12)a.axis=Math.abs(dx)>Math.abs(dy)*1.15?'horizontal':'vertical';
+    if(a.max>(a.kind==='media'?6:10))clearTimeout(holdTimer);
+    // Media: only a clearly upward/downward start is a volume swipe, so a thumb
+    // swipe that arcs a little is still read as previous/next.
+    // Media keeps re-reading the direction until the volume actually opens.
+    if(a.kind==='media'&&!a.volume&&Math.max(Math.abs(dx),Math.abs(dy))>=12)a.axis=Math.abs(dy)>Math.abs(dx)*1.4?'vertical':'horizontal';
+    else if(!a.axis&&Math.max(Math.abs(dx),Math.abs(dy))>=12)a.axis=Math.abs(dx)>Math.abs(dy)*1.15?'horizontal':'vertical';
     if(a.kind==='media'&&a.axis==='vertical'&&(dy<=-18||a.volume)){
       if(!a.volume){a.volume=true;a.volumeY=e.clientY;a.volumeLevel=volume.available?+volumeSlider.value:null;showVolume();}
       else if(a.volumeLevel===null&&volume.available){a.volumeY=e.clientY;a.volumeLevel=+volumeSlider.value;}
@@ -179,13 +183,13 @@
     button.addEventListener('contextmenu',e=>e.preventDefault());
     button.addEventListener('pointerdown',e=>{
       e.preventDefault();if(!C.connected()||e.button>0)return;
-      if(active){cancel();return;}
+      if(active)cancel(); // a contact the browser never finished must not swallow this one
       C.release();showCommands(false);lastPointer=performance.now();clearTimeout(restoreTimer);
       button.setPointerCapture(e.pointerId);
       active={kind,id:e.pointerId,startX:e.clientX,startY:e.clientY,stepX:e.clientX,start:performance.now(),lastStep:-Infinity,steps:0,max:0,axis:null,held:false};
       button.classList.add('active');
       holdTimer=setTimeout(()=>{
-        if(!active||active.kind!==kind||active.axis||active.max>10)return;
+        if(!active||active.kind!==kind||active.axis||active.max>(kind==='media'?6:10))return;
         active.held=true;
         if(kind==='apps'){C.send('appsBegin');paint('apps','windows');}
         else {window.ThreeESurface.openStudio();finishFeedback('media','piano');}
@@ -195,11 +199,13 @@
     button.addEventListener('pointerup',e=>{
       lastPointer=performance.now();
       if(!active||active.id!==e.pointerId)return;
-      move(e);lastPointer=performance.now();const a=active,dx=e.clientX-a.startX;
+      move(e);lastPointer=performance.now();const a=active,dx=e.clientX-a.startX,dy=e.clientY-a.startY;
       let feedback=null;
-      if(!a.held&&a.axis!=='vertical'){
-        if(kind==='media'&&a.axis==='horizontal'&&Math.abs(dx)>=24){C.send('media',{action:dx<0?1:2});feedback=dx<0?'previous':'next';}
-        else if(!a.axis&&a.max<12){
+      // Media skip is decided from where the finger ended up, so a swipe whose
+      // first few pixels wobbled still counts (unless it opened the volume).
+      if(kind==='media'&&!a.held&&!a.volume&&Math.abs(dx)>=24&&Math.abs(dx)>=Math.abs(dy)*0.8){C.send('media',{action:dx<0?1:2});feedback=dx<0?'previous':'next';}
+      else if(!a.held&&a.axis!=='vertical'){
+        if(!a.axis&&a.max<12){
           if(kind==='apps'){C.send('appsBegin');C.send('appsEnd');feedback='windows';}
           else C.send('media',{action:0});
         }
