@@ -27,7 +27,7 @@ internal sealed class PhoneMediaState : IDisposable {
                 var status=session.GetPlaybackInfo().PlaybackStatus;
                 int state=status==GlobalSystemMediaTransportControlsSessionPlaybackStatus.Playing?1:
                     status is GlobalSystemMediaTransportControlsSessionPlaybackStatus.Paused or GlobalSystemMediaTransportControlsSessionPlaybackStatus.Stopped?0:-1;
-                sessions.Add(new(session,session.SourceAppUserModelId??"",state,(action,token)=>Send(session,action,token)));
+                sessions.Add(new(session,session.SourceAppUserModelId??"",state,(action,token)=>action is MediaAction.Previous or MediaAction.Next?Skip(session,action==MediaAction.Next,token):Send(session,action,token)));
             } catch { /* An exited provider cannot receive commands. */ }
         }
         return new(sessions,manager.GetCurrentSession());
@@ -46,12 +46,41 @@ internal sealed class PhoneMediaState : IDisposable {
     public void Send(int action) {
         _=SendCommand(action);
     }
+
+    // Previous/next must work even when the player's window is in the
+    // background (YouTube in an unfocused Chrome often reports skip as
+    // unavailable to the media session). In order: the session's own skip, the
+    // hardware media key (Chrome/Edge handle it in the background), and for
+    // Previous a restart of the current track. Each attempt is logged.
+    private async Task<bool> Skip(GlobalSystemMediaTransportControlsSession session,bool next,CancellationToken token) {
+        string app=session.SourceAppUserModelId??"?";bool enabled=true;
+        try { var controls=session.GetPlaybackInfo().Controls; enabled=next?controls.IsNextEnabled:controls.IsPreviousEnabled; } catch { }
+        bool ok=false;string route="session";
+        if(enabled) {
+            try { ok=await (next?session.TrySkipNextAsync():session.TrySkipPreviousAsync()).AsTask(token); } catch { ok=false; }
+        }
+        if(!ok) { route="media key"; ok=NativeTrackpadInput.MediaKey(next); }
+        if(!ok&&!next) {
+            route="restart";
+            try { ok=await session.TryChangePlaybackPositionAsync(0).AsTask(token); } catch { ok=false; }
+        }
+        LogMedia($"{(next?"next":"previous")} app={app} skipEnabled={enabled} route={route} ok={ok}");
+        return ok;
+    }
+    private static readonly string MediaLog=Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"3EWindows","media.log");
+    private static void LogMedia(string line) {
+        try {
+            var info=new FileInfo(MediaLog);
+            if(info.Exists&&info.Length>256*1024)File.Delete(MediaLog);
+            File.AppendAllText(MediaLog,DateTime.Now.ToString("s")+" "+line+Environment.NewLine);
+        } catch { }
+    }
     private async Task SendCommand(int action) {
         try {
             using var timeout=CancellationTokenSource.CreateLinkedTokenSource(stop.Token);
             timeout.CancelAfter(2000);
             await router.SendAsync(action,timeout.Token);
-        } catch { /* Never fall back to a broadcast key that controls a different source. */ }
+        } catch { /* Play/pause never falls back to a broadcast key that could control a different source. */ }
     }
     private async Task Poll() {
         try {
