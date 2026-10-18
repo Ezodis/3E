@@ -46,6 +46,7 @@ await OutputVolumeTests.Run(Check);
 var fake = new FakeInput(); var firewall = new FakeFirewall();
 using(var volumeCommand=JsonDocument.Parse("{\"type\":\"volume\",\"level\":37}"))PhoneTrackpad.Apply(volumeCommand.RootElement,fake);
 Check(fake.Commands.Contains("volume:37"),"Volume commands reach the native boundary");
+Check(PhoneTrackpad.PageTitle("windows")=="3£ -win" && PhoneTrackpad.PageTitle("macos")=="3£ -mac","Browser title names the receiving computer");
 foreach(int invalidVolume in new[]{-1,101}) {
     bool rejected=false;try{using var command=JsonDocument.Parse(JsonSerializer.Serialize(new{type="volume",level=invalidVolume}));PhoneTrackpad.Apply(command.RootElement,fake);}catch(InvalidDataException){rejected=true;}
     Check(rejected,"Out-of-range volume command is rejected");

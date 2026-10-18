@@ -1,3 +1,12 @@
+3£Windows 1.0.32 tidies the tray menu.
+
+- **Gear icons:** Three-finger drag, PowerToys shortcuts and Dynamic wallpaper each have a ⚙ at the right edge. Click the row to switch it on or off; click the ⚙ to open its settings. The separate "Drag settings…", "PowerToys settings…" and "Show wallpaper controls…" items are gone.
+- **Phone Bar is one checkbox:** "Phone Bar" is checked while it runs; click it to start or stop. "Show QR…" is removed because left-clicking the tray icon already shows the QR.
+- **Dynamic wallpaper** now heads the theme section.
+- **Browser title:** the Phone Bar tab and home-screen name is "3£ -win" on Windows ("3£ -mac" on the Mac receiver), so the two are easy to tell apart.
+
+Includes everything from 1.0.31:
+
 3£Windows 1.0.31 gives the Windows Phone Bar a unique local-network address.
 
 - **Windows phone link:** scan or open `http://3e-win.local:17833`. The Mac receiver uses `3e-mac.local`, so both receivers can run on the same network without sending a QR link to the other computer.

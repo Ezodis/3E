@@ -221,6 +221,7 @@ public sealed class PhoneTrackpad : IDisposable {
             response.Headers["Content-Security-Policy"] = "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src data:; connect-src " + string.Join(" ", new[] { owner.Origin, owner.AliasOrigin }.Where(o => o != null).SelectMany(o => new[] { o, o.Replace("http:", "ws:") })) + "; frame-ancestors 'none'; base-uri 'none'; form-action 'none'";
             using var stream = pairing
                 ? new MemoryStream(Encoding.UTF8.GetBytes(PairingPage(owner.Origin + "/#" + owner.Token)))
+                : resource == "PhoneTrackpad.html" ? new MemoryStream(Encoding.UTF8.GetBytes(BrandedPage(input.Platform)))
                 : resource == "host.js" ? new MemoryStream(Encoding.UTF8.GetBytes("window.ThreeEHost="+JsonSerializer.Serialize(new { platform=input.Platform, http=false, alias=owner.AliasOrigin == null ? null : new Uri(owner.AliasOrigin).Authority })+";"))
                 : typeof(PhoneTrackpad).Assembly.GetManifestResourceStream("ThreeE.PhoneControl.Web." + resource);
             response.ContentLength64 = stream.Length;
@@ -313,6 +314,19 @@ public sealed class PhoneTrackpad : IDisposable {
         response.ContentLength64 = result.Length;
         await response.OutputStream.WriteAsync(result, owner.Cancel.Token);
         response.Close();
+    }
+
+    // Mac and Windows receivers are often open in neighbouring browser tabs;
+    // the tab and home-screen title names the computer each one controls.
+    public static string PageTitle(string platform) => platform == "macos" ? "3£ -mac" : "3£ -win";
+
+    private static string BrandedPage(string platform) {
+        using var stream = typeof(PhoneTrackpad).Assembly.GetManifestResourceStream("ThreeE.PhoneControl.Web.PhoneTrackpad.html");
+        using var reader = new StreamReader(stream, Encoding.UTF8);
+        var title = PageTitle(platform);
+        return reader.ReadToEnd()
+            .Replace("<title>3£ Phone Bar</title>", "<title>" + title + "</title>\n<meta name=\"apple-mobile-web-app-title\" content=\"" + title + "\">")
+            .Replace("<meta property=\"og:title\" content=\"3£ Phone Bar\">", "<meta property=\"og:title\" content=\"" + title + "\">");
     }
 
     private static string PairingPage(string link) {

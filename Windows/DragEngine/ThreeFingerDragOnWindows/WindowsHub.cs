@@ -35,6 +35,12 @@ public sealed class WindowsHub : IDisposable {
     private int ssmsThemeProfiles;
     private string ssmsRotationPeriod;
     private static readonly HttpClient http = CreateHttpClient();
+    // Screen rectangle and DPI of the most recently opened native tray menu,
+    // used to tell a click on a row's ⚙ from a click on its label.
+    private NativeRect menuRect;
+    private uint menuDpi = 96;
+    private readonly WinEventProc menuPopupProc;
+    private IntPtr menuPopupHook;
 
     public sealed class HubSettings {
         public bool Keyboard { get; set; } = true;
@@ -57,6 +63,8 @@ public sealed class WindowsHub : IDisposable {
         try { settings = JsonSerializer.Deserialize<HubSettings>(File.ReadAllText(Path.Combine(data, "settings.json"))) ?? new(); }
         catch { settings = new(); }
         menu.Opening += (_, _) => RefreshMenu();
+        menuPopupProc = OnMenuPopup;
+        menuPopupHook = SetWinEventHook(EventSystemMenuPopupStart, EventSystemMenuPopupStart, IntPtr.Zero, menuPopupProc, (uint)Environment.ProcessId, 0, 0);
         RefreshMenu();
         timer.Tick += (_, _) => Tick();
         timer.Start();
@@ -192,6 +200,15 @@ public sealed class WindowsHub : IDisposable {
     }
 
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] private static extern int MessageBox(IntPtr window, string text, string caption, uint type);
+    private const uint EventSystemMenuPopupStart = 0x0006;
+    private delegate void WinEventProc(IntPtr hook, uint eventType, IntPtr window, int objectId, int childId, uint thread, uint time);
+    [StructLayout(LayoutKind.Sequential)] private struct NativeRect { public int Left, Top, Right, Bottom; }
+    [StructLayout(LayoutKind.Sequential)] private struct NativePoint { public int X, Y; }
+    [DllImport("user32.dll")] private static extern IntPtr SetWinEventHook(uint eventMin, uint eventMax, IntPtr module, WinEventProc proc, uint process, uint thread, uint flags);
+    [DllImport("user32.dll")] private static extern bool UnhookWinEvent(IntPtr hook);
+    [DllImport("user32.dll")] private static extern bool GetWindowRect(IntPtr window, out NativeRect rect);
+    [DllImport("user32.dll")] private static extern bool GetCursorPos(out NativePoint point);
+    [DllImport("user32.dll")] private static extern uint GetDpiForWindow(IntPtr window);
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] private static extern IntPtr SendMessageTimeout(IntPtr window, uint message, UIntPtr wParam, string lParam, uint flags, uint timeout, out UIntPtr result);
 
     public static int ScheduledTheme(DateTime localTime) => localTime.Hour >= 12 && localTime.Hour < 20 ? 1 : 0;
@@ -239,17 +256,39 @@ public sealed class WindowsHub : IDisposable {
         Command = new MenuCommand(() => { try { click(); } catch (Exception ex) { Log(ex); MessageBox(IntPtr.Zero, ex.Message, "3£Windows", 0x10); } })
     };
 
-    private ToggleMenuFlyoutItem ToggleMenuItem(string label, bool value, Action<bool> change) {
-        var item = new ToggleMenuFlyoutItem { Text = label, IsChecked = value };
+    private ToggleMenuFlyoutItem ToggleMenuItem(string label, bool value, Action<bool> change, Action openSettings = null) {
+        // "\t" puts the gear in the native menu's right-aligned column.
+        var item = new ToggleMenuFlyoutItem { Text = openSettings == null ? label : label + "\t⚙", IsChecked = value };
         item.Command = new MenuCommand(() => {
+            if (openSettings != null && ClickedGear()) {
+                try { openSettings(); } catch (Exception ex) { Log(ex); MessageBox(IntPtr.Zero, ex.Message, "3£Windows", 0x10); }
+                return;
+            }
             try { value = !value; item.IsChecked = value; change(value); Save(); } catch (Exception ex) { Log(ex); }
         });
         return item;
     }
 
+    // Native menus run one command per row, so the gear is a hit zone: a click
+    // released over the right-hand edge of the menu opens that row's settings.
+    public static bool InGearZone(int x, int y, int left, int top, int right, int bottom, uint dpi) =>
+        right > left && y >= top && y < bottom && x < right && x >= right - (int)(52 * Math.Max(dpi, 96u) / 96);
+
+    private bool ClickedGear() => GetCursorPos(out var point) &&
+        InGearZone(point.X, point.Y, menuRect.Left, menuRect.Top, menuRect.Right, menuRect.Bottom, menuDpi);
+
+    private void OnMenuPopup(IntPtr hook, uint eventType, IntPtr window, int objectId, int childId, uint thread, uint time) {
+        if (window == IntPtr.Zero || !GetWindowRect(window, out var rect)) return;
+        menuRect = rect;
+        var dpi = GetDpiForWindow(window);
+        menuDpi = dpi == 0 ? 96 : dpi;
+    }
+
     private void Item(string label, Action click) => menu.Items.Add(ActionMenuItem(label, click));
 
-    private void Toggle(string label, bool value, Action<bool> change) => menu.Items.Add(ToggleMenuItem(label, value, change));
+    private void Toggle(string label, bool value, Action<bool> change, Action openSettings = null) => menu.Items.Add(ToggleMenuItem(label, value, change, openSettings));
+
+    private void OpenPowerToysSettings() => Start(Path.Combine(Path.GetDirectoryName(PowerToysPath), "WinUI3Apps", "PowerToys.Settings.exe"), "", true);
 
     public void RefreshControls() => RefreshMenu();
 
@@ -270,33 +309,32 @@ public sealed class WindowsHub : IDisposable {
     private void RefreshMenu() {
         menu.Items.Clear();
         menu.Items.Add(new MenuFlyoutItem { Text = "3£Windows " + Version, IsEnabled = false });
-        Toggle("Three-finger drag", App.SettingsData.ThreeFingerDrag, enabled => { App.SettingsData.ThreeFingerDrag = enabled; App.SettingsData.save(); });
-        Item("Drag settings…", () => App.Instance.OpenSettingsWindow());
-        Item("3£ Phone Bar — show QR…", OpenPhoneTrackpad);
-        if (phoneBar.Running) Item("Stop Phone Bar", () => { settings.PhoneBarAlwaysOn = false; Save(); phoneBar.Stop(); });
+        Toggle("Three-finger drag", App.SettingsData.ThreeFingerDrag, enabled => { App.SettingsData.ThreeFingerDrag = enabled; App.SettingsData.save(); },
+            () => App.Instance.OpenSettingsWindow());
+        // Left-clicking the tray icon shows the QR; this row only turns the receiver on or off.
+        Toggle("Phone Bar", phoneBar.Running, enabled => {
+            settings.PhoneBarAlwaysOn = enabled;
+            if (enabled) phoneBar.EnsureRunning(); else phoneBar.Stop();
+        });
         Item("Phone Bar — new link (old one stops working)", () => { phoneBar.ResetLink(); OpenPhoneTrackpad(); });
         Toggle(File.Exists(KeyboardPath) ? "Clicks keyboard — " + (IsRunning("3EWindows.Keyboard") ? "running" : "stopped") : "Clicks keyboard — connect and run setup", settings.Keyboard, enabled => {
             settings.Keyboard = enabled;
             if (enabled) _ = EnsureComponentsAsync(); else StopKeyboard();
         });
-        Toggle("PowerToys shortcuts and Workspaces", settings.PowerToys, enabled => {
+        Toggle("PowerToys shortcuts", settings.PowerToys, enabled => {
             settings.PowerToys = enabled;
             if (enabled) _ = EnsureComponentsAsync(); else { Stop("PowerToys"); Stop("PowerToys.KeyboardManagerEngine"); }
-        });
-        Item("PowerToys settings…", () => {
-            Start(Path.Combine(Path.GetDirectoryName(PowerToysPath), "WinUI3Apps", "PowerToys.Settings.exe"), "", true);
-        });
+        }, OpenPowerToysSettings);
         menu.Items.Add(new MenuFlyoutSeparator());
+        Toggle("Dynamic wallpaper", settings.Wallpaper, enabled => {
+            settings.Wallpaper = enabled;
+            if (enabled) _ = EnsureComponentsAsync(); else Stop("WinDynamicDesktop");
+        }, () => Start(WallpaperPath, "", true));
         Toggle("Auto dark — light 12 PM–8 PM", settings.AutoDark, enabled => { settings.AutoDark = enabled; lastTheme = -1; ApplyTheme(); });
         Toggle("Rotate SSMS themes", settings.SsmsTheme, enabled => { settings.SsmsTheme = enabled; if (enabled) UpdateSsmsTheme(true); });
         Item("Rotate SSMS theme now", () => { settings.SsmsTheme = true; UpdateSsmsTheme(true); Save(); });
         Item("Use light theme", () => { settings.AutoDark = false; Save(); SetTheme(1); });
         Item("Use dark theme", () => { settings.AutoDark = false; Save(); SetTheme(0); });
-        Toggle("Dynamic wallpaper", settings.Wallpaper, enabled => {
-            settings.Wallpaper = enabled;
-            if (enabled) _ = EnsureComponentsAsync(); else Stop("WinDynamicDesktop");
-        });
-        Item("Show wallpaper controls…", () => Start(WallpaperPath, "", true));
         menu.Items.Add(new MenuFlyoutSeparator());
         Item("Restart input engines", () => { StopKeyboard(); Stop("PowerToys.KeyboardManagerEngine"); _ = EnsureComponentsAsync(); });
         Item(updateTag == null ? "Check for updates…" : "Update available: " + updateTag + "…", () => _ = CheckUpdatesAsync(true));
@@ -462,6 +500,7 @@ public sealed class WindowsHub : IDisposable {
     public void Dispose() {
         disposed = true;
         timer.Stop();
+        if (menuPopupHook != IntPtr.Zero) { UnhookWinEvent(menuPopupHook); menuPopupHook = IntPtr.Zero; }
         phoneBar.Dispose();
         Save();
         StopKeyboard(); Stop("PowerToys"); Stop("PowerToys.KeyboardManagerEngine"); Stop("WinDynamicDesktop");
