@@ -84,3 +84,11 @@ static void AdvanceDesktopSelection(uint64_t target,NSUInteger sequence,NSIntege
 static void SelectDesktop(uint64_t target) {
     AdvanceDesktopSelection(target,++desktopSelectionSequence,DesktopSpaces().count+2);
 }
+static void StepDesktop(NSInteger direction) {
+    if(!direction)return;
+    NSArray *spaces=DesktopSpaces();NSInteger active=-1;
+    for(NSUInteger i=0;i<spaces.count;i++)if([spaces[i][@"active"] boolValue]){active=(NSInteger)i;break;}
+    NSInteger destination=active+(direction>0?1:-1);
+    if(active<0||destination<0||destination>=(NSInteger)spaces.count)return;
+    SelectDesktop([spaces[(NSUInteger)destination][@"id"] unsignedLongLongValue]);
+}

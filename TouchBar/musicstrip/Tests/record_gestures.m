@@ -5,17 +5,23 @@
 @property NSInteger holds;
 @property NSMutableArray *menus;
 @property NSMutableArray<NSNumber *> *tempoTargets;
+@property BOOL surfaceMode;
+@property NSMutableArray<NSDictionary *> *payloads;
 @end
 @implementation TestRecordController
-- (instancetype)init { if((self=[super init])) { self.commands=[NSMutableArray new]; self.menus=[NSMutableArray new]; self.tempoTargets=[NSMutableArray new]; } return self; }
+- (instancetype)init { if((self=[super init])) { self.commands=[NSMutableArray new]; self.menus=[NSMutableArray new]; self.tempoTargets=[NSMutableArray new]; self.payloads=[NSMutableArray new]; } return self; }
 - (void)setTempoFromDrag:(double)tempo { [self.tempoTargets addObject:@(tempo)]; }
 - (void)send:(NSString *)action { [self.commands addObject:action]; }
+- (void)send:(NSString *)action payload:(NSDictionary *)payload { [self.commands addObject:action]; [self.payloads addObject:payload]; }
+- (NSArray<NSNumber *> *)selectedTrackIndicesForSwipe { return @[@0,@1]; }
 - (void)showOptions { self.holds++; }
 - (void)showMenu:(NSString *)name { [self.menus addObject:name]; }
+- (BOOL)isControlSurfaceMode { return self.surfaceMode; }
 @end
 int main(void) {
     @autoreleasepool {
         [NSApplication sharedApplication];
+        NSCAssert([RecordTrackNameFromAXTitle(@"20-Bandøledu, Armed") isEqual:@"20-Bandøledu"],@"Armed accessibility labels match their stable Live track names");
         TestRecordController *controller=[TestRecordController new];
         StripRecordButton *button=controller.button;
         button.frame=NSMakeRect(0,0,32,30);
@@ -47,7 +53,7 @@ int main(void) {
         NSCAssert(button.recordLit && [button.bezelColor isEqual:NSColor.systemRedColor],@"Live Record-on must make Record red");
         ApplyRecordLight(button,NO,@{@"record":@YES,@"armed":@YES});
         NSCAssert(!button.recordLit,@"A disconnected/stale Live state cannot keep Record red");
-        NSCAssert(button.recordController==controller && controller.item.popoverTouchBar.itemIdentifiers.count==3 && !controller.options[@"play"] && !controller.options[@"stop"] && !controller.options[@"tap-tempo"],@"Arrangement contains only combined Loop, BPM and More; the persistent Record is supplied by the outer row");
+        NSCAssert(button.recordController==controller && [controller.item isKindOfClass:NSCustomTouchBarItem.class] && controller.item.view==button && controller.optionsTouchBar.itemIdentifiers.count==3 && !controller.options[@"play"] && !controller.options[@"stop"] && !controller.options[@"tap-tempo"],@"Outer Record must be a plain custom item so AppKit cannot consume its gestures for a native popover");
         NSCAssert(controller.performanceMenus[@"loop"].popoverTouchBar.itemIdentifiers.count==8 && controller.performanceMenus[@"tempo"].popoverTouchBar.itemIdentifiers.count==4 && controller.performanceMenus[@"more"].popoverTouchBar.itemIdentifiers.count==7,@"Loop, tempo and recording options must all be reachable from the hold panel");
         controller.state=@{@"performance":@1,@"tempo":@128.5,@"playing":@YES,@"loop":@YES,@"beats_per_bar":@3,@"loop_length":@12,@"record":@NO,@"armed":@YES};
         [controller refreshButtonsConnected:YES];
@@ -116,17 +122,36 @@ int main(void) {
         [controller.commands removeAllObjects];
         touch.point=NSMakePoint(22,15); event.phase=NSTouchPhaseBegan;
         [button touchesBeganWithEvent:(NSEvent *)event]; [button fireHold]; [button fireHold];
-        [NSRunLoop.mainRunLoop runUntilDate:[NSDate dateWithTimeIntervalSinceNow:.02]];
+        [NSRunLoop.mainRunLoop runUntilDate:[NSDate dateWithTimeIntervalSinceNow:.30]];
         event.phase=NSTouchPhaseEnded; [button touchesEndedWithEvent:(NSEvent *)event];
         NSCAssert(controller.holds==1 && controller.commands.count==0,@"Hold opens options once, release never starts recording");
         event.phase=NSTouchPhaseBegan; [button touchesBeganWithEvent:(NSEvent *)event];
         [button touchesCancelledWithEvent:(NSEvent *)event]; [button fireHold];
         event.phase=NSTouchPhaseEnded; [button touchesEndedWithEvent:(NSEvent *)event];
         NSCAssert(controller.commands.count==0,@"Cancelled touches do nothing");
+        [button beginAt:NSMakePoint(22,15) identity:nil]; [button moveAt:NSMakePoint(35,15)]; [button finishAt:NSMakePoint(35,15)];
+        NSArray<NSNumber *> *selectedIndices=controller.payloads.lastObject[@"track_indices"];
+        NSCAssert([controller.commands isEqual:@[@"arm-on"]] && selectedIndices.count==2 && selectedIndices[0].integerValue==0 && selectedIndices[1].integerValue==1,@"Normal-mode right swipe targets every selected armable track");
+        [controller.commands removeAllObjects];
+        [controller.payloads removeAllObjects];
+        [button beginAt:NSMakePoint(22,15) identity:nil]; [button moveAt:NSMakePoint(9,15)]; [button finishAt:NSMakePoint(9,15)];
+        selectedIndices=controller.payloads.lastObject[@"track_indices"];
+        NSCAssert([controller.commands isEqual:@[@"arm-off"]] && selectedIndices.count==2 && selectedIndices[0].integerValue==0 && selectedIndices[1].integerValue==1,@"Normal-mode left swipe disarms every selected armable track");
+        [controller.commands removeAllObjects];
+        controller.surfaceMode=YES;
+        [controller.payloads removeAllObjects];
+        [button beginAt:NSMakePoint(22,15) identity:nil]; [button moveAt:NSMakePoint(35,15)]; [button finishAt:NSMakePoint(35,15)];
+        selectedIndices=controller.payloads.lastObject[@"track_indices"];
+        NSCAssert([controller.commands isEqual:@[@"arm-exclusive"]] && selectedIndices.count==2 && selectedIndices[0].integerValue==0 && selectedIndices[1].integerValue==1,@"Control Surface right swipe exclusively arms every selected track");
+        [controller.commands removeAllObjects];
+        [controller.payloads removeAllObjects];
+        [button beginAt:NSMakePoint(22,15) identity:nil]; [button moveAt:NSMakePoint(13,15)]; [button finishAt:NSMakePoint(13,15)];
+        NSCAssert([controller.commands isEqual:@[@"arm-all-toggle"]],@"Control Surface left swipe toggles all armable tracks");
+        [controller.commands removeAllObjects];
         [button beginAt:NSMakePoint(22,15) identity:nil]; [button moveAt:NSMakePoint(23,25)];
         [button fireHold]; [button finishAt:NSMakePoint(23,25)];
         NSCAssert(controller.commands.count==0,@"Vertical motion is not a tap or horizontal swipe");
-        puts("Passed performance menu structure/state/capability gating, Loop hold without release toggle, BPM tap/swipe, fixed joined layout, recording-only red and original Record gestures; no Live commands sent.");
+        puts("Passed performance menu structure/state/capability gating, Loop hold without release toggle, BPM tap/swipe, fixed joined layout, recording-only red, and normal/Control Surface Record swipe directions; no Live commands sent.");
     }
     return 0;
 }

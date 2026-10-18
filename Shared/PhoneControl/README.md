@@ -15,6 +15,8 @@ The receiver starts only on request. Wi-Fi loss stops only the receiver; start i
 
 Use the QR option for Wi-Fi/Ethernet, including a reachable local Wi-Fi hotspot. Phone Bar does not need internet. Bluetooth is not offered: phone-to-host compatibility has not been verified on either platform. There is no native iPhone Bluetooth implementation.
 
+When mDNS is available, Mac QR codes use `http://3e-mac.local:17833` and Windows QR codes use `http://3e-win.local:17833`. Separate names keep their links unambiguous when both receivers are running on the same network. Networks that block multicast DNS continue to use the direct local IP link.
+
 The receiver checks adapters outside the input lock, so a slow driver scan cannot block cursor commands. The browser coalesces unsent motion during short WebSocket stalls, preserves button ordering, and ignores Safari toolbar-height changes during drags. Sustained failure still releases controls and reconnects. These changes have deterministic protocol/browser tests; they are not a measurement of real iPhone radio latency.
 
 ### Module ownership

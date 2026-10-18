@@ -64,7 +64,7 @@ strip_framework="$strip_midi/Contents/Frameworks/SnoizeMIDI.framework"
 [[ -e "$strip_framework/SnoizeMIDI" ]] || ln -s Versions/Current/SnoizeMIDI "$strip_framework/SnoizeMIDI"
 [[ -e "$strip_framework/Resources" ]] || ln -s Versions/Current/Resources "$strip_framework/Resources"
 xcrun clang -arch arm64 -arch x86_64 -dynamiclib -fobjc-arc -Wall -Wextra -Wno-unused-parameter -O2 \
-  -mmacosx-version-min=11.0 -framework AppKit -framework CoreMIDI MidiBridge.m \
+  -mmacosx-version-min=11.0 -framework AppKit -framework ApplicationServices -framework CoreMIDI MidiBridge.m \
   -o "$strip_midi/Contents/Frameworks/MusicStripMidiBridge.dylib"
 xattr -cr "$strip_app"
 codesign --force --sign - "$strip_framework"

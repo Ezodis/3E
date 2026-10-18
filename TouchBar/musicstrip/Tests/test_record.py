@@ -42,6 +42,39 @@ class RecordTests(unittest.TestCase):
         self.assertFalse(self.other.arm)
         for _ in range(2): self.server.execute(self.command("arm-off"))
         self.assertFalse(self.track.arm)
+    def test_arm_swipes_apply_to_every_selected_armable_track(self):
+        self.song.view.selected_tracks = [self.track, self.other]
+        self.server.execute(self.command("arm-on"))
+        self.assertTrue(self.track.arm)
+        self.assertTrue(self.other.arm)
+        self.server.execute(self.command("arm-off"))
+        self.assertFalse(self.track.arm)
+        self.assertFalse(self.other.arm)
+    def test_arm_swipes_find_track_level_multi_selection(self):
+        self.song.view.selected_tracks = None
+        self.track.is_selected = True
+        self.other.is_selected = True
+        self.server.execute(self.command("arm-on"))
+        self.assertTrue(self.track.arm)
+        self.assertTrue(self.other.arm)
+        self.server.execute(self.command("arm-off"))
+        self.assertFalse(self.track.arm)
+        self.assertFalse(self.other.arm)
+    def test_arm_swipes_accept_accessibility_selected_track_indices(self):
+        self.server.execute(self.command("arm-on", track_indices=[0, 1]))
+        self.assertTrue(self.track.arm)
+        self.assertTrue(self.other.arm)
+        self.server.execute(self.command("arm-off", track_indices=[0, 1]))
+        self.assertFalse(self.track.arm)
+        self.assertFalse(self.other.arm)
+    def test_control_surface_exclusive_arms_every_selected_track_only(self):
+        third = SimpleNamespace(name="Unselected", can_be_armed=True, arm=True)
+        self.song.tracks.append(third)
+        self.other.arm = True
+        self.server.execute(self.command("arm-exclusive", track_indices=[0, 1]))
+        self.assertTrue(self.track.arm)
+        self.assertTrue(self.other.arm)
+        self.assertFalse(third.arm)
     def test_stale_or_changed_track_cannot_act(self):
         for changes in ({"session":"old"}, {"time":90}, {"time":110}):
             with self.assertRaises(ValueError): self.server.execute(self.command("record", **changes))

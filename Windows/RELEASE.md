@@ -1,3 +1,7 @@
+3£Windows 1.0.31 gives the Windows Phone Bar a unique local-network address.
+
+- **Windows phone link:** scan or open `http://3e-win.local:17833`. The Mac receiver uses `3e-mac.local`, so both receivers can run on the same network without sending a QR link to the other computer.
+
 3£Windows 1.0.30 makes Media's previous/next swipe work even when YouTube is in the background.
 
 - **Skips reach an unfocused YouTube:** when Chrome's media session refuses the skip (common when its window isn't focused), 3£Windows sends the hardware Next/Previous media key, which Chrome and Edge handle in the background. If Previous still can't go back, the current video restarts from the beginning.
@@ -27,7 +31,7 @@ Includes everything from 1.0.26:
 - **Pinch to zoom** (Ctrl + wheel on Windows).
 - **Pointer acceleration:** slow movements are precise and quick flicks cross the screen, like a laptop trackpad (switch it off in Settings for the old linear feel).
 - **No more hold-to-right-click:** holding still never clicks. Use a two-finger tap to right-click.
-- **3e.local:** the stable name is now http://3e.local:17833 (was phonebar.local).
+- **3e-win.local:** the stable Windows name is now http://3e-win.local:17833. The Mac receiver uses `3e-mac.local`, so both can run on the same network without QR links reaching the wrong computer.
 
 Gesture handling was informed by KDE Connect's phone touchpad (speed-based acceleration and scroll direction lock); this is an independent implementation.
 
@@ -38,7 +42,7 @@ Includes everything from 1.0.25:
 Includes everything from 1.0.24:
 
 - **One link that keeps working:** the pairing link is saved, so it is the same after restarts, updates and network changes. Phone Bar now stays on and restarts itself after sleep or a network change. The tray has "Phone Bar — new link" to revoke the old link; "Stop Phone Bar" turns it off until you open the QR again.
-- **phonebar.local:** the receiver answers http://phonebar.local:17833. The QR still opens the IP address; the page switches to phonebar.local automatically when the network supports it, so a bookmark or home-screen icon keeps working when the laptop's IP changes. Networks that block .local names keep using the IP link.
+- **phonebar.local:** the receiver answered http://phonebar.local:17833. The QR still opened the IP address; the page switched to phonebar.local automatically when the network supported it, so a bookmark or home-screen icon kept working when the laptop's IP changed. Networks that blocked .local names kept using the IP link.
 - **Double-tap-hold-drag fixed:** holding still now measures how far the finger actually moved, not the sum of tiny jitters, which made the drag almost impossible to arm on a real phone. The drag starts once the finger moves 6 px from where it rested.
 - **Volume:** the slider follows your finger directly (iPhone handled the old hidden vertical slider badly), and new ▲/▼ buttons press the laptop's own volume keys, with Windows' volume flyout.
 

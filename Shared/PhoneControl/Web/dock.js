@@ -134,7 +134,7 @@
     picture(button,null,action);button.dataset.icon=action;
   }
   function restore(){clearTimeout(restoreTimer);if(!active){paint('apps');paint('media');}}
-  function finishFeedback(kind,icon){paint(kind,icon);clearTimeout(restoreTimer);restoreTimer=setTimeout(restore,300);}
+  function finishFeedback(kind,icon){paint(kind,icon);clearTimeout(restoreTimer);restoreTimer=setTimeout(restore,icon==='next'||icon==='previous'?1000:650);}
   function cancel(event,keepVolume=false){
     if(event&&active&&event.pointerId!==active.id)return;
     clearTimeout(holdTimer);
@@ -207,7 +207,7 @@
       else if(!a.held&&a.axis!=='vertical'){
         if(!a.axis&&a.max<12){
           if(kind==='apps'){C.send('appsBegin');C.send('appsEnd');feedback='windows';}
-          else C.send('media',{action:0});
+          else {C.send('media',{action:0});const playing=controls.media?.playing;if(typeof playing==='boolean')feedback=playing?'play':'pause';}
         }
       }
       if(a.volume)flushVolume();cancel(null,a.volume);if(a.volume)finishVolume();if(feedback)finishFeedback(kind,feedback);
@@ -218,7 +218,7 @@
     button.addEventListener('click',()=>{
       if(performance.now()-lastPointer<700||!C.connected())return;
       if(kind==='apps'){C.send('appsBegin');C.send('appsEnd');finishFeedback('apps','windows');}
-      else C.send('media',{action:0});
+      else {C.send('media',{action:0});const playing=controls.media?.playing;if(typeof playing==='boolean')finishFeedback('media',playing?'play':'pause');}
     });
     button.addEventListener('keydown',e=>{
       if(kind==='media'&&C.connected()&&['ArrowUp','ArrowDown'].includes(e.key)){

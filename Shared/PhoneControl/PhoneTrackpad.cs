@@ -34,14 +34,14 @@ public sealed class PhoneTrackpad : IDisposable {
     public string Status { get { lock (gate) return status; } }
     public bool Running { get { lock (gate) return session != null; } }
     public string PairingUrl { get { lock (gate) return session == null ? null : session.Origin + "/#" + session.Token; } }
-    // Stable name link (for example http://3e.local:17833/#token) when an alias is served.
+    // Stable name link (for example http://3e-win.local:17833/#token) when an alias is served.
     public string NamedUrl { get { lock (gate) return session?.AliasOrigin == null ? null : session.AliasOrigin + "/#" + session.Token; } }
     public IPAddress Address { get { lock (gate) return session?.Address; } }
     // Optional: a persisted pairing secret keeps the phone's link valid across
     // restarts and updates. It must return 48 hex characters; anything else
     // falls back to a fresh random secret for this session.
     public Func<string> TokenProvider { get; init; }
-    // Optional host name (for example "3e.local") also accepted for the
+    // Optional host name (for example "3e-win.local") also accepted for the
     // page, WebSocket and control requests. Name resolution is the host's job.
     public string AliasHost { get; init; }
     public string DesktopUrl { get { lock (gate) return session == null ? null : session.Origin + "/pair"; } }
@@ -101,10 +101,12 @@ public sealed class PhoneTrackpad : IDisposable {
                 if (candidate.AliasOrigin != null) candidate.Listener.Prefixes.Add(candidate.AliasOrigin + "/");
                 try { candidate.Listener.Start(); }
                 catch (HttpListenerException) when (candidate.AliasOrigin != null) {
-                    // The name prefix needs a URL reservation; keep the IP link working without it.
+                    // Some macOS HttpListener builds reject a second named prefix.
+                    // Listen on the wildcard socket but retain and validate both
+                    // approved Host/Origin values so the stable alias URL works.
                     candidate.Listener.Close();
-                    candidate = new Session(address, port, token, null);
-                    candidate.Listener.Prefixes.Add(candidate.Origin + "/");
+                    candidate = new Session(address, port, token, AliasHost);
+                    candidate.Listener.Prefixes.Add($"http://*:{port}/");
                     candidate.Listener.Start();
                 }
                 firewall.Open(address, port);

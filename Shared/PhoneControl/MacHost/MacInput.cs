@@ -24,11 +24,11 @@ public sealed class MacInput : ITrackpadInput, IDisposable {
     private readonly OutputVolume volume=new(()=>{int level=ThreeEGetOutputVolume();return level<0?(int?)null:level;},level=>{if(ThreeESetOutputVolume(level)!=1)throw new InvalidOperationException("Output volume unavailable");});
     private readonly MacMidi midi = new();
     private readonly Action<int> media;
-    private bool held,switching;
-    private readonly NavigationGesture navigation;
+    private readonly Action<string,int> systemAction;
+    private bool held;
     private object controls;
     private long lastClick; private Point lastClickPoint; private int clicks;
-    public MacInput(Action<int> media) { this.media=media; navigation=new(()=>ThreeEHasMultipleSpaces()>0,d=>Control(d<0?(ushort)123:(ushort)124),BeginApps,AppsStep,AppsEnd); midi.Select(0); }
+    public MacInput(Action<int> media,Action<string,int> systemAction) { this.media=media;this.systemAction=systemAction;midi.Select(0); }
     public void SetControls(object snapshot) => Volatile.Write(ref controls,snapshot);
     public string Platform => "macos";
     public object GetConnectionInfo() => new {platform=Platform,volume=volume.State,inputPermission=CGPreflightPostEventAccess(),controls=Volatile.Read(ref controls)};
@@ -36,7 +36,6 @@ public sealed class MacInput : ITrackpadInput, IDisposable {
     private static Point Location() { var e=CGEventCreate(IntPtr.Zero);if(e==IntPtr.Zero)throw new InvalidOperationException("macOS pointer event unavailable");try{return CGEventGetLocation(e);}finally{if(e!=IntPtr.Zero)CFRelease(e);} }
     private static void Post(IntPtr e) { if(e==IntPtr.Zero)throw new InvalidOperationException("macOS event unavailable");try{CGEventPost(0,e);}finally{CFRelease(e);} }
     private static void Key(ushort key,bool down,ulong flags=0) { var e=CGEventCreateKeyboardEvent(IntPtr.Zero,key,down);if(e==IntPtr.Zero)throw new InvalidOperationException("macOS keyboard event unavailable");CGEventSetFlags(e,flags);Post(e); }
-    private static void Control(ushort key) { try{Key(59,true,1UL<<18);Key(key,true,1UL<<18);Key(key,false,1UL<<18);}finally{Key(59,false);} }
     public void Move(int x,int y) { var p=Location();p.X+=x;p.Y+=y;Post(CGEventCreateMouseEvent(IntPtr.Zero,held?6u:5u,p,0)); }
     public void Scroll(int x,int y) => Post(ThreeECreateScrollEvent(y,-x));
     public void Down() {
@@ -48,15 +47,19 @@ public sealed class MacInput : ITrackpadInput, IDisposable {
     public void DragStart(int x,int y){if(held)return;lastClick=0;Down();}
     public void Release() { if(held){held=false;var e=CGEventCreateMouseEvent(IntPtr.Zero,2,Location(),0);if(e==IntPtr.Zero)throw new InvalidOperationException("macOS mouse event unavailable");CGEventSetIntegerValueField(e,1,clicks);Post(e);} }
     public void Click(bool right) { if(held)return;if(!right){Down();Release();}else{var p=Location();Post(CGEventCreateMouseEvent(IntPtr.Zero,3,p,1));Post(CGEventCreateMouseEvent(IntPtr.Zero,4,p,1));} }
-    public void TaskView(){ReleaseAll();Control(126);}
-    public void ShowDesktop(){ReleaseAll();Control(125);}
-    public void Desktop(int direction){if(direction!=0){ReleaseAll();Control(direction<0?(ushort)123:(ushort)124);}}
-    public void AppsBegin()=>BeginApps(1);
-    private void BeginApps(int direction){if(switching)return;switching=true;try{Key(55,true,1UL<<20);AppsStep(direction);}catch{AppsEnd();throw;}}
-    public void Navigate(int direction)=>navigation.Step(direction);
-    public void NavigateEnd()=>navigation.End();
-    public void AppsStep(int direction){if(!switching||direction==0)return;ulong flags=(1UL<<20)|(direction<0?1UL<<17:0);Key(48,true,flags);Key(48,false,flags);}
-    public void AppsEnd(){if(switching){switching=false;Key(55,false);}}
+    public void TaskView(){ReleaseAll();systemAction("missionControl",0);}
+    // Control–Down opens App Exposé. Use the system Show Desktop key (F11
+    // with the Fn modifier) so the Apps dock's downward swipe has the same
+    // meaning as Windows, instead of opening Exposé a second time.
+    public void ShowDesktop(){ReleaseAll();systemAction("showDesktop",0);}
+    public void Desktop(int direction){if(direction!=0){ReleaseAll();systemAction("space",direction);}}
+    // On macOS the Apps dock represents Spaces. Never fall back to Command-Tab:
+    // that changes applications instead of moving to the previous/next desktop.
+    public void AppsBegin()=>Desktop(1);
+    public void Navigate(int direction)=>Desktop(direction);
+    public void NavigateEnd(){}
+    public void AppsStep(int direction)=>Desktop(direction);
+    public void AppsEnd(){}
     // Same palette ids as Web/dock.js and PhoneTrackpad.ShortcutCount; real Command keys on macOS.
     private const ulong Cmd=1UL<<20,Shift=1UL<<17;
     private static readonly (ushort key,ulong flags)[] shortcuts={
@@ -64,7 +67,7 @@ public sealed class MacInput : ITrackpadInput, IDisposable {
         (15,Cmd),(20,Cmd|Shift),(21,Cmd|Shift),(23,Cmd|Shift),(49,Cmd),(12,Cmd)};
     public void Shortcut(int id){
         if((uint)id>=(uint)shortcuts.Length)return;
-        Release();AppsEnd();var (key,flags)=shortcuts[id];
+        Release();var (key,flags)=shortcuts[id];
         try{Key(key,true,flags);}finally{Key(key,false,flags);}
     }
     public void History(int direction){if(direction==0)return;Release();ushort key=direction<0?(ushort)33:(ushort)30;try{Key(key,true,Cmd);}finally{Key(key,false,Cmd);}} // Cmd+[ / Cmd+]
@@ -75,7 +78,7 @@ public sealed class MacInput : ITrackpadInput, IDisposable {
     public void Midi(bool note,int channel,int number,int value)=>midi.Send(note,channel,number,value);
     public void MidiPanic()=>midi.Panic();
     public void VolumeStep(int direction){if(direction==0)return;int level=ThreeEGetOutputVolume();if(level>=0)volume.Set(Math.Clamp(level+direction*6,0,100));}
-    public void ReleaseAll(){volume.CancelPending();try{Release();}finally{try{navigation.End();}finally{midi.Panic();}}}
+    public void ReleaseAll(){volume.CancelPending();try{Release();}finally{midi.Panic();}}
     public void Dispose(){try{ReleaseAll();}finally{volume.Dispose();midi.Dispose();}}
 }
 

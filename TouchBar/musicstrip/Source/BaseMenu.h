@@ -7,11 +7,13 @@ static NSMenu *StripBaseMenu(id target,BOOL gestures) {
         touchTab.identifier=@"local.musicstrip.touchTabToggle";touchTab.target=target;[menu addItem:touchTab];
     }
     [menu addItem:ThreeEPhoneBarMenu(target)];
+    [menu addItem:NSMenuItem.separatorItem];
     NSMenuItem *touchBar=[[NSMenuItem alloc] initWithTitle:@"Touch Bar unavailable on this Mac" action:nil keyEquivalent:@""];
     touchBar.enabled=NO;[menu addItem:touchBar];
     [menu addItem:NSMenuItem.separatorItem];
-    NSMenuItem *updates=[[NSMenuItem alloc] initWithTitle:@"Downloads and updates…" action:NSSelectorFromString(@"baseUpdates:") keyEquivalent:@""];
-    updates.target=target;[menu addItem:updates];
+    NSMenuItem *automatic=[[NSMenuItem alloc] initWithTitle:@"Automatically Install Updates" action:NSSelectorFromString(@"toggleBaseAutomaticUpdates:") keyEquivalent:@""];
+    automatic.target=target; automatic.state=StripAutomaticUpdatesEnabled()?NSControlStateValueOn:NSControlStateValueOff; [menu addItem:automatic];
+    [menu addItem:NSMenuItem.separatorItem];
     NSMenuItem *quit=[[NSMenuItem alloc] initWithTitle:@"Quit 3£" action:NSSelectorFromString(@"quitBase:") keyEquivalent:@""];
     quit.target=target;[menu addItem:quit];return menu;
 }

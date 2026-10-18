@@ -8,7 +8,9 @@
 #import <unistd.h>
 #import <QuartzCore/QuartzCore.h>
 #import "../../../Shared/PhoneControl/MacHost/PhoneControlMac.h"
+#import "ReleaseUpdates.h"
 #import "BaseMenu.h"
+#import "DownloadsAddon.h"
 
 
 @interface StripApplication : NSApplication
@@ -366,9 +368,28 @@ static OSStatus SendSpotifyCommand(pid_t pid, int command) {
 
 @implementation AppDelegate
 - (void)applicationDidFinishLaunching:(NSNotification *)notification {
+    if(NSProcessInfo.processInfo.arguments.count==1) [StripDownloadsAddon install];
+    StripAutomaticUpdatesEnabled();
     self.phoneController=[ThreeEPhoneController new];
     __weak AppDelegate *phoneSelf=self;
     self.phoneController.media=^(int action){ [phoneSelf performMediaCommand:action==1?5:action==2?4:2]; };
+    self.phoneController.systemAction=^(NSString *action,NSInteger direction){
+        BOOL missionControl=[action isEqualToString:@"missionControl"];
+        BOOL changeSpace=[action isEqualToString:@"space"];
+        BOOL showDesktop=[action isEqualToString:@"showDesktop"];
+        if(!missionControl&&!changeSpace&&!showDesktop)return;
+        if(!AccessibilityTrusted(NO)){AccessibilityTrusted(YES);return;}
+        CGEventFlags modifier=showDesktop ? kCGEventFlagMaskSecondaryFn : kCGEventFlagMaskControl;
+        CGKeyCode modifierKey=showDesktop ? 63 : 59;
+        CGKeyCode key=missionControl ? 126 : showDesktop ? 103 : direction<0 ? 123 : 124;
+        CGEventRef modDown=CGEventCreateKeyboardEvent(NULL,modifierKey,true),down=CGEventCreateKeyboardEvent(NULL,key,true),up=CGEventCreateKeyboardEvent(NULL,key,false),modUp=CGEventCreateKeyboardEvent(NULL,modifierKey,false);
+        if(modDown&&down&&up&&modUp){
+            CGEventSetFlags(modDown,modifier);CGEventSetFlags(down,modifier);CGEventSetFlags(up,modifier);CGEventSetFlags(modUp,0);
+            CGEventPost(kCGSessionEventTap,modDown);CGEventPost(kCGSessionEventTap,down);CGEventPost(kCGSessionEventTap,up);CGEventPost(kCGSessionEventTap,modUp);
+        }
+        if(modDown)CFRelease(modDown);if(down)CFRelease(down);if(up)CFRelease(up);if(modUp)CFRelease(modUp);
+    };
+    [self.phoneController startReceiver];
     BOOL touchBarAvailable=LoadInterfaces();
     // Never summon the system permission dialog automatically. macOS can
     // re-display it on every launch when the TCC decision is still settling;
@@ -388,6 +409,8 @@ static OSStatus SendSpotifyCommand(pid_t pid, int command) {
 #else
         self.baseStatusItem.menu=StripBaseMenu(self,NO);
 #endif
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW,20*NSEC_PER_SEC),dispatch_get_main_queue(),^{ StripCheckRelease(NO); });
+        [NSTimer scheduledTimerWithTimeInterval:6*60*60 repeats:YES block:^(NSTimer *timer){ StripCheckRelease(NO); }];
         [self startMediaTracking];
         [self refresh];
         return;
@@ -451,16 +474,24 @@ static OSStatus SendSpotifyCommand(pid_t pid, int command) {
     self.recoveryTimer = [NSTimer scheduledTimerWithTimeInterval:1 repeats:YES block:^(NSTimer *timer) { [weakSelf refresh]; }];
 }
 - (void)openPhone:(id)sender { [self.phoneController show]; }
+- (void)togglePhoneBar:(id)sender { [self.phoneController toggleReceiver]; }
+- (void)hoverPhoneBar:(id)sender { [self.phoneController showQRForHover]; }
+- (void)hidePhoneBarQR:(id)sender { [self.phoneController hideQRForHover]; }
 - (void)copyPhone:(id)sender { [self.phoneController copyLink:sender]; }
 - (void)stopPhone:(id)sender { [self.phoneController stop]; }
 - (void)quitBase:(id)sender { [NSApp terminate:nil]; }
-- (void)baseUpdates:(id)sender { [NSWorkspace.sharedWorkspace openURL:[NSURL URLWithString:@"https://github.com/Ezodis/3E/releases"]]; }
+- (void)toggleBaseAutomaticUpdates:(id)sender {
+    BOOL enabled=!StripAutomaticUpdatesEnabled(); StripSetAutomaticUpdates(enabled);
+    if(enabled) StripCheckRelease(NO);
+}
 - (void)toggleBaseTouchTab:(id)sender {
 #ifdef STRIP_COMBINED_TOUCHTAB
     [self toggleTouchTab];
 #endif
 }
 - (BOOL)validateMenuItem:(NSMenuItem *)item {
+    if(item.action==@selector(togglePhoneBar:)) { item.state=self.phoneController.task.running?NSControlStateValueOn:NSControlStateValueOff; return YES; }
+    if(item.action==NSSelectorFromString(@"toggleBaseAutomaticUpdates:")) { item.state=StripAutomaticUpdatesEnabled()?NSControlStateValueOn:NSControlStateValueOff; return YES; }
 #ifdef STRIP_COMBINED_TOUCHTAB
     if(item.action==@selector(toggleBaseTouchTab:))item.state=StripGesturesRunning()?NSControlStateValueOn:NSControlStateValueOff;
 #endif
@@ -618,6 +649,7 @@ static OSStatus SendSpotifyCommand(pid_t pid, int command) {
                 if ([line isEqualToString:@"READY"]) {
                     self.midiReady = YES;
                     [self sendMidi:self.appsVisible ? @"APPS_STATE 1" : @"APPS_STATE 0"];
+                    [self sendMidi:[NSString stringWithFormat:@"DOWNLOADS_STATE %d",[StripDownloadsAddon isEnabled]]];
 #ifdef STRIP_COMBINED_TOUCHTAB
                     [self refreshTouchTab];
 #endif
@@ -630,10 +662,19 @@ static OSStatus SendSpotifyCommand(pid_t pid, int command) {
                     [self appsLauncherCommand:2];
                 } else if ([line isEqualToString:@"PHONE_OPEN"]) {
                     [self.phoneController show];
+                } else if ([line isEqualToString:@"PHONE_TOGGLE"]) {
+                    [self.phoneController toggleReceiver];
+                } else if ([line isEqualToString:@"PHONE_HOVER"]) {
+                    [self.phoneController showQRForHover];
+                } else if ([line isEqualToString:@"PHONE_HIDE_QR"]) {
+                    [self.phoneController hideQRForHover];
                 } else if ([line isEqualToString:@"PHONE_COPY"]) {
                     [self.phoneController copyLink:nil];
                 } else if ([line isEqualToString:@"PHONE_STOP"]) {
                     [self.phoneController stop];
+                } else if ([line isEqualToString:@"DOWNLOADS_TOGGLE"]) {
+                    BOOL enabled=[StripDownloadsAddon toggleFromMenu];
+                    [self sendMidi:[NSString stringWithFormat:@"DOWNLOADS_STATE %d",enabled]];
                 } else if ([line isEqualToString:@"VISIBLE"]) {
                     self.midiVisible=YES;
                     if(self.appsVisible || self.appsRequested) [self sendMidi:@"HIDE"];

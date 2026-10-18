@@ -6,11 +6,11 @@ using System.Text;
 namespace ThreeE.PhoneBar.Windows;
 
 // Minimal multicast-DNS responder so phones on the same network can open the
-// receiver as http://3e.local:17833 instead of a changing IP address.
+// receiver as http://3e-win.local:17833 instead of a changing IP address.
 // It answers only A (and ANY) questions for its single name with the
 // receiver's current address, and stops with the receiver.
 public sealed class PhoneNameResponder : IDisposable {
-    public const string Name = "3e.local";
+    public const string Name = "3e-win.local";
     private static readonly IPAddress Group = IPAddress.Parse("224.0.0.251");
     private readonly IPAddress address;
     private readonly UdpClient udp;

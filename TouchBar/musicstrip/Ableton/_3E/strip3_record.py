@@ -41,12 +41,76 @@ class RecordServer:
         return next((i for i, track in enumerate(self.song.tracks)
                      if track == selected), -1)
 
+    def selected_arm_targets(self):
+        """Return Live's complete selected-track set when the version exposes it."""
+        view = self.song.view
+        for name in ("selected_tracks", "selected_track_set"):
+            try:
+                selected = getattr(view, name, None)
+                if selected:
+                    tracks = list(selected)
+                    if tracks:
+                        return [track for track in tracks
+                                if getattr(track, "can_be_armed", False)]
+            except (AttributeError, TypeError, RuntimeError):
+                pass
+        # A few Live builds expose selection on each Track/Track.View even
+        # though it is absent from the documented Song.View surface.
+        tracks = list(getattr(self.song, "tracks", ()))
+        selected = []
+        for track in tracks:
+            for owner in (track, getattr(track, "view", None)):
+                if owner is None:
+                    continue
+                for name in ("is_selected", "selected"):
+                    try:
+                        if bool(getattr(owner, name, False)):
+                            selected.append(track)
+                            break
+                    except (AttributeError, RuntimeError):
+                        pass
+                else:
+                    continue
+                break
+        if selected:
+            return [track for track in selected
+                    if getattr(track, "can_be_armed", False)]
+        track = view.selected_track
+        return [track] if getattr(track, "can_be_armed", False) else []
+
+    def arm_selection_source(self):
+        for name in ("selected_tracks", "selected_track_set"):
+            try:
+                selected = getattr(self.song.view, name, None)
+                if selected and list(selected):
+                    return name
+            except (AttributeError, TypeError, RuntimeError):
+                pass
+        for track in getattr(self.song, "tracks", ()):
+            for owner in (track, getattr(track, "view", None)):
+                if owner is None:
+                    continue
+                for name in ("is_selected", "selected"):
+                    try:
+                        if bool(getattr(owner, name, False)):
+                            return "track." + name
+                    except (AttributeError, RuntimeError):
+                        pass
+        return "selected_track"
+
     def state(self):
         track = self.song.view.selected_track
         result = {"protocol": 1, "pid": os.getpid(), "session_id": self.session,
                   "time": self.clock(), "track_index": self.selected_index(),
                   "track_name": str(track.name), "can_arm": bool(track.can_be_armed),
                   "armed": bool(track.arm) if track.can_be_armed else False,
+                  "tracks": [{"index": index, "name": str(item.name),
+                              "can_arm": bool(item.can_be_armed)}
+                             for index, item in enumerate(self.song.tracks)],
+                  "arm_selection_source": self.arm_selection_source(),
+                  "arm_selection_indices": [next((i for i, candidate in enumerate(self.song.tracks)
+                                                  if candidate == selected), -1)
+                                            for selected in self.selected_arm_targets()],
                   "last_id": self.last_id, "error": self.error}
         result.update({key: bool(getattr(self.song, prop))
                        for key, prop in TOGGLES.items()})
@@ -117,16 +181,53 @@ class RecordServer:
             self.song.stop_all_clips()  # Use Live's launch quantization, not an abrupt cut.
         elif action == "re-enable-automation":
             self.song.re_enable_automation()
-        elif action in ("arm-on", "arm-off"):
+        elif action in ("arm-on", "arm-off", "arm-exclusive", "arm-all-toggle"):
             track = self.song.view.selected_track
             if command.get("track_index") != self.selected_index():
                 raise ValueError("Selected track changed; swipe again")
-            if not track.can_be_armed:
-                raise ValueError("Select an audio or MIDI track")
+            selected_targets = self.selected_arm_targets()
+            if action == "arm-all-toggle":
+                armable = [item for item in self.song.tracks if item.can_be_armed]
+                desired = not any(item.arm for item in armable)
+                for item in armable:
+                    item.arm = desired
+                return
+            if action == "arm-exclusive":
+                requested_indices = command.get("track_indices")
+                if isinstance(requested_indices, list):
+                    selected_targets = []
+                    for index in requested_indices:
+                        if isinstance(index, bool) or not isinstance(index, int):
+                            raise ValueError("Invalid selected track list")
+                        if 0 <= index < len(self.song.tracks):
+                            candidate = self.song.tracks[index]
+                            if candidate.can_be_armed and candidate not in selected_targets:
+                                selected_targets.append(candidate)
+                if not selected_targets:
+                    raise ValueError("No selected armable tracks")
+                for item in self.song.tracks:
+                    if item.can_be_armed:
+                        item.arm = item in selected_targets
+                return
             desired = action == "arm-on"
             # Touch Bar swipes are additive, like modifier-clicking Arm.
             # Do not implement Live's exclusive-arm UI preference here.
-            track.arm = desired  # Explicit state: repeated swipes never toggle.
+            requested_indices = command.get("track_indices")
+            if isinstance(requested_indices, list):
+                selected_targets = []
+                for index in requested_indices:
+                    if isinstance(index, bool) or not isinstance(index, int):
+                        raise ValueError("Invalid selected track list")
+                    if 0 <= index < len(self.song.tracks):
+                        candidate = self.song.tracks[index]
+                        if candidate.can_be_armed and candidate not in selected_targets:
+                            selected_targets.append(candidate)
+                if not selected_targets:
+                    raise ValueError("No selected armable tracks")
+            elif not selected_targets:
+                raise ValueError("Select an audio or MIDI track")
+            for item in selected_targets:
+                item.arm = desired  # Explicit state: repeated swipes never toggle.
         elif action == "quantization":
             values = (0, 2, 5)  # None, eighth, sixteenth; Live Record Quantization.
             current = int(self.song.midi_recording_quantization)

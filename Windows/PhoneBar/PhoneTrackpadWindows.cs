@@ -39,7 +39,7 @@ public sealed class TrackpadFirewall : ITrackpadFirewall {
         try {
             policy.Rules.Remove(NameRule);
             rule.Name = NameRule;
-            rule.Description = "Answers 3e.local for the Phone Bar receiver while it runs.";
+            rule.Description = "Answers 3e-win.local for the Phone Bar receiver while it runs.";
             rule.Protocol = 17; rule.LocalPorts = "5353"; rule.RemoteAddresses = "LocalSubnet";
             rule.Direction = 1; rule.Action = 1; rule.Profiles = int.MaxValue; rule.EdgeTraversal = false; rule.Enabled = true;
             policy.Rules.Add(rule);

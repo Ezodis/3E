@@ -132,11 +132,11 @@ Check(fake.Commands.Contains("history:-1") && fake.Commands.Contains("zoom:1"),"
         return q.ToArray();
     }
     var here = IPAddress.Parse("192.168.1.42");
-    var reply = ThreeE.PhoneBar.Windows.PhoneNameResponder.Answer(Query("3e.local", 1, 1), here, 5353);
-    Check(reply != null && !reply.Value.unicast && reply.Value.packet[^4..].SequenceEqual(here.GetAddressBytes()) && (reply.Value.packet[2] & 0x84) == 0x84, "3e.local answers with the receiver's address");
-    var upper = ThreeE.PhoneBar.Windows.PhoneNameResponder.Answer(Query("3E.LOCAL", 255, 0x8001), here, 5353);
+    var reply = ThreeE.PhoneBar.Windows.PhoneNameResponder.Answer(Query("3e-win.local", 1, 1), here, 5353);
+    Check(reply != null && !reply.Value.unicast && reply.Value.packet[^4..].SequenceEqual(here.GetAddressBytes()) && (reply.Value.packet[2] & 0x84) == 0x84, "3e-win.local answers with the receiver's address");
+    var upper = ThreeE.PhoneBar.Windows.PhoneNameResponder.Answer(Query("3E-WIN.LOCAL", 255, 0x8001), here, 5353);
     Check(upper != null && upper.Value.unicast, "Name matching is case-insensitive and honours unicast-response questions");
-    var legacy = ThreeE.PhoneBar.Windows.PhoneNameResponder.Answer(Query("3e.local", 1, 1, 0x1234), here, 53000);
+    var legacy = ThreeE.PhoneBar.Windows.PhoneNameResponder.Answer(Query("3e-win.local", 1, 1, 0x1234), here, 53000);
     Check(legacy != null && legacy.Value.unicast && legacy.Value.packet[0] == 0x12 && legacy.Value.packet[1] == 0x34, "One-shot resolvers get a direct reply with their query id");
     Check(ThreeE.PhoneBar.Windows.PhoneNameResponder.Answer(Query("otherpc.local", 1, 1), here, 5353) == null, "Other names are never answered");
     Check(ThreeE.PhoneBar.Windows.PhoneNameResponder.Answer(new byte[] { 0, 0, 0x84, 0, 0, 1 }, here, 5353) == null && ThreeE.PhoneBar.Windows.PhoneNameResponder.Answer(new byte[3], here, 5353) == null, "Responses and malformed packets are ignored");

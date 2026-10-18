@@ -1,4 +1,5 @@
 #import <AppKit/AppKit.h>
+#import <ApplicationServices/ApplicationServices.h>
 #import "../../../Shared/PhoneControl/MacHost/PhoneBarMenu.h"
 #import <objc/runtime.h>
 #import <objc/message.h>
@@ -58,6 +59,8 @@ static NSString *const CloseID = @"local.musicstrip.midi.close";
 static NSString *const LayoutID = @"local.musicstrip.midi.layout";
 static void Cycle(id target, SEL selector, id sender);
 static void ChangeOctaves(NSInteger direction);
+static void CycleOctaves(void);
+static void SetOctaveCount(NSInteger next);
 static void ExpandPiano(NSView *piano);
 static void CollapsePiano(void);
 static void ResetPianoExpansion(void);
@@ -322,6 +325,10 @@ static NSString *const NavigationID = @"local.musicstrip.midi.navigation";
 @property BOOL standaloneRecord;
 @property BOOL degreeToggle;
 @property BOOL degreeToggleOn;
+@property BOOL compactGlyph;
+@property BOOL firstConfigurationSegment;
+@property BOOL configurationHasClose;
+@property BOOL iconAboveCaption;
 @property CGFloat presetHue;
 @property BOOL recordLit;
 @property id touchIdentity;
@@ -335,6 +342,7 @@ static NSString *const NavigationID = @"local.musicstrip.midi.navigation";
 @end
 static MidiNavigationButton *navigationButton;
 static MidiNavigationButton *octavesButton;
+static NSView *pianoConfigurationGroup;
 @implementation MidiNavigationButton
 - (instancetype)initWithFrame:(NSRect)frame {
     if ((self=[super initWithFrame:frame])) {
@@ -357,54 +365,62 @@ static MidiNavigationButton *octavesButton;
         [NSGraphicsContext saveGraphicsState];
         [NSBezierPath clipRect:NSIntersectionRect(self.bounds,dirtyRect)];
         NSInteger segment=self.optionSegment ?: (self.joinedEdge==2 ? 2 : 1);
-        NSRect whole=NSMakeRect(-44*(segment-1),1,self.optionSegment ? 132 : 88,28);
+        CGFloat groupWidth=self.configurationHasClose ? 132 : self.optionSegment ? 132 : 88;
+        CGFloat segmentOffset=self.configurationHasClose ? (segment==1 ? 32 : segment==2 ? 68 : 104) : 44*(segment-1);
+        NSRect whole=NSMakeRect(-segmentOffset,1,groupWidth,28);
         [[NSBezierPath bezierPathWithRoundedRect:whole xRadius:7 yRadius:7] addClip];
-        [[[NSGradient alloc] initWithStartingColor:[NSColor colorWithWhite:.24 alpha:1] endingColor:[NSColor colorWithWhite:.13 alpha:1]] drawInRect:self.bounds angle:90];
+        NSColor *start=[NSColor colorWithCalibratedHue:self.presetHue saturation:.72 brightness:.82 alpha:1];
+        NSColor *end=[NSColor colorWithCalibratedHue:fmod(self.presetHue+.10,1) saturation:.85 brightness:.46 alpha:1];
+        [[[NSGradient alloc] initWithStartingColor:start endingColor:end] drawInRect:whole angle:0];
         if(self.highlighted) { [[NSColor colorWithWhite:1 alpha:.12] setFill]; NSRectFill(self.bounds); }
-        if(segment>1) { [[NSColor colorWithWhite:1 alpha:.12] setFill]; NSRectFill(NSMakeRect(0,5,.5,20)); }
+        if(segment>1 || self.firstConfigurationSegment) { [[NSColor colorWithWhite:1 alpha:.12] setFill]; NSRectFill(NSMakeRect(0,5,.5,20)); }
         if(self.degreeToggle) {
             NSColor *tint=self.degreeToggleOn ? [NSColor colorWithSRGBRed:.52 green:.86 blue:.93 alpha:1] : [NSColor colorWithWhite:.55 alpha:1];
             if(self.degreeToggleOn) { [[tint colorWithAlphaComponent:.16] setFill]; NSRectFillUsingOperation(self.bounds,NSCompositingOperationSourceOver); }
-            NSImage *symbol=[NSImage imageWithSize:NSMakeSize(22,18) flipped:NO drawingHandler:^BOOL(NSRect rect) {
+            CGFloat glyphWidth=self.compactGlyph ? 14 : 22, glyphHeight=self.compactGlyph ? 12 : 18;
+            NSImage *symbol=[NSImage imageWithSize:NSMakeSize(glyphWidth,glyphHeight) flipped:NO drawingHandler:^BOOL(NSRect rect) {
                 NSSize size=self.image.size;
-                CGFloat ratio=MIN(22/MAX(1,size.width),18/MAX(1,size.height));
+                CGFloat ratio=MIN(glyphWidth/MAX(1,size.width),glyphHeight/MAX(1,size.height));
                 NSSize fitted=NSMakeSize(size.width*ratio,size.height*ratio);
-                [self.image drawInRect:NSMakeRect((22-fitted.width)/2,(18-fitted.height)/2,fitted.width,fitted.height)];
+                [self.image drawInRect:NSMakeRect((glyphWidth-fitted.width)/2,(glyphHeight-fitted.height)/2,fitted.width,fitted.height)];
                 [tint setFill]; NSRectFillUsingOperation(rect,NSCompositingOperationSourceIn); return YES;
             }];
-            [symbol drawInRect:NSMakeRect(11,6,22,18)];
-            if(self.degreeToggleOn) { [tint setFill]; [[NSBezierPath bezierPathWithOvalInRect:NSMakeRect(35,23,4,4)] fill]; }
+            [symbol drawInRect:NSMakeRect((NSWidth(self.bounds)-glyphWidth)/2,(30-glyphHeight)/2,glyphWidth,glyphHeight)];
+            if(self.degreeToggleOn) { [tint setFill]; [[NSBezierPath bezierPathWithOvalInRect:NSMakeRect(NSWidth(self.bounds)-9,23,4,4)] fill]; }
             [NSGraphicsContext restoreGraphicsState]; return;
         }
         if(self.image) {
-            NSImage *glyph=[NSImage imageWithSize:NSMakeSize(18,13) flipped:NO drawingHandler:^BOOL(NSRect rect) {
+            CGFloat glyphWidth=self.iconAboveCaption ? 16 : 18, glyphHeight=self.iconAboveCaption ? 12 : 13;
+            NSImage *glyph=[NSImage imageWithSize:NSMakeSize(glyphWidth,glyphHeight) flipped:NO drawingHandler:^BOOL(NSRect rect) {
                 NSSize size=self.image.size;
-                CGFloat scale=MIN(18/MAX(1,size.width),13/MAX(1,size.height));
+                CGFloat scale=MIN(glyphWidth/MAX(1,size.width),glyphHeight/MAX(1,size.height));
                 NSSize fitted=NSMakeSize(size.width*scale,size.height*scale);
-                [self.image drawInRect:NSMakeRect((18-fitted.width)/2,(13-fitted.height)/2,fitted.width,fitted.height)];
+                [self.image drawInRect:NSMakeRect((glyphWidth-fitted.width)/2,(glyphHeight-fitted.height)/2,fitted.width,fitted.height)];
                 [NSColor.whiteColor setFill]; NSRectFillUsingOperation(rect,NSCompositingOperationSourceIn); return YES;
             }];
-            [glyph drawInRect:NSMakeRect(13,14,18,13)];
+            [glyph drawInRect:NSMakeRect((NSWidth(self.bounds)-glyphWidth)/2,self.iconAboveCaption ? 2 : 14,glyphWidth,glyphHeight)];
         } else {
             NSDictionary *top=@{NSFontAttributeName:[NSFont monospacedDigitSystemFontOfSize:14 weight:NSFontWeightSemibold],NSForegroundColorAttributeName:NSColor.whiteColor};
             NSSize size=[self.title sizeWithAttributes:top];
-            [self.title drawAtPoint:NSMakePoint((44-size.width)/2,11) withAttributes:top];
+            [self.title drawAtPoint:NSMakePoint((NSWidth(self.bounds)-size.width)/2,11) withAttributes:top];
         }
         NSDictionary *bottom=@{NSFontAttributeName:[NSFont systemFontOfSize:8 weight:NSFontWeightSemibold],NSForegroundColorAttributeName:[NSColor colorWithWhite:.90 alpha:1]};
         if(self.octaveSpanSymbol) {
             // A miniature keyboard enclosed by span markers, without text.
             NSBezierPath *span=[NSBezierPath bezierPath];
-            [span moveToPoint:NSMakePoint(11,3)]; [span lineToPoint:NSMakePoint(11,9)];
-            [span moveToPoint:NSMakePoint(33,3)]; [span lineToPoint:NSMakePoint(33,9)];
-            [span appendBezierPathWithRect:NSMakeRect(14,3,16,6)];
+            CGFloat keyboardWidth=MIN(16,MAX(10,NSWidth(self.bounds)-16));
+            CGFloat keyboardX=(NSWidth(self.bounds)-keyboardWidth)/2;
+            [span moveToPoint:NSMakePoint(keyboardX-3,3)]; [span lineToPoint:NSMakePoint(keyboardX-3,9)];
+            [span moveToPoint:NSMakePoint(keyboardX+keyboardWidth+3,3)]; [span lineToPoint:NSMakePoint(keyboardX+keyboardWidth+3,9)];
+            [span appendBezierPathWithRect:NSMakeRect(keyboardX,3,keyboardWidth,6)];
             for(NSInteger i=1;i<7;i++) {
-                CGFloat x=14+i*16.0/7;
+                CGFloat x=keyboardX+i*keyboardWidth/7;
                 [span moveToPoint:NSMakePoint(x,3)]; [span lineToPoint:NSMakePoint(x,9)];
             }
             span.lineWidth=.65; [[NSColor colorWithWhite:.90 alpha:1] setStroke]; [span stroke];
         } else {
             NSSize size=[self.stackedCaption sizeWithAttributes:bottom];
-            [self.stackedCaption drawAtPoint:NSMakePoint((44-size.width)/2,2) withAttributes:bottom];
+            [self.stackedCaption drawAtPoint:NSMakePoint((NSWidth(self.bounds)-size.width)/2,self.iconAboveCaption ? 16 : 2) withAttributes:bottom];
         }
         [NSGraphicsContext restoreGraphicsState]; return;
     }
@@ -482,9 +498,9 @@ static MidiNavigationButton *octavesButton;
     if (!self.tracking) return;
     [self moveAt:point];
     CGFloat dx=point.x-self.startX, dy=point.y-self.startY;
-    if(!self.octaveControl && !self.didStep && !self.held && !self.cancelled && NSPointInRect(point,self.bounds) && hypot(dx,dy)<8) {
-        BOOL back=self.startX<NSMidX(self.bounds);
-        [self step:back ? -1 : 1];
+    if(!self.didStep && !self.held && !self.cancelled && NSPointInRect(point,self.bounds) && hypot(dx,dy)<8) {
+        if(self.octaveControl) CycleOctaves();
+        else { BOOL back=self.startX<NSMidX(self.bounds); [self step:back ? -1 : 1]; }
     }
     self.tracking=NO; self.touchIdentity=nil; [self highlight:NO];
 }
@@ -508,7 +524,7 @@ static MidiNavigationButton *octavesButton;
 - (void)mouseDown:(NSEvent *)event { [self beginAt:[self convertPoint:event.locationInWindow fromView:nil] identity:nil]; }
 - (void)mouseDragged:(NSEvent *)event { [self moveAt:[self convertPoint:event.locationInWindow fromView:nil]]; }
 - (void)mouseUp:(NSEvent *)event { [self finishAt:[self convertPoint:event.locationInWindow fromView:nil]]; }
-- (BOOL)accessibilityPerformPress { if(!self.octaveControl) Cycle(NSApp.delegate,NSSelectorFromString(@"musicStripCycle:"),nil); return YES; }
+- (BOOL)accessibilityPerformPress { if(self.octaveControl) CycleOctaves(); else Cycle(NSApp.delegate,NSSelectorFromString(@"musicStripCycle:"),nil); return YES; }
 - (void)dealloc { [self.holdTimer invalidate]; }
 @end
 static void UpdateNavigationColor(void);
@@ -535,6 +551,7 @@ static void UpdateDegreeButton(void) {
     pianoDegreeButton.title=@"";
     pianoDegreeButton.stackedCaption=@"";
     pianoDegreeButton.degreeToggle=YES; pianoDegreeButton.degreeToggleOn=enabled;
+    pianoDegreeButton.compactGlyph=YES;
     pianoDegreeButton.image=[NSImage imageWithSystemSymbolName:@"music.note.list" accessibilityDescription:@"Scale harmony"] ?: [NSImage imageWithSystemSymbolName:@"music.note" accessibilityDescription:@"Scale harmony"];
     pianoDegreeButton.needsDisplay=YES;
     [pianoDegreeButton setAccessibilityLabel:enabled ? @"Scale degrees shown. Tap to hide." : @"Scale degrees hidden. Tap to show."];
@@ -560,6 +577,7 @@ static void UpdatePianoConfigControls(void) {
     pianoModeButton.title=@[@"GLISS",@"HOLD",@"BEND"][mode];
     pianoModeButton.stackedCaption=pianoModeButton.title;
     pianoModeButton.image=[NSImage imageWithSystemSymbolName:@[@"pianokeys",@"hand.raised.fill",@"waveform"][mode] accessibilityDescription:nil];
+    pianoModeButton.iconAboveCaption=YES;
     pianoModeButton.needsDisplay=YES;
     [pianoModeButton setAccessibilityLabel:[NSString stringWithFormat:@"Piano gesture: %@. Tap to cycle, swipe left or right to change.",@[@"Glissando",@"No Glissando",@"Pitchbend"][mode]]];
     pianoChannelButton.title=[NSString stringWithFormat:@"Ch %@",[expandedPianoView valueForKey:@"channelNumber"]];
@@ -568,13 +586,14 @@ static void UpdatePianoConfigControls(void) {
 #import "AbletonRecord.h"
 @interface StripJoinedMidiControl : NSView
 @property(weak) MidiNavigationButton *navigation;
+@property CGFloat presetHue;
 @end
 @implementation StripJoinedMidiControl
 - (NSSize)intrinsicContentSize { return self.frame.size; }
 - (void)drawRect:(NSRect)dirtyRect {
-    if(!self.navigation) return;
-    NSColor *start=[NSColor colorWithCalibratedHue:self.navigation.presetHue saturation:.72 brightness:.82 alpha:1];
-    NSColor *end=[NSColor colorWithCalibratedHue:fmod(self.navigation.presetHue+.10,1) saturation:.85 brightness:.46 alpha:1];
+    CGFloat hue=self.navigation ? self.navigation.presetHue : self.presetHue;
+    NSColor *start=[NSColor colorWithCalibratedHue:hue saturation:.72 brightness:.82 alpha:1];
+    NSColor *end=[NSColor colorWithCalibratedHue:fmod(hue+.10,1) saturation:.85 brightness:.46 alpha:1];
     [NSGraphicsContext saveGraphicsState];
     [[NSBezierPath bezierPathWithRoundedRect:self.bounds xRadius:7 yRadius:7] addClip];
     [[[NSGradient alloc] initWithStartingColor:start endingColor:end] drawInRect:self.bounds angle:0];
@@ -582,14 +601,21 @@ static void UpdatePianoConfigControls(void) {
 }
 @end
 static void UpdateNavigationColor(void) {
-    if(!navigationButton) return;
     id delegate=NSApp.delegate;
     NSInteger preset=[[delegate valueForKey:@"userTouchbarNumber"] integerValue];
     NSUInteger count=[[delegate valueForKey:@"allUserTouchbars"] count];
     BOOL surface=[[delegate valueForKey:@"controlSurfadeMode"] boolValue];
     CGFloat hue=surface ? .08 : fmod(.58+MAX(0,preset)/(double)MAX(1,count),1);
-    if(navigationButton.presetHue!=hue) { navigationButton.presetHue=hue; navigationButton.needsDisplay=YES; navigationButton.superview.needsDisplay=YES; }
-    navigationButton.toolTip=surface ? @"MIDI Control Surface" : [NSString stringWithFormat:@"MIDI preset %ld",(long)preset+1];
+    if(navigationButton) {
+        if(navigationButton.presetHue!=hue) { navigationButton.presetHue=hue; navigationButton.needsDisplay=YES; navigationButton.superview.needsDisplay=YES; }
+        navigationButton.toolTip=surface ? @"MIDI Control Surface" : [NSString stringWithFormat:@"MIDI preset %ld",(long)preset+1];
+    }
+    if(pianoConfigurationGroup) {
+        ((StripJoinedMidiControl *)pianoConfigurationGroup).presetHue=hue;
+        pianoConfigurationGroup.needsDisplay=YES;
+    }
+    NSArray *pianoButtons=@[pianoModeButton ?: (id)NSNull.null,octavesButton ?: (id)NSNull.null,pianoDegreeButton ?: (id)NSNull.null];
+    for(id button in pianoButtons) if(button!=NSNull.null) { [button setPresetHue:hue]; [button setNeedsDisplay:YES]; }
 }
 static NSView *JoinCloseNavigation(NSButton *close,MidiNavigationButton *navigation,NSInteger preset,NSUInteger count) {
     navigation.presetHue=fmod(.58+MAX(0,preset)/(double)MAX(1,count),1);
@@ -639,6 +665,8 @@ static NSImage *BrandMenuIcon(void) {
 }
 static NSString *combinedGestureState=@"permission";
 static BOOL appsMenuVisible;
+static BOOL downloadsEnabled;
+static NSMenuItem *MenuSeparator(void) { return [NSMenuItem separatorItem]; }
 static void CleanMenu(NSMenu *menu) {
     NSStatusItem *statusItem=[(id)NSApp.delegate valueForKey:@"theItem"];
     if([NSProcessInfo.processInfo.environment[@"STRIP_COMBINED_TOUCHTAB"] isEqual:@"1"] && menu==statusItem.menu) {
@@ -659,6 +687,7 @@ static void CleanMenu(NSMenu *menu) {
     }
     for(NSMenuItem *item in menu.itemArray.copy) {
         NSString *title=item.title.lowercaseString;
+        if([title containsString:@"check for update"]) { [menu removeItem:item]; continue; }
         if([title isEqual:@"control surface mode"]) {
             item.target=NSClassFromString(@"MusicStripMidiBridge");
             item.action=NSSelectorFromString(@"toggleSurfaceMode:");
@@ -683,20 +712,53 @@ static void CleanMenu(NSMenu *menu) {
         if(item.submenu) CleanMenu(item.submenu);
     }
     if(menu==statusItem.menu) {
-        NSMenuItem *apps=nil;
-        for(NSMenuItem *item in menu.itemArray) if([item.identifier isEqual:@"local.musicstrip.appsToggle"]) apps=item;
+        NSMenuItem *version=nil,*trackTab=nil,*phone=nil,*apps=nil,*midi=nil,*surface=nil,*downloads=nil,*automatic=nil;
+        NSMenuItem *reset=nil,*quit=nil;NSMutableArray<NSMenuItem *> *remaining=[NSMutableArray array];
+        for(NSMenuItem *item in menu.itemArray.copy) {
+            NSString *title=item.title.lowercaseString;
+            if(!version && [title containsString:@"(v."])version=item;
+            else if([item.identifier isEqual:@"local.musicstrip.touchTabToggle"])trackTab=item;
+            else if([item.identifier isEqual:@"local.musicstrip.phone"])phone=item;
+            else if([item.identifier isEqual:@"local.musicstrip.appsToggle"])apps=item;
+            else if(item.action==NSSelectorFromString(@"toggleMidi:"))midi=item;
+            else if(item.action==NSSelectorFromString(@"toggleSurfaceMode:"))surface=item;
+            else if([item.identifier isEqual:@"local.musicstrip.downloads"])downloads=item;
+            else if([item.identifier isEqual:@"local.musicstrip.automaticUpdates"])automatic=item;
+            else if([title containsString:@"check for update"] || item.isSeparatorItem || [item.identifier hasPrefix:@"local.musicstrip.section."]) continue;
+            else if([title isEqual:@"reset touch bar"])reset=item;
+            else if([title isEqual:@"quit"])quit=item;
+            else [remaining addObject:item];
+        }
+        if(!phone)phone=ThreeEPhoneBarMenu(NSClassFromString(@"MusicStripMidiBridge"));
         if(!apps) {
             apps=[[NSMenuItem alloc] initWithTitle:@"Touch Bar App" action:NSSelectorFromString(@"toggleApps:") keyEquivalent:@""];
-            apps.identifier=@"local.musicstrip.appsToggle";
-            apps.target=NSClassFromString(@"MusicStripMidiBridge");
-        } else [menu removeItem:apps];
-        NSInteger index=menu.numberOfItems && [menu.itemArray.firstObject.title containsString:@"(v."] ? 1 : 0;
-        if(index<menu.numberOfItems && [menu.itemArray[index].identifier isEqual:@"local.musicstrip.touchTabToggle"]) index++;
-        [menu insertItem:apps atIndex:index];
-        apps.state=appsMenuVisible ? NSControlStateValueOn : NSControlStateValueOff;
-        BOOL hasPhone=NO;
-        for(NSMenuItem *item in menu.itemArray)if([item.identifier isEqual:@"local.musicstrip.phone"])hasPhone=YES;
-        if(!hasPhone)[menu insertItem:ThreeEPhoneBarMenu(NSClassFromString(@"MusicStripMidiBridge")) atIndex:index+1];
+            apps.identifier=@"local.musicstrip.appsToggle";apps.target=NSClassFromString(@"MusicStripMidiBridge");
+        }
+        if(!downloads) {
+            downloads=[[NSMenuItem alloc] initWithTitle:@"Auto-move Downloads to Desktop" action:NSSelectorFromString(@"toggleDownloads:") keyEquivalent:@""];
+            downloads.identifier=@"local.musicstrip.downloads";downloads.target=NSClassFromString(@"MusicStripMidiBridge");
+        }
+        if(!automatic) {
+            automatic=[[NSMenuItem alloc] initWithTitle:@"Automatically Install Updates" action:NSSelectorFromString(@"toggleAutomaticUpdates:") keyEquivalent:@""];
+            automatic.identifier=@"local.musicstrip.automaticUpdates";automatic.target=NSClassFromString(@"MusicStripMidiBridge");
+        }
+        apps.state=appsMenuVisible&&!recordController.activeMenuBar?NSControlStateValueOn:NSControlStateValueOff;
+        if(midi)midi.state=[[(id)NSApp.delegate valueForKey:@"touchbarShown"] boolValue] && !recordController.activeMenuBar && !appsMenuVisible ? NSControlStateValueOn:NSControlStateValueOff;
+        downloads.title=@"Auto-move Downloads to Desktop";downloads.state=downloadsEnabled?NSControlStateValueOn:NSControlStateValueOff;
+        automatic.state=StripAutomaticUpdatesEnabled()?NSControlStateValueOn:NSControlStateValueOff;
+        if(surface) { surface.title=@"Control Surface Mode";surface.state=recordController.activeMenuBar&&!appsMenuVisible?NSControlStateValueOn:NSControlStateValueOff; }
+
+        [menu removeAllItems];
+        if(version)[menu addItem:version];
+        if(trackTab)[menu addItem:trackTab];
+        [menu addItem:phone];[menu addItem:MenuSeparator()];
+        [menu addItem:apps];if(midi)[menu addItem:midi];if(surface)[menu addItem:surface];
+        [menu addItem:MenuSeparator()];
+        for(NSMenuItem *item in remaining)[menu addItem:item];
+        [menu addItem:MenuSeparator()];
+        [menu addItem:downloads];[menu addItem:automatic];
+        if(reset||quit)[menu addItem:MenuSeparator()];
+        if(reset)[menu addItem:reset];if(quit)[menu addItem:quit];
     }
 }
 static void ApplyBranding(void) {
@@ -715,10 +777,15 @@ static NSArray *MenuTitles(NSMenu *menu) {
 + (void)toggleTouchTab:(id)sender;
 + (void)toggleSurfaceMode:(id)sender;
 + (void)toggleMidi:(id)sender;
++ (void)toggleAutomaticUpdates:(id)sender;
 + (void)toggleApps:(id)sender;
 + (void)openPhone:(id)sender;
 + (void)copyPhone:(id)sender;
 + (void)stopPhone:(id)sender;
++ (void)togglePhoneBar:(id)sender;
++ (void)hoverPhoneBar:(id)sender;
++ (void)hidePhoneBarQR:(id)sender;
++ (void)toggleDownloads:(id)sender;
 @end
 static void SuppressTray(id cls, SEL sel, id item) { Report("TRAY_SUPPRESSED\n"); }
 static void Open(id self, SEL sel, NSTouchBar *bar, id identifier) {
@@ -782,12 +849,15 @@ static void Open(id self, SEL sel, NSTouchBar *bar, id identifier) {
     // Surplus width belongs to the spacer, never to pads/transport buttons.
     // Piano-only rows explicitly claim their usable width; keep the same
     // identifiers for every normal preset so the outer controls never move.
-    outer.defaultItemIdentifiers = @[CloseID,LayoutID,NSTouchBarItemIdentifierFlexibleSpace,RecordID];
+    outer.defaultItemIdentifiers = @[CloseID,RecordID,LayoutID,NSTouchBarItemIdentifierFlexibleSpace];
     if (pianoExpanded) {
         recordController.button.joinedEdge=0;
-        recordController.item.collapsedRepresentation=recordController.button;
         NSCustomTouchBarItem *options=[[NSCustomTouchBarItem alloc] initWithIdentifier:OctavesID];
-        octavesButton=[[MidiNavigationButton alloc] initWithFrame:NSMakeRect(0,0,44,30)];
+        closeButton.contentTintColor=NSColor.whiteColor;
+        closeButton.image.template=YES;
+        closeButton.frame=NSMakeRect(0,0,32,30);
+        closeButton.translatesAutoresizingMaskIntoConstraints=NO;
+        octavesButton=[[MidiNavigationButton alloc] initWithFrame:NSMakeRect(0,0,36,30)];
         octavesButton.octaveControl=YES;
         octavesButton.stackedCaption=@""; octavesButton.octaveSpanSymbol=YES; octavesButton.joinedEdge=2;
         octavesButton.optionSegment=2;
@@ -795,29 +865,36 @@ static void Open(id self, SEL sel, NSTouchBar *bar, id identifier) {
         octavesButton.title=[[expandedPianoView valueForKey:@"numOctaves"] stringValue];
         octavesButton.font=[NSFont monospacedDigitSystemFontOfSize:14 weight:NSFontWeightMedium];
         [octavesButton setAccessibilityLabel:@"Visible piano octaves: swipe right to increase or left to decrease; tapping does nothing"];
-        [octavesButton.widthAnchor constraintEqualToConstant:44].active=YES;
+        [octavesButton.widthAnchor constraintEqualToConstant:36].active=YES;
         pianoChannelButton=nil;
-        pianoModeButton=[[PianoConfigButton alloc] initWithFrame:NSMakeRect(0,0,44,30)];
+        pianoModeButton=[[PianoConfigButton alloc] initWithFrame:NSMakeRect(0,0,36,30)];
         pianoModeButton.octaveControl=YES;
         pianoModeButton.joinedEdge=1;
         pianoModeButton.optionSegment=1;
+        pianoModeButton.configurationHasClose=YES; pianoModeButton.firstConfigurationSegment=YES;
         pianoModeButton.font=[NSFont systemFontOfSize:8 weight:NSFontWeightMedium];
         pianoModeButton.imagePosition=NSImageAbove;
-        [pianoModeButton.widthAnchor constraintEqualToConstant:44].active=YES;
-        pianoDegreeButton=[[PianoDegreeButton alloc] initWithFrame:NSMakeRect(0,0,44,30)];
+        [pianoModeButton.widthAnchor constraintEqualToConstant:36].active=YES;
+        pianoDegreeButton=[[PianoDegreeButton alloc] initWithFrame:NSMakeRect(0,0,28,30)];
         pianoDegreeButton.image=nil; pianoDegreeButton.imagePosition=NSNoImage;
         pianoDegreeButton.octaveControl=YES; pianoDegreeButton.optionSegment=3;
-        [pianoDegreeButton.widthAnchor constraintEqualToConstant:44].active=YES;
+        pianoDegreeButton.configurationHasClose=YES;
+        [pianoDegreeButton.widthAnchor constraintEqualToConstant:28].active=YES;
+        octavesButton.configurationHasClose=YES;
         NSView *joined=[[StripJoinedMidiControl alloc] initWithFrame:NSMakeRect(0,0,132,30)];
+        pianoConfigurationGroup=joined;
         joined.translatesAutoresizingMaskIntoConstraints=NO;
         [joined setContentHuggingPriority:NSLayoutPriorityRequired forOrientation:NSLayoutConstraintOrientationHorizontal];
         [joined setContentCompressionResistancePriority:NSLayoutPriorityRequired forOrientation:NSLayoutConstraintOrientationHorizontal];
         pianoModeButton.translatesAutoresizingMaskIntoConstraints=NO; octavesButton.translatesAutoresizingMaskIntoConstraints=NO;
         pianoDegreeButton.translatesAutoresizingMaskIntoConstraints=NO;
-        [joined addSubview:pianoModeButton]; [joined addSubview:octavesButton]; [joined addSubview:pianoDegreeButton];
+        [joined addSubview:closeButton]; [joined addSubview:pianoModeButton]; [joined addSubview:octavesButton]; [joined addSubview:pianoDegreeButton];
         [NSLayoutConstraint activateConstraints:@[
             [joined.widthAnchor constraintEqualToConstant:132], [joined.heightAnchor constraintEqualToConstant:30],
-            [pianoModeButton.leadingAnchor constraintEqualToAnchor:joined.leadingAnchor],
+            [closeButton.leadingAnchor constraintEqualToAnchor:joined.leadingAnchor],
+            [closeButton.topAnchor constraintEqualToAnchor:joined.topAnchor],
+            [closeButton.widthAnchor constraintEqualToConstant:32], [closeButton.heightAnchor constraintEqualToConstant:30],
+            [pianoModeButton.leadingAnchor constraintEqualToAnchor:closeButton.trailingAnchor],
             [pianoModeButton.topAnchor constraintEqualToAnchor:joined.topAnchor], [pianoModeButton.heightAnchor constraintEqualToConstant:30],
             [octavesButton.leadingAnchor constraintEqualToAnchor:pianoModeButton.trailingAnchor],
             [octavesButton.topAnchor constraintEqualToAnchor:joined.topAnchor], [octavesButton.heightAnchor constraintEqualToConstant:30],
@@ -825,10 +902,11 @@ static void Open(id self, SEL sel, NSTouchBar *bar, id identifier) {
             [pianoDegreeButton.topAnchor constraintEqualToAnchor:joined.topAnchor], [pianoDegreeButton.heightAnchor constraintEqualToConstant:30],
             [pianoDegreeButton.trailingAnchor constraintEqualToAnchor:joined.trailingAnchor]
         ]];
+        UpdateNavigationColor();
         options.view=joined; options.visibilityPriority=NSTouchBarItemPriorityHigh;
         UpdatePianoConfigControls();
-        outer.templateItems=[NSSet setWithArray:@[close,expandedPianoItem,options]];
-        outer.defaultItemIdentifiers=@[CloseID,expandedPianoItem.identifier,OctavesID];
+        outer.templateItems=[NSSet setWithArray:@[expandedPianoItem,options]];
+        outer.defaultItemIdentifiers=@[OctavesID,expandedPianoItem.identifier];
         outer.principalItemIdentifier=expandedPianoItem.identifier;
         navigationButton=nil;
     }
@@ -876,6 +954,7 @@ static void ResetPianoExpansion(void) {
         normalPianoView.needsDisplay=YES;
     }
     normalPianoView=nil; expandedPianoContainer=nil;
+    pianoConfigurationGroup=nil;
     [octavesButton cancelGesture]; octavesButton=nil;
     [pianoModeButton cancelGesture]; [pianoChannelButton cancelGesture]; pianoModeButton=nil; pianoChannelButton=nil;
     [pianoDegreeButton cancelGesture]; pianoDegreeButton=nil;
@@ -944,6 +1023,20 @@ static void ChangeOctaves(NSInteger direction) {
     NSInteger current=[[expandedPianoView valueForKey:@"numOctaves"] integerValue];
     NSInteger start=[[expandedPianoView valueForKey:@"startOctave"] integerValue];
     NSInteger next=MIN(MAX(1,10-start),MAX(1,current+direction));
+    SetOctaveCount(next);
+}
+static void CycleOctaves(void) {
+    if(!pianoExpanded || !expandedPianoView || [[expandedPianoView valueForKey:@"activeKeys"] count]) return;
+    NSInteger current=[[expandedPianoView valueForKey:@"numOctaves"] integerValue];
+    NSInteger start=[[expandedPianoView valueForKey:@"startOctave"] integerValue];
+    NSInteger maximum=MAX(1,10-start);
+    SetOctaveCount(current>=maximum ? 1 : current+1);
+}
+static void SetOctaveCount(NSInteger next) {
+    if(!pianoExpanded || !expandedPianoView || [[expandedPianoView valueForKey:@"activeKeys"] count]) return;
+    NSInteger current=[[expandedPianoView valueForKey:@"numOctaves"] integerValue];
+    NSInteger start=[[expandedPianoView valueForKey:@"startOctave"] integerValue];
+    next=MIN(MAX(1,10-start),MAX(1,next));
     if(next!=current) {
         // The original engine allocates octave-label arrays during init. Build
         // a matching piano through that initializer instead of mutating its
@@ -1308,11 +1401,11 @@ static void TestArrangementLayout(BOOL viaMenu,BOOL fromHidden) {
         NSTouchBar *arrangement=controller.activeMenuBar;
         NSCAssert([[(id)NSApp.delegate valueForKey:@"controlSurfadeMode"] boolValue],@"The native surface engine must actually enter Control Surface Mode, not just display its view");
         NSCAssert(arrangement && ![arrangement.itemIdentifiers containsObject:CloseID],@"Record hold opens Arrangement without a close or preset-switch item");
-        NSGroupTouchBarItem *group=(id)[arrangement itemForIdentifier:@"local.musicstrip.performance.controls"];
-        NSCAssert([group.groupTouchBar.itemIdentifiers containsObject:@"local.musicstrip.performance.native-surface"] && group.groupTouchBar.itemIdentifiers.count==5,@"The native control surface is combined with Loop, BPM and More plus a non-overlap spacer");
-        for(NSString *identifier in group.groupTouchBar.itemIdentifiers) {
-            if([identifier isEqual:@"local.musicstrip.performance.surface-gap"]) continue;
-            NSTouchBarItem *item=[group.groupTouchBar itemForIdentifier:identifier];
+        NSArray *expectedArrangement=@[[RecordID stringByAppendingString:@".performance.loop"],@"local.musicstrip.performance.record",[RecordID stringByAppendingString:@".performance.tempo"],[RecordID stringByAppendingString:@".performance.more"],NSTouchBarItemIdentifierFlexibleSpace,@"local.musicstrip.performance.native-surface"];
+        NSCAssert([arrangement.defaultItemIdentifiers isEqualToArray:expectedArrangement],@"Loop, Record, BPM, More and the native surface must stay in the requested left-to-right order");
+        for(NSString *identifier in arrangement.itemIdentifiers) {
+            if([identifier isEqual:NSTouchBarItemIdentifierFlexibleSpace]) continue;
+            NSTouchBarItem *item=[arrangement itemForIdentifier:identifier];
             if(![item isKindOfClass:NSPopoverTouchBarItem.class] && ![item respondsToSelector:@selector(view)]) continue;
             NSView *view=[item isKindOfClass:NSPopoverTouchBarItem.class] ? [(NSPopoverTouchBarItem *)item collapsedRepresentation] : [(NSCustomTouchBarItem *)item view];
             NSCAssert(view.window && view.bounds.size.width>0,@"Each combined arrangement control must really be visible: %@ %@",identifier,NSStringFromRect(view.frame));
@@ -1344,7 +1437,9 @@ static void TestArrangementLayout(BOOL viaMenu,BOOL fromHidden) {
                 NSCAssert(NSMinX(full)>=NSMinX(clip)-.1 && NSMaxX(full)<=NSMaxX(clip)+.1,@"The full %@ drawing and gesture area must be unclipped: %@ within %@",action,NSStringFromRect(full),NSStringFromRect(clip));
             }
         }
-        NSCAssert(record.window && fabs(NSWidth(frame)-32)<.1 && fabs(NSMaxX(frame)-record.window.contentView.bounds.size.width)<1,@"Arrangement retains Record at the same far-right position: %@ host %@",NSStringFromRect(frame),NSStringFromRect(record.window.contentView.bounds));
+        NSView *loopView=controller.performanceMenus[@"loop"].collapsedRepresentation;
+        NSRect loopFrame=[loopView convertRect:loopView.bounds toView:nil];
+        NSCAssert(record.window && fabs(NSWidth(frame)-32)<.1 && fabs(NSMinX(frame)-76)<.1 && fabs(NSWidth(loopFrame)-76)<.1,@"Arrangement aligns the 32-point Record button after the 76-point Loop slot: Loop %@ Record %@",NSStringFromRect(loopFrame),NSStringFromRect(frame));
         NSTouchBar *device=[(id)NSApp.delegate valueForKey:@"eightFaderGroup"];
         Open(NSApp.delegate,NSSelectorFromString(@"openTouchbar:fromIdentifier:"),device,nil);
         dispatch_after(dispatch_time(DISPATCH_TIME_NOW,300*NSEC_PER_MSEC),dispatch_get_main_queue(),^{
@@ -1449,7 +1544,7 @@ static void TestNativeFlexiblePianos(NSInteger count) {
             NSRect recordFrame=[recordController.button convertRect:recordController.button.bounds toView:nil];
             Report([[NSString stringWithFormat:@"FIXED_CONTROL_GEOMETRY close=%@ navigation=%@ record=%@\n",NSStringFromRect(closeFrame),NSStringFromRect(navigationFrame),NSStringFromRect(recordFrame)] UTF8String]);
             NSCAssert(fabs(NSMinX(closeButton.frame))<=1 && fabs(NSMaxX(closeButton.frame)-NSMinX(navigationButton.frame))<1,@"Keep the X in its original slot and join navigation directly beside it (allow native half-point alignment)");
-            NSCAssert(fabs(NSMaxX(recordFrame)-recordController.button.window.contentView.bounds.size.width)<1,@"Record must use the farthest-right native slot");
+            NSCAssert(NSMinX(recordFrame)>=NSMaxX(navigationFrame)-1 && NSMinX(recordFrame)-NSMaxX(navigationFrame)<8,@"Record stays immediately after the joined X and preset arrows");
             for(NSDictionary *view in geometry) {
                 NSRect position=NSRectFromString(view[@"position"]);
                 NSCAssert([view[@"attached"] boolValue] && fabs([view[@"width"] doubleValue]-width)<1 && position.origin.y>=0 && NSMaxX(position)<=[view[@"windowWidth"] doubleValue],@"Actual native Touch Bar must display all three keyboards at equal widths without clipping or hidden containers");
@@ -1517,20 +1612,21 @@ static void TestPianoExpansionCase(NSTouchBar *bar,NSTouchBar *saved,id savedIde
         NSCAssert(piano.window && piano.bounds.size.width>compactWidth*2 && expandedRect.origin.x>=0 && NSMaxX(expandedRect)<=piano.window.contentView.bounds.size.width,@"The selected piano must actually expand visibly without clipping");
         event.phase=NSTouchPhaseEnded; PianoEnded(piano,@selector(touchesEndedWithEvent:),(NSEvent *)event);
         NSCAssert(PianoStartNote(piano)==start,@"Hold release must not transpose");
-        NSCAssert(![presentation.itemIdentifiers containsObject:RecordID],@"Expanded piano must not contain Record");
+        NSCAssert(![presentation.itemIdentifiers containsObject:RecordID] && [presentation.defaultItemIdentifiers.firstObject isEqual:OctavesID] && ![presentation.itemIdentifiers containsObject:NavigationID],@"Expanded piano starts with the joined Close/configuration control and hides Record and preset navigation");
         for(NSInteger modeStep=0;modeStep<3;modeStep++) {
             NSInteger before=[[expandedPianoView valueForKey:@"type"] integerValue];
             [pianoModeButton beginAt:NSMakePoint(22,15) identity:NSUUID.UUID]; [pianoModeButton finishAt:NSMakePoint(22,15)];
             NSCAssert([[expandedPianoView valueForKey:@"type"] integerValue]==(before+1)%3,@"Actual gesture button must cycle the native modes");
         }
         NSCAssert(!pianoChannelButton && ![presentation.itemIdentifiers containsObject:@"local.musicstrip.piano.channel"],@"MIDI channel belongs in Customize Controls, not the expanded piano");
-        NSCAssert(pianoModeButton.superview==octavesButton.superview && fabs(NSMaxX(pianoModeButton.frame)-NSMinX(octavesButton.frame))<.1,@"Mode and octaves must be one gapless joined item");
+        NSCAssert(closeButton.superview==pianoModeButton.superview && pianoModeButton.superview==octavesButton.superview && fabs(NSMaxX(closeButton.frame)-NSMinX(pianoModeButton.frame))<.1 && fabs(NSMaxX(pianoModeButton.frame)-NSMinX(octavesButton.frame))<.1,@"Close, gesture mode and octaves must share one gapless preset-colored item");
         NSCAssert([pianoModeButton.stackedCaption isEqual:pianoModeButton.title] && octavesButton.octaveSpanSymbol && octavesButton.stackedCaption.length==0,@"Piano options use a stacked mode label and a text-free octave symbol");
-        NSCAssert(pianoDegreeButton.superview==octavesButton.superview && fabs(NSMaxX(octavesButton.frame)-NSMinX(pianoDegreeButton.frame))<.1,@"All three piano options form a single gapless item");
+        NSCAssert(pianoDegreeButton.superview==octavesButton.superview && fabs(NSMaxX(octavesButton.frame)-NSMinX(pianoDegreeButton.frame))<.1 && pianoDegreeButton.compactGlyph && fabs(NSWidth(pianoDegreeButton.bounds)-28)<.1 && fabs(NSWidth(pianoModeButton.bounds)-36)<.1 && fabs(NSWidth(octavesButton.bounds)-36)<.1 && fabs(NSWidth(pianoConfigurationGroup.bounds)-132)<.1,@"Three compact controls share a joined item; Labels is narrower");
+        NSCAssert(pianoModeButton.iconAboveCaption,@"Gesture icon is drawn above its GLISS/HOLD/BEND caption");
         BOOL beforeDegrees=PianoShowsDegrees(piano);
         [pianoDegreeButton beginAt:NSMakePoint(22,15) identity:NSUUID.UUID]; [pianoDegreeButton finishAt:NSMakePoint(22,15)];
         NSCAssert(PianoShowsDegrees(piano)!=beforeDegrees && [InstanceSettings(bar,identifier)[@"showDegrees"] boolValue]!=beforeDegrees,@"A real button tap persists degree visibility for this piano only");
-        for(NSView *control in @[pianoModeButton,octavesButton,pianoDegreeButton]) {
+        for(NSView *control in @[closeButton,pianoModeButton,octavesButton,pianoDegreeButton]) {
             NSRect frame=[control convertRect:control.bounds toView:nil];
             NSCAssert(control.window && frame.origin.x>=0 && NSMaxX(frame)<=control.window.contentView.bounds.size.width,@"All expanded settings controls must be visible");
         }
@@ -1803,6 +1899,8 @@ static void Command(NSString *command) {
             Report("CONTROLS_TOUCH_SELECTION_AND_COUNT_PASSED\n");
         } else if ([command hasPrefix:@"APPS_STATE "]) {
             appsMenuVisible=[[command substringFromIndex:11] boolValue]; ApplyBranding();
+        } else if ([command hasPrefix:@"DOWNLOADS_STATE "]) {
+            downloadsEnabled=[[command substringFromIndex:16] boolValue]; ApplyBranding();
         } else if ([command hasPrefix:@"TOUCHTAB_STATE "]) {
             combinedGestureState=[command substringFromIndex:15];
             ApplyBranding();
@@ -1886,7 +1984,6 @@ static void Command(NSString *command) {
             TestAllPianoExpansion();
         } else if ([command isEqualToString:@"UPDATE_SOURCE_TEST"]) {
             Class cls=[NSApp.delegate class];
-            NSCAssert(method_getImplementation(class_getInstanceMethod(cls,NSSelectorFromString(@"checkForUpdate:")))==(IMP)StripUpdateMenu,@"Manual update hook");
             NSCAssert(method_getImplementation(class_getInstanceMethod(cls,NSSelectorFromString(@"startUpdateCheckBackground")))==(IMP)StripUpdateBackground,@"Launch update hook");
             Report("UPDATE_SOURCE_TOUCHBAR3DY_PASSED\n");
         } else if ([command isEqualToString:@"PIANO_SCALE_TEST"]) {
@@ -2010,7 +2107,7 @@ static void Command(NSString *command) {
                 @"backKeyCount": @(CycleKeyCount(delegate, NSEventModifierFlagControl)),
                 @"presentation": presentation.itemIdentifiers ?: @[],
                 @"closeIsFirst": @([presentation.itemIdentifiers.firstObject isEqualToString:CloseID]),
-                @"recordIsLast": @([presentation.itemIdentifiers.lastObject isEqualToString:RecordID]),
+                @"recordFollowsClose": @(presentation.itemIdentifiers.count>1 && [presentation.itemIdentifiers[1] isEqualToString:RecordID]),
                 @"closeNavigationJoined": @(navigationButton && navigationButton.superview==closeButton.superview),
                 @"navigationPresetHue": @(navigationButton.presetHue),
                 @"recordLit": @(recordController.button.recordLit),
@@ -2018,7 +2115,7 @@ static void Command(NSString *command) {
                 @"surfaceMode": [delegate valueForKey:@"controlSurfadeMode"] ?: @NO,
                 @"pianoExpanded": @(pianoExpanded),
                 @"presentationSerial": @(presentationSerial),
-                @"octavesIsLast": @([presentation.itemIdentifiers.lastObject isEqualToString:OctavesID]),
+                @"pianoConfigIsFirst": @(pianoExpanded && [presentation.itemIdentifiers.firstObject isEqualToString:OctavesID]),
                 @"pianoOctaveCount": [expandedPianoView ?: PianoItemForView(nil).view valueForKey:@"numOctaves"] ?: @(-1),
                 @"pianoKeyCount": @([[expandedPianoView ?: PianoItemForView(nil).view valueForKey:@"pianoKeys"] count]),
                 @"pianoWidth": @(expandedPianoView ? expandedPianoView.frame.size.width : PianoItemForView(nil).view.frame.size.width),
@@ -2052,23 +2149,32 @@ static void Command(NSString *command) {
 + (void)openPhone:(id)sender { Report("PHONE_OPEN\n"); }
 + (void)copyPhone:(id)sender { Report("PHONE_COPY\n"); }
 + (void)stopPhone:(id)sender { Report("PHONE_STOP\n"); }
++ (void)togglePhoneBar:(id)sender { Report("PHONE_TOGGLE\n"); }
++ (void)hoverPhoneBar:(id)sender { Report("PHONE_HOVER\n"); }
++ (void)hidePhoneBarQR:(id)sender { Report("PHONE_HIDE_QR\n"); }
++ (void)toggleDownloads:(id)sender { Report("DOWNLOADS_TOGGLE\n"); }
 + (void)toggleMidi:(id)sender { Command([[(id)NSApp.delegate valueForKey:@"touchbarShown"] boolValue] ? @"HIDE" : @"SHOW"); ApplyBranding(); }
++ (void)toggleAutomaticUpdates:(id)sender { StripToggleAutomaticUpdates(self,_cmd,sender); }
 + (void)toggleSurfaceMode:(id)sender { ChangeMode(NSApp.delegate,NSSelectorFromString(@"changeMode:"),sender); }
 + (BOOL)validateMenuItem:(NSMenuItem *)item {
     if(item.action==@selector(toggleApps:)) {
-        item.state=appsMenuVisible ? NSControlStateValueOn : NSControlStateValueOff; return YES;
+        item.state=appsMenuVisible&&!recordController.activeMenuBar ? NSControlStateValueOn : NSControlStateValueOff; return YES;
     }
     if(item.action==@selector(toggleTouchTab:)) {
         item.state=[combinedGestureState isEqual:@"on"] ? NSControlStateValueOn : NSControlStateValueOff;
         return YES;
     }
+    if(item.action==@selector(toggleAutomaticUpdates:)) {
+        item.state=StripAutomaticUpdatesEnabled() ? NSControlStateValueOn : NSControlStateValueOff; return YES;
+    }
     if(item.action==@selector(toggleMidi:)) {
         item.title=@"Touch Bar Midi";
-        item.state=[[(id)NSApp.delegate valueForKey:@"touchbarShown"] boolValue] ? NSControlStateValueOn : NSControlStateValueOff;
+        item.state=[[(id)NSApp.delegate valueForKey:@"touchbarShown"] boolValue] && !recordController.activeMenuBar && !appsMenuVisible ? NSControlStateValueOn : NSControlStateValueOff;
         return ![[(id)NSApp.delegate valueForKey:@"editTouchBar"] boolValue] && ![[(id)NSApp.delegate valueForKey:@"editCCs"] boolValue];
     }
+    if(item.action==@selector(toggleDownloads:)) { item.state=downloadsEnabled?NSControlStateValueOn:NSControlStateValueOff;return YES; }
     if(item.action==@selector(toggleSurfaceMode:)) {
-        item.state=recordController.activeMenuBar ? NSControlStateValueOn : NSControlStateValueOff;
+        item.state=recordController.activeMenuBar&&!appsMenuVisible ? NSControlStateValueOn : NSControlStateValueOff;
         return ![[(id)NSApp.delegate valueForKey:@"editTouchBar"] boolValue] && ![[(id)NSApp.delegate valueForKey:@"editCCs"] boolValue];
     }
     return YES;
