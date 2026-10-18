@@ -385,7 +385,10 @@ static OSStatus SendSpotifyCommand(pid_t pid, int command) {
         CGEventRef modDown=CGEventCreateKeyboardEvent(NULL,modifierKey,true),down=CGEventCreateKeyboardEvent(NULL,key,true),up=CGEventCreateKeyboardEvent(NULL,key,false),modUp=CGEventCreateKeyboardEvent(NULL,modifierKey,false);
         if(modDown&&down&&up&&modUp){
             CGEventSetFlags(modDown,modifier);CGEventSetFlags(down,modifier);CGEventSetFlags(up,modifier);CGEventSetFlags(modUp,0);
-            CGEventPost(kCGSessionEventTap,modDown);CGEventPost(kCGSessionEventTap,down);CGEventPost(kCGSessionEventTap,up);CGEventPost(kCGSessionEventTap,modUp);
+            // Inject at the HID tap, like the Mac phone-host input path. The
+            // session tap can leave Control+Arrow/Fn+F11 inside the 3£ app
+            // instead of letting macOS handle the configured system action.
+            CGEventPost(kCGHIDEventTap,modDown);CGEventPost(kCGHIDEventTap,down);CGEventPost(kCGHIDEventTap,up);CGEventPost(kCGHIDEventTap,modUp);
         }
         if(modDown)CFRelease(modDown);if(down)CFRelease(down);if(up)CFRelease(up);if(modUp)CFRelease(modUp);
     };
