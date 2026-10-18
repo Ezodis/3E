@@ -26,7 +26,16 @@ static BOOL StripAutomaticUpdatesEnabled(void) {
 static void StripSetAutomaticUpdates(BOOL enabled) {
     [NSUserDefaults.standardUserDefaults setBool:enabled forKey:StripAutomaticUpdatesKey];
 }
-static BOOL StripCombinedRelease(void) { return [NSProcessInfo.processInfo.environment[@"STRIP_COMBINED_TOUCHTAB"] isEqual:@"1"]; }
+static BOOL StripCombinedRelease(void) {
+#ifdef STRIP_COMBINED_TOUCHTAB
+    // The edition is fixed when the main executable is built. The runtime
+    // environment flag is passed only to helper processes, so consulting it
+    // here made the combined app look like Touch Bar-only to its updater.
+    return YES;
+#else
+    return NO;
+#endif
+}
 static NSDictionary *StripValidRelease(id value) {
     if(![value isKindOfClass:NSDictionary.class] || [value[@"draft"] boolValue] || [value[@"prerelease"] boolValue]) return nil;
     NSString *tag=value[@"tag_name"];
