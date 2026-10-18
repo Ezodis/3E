@@ -23,6 +23,7 @@ static NSString *const DockFoldersID = @"local.musicstrip.dock.folders";
 
 @interface DockLauncher : MusicView
 @property BOOL panelOpen;
+@property NSPoint appStartPoint;
 @end
 @implementation DockLauncher
 - (NSSize)intrinsicContentSize { return NSMakeSize(40,30); }
@@ -46,16 +47,25 @@ static NSString *const DockFoldersID = @"local.musicstrip.dock.folders";
 }
 - (void)moveAt:(NSPoint)point {
     [super moveAt:point];
-    if(self.tracking && fabs(point.x-self.startX)>=8) { [self.holdTimer invalidate]; self.holdTimer=nil; }
+    if(self.tracking && (fabs(point.x-self.appStartPoint.x)>=8 || fabs(point.y-self.appStartPoint.y)>=8)) { [self.holdTimer invalidate]; self.holdTimer=nil; }
+}
+- (void)beginAt:(NSPoint)point identity:(id)identity {
+    self.appStartPoint=point;
+    [super beginAt:point identity:identity];
 }
 - (void)finishAt:(NSPoint)point {
     [self.holdTimer invalidate]; self.holdTimer=nil;
     if (!self.tracking) return;
-    CGFloat dx=point.x-self.startX;
-    BOOL swipe=!self.didHold && !self.cancelled && fabs(dx)>=8;
+    CGFloat dx=point.x-self.appStartPoint.x,dy=point.y-self.appStartPoint.y;
+    BOOL horizontal=fabs(dx)>=8 && fabs(dx)>=fabs(dy);
+    BOOL vertical=fabs(dy)>=8 && fabs(dy)>fabs(dx);
+    BOOL swipe=!self.didHold && !self.cancelled && (horizontal||vertical);
     BOOL tap=!self.didHold && !self.cancelled && !swipe && NSPointInRect(point,self.bounds);
     self.tracking=NO; self.touchIdentity=nil; [self highlight:NO];
-    if(self.performCommand && (swipe || tap)) self.performCommand(swipe ? (dx<0 ? 5 : 4) : 2);
+    if(self.performCommand && (swipe || tap)) {
+        if(vertical) { if(dy>0)self.performCommand(6); }
+        else self.performCommand(swipe ? (dx<0 ? 5 : 4) : 2);
+    }
 }
 - (void)touchesMovedWithEvent:(NSEvent *)event {
     // The narrow edge follows its original finger

@@ -64,6 +64,23 @@ static BOOL AccessibilityTrusted(BOOL prompt) {
     return AXIsProcessTrustedWithOptions((__bridge CFDictionaryRef)options);
 }
 
+static void PostMacSystemAction(NSString *action,NSInteger direction) {
+    BOOL missionControl=[action isEqualToString:@"missionControl"];
+    BOOL changeSpace=[action isEqualToString:@"space"];
+    BOOL showDesktop=[action isEqualToString:@"showDesktop"];
+    if(!missionControl&&!changeSpace&&!showDesktop)return;
+    if(!AccessibilityTrusted(NO)) { AccessibilityTrusted(YES); return; }
+    CGEventFlags modifier=showDesktop ? kCGEventFlagMaskSecondaryFn : kCGEventFlagMaskControl;
+    CGKeyCode modifierKey=showDesktop ? 63 : 59;
+    CGKeyCode key=missionControl ? 126 : showDesktop ? 103 : direction<0 ? 123 : 124;
+    CGEventRef modDown=CGEventCreateKeyboardEvent(NULL,modifierKey,true),down=CGEventCreateKeyboardEvent(NULL,key,true),up=CGEventCreateKeyboardEvent(NULL,key,false),modUp=CGEventCreateKeyboardEvent(NULL,modifierKey,false);
+    if(modDown&&down&&up&&modUp){
+        CGEventSetFlags(modDown,modifier);CGEventSetFlags(down,modifier);CGEventSetFlags(up,modifier);CGEventSetFlags(modUp,0);
+        CGEventPost(kCGHIDEventTap,modDown);CGEventPost(kCGHIDEventTap,down);CGEventPost(kCGHIDEventTap,up);CGEventPost(kCGHIDEventTap,modUp);
+    }
+    if(modDown)CFRelease(modDown);if(down)CFRelease(down);if(up)CFRelease(up);if(modUp)CFRelease(modUp);
+}
+
 static NSString *MediaKey(const char *symbol) {
     NSString *__unsafe_unretained *key = (NSString *__unsafe_unretained *)dlsym(mediaFramework ?: RTLD_DEFAULT, symbol);
     return key ? *key : nil;
@@ -374,23 +391,7 @@ static OSStatus SendSpotifyCommand(pid_t pid, int command) {
     __weak AppDelegate *phoneSelf=self;
     self.phoneController.media=^(int action){ [phoneSelf performMediaCommand:action==1?5:action==2?4:2]; };
     self.phoneController.systemAction=^(NSString *action,NSInteger direction){
-        BOOL missionControl=[action isEqualToString:@"missionControl"];
-        BOOL changeSpace=[action isEqualToString:@"space"];
-        BOOL showDesktop=[action isEqualToString:@"showDesktop"];
-        if(!missionControl&&!changeSpace&&!showDesktop)return;
-        if(!AccessibilityTrusted(NO)){AccessibilityTrusted(YES);return;}
-        CGEventFlags modifier=showDesktop ? kCGEventFlagMaskSecondaryFn : kCGEventFlagMaskControl;
-        CGKeyCode modifierKey=showDesktop ? 63 : 59;
-        CGKeyCode key=missionControl ? 126 : showDesktop ? 103 : direction<0 ? 123 : 124;
-        CGEventRef modDown=CGEventCreateKeyboardEvent(NULL,modifierKey,true),down=CGEventCreateKeyboardEvent(NULL,key,true),up=CGEventCreateKeyboardEvent(NULL,key,false),modUp=CGEventCreateKeyboardEvent(NULL,modifierKey,false);
-        if(modDown&&down&&up&&modUp){
-            CGEventSetFlags(modDown,modifier);CGEventSetFlags(down,modifier);CGEventSetFlags(up,modifier);CGEventSetFlags(modUp,0);
-            // Inject at the HID tap, like the Mac phone-host input path. The
-            // session tap can leave Control+Arrow/Fn+F11 inside the 3£ app
-            // instead of letting macOS handle the configured system action.
-            CGEventPost(kCGHIDEventTap,modDown);CGEventPost(kCGHIDEventTap,down);CGEventPost(kCGHIDEventTap,up);CGEventPost(kCGHIDEventTap,modUp);
-        }
-        if(modDown)CFRelease(modDown);if(down)CFRelease(down);if(up)CFRelease(up);if(modUp)CFRelease(modUp);
+        PostMacSystemAction(action,direction);
     };
     [self.phoneController startReceiver];
     BOOL touchBarAvailable=LoadInterfaces();
@@ -511,6 +512,7 @@ static OSStatus SendSpotifyCommand(pid_t pid, int command) {
         self.appsRequested=YES; self.midiRequested=NO;
         [self sendMidi:@"HIDE"]; [self sendApps:@"SHOW"];
     } else if(command==4) [self sendApps:@"HIDE"];
+    else if(command==6) PostMacSystemAction(@"missionControl",0);
     else [self sendApps:@"TAP"];
 }
 - (void)sendApps:(NSString *)command {
