@@ -47,7 +47,7 @@ jobs:
           /tmp/window-test
           xcrun clang -fobjc-arc -Wno-deprecated-declarations -framework AppKit -framework Carbon -framework ApplicationServices -framework QuartzCore -framework CoreImage TouchBar/musicstrip/Tests/apps_launcher_hold.m -o /tmp/apps-hold-test
           /tmp/apps-hold-test
-          xcrun clang -fobjc-arc -framework AppKit -framework CoreMIDI TouchBar/musicstrip/Tests/combined_menu.m -o /tmp/menu-test
+          xcrun clang -fobjc-arc -DSTRIP_COMBINED_TOUCHTAB=1 -framework AppKit -framework CoreMIDI TouchBar/musicstrip/Tests/combined_menu.m -o /tmp/menu-test
           STRIP_COMBINED_TOUCHTAB=1 /tmp/menu-test
       - name: Verify signatures, architectures and edition; package
         env:
