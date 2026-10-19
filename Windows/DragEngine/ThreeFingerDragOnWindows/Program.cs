@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Diagnostics;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.UI.Dispatching;
@@ -47,6 +48,11 @@ public class Program {
                 WindowsHub.InGearZone(930, 50, 600, 0, 1000, 400, 144),
                 !WindowsHub.InGearZone(990, 450, 600, 0, 1000, 400, 96),
                 !WindowsHub.InGearZone(990, 50, 0, 0, 0, 0, 96),
+                WindowsHub.MenuGlyph("Rotate themes\t\u2003\u2003\u200B") == "\uE8EE",
+                WindowsHub.MenuGlyph("Dynamic wallpaper\t\u2003\u2003") == "\uE9E9",
+                WindowsHub.MenuGlyph("Use dark theme") == null,
+                SsmsTheme.SetProperty("{// keep\n\"workbench.colorTheme\": \"Abyss\"}", "workbench.colorTheme", "Monokai") == "{// keep\n\"workbench.colorTheme\": \"Monokai\"}",
+                SsmsTheme.ExtensionThemes("{\"contributes\":{\"themes\":[{\"id\":\"Abyss\",\"label\":\"%l%\",\"uiTheme\":\"vs-dark\"},{\"label\":\"Quiet Light\",\"uiTheme\":\"vs\"},{\"label\":\"HC\",\"uiTheme\":\"hc-black\"},{\"label\":\"%x%\",\"uiTheme\":\"vs\"}]}}").Select(t => t.Id + (t.Light ? "+" : "-")).SequenceEqual(new[] { "Abyss-", "Quiet Light+" }),
             };
             bool passed = Array.TrueForAll(cases, item => item);
             System.IO.File.WriteAllText(args[1], System.Text.Json.JsonSerializer.Serialize(new { passed, cases, version = WindowsHub.Version }));

@@ -40,7 +40,17 @@ public sealed class WindowsHub : IDisposable {
     private NativeRect menuRect;
     private uint menuDpi = 96;
     private readonly WinEventProc menuPopupProc;
-    private IntPtr menuPopupHook;
+    private IntPtr menuPopupHook, menuFocusHook;
+    // The native menu can only hold text, so rows with an icon reserve blank
+    // space after a tab and the icon is painted there while the menu is open.
+    // A zero-width space at the end marks which icon a row gets.
+    private const string IconSlot = "\t\u2003\u2003";
+    private const string RotateSlot = IconSlot + "\u200B";
+    private const string SettingsGlyph = "\uE9E9"; // Segoe Fluent Icons / MDL2 sliders
+    private const string RotateGlyph = "\uE8EE"; // repeat
+    private static readonly UIntPtr IconTimer = (UIntPtr)0x3E1;
+    private readonly MenuWindowProc menuWindowProc;
+    private IntPtr paintedMenu, previousMenuProc;
 
     public sealed class HubSettings {
         public bool Keyboard { get; set; } = true;
@@ -64,7 +74,9 @@ public sealed class WindowsHub : IDisposable {
         catch { settings = new(); }
         menu.Opening += (_, _) => RefreshMenu();
         menuPopupProc = OnMenuPopup;
+        menuWindowProc = MenuWindowMessage;
         menuPopupHook = SetWinEventHook(EventSystemMenuPopupStart, EventSystemMenuPopupStart, IntPtr.Zero, menuPopupProc, (uint)Environment.ProcessId, 0, 0);
+        menuFocusHook = SetWinEventHook(EventObjectFocus, EventObjectFocus, IntPtr.Zero, menuPopupProc, (uint)Environment.ProcessId, 0, 0);
         RefreshMenu();
         timer.Tick += (_, _) => Tick();
         timer.Start();
@@ -209,6 +221,30 @@ public sealed class WindowsHub : IDisposable {
     [DllImport("user32.dll")] private static extern bool GetWindowRect(IntPtr window, out NativeRect rect);
     [DllImport("user32.dll")] private static extern bool GetCursorPos(out NativePoint point);
     [DllImport("user32.dll")] private static extern uint GetDpiForWindow(IntPtr window);
+    private const uint EventObjectFocus = 0x8005;
+    private delegate IntPtr MenuWindowProc(IntPtr window, uint message, IntPtr wParam, IntPtr lParam);
+    [DllImport("user32.dll", EntryPoint = "SetWindowLongPtrW")] private static extern IntPtr SetWindowProc(IntPtr window, int index, MenuWindowProc proc);
+    [DllImport("user32.dll", EntryPoint = "SetWindowLongPtrW")] private static extern IntPtr SetWindowProc(IntPtr window, int index, IntPtr proc);
+    [DllImport("user32.dll")] private static extern IntPtr CallWindowProcW(IntPtr previous, IntPtr window, uint message, IntPtr wParam, IntPtr lParam);
+    [DllImport("user32.dll")] private static extern IntPtr SendMessageW(IntPtr window, uint message, IntPtr wParam, IntPtr lParam);
+    [DllImport("user32.dll")] private static extern int GetMenuItemCount(IntPtr menu);
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)] private static extern int GetMenuStringW(IntPtr menu, uint item, System.Text.StringBuilder text, int max, uint flags);
+    [DllImport("user32.dll")] private static extern bool GetMenuItemRect(IntPtr window, IntPtr menu, uint item, out NativeRect rect);
+    [DllImport("user32.dll")] private static extern int MapWindowPoints(IntPtr from, IntPtr to, ref NativeRect rect, int count);
+    [DllImport("user32.dll")] private static extern bool GetClientRect(IntPtr window, out NativeRect rect);
+    [DllImport("user32.dll")] private static extern IntPtr GetDC(IntPtr window);
+    [DllImport("user32.dll")] private static extern int ReleaseDC(IntPtr window, IntPtr dc);
+    [DllImport("user32.dll")] private static extern UIntPtr SetTimer(IntPtr window, UIntPtr id, uint milliseconds, IntPtr callback);
+    [DllImport("user32.dll")] private static extern bool KillTimer(IntPtr window, UIntPtr id);
+    [DllImport("user32.dll")] private static extern int FillRect(IntPtr dc, ref NativeRect rect, IntPtr brush);
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)] private static extern int DrawTextW(IntPtr dc, string text, int length, ref NativeRect rect, uint format);
+    [DllImport("gdi32.dll")] private static extern uint GetPixel(IntPtr dc, int x, int y);
+    [DllImport("gdi32.dll")] private static extern IntPtr CreateSolidBrush(uint color);
+    [DllImport("gdi32.dll")] private static extern bool DeleteObject(IntPtr handle);
+    [DllImport("gdi32.dll")] private static extern IntPtr SelectObject(IntPtr dc, IntPtr handle);
+    [DllImport("gdi32.dll")] private static extern uint SetTextColor(IntPtr dc, uint color);
+    [DllImport("gdi32.dll")] private static extern int SetBkMode(IntPtr dc, int mode);
+    [DllImport("gdi32.dll", CharSet = CharSet.Unicode)] private static extern IntPtr CreateFontW(int height, int width, int escapement, int orientation, int weight, uint italic, uint underline, uint strikeOut, uint charSet, uint precision, uint clipPrecision, uint quality, uint pitchAndFamily, string face);
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] private static extern IntPtr SendMessageTimeout(IntPtr window, uint message, UIntPtr wParam, string lParam, uint flags, uint timeout, out UIntPtr result);
 
     public static int ScheduledTheme(DateTime localTime) => localTime.Hour >= 12 && localTime.Hour < 20 ? 1 : 0;
@@ -256,9 +292,9 @@ public sealed class WindowsHub : IDisposable {
         Command = new MenuCommand(() => { try { click(); } catch (Exception ex) { Log(ex); MessageBox(IntPtr.Zero, ex.Message, "3£Windows", 0x10); } })
     };
 
-    private ToggleMenuFlyoutItem ToggleMenuItem(string label, bool value, Action<bool> change, Action openSettings = null) {
+    private ToggleMenuFlyoutItem ToggleMenuItem(string label, bool value, Action<bool> change, Action openSettings = null, string slot = IconSlot) {
         // "\t" puts the settings dots in the native menu's right-aligned column.
-        var item = new ToggleMenuFlyoutItem { Text = openSettings == null ? label : label + "\t⋯", IsChecked = value };
+        var item = new ToggleMenuFlyoutItem { Text = openSettings == null ? label : label + slot, IsChecked = value };
         item.Command = new MenuCommand(() => {
             if (openSettings != null && ClickedGear()) {
                 try { openSettings(); } catch (Exception ex) { Log(ex); MessageBox(IntPtr.Zero, ex.Message, "3£Windows", 0x10); }
@@ -278,15 +314,77 @@ public sealed class WindowsHub : IDisposable {
         InGearZone(point.X, point.Y, menuRect.Left, menuRect.Top, menuRect.Right, menuRect.Bottom, menuDpi);
 
     private void OnMenuPopup(IntPtr hook, uint eventType, IntPtr window, int objectId, int childId, uint thread, uint time) {
-        if (window == IntPtr.Zero || !GetWindowRect(window, out var rect)) return;
-        menuRect = rect;
-        var dpi = GetDpiForWindow(window);
-        menuDpi = dpi == 0 ? 96 : dpi;
+        try {
+            // Hover highlights are drawn without WM_PAINT; repaint the icons after focus moves.
+            if (eventType == EventObjectFocus) { if (paintedMenu != IntPtr.Zero) DrawMenuIcons(paintedMenu); return; }
+            if (window == IntPtr.Zero || !GetWindowRect(window, out var rect)) return;
+            menuRect = rect;
+            var dpi = GetDpiForWindow(window);
+            menuDpi = dpi == 0 ? 96 : dpi;
+            if (paintedMenu != IntPtr.Zero) return;
+            previousMenuProc = SetWindowProc(window, -4, menuWindowProc);
+            if (previousMenuProc == IntPtr.Zero) return;
+            paintedMenu = window;
+            SetTimer(window, IconTimer, 40, IntPtr.Zero);
+            DrawMenuIcons(window);
+        } catch (Exception ex) { Log(ex); }
+    }
+
+    private IntPtr MenuWindowMessage(IntPtr window, uint message, IntPtr wParam, IntPtr lParam) {
+        var previous = previousMenuProc;
+        if (message == 0x0113 && (ulong)wParam.ToInt64() == IconTimer.ToUInt64()) { DrawMenuIcons(window); return IntPtr.Zero; }
+        if (message == 0x0082) { // WM_NCDESTROY: hand the window back before it goes away.
+            KillTimer(window, IconTimer);
+            SetWindowProc(window, -4, previous);
+            paintedMenu = IntPtr.Zero; previousMenuProc = IntPtr.Zero;
+            return CallWindowProcW(previous, window, message, wParam, lParam);
+        }
+        var result = CallWindowProcW(previous, window, message, wParam, lParam);
+        if (message is 0x000F or 0x0085 or 0x01E5) DrawMenuIcons(window); // paint, frame, menu selection
+        return result;
+    }
+
+    public static string MenuGlyph(string text) => text.EndsWith(RotateSlot, StringComparison.Ordinal) ? RotateGlyph : text.EndsWith(IconSlot, StringComparison.Ordinal) ? SettingsGlyph : null;
+
+    private void DrawMenuIcons(IntPtr window) {
+        try {
+            var menuHandle = SendMessageW(window, 0x01E1, IntPtr.Zero, IntPtr.Zero); // MN_GETHMENU
+            if (menuHandle == IntPtr.Zero || !GetClientRect(window, out var client)) return;
+            uint dpi = GetDpiForWindow(window); if (dpi == 0) dpi = 96;
+            int Px(int value) => (int)(value * dpi / 96);
+            var dc = GetDC(window);
+            if (dc == IntPtr.Zero) return;
+            var font = CreateFontW(-Px(15), 0, 0, 0, 400, 0, 0, 0, 1, 0, 0, 5, 0,
+                Environment.OSVersion.Version.Build >= 22000 ? "Segoe Fluent Icons" : "Segoe MDL2 Assets");
+            try {
+                var text = new System.Text.StringBuilder(256);
+                for (int index = 0, count = GetMenuItemCount(menuHandle); index < count; index++) {
+                    text.Clear();
+                    if (GetMenuStringW(menuHandle, (uint)index, text, text.Capacity, 0x400) <= 0) continue;
+                    string glyph = MenuGlyph(text.ToString());
+                    if (glyph == null || !GetMenuItemRect(IntPtr.Zero, menuHandle, (uint)index, out var row)) continue;
+                    MapWindowPoints(IntPtr.Zero, window, ref row, 2);
+                    int x = client.Right - Px(36), y = (row.Top + row.Bottom) / 2, half = Px(10);
+                    uint background = GetPixel(dc, x - Px(14), y);
+                    if (background == 0xFFFFFFFF) continue; // not readable mid-animation; the timer retries
+                    var box = new NativeRect { Left = x - half, Top = y - half, Right = x + half, Bottom = y + half };
+                    var brush = CreateSolidBrush(background);
+                    FillRect(dc, ref box, brush);
+                    DeleteObject(brush);
+                    int luminance = (int)((background & 0xFF) * 299 + ((background >> 8) & 0xFF) * 587 + ((background >> 16) & 0xFF) * 114) / 1000;
+                    SetBkMode(dc, 1);
+                    SetTextColor(dc, luminance > 128 ? 0x00303030u : 0x00F0F0F0u);
+                    var old = SelectObject(dc, font);
+                    DrawTextW(dc, glyph, -1, ref box, 0x1 | 0x4 | 0x20 | 0x100); // centre, vcentre, single line, no clip
+                    SelectObject(dc, old);
+                }
+            } finally { DeleteObject(font); ReleaseDC(window, dc); }
+        } catch (Exception ex) { Log(ex); }
     }
 
     private void Item(string label, Action click) => menu.Items.Add(ActionMenuItem(label, click));
 
-    private void Toggle(string label, bool value, Action<bool> change, Action openSettings = null) => menu.Items.Add(ToggleMenuItem(label, value, change, openSettings));
+    private void Toggle(string label, bool value, Action<bool> change, Action openSettings = null, string slot = IconSlot) => menu.Items.Add(ToggleMenuItem(label, value, change, openSettings, slot));
 
     private void OpenPowerToysSettings() => Start(Path.Combine(Path.GetDirectoryName(PowerToysPath), "WinUI3Apps", "PowerToys.Settings.exe"), "", true);
 
@@ -296,6 +394,12 @@ public sealed class WindowsHub : IDisposable {
     private void KeepPhoneBar() {
         if (!settings.PhoneBarAlwaysOn || disposed) return;
         try { phoneBar.EnsureRunning(); } catch (Exception ex) { Log(ex); }
+    }
+
+    private void NewPhoneLink() {
+        if (MessageBox(IntPtr.Zero, "Make a new Phone Bar link?\n\nThe current link stops working. Scan the new QR code on your iPhone (and email it to your Watch) afterwards.", "3£ Phone Bar", 0x24 | ForegroundDialog) != 6) return;
+        phoneBar.ResetLink();
+        OpenPhoneTrackpad();
     }
 
     public void OpenPhoneTrackpad() {
@@ -309,14 +413,14 @@ public sealed class WindowsHub : IDisposable {
     private void RefreshMenu() {
         menu.Items.Clear();
         menu.Items.Add(new MenuFlyoutItem { Text = "3£Windows " + Version, IsEnabled = false });
-        Toggle("Three-finger drag", App.SettingsData.ThreeFingerDrag, enabled => { App.SettingsData.ThreeFingerDrag = enabled; App.SettingsData.save(); },
-            () => App.Instance.OpenSettingsWindow());
-        // Left-clicking the tray icon shows the QR; this row only turns the receiver on or off.
+        // One Phone Bar row: click to turn it on or off; its icon makes a new link.
+        // Left-clicking the tray icon shows the QR.
         Toggle("Phone Bar", phoneBar.Running, enabled => {
             settings.PhoneBarAlwaysOn = enabled;
             if (enabled) phoneBar.EnsureRunning(); else phoneBar.Stop();
-        });
-        Item("Phone Bar — new link (old one stops working)", () => { phoneBar.ResetLink(); OpenPhoneTrackpad(); });
+        }, NewPhoneLink);
+        Toggle("Three-finger drag", App.SettingsData.ThreeFingerDrag, enabled => { App.SettingsData.ThreeFingerDrag = enabled; App.SettingsData.save(); },
+            () => App.Instance.OpenSettingsWindow());
         Toggle(File.Exists(KeyboardPath) ? "Clicks keyboard — " + (IsRunning("3EWindows.Keyboard") ? "running" : "stopped") : "Clicks keyboard — connect and run setup", settings.Keyboard, enabled => {
             settings.Keyboard = enabled;
             if (enabled) _ = EnsureComponentsAsync(); else StopKeyboard();
@@ -331,8 +435,9 @@ public sealed class WindowsHub : IDisposable {
             if (enabled) _ = EnsureComponentsAsync(); else Stop("WinDynamicDesktop");
         }, () => Start(WallpaperPath, "", true));
         Toggle("Auto dark — light 12 PM–8 PM", settings.AutoDark, enabled => { settings.AutoDark = enabled; lastTheme = -1; ApplyTheme(); });
-        Toggle("Rotate SSMS themes", settings.SsmsTheme, enabled => { settings.SsmsTheme = enabled; if (enabled) UpdateSsmsTheme(true); });
-        Item("Rotate SSMS theme now", () => { settings.SsmsTheme = true; UpdateSsmsTheme(true); Save(); });
+        // SSMS and the code editors rotate together; the repeat icon rotates now.
+        Toggle("Rotate themes", settings.SsmsTheme, enabled => { settings.SsmsTheme = enabled; if (enabled) UpdateSsmsTheme(true); },
+            () => { settings.SsmsTheme = true; UpdateSsmsTheme(true); Save(); }, RotateSlot);
         Item("Use light theme", () => { settings.AutoDark = false; Save(); SetTheme(1); });
         Item("Use dark theme", () => { settings.AutoDark = false; Save(); SetTheme(0); });
         menu.Items.Add(new MenuFlyoutSeparator());
@@ -364,8 +469,8 @@ public sealed class WindowsHub : IDisposable {
         themes.Items.Add(Switch("Auto light/dark schedule", settings.AutoDark, enabled => { settings.AutoDark = enabled; lastTheme = -1; ApplyTheme(); }));
         themes.Items.Add(ActionItem("Use light theme", () => { settings.AutoDark = false; Save(); SetTheme(1); }));
         themes.Items.Add(ActionItem("Use dark theme", () => { settings.AutoDark = false; Save(); SetTheme(0); }));
-        themes.Items.Add(Switch("Rotate SSMS themes", settings.SsmsTheme, enabled => { settings.SsmsTheme = enabled; if (enabled) UpdateSsmsTheme(true); }));
-        themes.Items.Add(ActionItem("Rotate SSMS theme now", () => { settings.SsmsTheme = true; UpdateSsmsTheme(true); Save(); }));
+        themes.Items.Add(Switch("Rotate themes", settings.SsmsTheme, enabled => { settings.SsmsTheme = enabled; if (enabled) UpdateSsmsTheme(true); }));
+        themes.Items.Add(ActionItem("Rotate themes now", () => { settings.SsmsTheme = true; UpdateSsmsTheme(true); Save(); }));
         launcher.Items.Add(themes);
         launcher.Items.Add(ActionItem("Wallpaper controls…", () => Start(WallpaperPath, "", true)));
         launcher.Items.Add(new MenuFlyoutSeparator());
@@ -502,6 +607,7 @@ public sealed class WindowsHub : IDisposable {
         disposed = true;
         timer.Stop();
         if (menuPopupHook != IntPtr.Zero) { UnhookWinEvent(menuPopupHook); menuPopupHook = IntPtr.Zero; }
+        if (menuFocusHook != IntPtr.Zero) { UnhookWinEvent(menuFocusHook); menuFocusHook = IntPtr.Zero; }
         phoneBar.Dispose();
         Save();
         StopKeyboard(); Stop("PowerToys"); Stop("PowerToys.KeyboardManagerEngine"); Stop("WinDynamicDesktop");

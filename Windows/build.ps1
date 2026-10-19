@@ -63,20 +63,18 @@ if ($LASTEXITCODE) { throw 'Phone dock tests failed.' }
 node (Join-Path $PSScriptRoot 'PhoneTrackpadTests\watch.test.cjs')
 if ($LASTEXITCODE -ne 0) { throw 'Watch transport and handoff tests failed.' }
 
-$kiroSource = [IO.File]::ReadAllText((Join-Path $PSScriptRoot 'KiroTheme.ps1'))
-$kiroEncoded = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($kiroSource))
+# Kiro and the other code editors now rotate with SSMS inside the app ("Rotate themes").
+# Remove the old standalone Kiro task so the two never compete.
 $kiroTemplate = @'
 Unregister-ScheduledTask -TaskName 'Edy Kiro Theme' -Confirm:$false -ErrorAction SilentlyContinue
-$kiroAction = New-ScheduledTaskAction -Execute powershell.exe -Argument '-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -EncodedCommand {{KIRO_ENCODED}}'
-$kiroTriggers = @((New-ScheduledTaskTrigger -AtLogOn -User $user),(New-ScheduledTaskTrigger -Daily -At '12:00'),(New-ScheduledTaskTrigger -Daily -At '20:00'))
-Register-ScheduledTask -TaskName '3£Windows Kiro Theme' -Action $kiroAction -Trigger $kiroTriggers -Principal $taskPrincipal -Settings $taskSettings -Force | Out-Null
+Unregister-ScheduledTask -TaskName '3£Windows Kiro Theme' -Confirm:$false -ErrorAction SilentlyContinue
 '@
 $installer = [IO.File]::ReadAllText((Join-Path $PSScriptRoot 'Installer.template.ps1'))
 $installer = $installer.Replace('{{CLICKS_ACCENTS_SHA256}}',(Get-FileHash -LiteralPath (Join-Path $build 'keyboard\ClicksAccents.exe') -Algorithm SHA256).Hash)
 $installer = $installer.Replace('{{LAUNCHER}}',[IO.File]::ReadAllText((Join-Path $PSScriptRoot 'Launcher.ps1')))
 $installer = $installer.Replace('{{CLICKS_FUNCTIONS}}',[IO.File]::ReadAllText((Join-Path $PSScriptRoot 'Keyboard\ClicksScopedFunctions.ps1'))).Replace('{{CLICKS_ASSETS}}',($assetLines -join "`r`n"))
 $installer = $installer.Replace('{{VERSION}}',$version).Replace('{{POWERTOYS_CONFIG}}',[IO.File]::ReadAllText((Join-Path $PSScriptRoot 'PowerToys.json'))).Replace('{{KEYBOARD_CONFIG}}',[IO.File]::ReadAllText((Join-Path $PSScriptRoot 'Keyboard.template.kbd')))
-$installer = $installer.Replace('{{APP_X64}}',$payloads.x64).Replace('{{APP_ARM64}}',$payloads.arm64).Replace('{{KIRO_TASK}}',$kiroTemplate.Replace('{{KIRO_ENCODED}}',$kiroEncoded))
+$installer = $installer.Replace('{{APP_X64}}',$payloads.x64).Replace('{{APP_ARM64}}',$payloads.arm64).Replace('{{KIRO_TASK}}',$kiroTemplate)
 if ($installer -match '{{(APP_|VERSION|KIRO_|POWERTOYS_|KEYBOARD_CONFIG|LAUNCHER|CLICKS_)') { throw 'Unresolved installer placeholders.' }
 if ($installer -match '(?i)C:\\Users\\|DEV_[0-9A-F]{12}|capture-clicks|button-tester|\.py\b') { throw 'A machine-specific path, hardware identity, or diagnostic dependency leaked into the installer.' }
 $recovery = [regex]::Match($installer, "(?s)\`$recovery = @'\r?\n(.*?)\r?\n'@").Groups[1].Value

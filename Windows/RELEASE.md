@@ -1,3 +1,11 @@
+3£Windows 1.0.34 gives the tray menu real icons and one row per feature.
+
+- **Real icons:** rows with settings show a Windows sliders icon at the right edge (Segoe Fluent Icons). Click the row to toggle; click the icon for settings.
+- **Phone Bar is one row, at the top:** click to turn it on or off; its icon makes a new link (after confirming, since the old link stops working). Left-clicking the tray icon still shows the QR.
+- **Rotate themes:** one row replaces "Rotate SSMS themes" and "Rotate SSMS theme now". Click to switch rotation on or off; the repeat icon rotates now. Rotation now covers SSMS and every installed VS Code–style editor (Kiro, VS Code, Cursor, Windsurf, VSCodium), choosing from each one's installed light or dark themes. The old separate Kiro theme task is removed.
+
+Includes everything from 1.0.33:
+
 3£Windows 1.0.33 simplifies the tray menu further.
 
 - **Simpler settings icon:** the ⚙ is now a quiet ⋯ at the right edge of Three-finger drag, PowerToys shortcuts and Dynamic wallpaper. Click the row to toggle; click the ⋯ for settings.
