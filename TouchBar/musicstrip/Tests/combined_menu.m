@@ -17,7 +17,7 @@
 int main(void) { @autoreleasepool {
     [NSApplication sharedApplication]; NSApp.activationPolicy=NSApplicationActivationPolicyProhibited;
     TestDelegate *delegate=[TestDelegate new]; delegate.theItem=[TestStatus new]; delegate.theItem.menu=[NSMenu new]; NSApp.delegate=delegate;
-    NSCAssert(StripCombinedRelease(),@"Run with STRIP_COMBINED_TOUCHTAB=1");
+    NSCAssert(StripCombinedRelease(),@"Build with -DSTRIP_TEST_EDITION_COMBINED=1");
     CleanMenu(delegate.theItem.menu);
     NSCAssert(delegate.theItem.menu.numberOfItems==8,@"Add gesture, App, Phone Bar, downloads and automatic-update controls to the existing menu");
     NSMenuItem *phone=nil;

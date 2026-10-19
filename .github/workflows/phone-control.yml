@@ -53,8 +53,12 @@ jobs:
           /tmp/window-test
           xcrun clang -fobjc-arc -Wno-deprecated-declarations -framework AppKit -framework Carbon -framework ApplicationServices -framework QuartzCore -framework CoreImage TouchBar/musicstrip/Tests/apps_launcher_hold.m -o /tmp/apps-test
           /tmp/apps-test
-          xcrun clang -fobjc-arc -framework AppKit -framework CoreMIDI TouchBar/musicstrip/Tests/combined_menu.m -o /tmp/menu-test
-          STRIP_COMBINED_TOUCHTAB=1 /tmp/menu-test
+          xcrun clang -fobjc-arc -DSTRIP_TEST_EDITION_COMBINED=1 -framework AppKit -framework CoreMIDI TouchBar/musicstrip/Tests/combined_menu.m -o /tmp/menu-test
+          /tmp/menu-test
+          xcrun clang -fobjc-arc -DSTRIP_TEST_EDITION_TOUCHBAR=1 -framework AppKit -framework ApplicationServices TouchBar/musicstrip/Tests/release_updates.m -o /tmp/release-updates-touchbar
+          /tmp/release-updates-touchbar
+          xcrun clang -fobjc-arc -DSTRIP_TEST_EDITION_COMBINED=1 -framework AppKit -framework ApplicationServices TouchBar/musicstrip/Tests/release_updates.m -o /tmp/release-updates-combined
+          /tmp/release-updates-combined
       - uses: actions/upload-artifact@v4
         with:
           name: 3E-Phone-Mac
