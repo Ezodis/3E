@@ -1,33 +1,37 @@
 // SPDX-License-Identifier: MIT
 namespace ThreeE.PhoneHost;
 
-// Quartz posts asynchronously. Accumulate from the newest submitted target
-// while the observed cursor is still at an earlier target, instead of losing
-// deltas. Physical pointer movement, screen-edge clamping and idle time rebase.
+// Quartz cursor observations can lag or fall between posted targets. During
+// continuous phone motion, integrate from our last target, never that feedback.
+// After a pause, yield to the physical mouse. Clamp before retaining a target so
+// pushing against an edge cannot build up invisible movement to undo later.
 public sealed class MacPointerMotion {
-    private readonly List<(double X,double Y)> pending=new();
-    private (double X,double Y) origin;
+    public readonly record struct Display(double X,double Y,double Width,double Height);
+    private readonly Func<double,double,(double X,double Y)> clamp;
+    private (double X,double Y)? target;
     private long lastMove;
-    public void Reset()=>pending.Clear();
+    public MacPointerMotion(Func<double,double,(double X,double Y)> clamp=null) {
+        this.clamp=clamp??((x,y)=>(x,y));
+    }
+    public void Reset()=>target=null;
     public (double X,double Y) Resolve(double x,double y,long now) {
-        var observed=(X:x,Y:y);
-        if(pending.Count==0)return observed;
-        if(now-lastMove>100) {Reset();return observed;}
-        int acknowledged=pending.FindLastIndex(p=>Math.Abs(p.X-x)<0.5&&Math.Abs(p.Y-y)<0.5);
-        if(acknowledged>=0) {
-            origin=pending[acknowledged];pending.RemoveRange(0,acknowledged+1);
-        } else if(Math.Abs(origin.X-x)>=0.5||Math.Abs(origin.Y-y)>=0.5) {
-            Reset();return observed;
-        }
-        return pending.Count==0?observed:pending[^1];
+        if(now-lastMove>100)Reset();
+        return target??(x,y);
     }
     public (double X,double Y) Move(double x,double y,int dx,int dy,long now) {
         var start=Resolve(x,y,now);
-        if(pending.Count==0)origin=(x,y);
-        var target=(X:start.X+dx,Y:start.Y+dy);
-        pending.Add(target);lastMove=now;
-        // Bound state even if the OS stops acknowledging events.
-        if(pending.Count>64) {origin=pending[0];pending.RemoveAt(0);}
-        return target;
+        target=clamp(start.X+dx,start.Y+dy);lastMove=now;
+        return target.Value;
+    }
+    public static (double X,double Y) Clamp(double x,double y,IReadOnlyList<Display> displays) {
+        var result=(X:x,Y:y);double nearest=double.PositiveInfinity;
+        foreach(var display in displays) {
+            if(display.Width<1||display.Height<1)continue;
+            double cx=Math.Clamp(x,display.X,display.X+display.Width-1);
+            double cy=Math.Clamp(y,display.Y,display.Y+display.Height-1);
+            double distance=(x-cx)*(x-cx)+(y-cy)*(y-cy);
+            if(distance<nearest){nearest=distance;result=(cx,cy);}
+        }
+        return result;
     }
 }

@@ -7,6 +7,11 @@ public sealed class MacInput : ITrackpadInput, IDisposable {
     private const string CG="/System/Library/Frameworks/CoreGraphics.framework/CoreGraphics";
     private const string CF="/System/Library/Frameworks/CoreFoundation.framework/CoreFoundation";
     [StructLayout(LayoutKind.Sequential)] private struct Point { public double X,Y; }
+    [StructLayout(LayoutKind.Sequential)] private struct Rect { public double X,Y,Width,Height; }
+    [DllImport(CG)] private static extern uint CGGetActiveDisplayList(uint capacity,[Out] uint[] displays,out uint count);
+    [DllImport(CG)] private static extern Rect CGDisplayBounds(uint display);
+    [DllImport(CG)] private static extern IntPtr CGEventSourceCreate(int state);
+    [DllImport(CG)] private static extern void CGEventSourceSetLocalEventsSuppressionInterval(IntPtr source,double seconds);
     [DllImport(CG)] private static extern IntPtr CGEventCreate(IntPtr source);
     [DllImport(CG)] private static extern Point CGEventGetLocation(IntPtr e);
     [DllImport(CG)] private static extern IntPtr CGEventCreateMouseEvent(IntPtr source,uint type,Point position,uint button);
@@ -27,11 +32,15 @@ public sealed class MacInput : ITrackpadInput, IDisposable {
     private readonly Action<int> media;
     private readonly Action<string,int> systemAction;
     private bool held;
-    private readonly MacPointerMotion pointer = new();
+    private readonly MacPointerMotion pointer;
+    private IntPtr mouseSource;
+    private readonly uint[] displayIds=new uint[32];
+    private readonly List<MacPointerMotion.Display> displays=new();
+    private long displayRefresh;
     private bool appSwitcherHeld;
     private object controls;
     private long lastClick; private Point lastClickPoint; private int clicks;
-    public MacInput(Action<int> media,Action<string,int> systemAction) { this.media=media;this.systemAction=systemAction;midi.Select(0); }
+    public MacInput(Action<int> media,Action<string,int> systemAction) { this.media=media;this.systemAction=systemAction;pointer=new(ClampPointer);midi.Select(0); }
     public void SetControls(object snapshot) => Volatile.Write(ref controls,snapshot);
     public string Platform => "macos";
     public object GetConnectionInfo() => new {platform=Platform,volume=volume.State,inputPermission=CGPreflightPostEventAccess(),controls=Volatile.Read(ref controls)};
@@ -39,6 +48,52 @@ public sealed class MacInput : ITrackpadInput, IDisposable {
     private static Point Location() { var e=CGEventCreate(IntPtr.Zero);if(e==IntPtr.Zero)throw new InvalidOperationException("macOS pointer event unavailable");try{return CGEventGetLocation(e);}finally{if(e!=IntPtr.Zero)CFRelease(e);} }
     private static void Post(IntPtr e) { if(e==IntPtr.Zero)throw new InvalidOperationException("macOS event unavailable");try{CGEventPost(0,e);}finally{CFRelease(e);} }
     private static void Key(ushort key,bool down,ulong flags=0) { var e=CGEventCreateKeyboardEvent(IntPtr.Zero,key,down);if(e==IntPtr.Zero)throw new InvalidOperationException("macOS keyboard event unavailable");CGEventSetFlags(e,flags);Post(e); }
+    private (double X,double Y) ClampPointer(double x,double y) {
+        long now=Environment.TickCount64;
+        if(displays.Count==0||now-displayRefresh>=1000) {
+            if(CGGetActiveDisplayList((uint)displayIds.Length,displayIds,out uint count)==0) {
+                displays.Clear();
+                for(int i=0;i<Math.Min(count,(uint)displayIds.Length);i++) {
+                    var r=CGDisplayBounds(displayIds[i]);
+                    displays.Add(new(r.X,r.Y,r.Width,r.Height));
+                }
+            }
+            displayRefresh=now;
+        }
+        return MacPointerMotion.Clamp(x,y,displays);
+    }
+    private static IntPtr CreateMouseSource() {
+        var source=CGEventSourceCreate(0); // Combined session state preserves keyboard modifiers.
+        if(source==IntPtr.Zero)throw new InvalidOperationException("macOS mouse source unavailable");
+        CGEventSourceSetLocalEventsSuppressionInterval(source,0);
+        return source;
+    }
+    private IntPtr MouseEvent(uint type,Point point,uint button) {
+        if(mouseSource==IntPtr.Zero)mouseSource=CreateMouseSource();
+        return CGEventCreateMouseEvent(mouseSource,type,point,button);
+    }
+    // Exercise the actual interop ABI without posting events or moving the cursor.
+    public static void ValidatePointerEvents() {
+        var ids=new uint[32];
+        if(CGGetActiveDisplayList((uint)ids.Length,ids,out uint count)!=0||count>ids.Length)
+            throw new Exception("Active display query failed");
+        for(int i=0;i<count;i++) {
+            var r=CGDisplayBounds(ids[i]);
+            if(!double.IsFinite(r.X)||!double.IsFinite(r.Y)||r.Width<1||r.Height<1)
+                throw new Exception("Display bounds ABI mismatch");
+        }
+        var source=CreateMouseSource();
+        try {
+            foreach(uint type in new uint[]{5,6,1,2,3,4}) {
+                var e=CGEventCreateMouseEvent(source,type,new Point {X=123.5,Y=45.5},type is 3 or 4?1u:0u);
+                if(e==IntPtr.Zero)throw new Exception("Mouse event creation failed");
+                try {
+                    var p=CGEventGetLocation(e);
+                    if(p.X!=123.5||p.Y!=45.5)throw new Exception("Mouse location ABI mismatch");
+                } finally {CFRelease(e);}
+            }
+        } finally {CFRelease(source);}
+    }
     private Point PointerLocation() {
         var observed=Location();var target=pointer.Resolve(observed.X,observed.Y,Environment.TickCount64);
         return new Point {X=target.X,Y=target.Y};
@@ -46,7 +101,7 @@ public sealed class MacInput : ITrackpadInput, IDisposable {
     public void Move(int x,int y) {
         if(x==0&&y==0)return;
         var observed=Location();var target=pointer.Move(observed.X,observed.Y,x,y,Environment.TickCount64);
-        var e=CGEventCreateMouseEvent(IntPtr.Zero,held?6u:5u,new Point {X=target.X,Y=target.Y},0);
+        var e=MouseEvent(held?6u:5u,new Point {X=target.X,Y=target.Y},0);
         if(e==IntPtr.Zero)throw new InvalidOperationException("macOS pointer event unavailable");
         CGEventSetIntegerValueField(e,4,x);CGEventSetIntegerValueField(e,5,y);
         Post(e);
@@ -55,12 +110,12 @@ public sealed class MacInput : ITrackpadInput, IDisposable {
     public void Down() {
         if(held)return;var p=PointerLocation();long now=Environment.TickCount64;
         clicks=now-lastClick<550 && Math.Abs(p.X-lastClickPoint.X)<5 && Math.Abs(p.Y-lastClickPoint.Y)<5 ? Math.Min(2,clicks+1):1;
-        lastClick=now;lastClickPoint=p;var e=CGEventCreateMouseEvent(IntPtr.Zero,1,p,0);if(e==IntPtr.Zero)throw new InvalidOperationException("macOS mouse event unavailable");CGEventSetIntegerValueField(e,1,clicks);held=true;Post(e);
+        lastClick=now;lastClickPoint=p;var e=MouseEvent(1,p,0);if(e==IntPtr.Zero)throw new InvalidOperationException("macOS mouse event unavailable");CGEventSetIntegerValueField(e,1,clicks);held=true;Post(e);
     }
     // A fresh click count keeps tap-then-drag from becoming a double-click drag.
     public void DragStart(int x,int y){if(held)return;lastClick=0;Down();}
-    public void Release() { if(held){held=false;var e=CGEventCreateMouseEvent(IntPtr.Zero,2,PointerLocation(),0);if(e==IntPtr.Zero)throw new InvalidOperationException("macOS mouse event unavailable");CGEventSetIntegerValueField(e,1,clicks);Post(e);} }
-    public void Click(bool right) { if(held)return;if(!right){Down();Release();}else{var p=PointerLocation();Post(CGEventCreateMouseEvent(IntPtr.Zero,3,p,1));Post(CGEventCreateMouseEvent(IntPtr.Zero,4,p,1));} }
+    public void Release() { if(held){held=false;var e=MouseEvent(2,PointerLocation(),0);if(e==IntPtr.Zero)throw new InvalidOperationException("macOS mouse event unavailable");CGEventSetIntegerValueField(e,1,clicks);Post(e);} }
+    public void Click(bool right) { if(held)return;if(!right){Down();Release();}else{var p=PointerLocation();Post(MouseEvent(3,p,1));Post(MouseEvent(4,p,1));} }
     public void TaskView(){ReleaseAll();systemAction("missionControl",0);}
     // Control–Down opens App Exposé. Use the system Show Desktop key (F11
     // with the Fn modifier) so the Apps dock's downward swipe has the same
@@ -140,7 +195,7 @@ public sealed class MacInput : ITrackpadInput, IDisposable {
     public void MidiPanic()=>midi.Panic();
     public void VolumeStep(int direction){if(direction==0)return;int level=ThreeEGetOutputVolume();if(level>=0)volume.Set(Math.Clamp(level+direction*6,0,100));}
     public void ReleaseAll(){volume.CancelPending();try{Release();AppsEnd();}finally{pointer.Reset();midi.Panic();}}
-    public void Dispose(){try{ReleaseAll();}finally{volume.Dispose();midi.Dispose();}}
+    public void Dispose(){try{ReleaseAll();}finally{volume.Dispose();midi.Dispose();if(mouseSource!=IntPtr.Zero){CFRelease(mouseSource);mouseSource=IntPtr.Zero;}}}
 }
 
 public sealed class MacMidi : MidiOutput {

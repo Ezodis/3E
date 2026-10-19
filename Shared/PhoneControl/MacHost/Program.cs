@@ -15,10 +15,11 @@ if(args.Contains("--bonjour-self-test")) {
     Console.WriteLine("PASS: native Bonjour registers and re-registers a stable local-only name (no LAN advertisement or native input)");return;
 }
 if(args.Contains("--native-self-test")) {
+    MacInput.ValidatePointerEvents();
     if(MacInput.ThreeEValidateScrollEvent()!=1)throw new Exception("Quartz scroll event mismatch");
     if(MacInput.ThreeEHasMultipleSpaces() is <0 or >1)throw new Exception("Space discovery mismatch");
     if(MacInput.ThreeEGetOutputVolume() is < -1 or >100)throw new Exception("Output volume probe mismatch");
-    Console.WriteLine("PASS: native Quartz scroll event ABI and read-only Space/output-volume discovery (no posted input)");return;
+    Console.WriteLine("PASS: native Quartz pointer/display/scroll ABI and read-only Space/output-volume discovery (no posted input)");return;
 }
 if(args.Contains("--clipboard-self-test")) {
     // Round-trips text, HTML, a picture and then a file through the real pasteboard.

@@ -1,7 +1,7 @@
 // Check this app's public releases, never the vendor engine's old XML feed.
 #import <sys/stat.h>
 #import <unistd.h>
-static NSString *const StripReleaseVersion=@"3.0.96";
+static NSString *const StripReleaseVersion=@"3.0.98";
 static NSString *StripInstalledVersion(void) {
     NSString *path=NSBundle.mainBundle.bundlePath;
     while(path.length>1) {
