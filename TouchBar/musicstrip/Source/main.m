@@ -418,7 +418,7 @@ static OSStatus SendSpotifyCommand(pid_t pid, int command) {
     self.playbackBook = [PlaybackBook new];
     if(!touchBarAvailable) {
         self.baseStatusItem=[NSStatusBar.systemStatusBar statusItemWithLength:NSVariableStatusItemLength];
-        self.baseStatusItem.button.image=ThreeEBrandMenuImage(); self.baseStatusItem.button.title=@""; self.baseStatusItem.button.toolTip=@"3£";
+        self.baseStatusItem.button.image=ThreeEBrandMenuImage(); self.baseStatusItem.button.title=@""; self.baseStatusItem.button.toolTip=@"3E";
 #ifdef STRIP_COMBINED_TOUCHTAB
         self.baseStatusItem.menu=StripBaseMenu(self,YES);
 #else
@@ -590,7 +590,7 @@ static OSStatus SendSpotifyCommand(pid_t pid, int command) {
     NSString *state=StripRefreshGestures();
     if(![state isEqual:self.gestureState]) {
         self.gestureState=state;
-        NSLog(@"3£ combined trackpad state: %@ (host PID %d)",state,getpid());
+        NSLog(@"3E combined trackpad state: %@ (host PID %d)",state,getpid());
         if([state isEqual:@"on"]) dispatch_async(dispatch_get_global_queue(QOS_CLASS_UTILITY,0),^{
             NSMutableDictionary *apps=[NSMutableDictionary new];
             for(NSString *bundle in @[@"com.apple.Safari",@"com.apple.finder",@"com.openai.codex"]) {
@@ -753,7 +753,7 @@ static OSStatus SendSpotifyCommand(pid_t pid, int command) {
                 self.abletonPermissionPrompted = YES;
                 AXIsProcessTrustedWithOptions((__bridge CFDictionaryRef)@{(__bridge NSString *)kAXTrustedCheckOptionPrompt:@YES});
             }
-            NSLog(@"Enable 3£ in macOS Accessibility to control Ableton's transport.");
+            NSLog(@"Enable 3E in macOS Accessibility to control Ableton's transport.");
             return;
         }
         pid_t pid = app.processIdentifier;

@@ -38,8 +38,8 @@ class ReleasesTest(unittest.TestCase):
 
     def test_portable_architecture_query(self):
         with patch("release.run", return_value="x86_64 arm64") as command:
-            verify_architectures("/path/3£.app/Contents/MacOS/MusicStrip")
-            command.assert_called_once_with("xcrun", "lipo", "-archs", "/path/3£.app/Contents/MacOS/MusicStrip")
+            verify_architectures("/path/3E.app/Contents/MacOS/MusicStrip")
+            command.assert_called_once_with("xcrun", "lipo", "-archs", "/path/3E.app/Contents/MacOS/MusicStrip")
         with patch("release.run", return_value="arm64"):
             with self.assertRaises(AssertionError):
                 verify_architectures("/path/MusicStrip")

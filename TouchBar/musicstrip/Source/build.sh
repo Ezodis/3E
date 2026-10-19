@@ -40,7 +40,7 @@ if [[ "$strip_edition" == --bridge-only ]]; then
 fi
 strip_stage=$(mktemp -d /tmp/strip3-build.XXXXXX)
 trap '[[ "$strip_stage" == /tmp/strip3-build.* ]] && /bin/rm -r -- "$strip_stage"' EXIT
-strip_app="$strip_stage/3£.app"
+strip_app="$strip_stage/3E.app"
 ditto --norsrc --noextattr "$strip_repo/recovered/Strip3£.app" "$strip_app"
 cp Info.plist "$strip_app/Contents/Info.plist"
 if [[ "$strip_combined" == YES ]]; then
@@ -59,6 +59,8 @@ zsh "$strip_repo/../Shared/PhoneControl/MacHost/build-hosts.sh" "$strip_app"
 strip_apps_helper="$strip_app/Contents/Helpers/MusicStrip Apps.app"
 cp "$strip_app/Contents/MacOS/MusicStrip" "$strip_apps_helper/Contents/MacOS/MusicStripApps"
 strip_midi="$strip_app/Contents/Helpers/MIDI Touchbar.app"
+plutil -replace CFBundleName -string '3E' "$strip_midi/Contents/Info.plist"
+plutil -replace CFBundleDisplayName -string '3E' "$strip_midi/Contents/Info.plist"
 strip_framework="$strip_midi/Contents/Frameworks/SnoizeMIDI.framework"
 [[ -e "$strip_framework/Versions/Current" ]] || ln -s A "$strip_framework/Versions/Current"
 [[ -e "$strip_framework/SnoizeMIDI" ]] || ln -s Versions/Current/SnoizeMIDI "$strip_framework/SnoizeMIDI"
@@ -73,7 +75,7 @@ codesign --force --sign - "$strip_midi"
 codesign --force --sign - "$strip_apps_helper"
 codesign --force --sign "$strip_identity" --timestamp=none "$strip_app"
 codesign --verify --deep --strict "$strip_app"
-strip_output="$strip_repo/build/musicstrip/3£.app"
+strip_output="$strip_repo/build/musicstrip/3E.app"
 if [[ -e "$strip_output" ]]; then
   [[ -f "$strip_output/Contents/Info.plist" && -f "$strip_output/Contents/MacOS/MusicStrip" ]]
   [[ "$(/usr/libexec/PlistBuddy -c 'Print CFBundleIdentifier' "$strip_output/Contents/Info.plist")" == local.musicstrip.app ]]
@@ -81,5 +83,5 @@ if [[ -e "$strip_output" ]]; then
 fi
 ditto --norsrc --noextattr "$strip_app" "$strip_output"
 codesign --verify --deep --strict "$strip_output"
-printf 'Built and verified: %s\n' "$strip_repo/build/musicstrip/3£.app"
+printf 'Built and verified: %s\n' "$strip_repo/build/musicstrip/3E.app"
 # No installation, launch, zip or persistent backup happens automatically.

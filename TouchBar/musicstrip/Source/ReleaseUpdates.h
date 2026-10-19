@@ -70,12 +70,12 @@ static BOOL StripRunTool(NSString *path,NSArray<NSString *> *arguments) {
     NSTask *task=[NSTask new]; task.executableURL=[NSURL fileURLWithPath:path]; task.arguments=arguments;
     task.standardOutput=[NSFileHandle fileHandleWithNullDevice]; task.standardError=[NSFileHandle fileHandleWithNullDevice];
     @try { [task launchAndReturnError:nil]; [task waitUntilExit]; return task.terminationStatus==0; }
-    @catch(NSException *exception) { NSLog(@"3£ update tool failed: %@",exception.reason); return NO; }
+    @catch(NSException *exception) { NSLog(@"3E update tool failed: %@",exception.reason); return NO; }
 }
 static void StripFinishUpdateFailure(NSString *message,BOOL foreground) {
     stripUpdateInstalling=NO;
-    NSLog(@"3£ update failed: %@",message);
-    if(foreground) StripNotify(@"3£ update failed",message);
+    NSLog(@"3E update failed: %@",message);
+    if(foreground) StripNotify(@"3E update failed",message);
 }
 static void StripDownloadAndInstall(NSDictionary *release,BOOL foreground) {
     if(stripUpdateInstalling) return;
@@ -85,7 +85,7 @@ static void StripDownloadAndInstall(NSDictionary *release,BOOL foreground) {
     configuration.timeoutIntervalForRequest=600; configuration.timeoutIntervalForResource=3600;
     NSURLSession *session=[NSURLSession sessionWithConfiguration:configuration];
     NSURLSessionDownloadTask *task=[session downloadTaskWithURL:url completionHandler:^(NSURL *location,NSURLResponse *response,NSError *error) {
-        NSString *downloadedArchive=[NSTemporaryDirectory() stringByAppendingPathComponent:[NSString stringWithFormat:@"3£-release-%@.zip",NSUUID.UUID.UUIDString]];
+        NSString *downloadedArchive=[NSTemporaryDirectory() stringByAppendingPathComponent:[NSString stringWithFormat:@"3E-release-%@.zip",NSUUID.UUID.UUIDString]];
         NSError *downloadCopyError=nil;
         if(!error && location && [(NSHTTPURLResponse *)response statusCode]==200 &&
            ![[NSFileManager defaultManager] copyItemAtURL:location toURL:[NSURL fileURLWithPath:downloadedArchive] error:&downloadCopyError]) error=downloadCopyError;
@@ -97,7 +97,7 @@ static void StripDownloadAndInstall(NSDictionary *release,BOOL foreground) {
             NSString *bundlePath=NSBundle.mainBundle.bundlePath;
             while(bundlePath.length>1 && ![[NSBundle bundleWithPath:bundlePath].bundleIdentifier isEqual:@"local.musicstrip.app"]) bundlePath=bundlePath.stringByDeletingLastPathComponent;
             NSString *parent=bundlePath.stringByDeletingLastPathComponent;
-            NSString *work=[parent stringByAppendingPathComponent:[NSString stringWithFormat:@".3£-update-%@",NSUUID.UUID.UUIDString]];
+            NSString *work=[parent stringByAppendingPathComponent:[NSString stringWithFormat:@".3E-update-%@",NSUUID.UUID.UUIDString]];
             NSError *fileError=nil;
             if(![NSFileManager.defaultManager createDirectoryAtPath:work withIntermediateDirectories:YES attributes:nil error:&fileError]) {
                 [[NSFileManager defaultManager] removeItemAtPath:downloadedArchive error:nil];
@@ -109,7 +109,7 @@ static void StripDownloadAndInstall(NSDictionary *release,BOOL foreground) {
                 [[NSFileManager defaultManager] createDirectoryAtPath:extract withIntermediateDirectories:YES attributes:nil error:&fileError] &&
                 StripRunTool(@"/usr/bin/ditto",@[@"-x",@"-k",archive,extract]);
             [[NSFileManager defaultManager] removeItemAtPath:downloadedArchive error:nil];
-            NSString *candidate=[extract stringByAppendingPathComponent:@"3£.app"];
+            NSString *candidate=[extract stringByAppendingPathComponent:@"3E.app"];
             NSString *infoPath=[candidate stringByAppendingPathComponent:@"Contents/Info.plist"];
             NSDictionary *info=[NSDictionary dictionaryWithContentsOfFile:infoPath];
             NSString *expectedID=StripCombinedRelease() ? @"combined-v" : @"touchbar-v";
@@ -128,7 +128,7 @@ static void StripDownloadAndInstall(NSDictionary *release,BOOL foreground) {
                 dispatch_async(dispatch_get_main_queue(),^{ StripFinishUpdateFailure(fileError.localizedDescription ?: @"The downloaded app did not pass version, edition, or signature checks.",foreground); }); return;
             }
             NSString *installerSource=[candidate stringByAppendingPathComponent:@"Contents/Resources/UpdateInstaller.sh"];
-            NSString *installerCopy=[NSTemporaryDirectory() stringByAppendingPathComponent:[NSString stringWithFormat:@"3£-update-installer-%@.sh",NSUUID.UUID.UUIDString]];
+            NSString *installerCopy=[NSTemporaryDirectory() stringByAppendingPathComponent:[NSString stringWithFormat:@"3E-update-installer-%@.sh",NSUUID.UUID.UUIDString]];
             if(![[NSFileManager defaultManager] copyItemAtPath:installerSource toPath:installerCopy error:&fileError]) {
                 [[NSFileManager defaultManager] removeItemAtPath:work error:nil];
                 dispatch_async(dispatch_get_main_queue(),^{ StripFinishUpdateFailure(fileError.localizedDescription ?: @"The update installer is missing.",foreground); }); return;
@@ -138,7 +138,7 @@ static void StripDownloadAndInstall(NSDictionary *release,BOOL foreground) {
             for(NSRunningApplication *app in [NSRunningApplication runningApplicationsWithBundleIdentifier:@"local.musicstrip.app"]) if(!app.terminated) { mainPID=app.processIdentifier; break; }
             if(!mainPID) {
                 [[NSFileManager defaultManager] removeItemAtPath:work error:nil]; [[NSFileManager defaultManager] removeItemAtPath:installerCopy error:nil];
-                dispatch_async(dispatch_get_main_queue(),^{ StripFinishUpdateFailure(@"The main 3£ app could not be found.",foreground); }); return;
+                dispatch_async(dispatch_get_main_queue(),^{ StripFinishUpdateFailure(@"The main 3E app could not be found.",foreground); }); return;
             }
             NSTask *installer=[NSTask new]; installer.executableURL=[NSURL fileURLWithPath:@"/bin/zsh"];
             installer.arguments=@[installerCopy,candidate,bundlePath,work,[NSString stringWithFormat:@"%d",mainPID],[NSString stringWithFormat:@"%d",helperPID]];
@@ -149,7 +149,7 @@ static void StripDownloadAndInstall(NSDictionary *release,BOOL foreground) {
                 dispatch_async(dispatch_get_main_queue(),^{ StripFinishUpdateFailure(launchError.localizedDescription ?: @"The update installer could not start.",foreground); }); return;
             }
             dispatch_async(dispatch_get_main_queue(),^{
-                StripNotify(@"Installing 3£ update",[NSString stringWithFormat:@"Version %@ will install now. 3£ will restart when installation finishes.",release[@"version"]]);
+                StripNotify(@"Installing 3E update",[NSString stringWithFormat:@"Version %@ will install now. 3E will restart when installation finishes.",release[@"version"]]);
                 [NSApp terminate:nil];
             });
         });
@@ -178,8 +178,8 @@ static void StripCheckRelease(BOOL foreground) {
             }
             if(!foreground) return;
             NSAlert *alert=[NSAlert new];
-            alert.messageText=newer ? @"A 3£ update is available" : (release ? @"3£ is up to date" : @"Could not check for updates");
-            alert.informativeText=newer ? [NSString stringWithFormat:@"Version %@ is available. Install it now? 3£ will restart after the update is ready.",release[@"version"]] : (release ? [NSString stringWithFormat:@"Installed version: %@. TouchBar updates come from Ezodis/3E.",installed] : @"Check your connection and try again. No app files were changed.");
+            alert.messageText=newer ? @"A 3E update is available" : (release ? @"3E is up to date" : @"Could not check for updates");
+            alert.informativeText=newer ? [NSString stringWithFormat:@"Version %@ is available. Install it now? 3E will restart after the update is ready.",release[@"version"]] : (release ? [NSString stringWithFormat:@"Installed version: %@. TouchBar updates come from Ezodis/3E.",installed] : @"Check your connection and try again. No app files were changed.");
             [alert addButtonWithTitle:newer ? @"Install" : @"OK"];
             if(newer) [alert addButtonWithTitle:@"Later"];
             [alert addButtonWithTitle:@"View Releases"];

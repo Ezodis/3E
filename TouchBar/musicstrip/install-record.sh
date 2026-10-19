@@ -3,7 +3,7 @@
 set -eu
 cd "${0:A:h:h}"
 zsh musicstrip/rename-installed.sh
-strip_app='/Applications/3£.app'
+strip_app='/Applications/3E.app'
 strip_helper="$strip_app/Contents/Helpers/MIDI Touchbar.app"
 strip_framework="$strip_helper/Contents/Frameworks/SnoizeMIDI.framework"
 strip_identity="${STRIP_SIGNING_IDENTITY:-EDA0E1C9F0DD46BE3437CD2733933E31D3A8623D}"

@@ -1,14 +1,14 @@
-# 3£ — original app source and Ableton Record
+# 3E — original app source and Ableton Record
 
 The Apps launcher is a glyph-free 18-point swipe extension beside the macOS Control Strip arrow: swipe left to open apps, right to close. Its leftmost eight points fade from the native arrow's dark edge into the flat control background, softening the seam without painting outside our view. It draws no separate bezel, dots, X or divider; taps still toggle. Holding has no action and releasing a hold does not toggle the bar. The experimental Spaces-on-hold feature, native notification, visibility monitoring, delayed handoff and modal rebuilding have been removed at the user's request after physical black-bar failures. The separate media button's hold-to-open-MIDI remains unchanged. Tests check that repeated app holds make no transition and preserve normal taps, swipes and media holds. The macOS-owned arrow and its system-imposed boundary are not modified. The adjoining 52-point music control shares the same background without its old left bezel, and its icon/action pair sits three points farther left than before. Both fit the original 70-point native slot and keep their independent gestures.
 
-The existing menu has a checked **Touch Bar App** toggle after Touch Tab, reflecting actual app-row visibility through the main/helper pipe. Menu version labels and update comparisons read the containing 3£ app's Info.plist, not the helper's vendor version or stale compile-time base. Additive installs preserve the current release version; set `STRIP_RELEASE_VERSION` to the verified matching published version when syncing a new build.
+The existing menu has a checked **Touch Bar App** toggle after Touch Tab, reflecting actual app-row visibility through the main/helper pipe. Menu version labels and update comparisons read the containing 3E app's Info.plist, not the helper's vendor version or stale compile-time base. Additive installs preserve the current release version; set `STRIP_RELEASE_VERSION` to the verified matching published version when syncing a new build.
 
 The shared app/media root explicitly accepts direct Touch Bar input and forwards each finger's lifecycle to the button where it began. Crossing the 18-point app region into media during a swipe does not change targets or lose release events. Cancellation clears tracking and hold timers. Tests cover both input regions, boundary-crossing swipes, app hold inactivity, media holds and cancellation. Physical confirmation is still needed after input changes. `AppsLauncherLastInput` records only the host PID, command and timestamp for an actual app-button action; it contains no app, media or MIDI content.
 
 ## Recovery and preservation
 
-Version 3.0.11 uses `3£.app` for the installed app and release archives. Its
+Version 3.0.11 uses `3E.app` for the installed app and release archives. Its
 bundle identifier, certificate-backed signing identity and preferences remain
 unchanged. The historical recovered dependency retains its archive filename.
 
@@ -26,7 +26,7 @@ leaving a frozen message. Permission failures follow the same dismissal rule.
 On this development Mac, the actual LaunchServices host reported Accessibility
 denied and System Settings showed the old app entry off. Touch Tab's preference
 was also off and was enabled. macOS authentication is required to refresh the
-existing permission for `/Applications/3£.app`; code cannot grant it. Do not claim
+existing permission for `/Applications/3E.app`; code cannot grant it. Do not claim
 that gesture/window access works merely because a terminal test inherits Codex's
 permissions. `TouchTabRuntimeState` records the real host PID, bundle path,
 authorization and listener state; `WindowAccessRuntimeState` records read-only AX
@@ -34,7 +34,7 @@ window counts after the real host becomes authorized (not window titles).
 
 The combined menu places Touch Tab immediately below Phone Bar, then lists Touch Bar Midi and Control Surface Mode. Labels stay fixed; checks reflect the real gesture listener, MIDI visibility and combined surface panel respectively. Clicking an unchecked, permission-blocked Touch Tab retries activation and requests Accessibility approval for the actual main app; it does not accidentally disable the saved preference. Permission prompts occur only on that explicit menu action, never in the polling timer. Approval starts the listener automatically on the next refresh.
 
-On October 11 the macOS permission log identified the enabled-but-denied cause: the stored approval required an obsolete binary `cdhash`, failing code-requirement validation (`-67050`) against the certificate-signed current app. Toggling the old entry did not replace that requirement. Removing only its Device Control and Data Access entry, adding the exact installed `/Applications/3£.app` through the system chooser, and restarting fixed the actual host: AX trust, event-listening access, event-posting access and the gesture listener all reported true. No TCC database edits or global resets were used. The engine now tests an actual enabled event tap and posting permission rather than treating AX trust alone as gesture readiness; runtime diagnostics include both input capabilities. This does not prove a physical swipe was performed; verify that interactively after permission recovery.
+On October 11 the macOS permission log identified the enabled-but-denied cause: the stored approval required an obsolete binary `cdhash`, failing code-requirement validation (`-67050`) against the certificate-signed current app. Toggling the old entry did not replace that requirement. Removing only its Device Control and Data Access entry, adding the exact installed `/Applications/3E.app` through the system chooser, and restarting fixed the actual host: AX trust, event-listening access, event-posting access and the gesture listener all reported true. No TCC database edits or global resets were used. The engine now tests an actual enabled event tap and posting permission rather than treating AX trust alone as gesture readiness; runtime diagnostics include both input capabilities. This does not prove a physical swipe was performed; verify that interactively after permission recovery.
 
 `Source/main.m`, the existing MIDI customization bridge, all seven supporting headers, `Info.plist`, icon generator and resources were recovered from the original iCloud project at `Documents/Codex/2026-10-01/i-l/outputs/MusicStrip/Source`. The 84,361-byte main source matches the restored local iCloud file. This is not the earlier incomplete reconstruction.
 
@@ -72,13 +72,13 @@ Older already-loaded scripts also support proportional BPM swipes without a rest
 
 Punch In/Out use Live's existing loop-brace start/end markers. Record Quantization cycles Off, 1/8 and 1/16; it is not count-in. Live's count-in setting is intentionally not faked as a writable Song property.
 
-`Ableton/_3E` extends the existing MIDITouchbar script with a local acknowledged-command bridge. Install it in the configured User Library's `Remote Scripts/_3E` folder. Choose **_3E** in Live's Link, Tempo & MIDI settings and set both input and output to **3£ Surface**. Only one surface instance owns the command server. The original device/parameter/channel-strip integration is unchanged; the vendor-installed original script is not edited.
+`Ableton/_3E` extends the existing MIDITouchbar script with a local acknowledged-command bridge. Install it in the configured User Library's `Remote Scripts/_3E` folder. Choose **_3E** in Live's Link, Tempo & MIDI settings and set both input and output to **3E Surface**. Only one surface instance owns the command server. The original device/parameter/channel-strip integration is unchanged; the vendor-installed original script is not edited.
 
-The same engine's separate note/pad port is now named **3£ Keyboard**, not MIDI Touchbar User. The bridge updates only the names of endpoints obtained from its own four streams, retaining endpoint references and unique IDs. Surface and Keyboard remain separate routing roles, not separate apps. Existing Live port selections may need reselecting once after this label change; this was done in the live verification.
+The same engine's separate note/pad port is now named **3E Keyboard**, not MIDI Touchbar User. The bridge updates only the names of endpoints obtained from its own four streams, retaining endpoint references and unique IDs. Surface and Keyboard remain separate routing roles, not separate apps. Existing Live port selections may need reselecting once after this label change; this was done in the live verification.
 
-The app's visible branding is **3£**, but Live 12.2.5 cannot load that exact control-surface name: its loader executes `import 3£` and raises `SyntaxError: invalid character '£'`. This was verified in the live application, not guessed. **_3E** is the user-approved Python-compatible control-surface name; plain `3E` is also invalid because it begins with a number.
+The app's visible branding is **3E**, but Live 12.2.5 cannot load that exact control-surface name: its loader executes `import 3E` and raises `SyntaxError: invalid character '£'`. This was verified in the live application, not guessed. **_3E** is the user-approved Python-compatible control-surface name; plain `3E` is also invalid because it begins with a number.
 
-Commands run on Live's control-surface thread, expire after two seconds, target the current Live session and reject a changed primary selected track. Record swipes read Ableton's selected track rows so a multi-selection arms or disarms every selected armable track in normal mode. In Control Surface mode, a right swipe arms every selected armable track and disarms all other armable tracks; a left swipe keeps its all-track toggle. Reading selected rows requires Accessibility approval for 3£; if approval is unavailable, swipes fall back to the primary selected track. The Touch Bar only displays recording state returned by Live; it does not optimistically invent success. Local IPC lives under `~/Library/Application Support/Strip3/AbletonRecord` (the internal compatibility path is not the displayed name).
+Commands run on Live's control-surface thread, expire after two seconds, target the current Live session and reject a changed primary selected track. Record swipes read Ableton's selected track rows so a multi-selection arms or disarms every selected armable track in normal mode. In Control Surface mode, a right swipe arms every selected armable track and disarms all other armable tracks; a left swipe keeps its all-track toggle. Reading selected rows requires Accessibility approval for 3E; if approval is unavailable, swipes fall back to the primary selected track. The Touch Bar only displays recording state returned by Live; it does not optimistically invent success. Local IPC lives under `~/Library/Application Support/Strip3/AbletonRecord` (the internal compatibility path is not the displayed name).
 
 ## Reusable Piano customization
 
@@ -101,7 +101,7 @@ Both piano side arrows keep compact fixed 14-point areas regardless of octave co
 
 The native key paths and pressed-note colors are rendered without the vendor's independently calculated chevrons, preventing ghost arrows on the final keys. A single pair of 14-point arrows shares its bounds-based regions with hold/tap handling, so stale native arrow paths cannot disable the right-side hold. Regression tests press the last key at 1, 2 and 10 octaves, check its pixels for unwanted arrows, and test both sides of all three piano slots.
 
-The X returns from expanded mode without hiding MIDI; in normal mode it closes MIDI. Settings changes wait until all notes on that keyboard are released. Changes persist separately for the touched slot, and replacement views retain their settings identity; other pianos are unchanged. The menu-bar **Customize Controls** item retains the original controls workflow, including MIDI channel and other settings. Only the piano's Glissando/Type selector is hidden there; gesture mode stays in the expanded piano, which has no channel button. All pianos use **3£ Keyboard**, with channels distinguishing routing. Per-preset settings persist as `piano`, `piano2` and `piano3`.
+The X returns from expanded mode without hiding MIDI; in normal mode it closes MIDI. Settings changes wait until all notes on that keyboard are released. Changes persist separately for the touched slot, and replacement views retain their settings identity; other pianos are unchanged. The menu-bar **Customize Controls** item retains the original controls workflow, including MIDI channel and other settings. Only the piano's Glissando/Type selector is hidden there; gesture mode stays in the expanded piano, which has no channel button. All pianos use **3E Keyboard**, with channels distinguishing routing. Per-preset settings persist as `piano`, `piano2` and `piano3`.
 
 Adding a new Piano slot preserves the controls present before the drag, even when AppKit reports a replacement layout. Deliberate removals and reordering keep native behavior. The palette also watches confirmed layout changes so a late drop commit still advances its reusable tile to the third slot. Multiple keyboards lower the original view's 400-point minimum, share equal flexible widths and fill the space left by other controls; the wrapper removes its flexible spacer for these layouts. A single keyboard retains its original minimum and sizing. Native regressions use isolated temporary presets, verify actual visible, unclipped two/three-keyboard geometry, persistence and independent note-on/off handlers, and never send MIDI to Live or change a user preset. Physical dragging remains a user verification step.
 
@@ -130,7 +130,7 @@ Apply/live reload. The Apply test restores its temporary channel change. Native
 two/three-piano sizing/note regressions also pass. Final physical finger testing
 is still required on the Touch Bar.
 
-The default `zsh musicstrip/Source/build.sh` builds the full Combined base app with TouchBar, TouchTab and Phone Bar. `--combined` remains an alias; use `--touchbar-only` explicitly for the smaller edition. The combined app embeds the shared TouchTab Swift gesture module in its main process, adds a **Touch Tab** menu toggle through the existing MIDI-helper pipe, and preserves the original MIDI engine. On the development Mac, quit 3£ and run `zsh musicstrip/install-combined.sh` for an in-place installation. The main executable is rebuilt from the maintained original source with narrowly scoped gesture lifecycle/pipe hooks; the working app-picker helper, piano engine, resources, MIDI mappings and user settings are retained. Root README describes the separate combined/standalone update feeds and permissions.
+The default `zsh musicstrip/Source/build.sh` builds the full Combined base app with TouchBar, TouchTab and Phone Bar. `--combined` remains an alias; use `--touchbar-only` explicitly for the smaller edition. The combined app embeds the shared TouchTab Swift gesture module in its main process, adds a **Touch Tab** menu toggle through the existing MIDI-helper pipe, and preserves the original MIDI engine. On the development Mac, quit 3E and run `zsh musicstrip/install-combined.sh` for an in-place installation. The main executable is rebuilt from the maintained original source with narrowly scoped gesture lifecycle/pipe hooks; the working app-picker helper, piano engine, resources, MIDI mappings and user settings are retained. Root README describes the separate combined/standalone update feeds and permissions.
 
 Requires macOS/Xcode command-line tools. The original engine is already vendored as a bundle dependency; no download from Documents/Downloads is required to build.
 
@@ -139,13 +139,13 @@ zsh musicstrip/Source/build.sh
 zsh musicstrip/Source/build.sh --bridge-only
 ```
 
-Full output goes to ignored `build/musicstrip/3£.app`. This builds and verifies the complete package but does not replace the installed main app. Set `STRIP_SIGNING_IDENTITY` to the existing stable certificate identity on another build machine; changing signing identity may require a new macOS approval.
+Full output goes to ignored `build/musicstrip/3E.app`. This builds and verifies the complete package but does not replace the installed main app. Set `STRIP_SIGNING_IDENTITY` to the existing stable certificate identity on another build machine; changing signing identity may require a new macOS approval.
 
 For the additive Record update, quit the canonical app first, then:
 
 ```sh
 zsh musicstrip/install-record.sh
-open '/Applications/3£.app'
+open '/Applications/3E.app'
 ```
 
 The installer updates only the injected MIDI bridge, required framework links/signatures and packaged Ableton script. It refuses to update while MusicStrip or its MIDI helper is running. It never creates an installed companion app or backup. Override `STRIP_ABLETON_SCRIPT_DIR` if your configured User Library is elsewhere. Restart Live after changing its script, then choose _3E once.
@@ -164,7 +164,7 @@ xcrun clang -fobjc-arc -O0 -Wno-unused-parameter -framework AppKit -framework Co
 xcrun clang -fobjc-arc -O0 -Wno-unused-parameter -framework AppKit -framework CoreMIDI \
   musicstrip/Tests/multi_piano.m -o /tmp/3pounds-multi-piano-test
 /tmp/3pounds-multi-piano-test
-'build/musicstrip/3£.app/Contents/MacOS/MusicStrip' --self-test
+'build/musicstrip/3E.app/Contents/MacOS/MusicStrip' --self-test
 ```
 
 The gesture tests call the actual direct-touch handlers (including identity, movement, release, hold and cancellation), without launching another tray app or sending Live commands. `Tests/record_live.m` is an explicit opt-in diagnostic that sends actual commands to a connected Live session; do not run it on an active recording or important project. Automated tests are not a substitute for a user's finger test on the physical Touch Bar.

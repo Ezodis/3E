@@ -3,7 +3,7 @@
 set -eu
 cd "${0:A:h:h}"
 zsh musicstrip/rename-installed.sh
-strip_app='/Applications/3£.app'
+strip_app='/Applications/3E.app'
 [[ "$(/usr/libexec/PlistBuddy -c 'Print CFBundleIdentifier' "$strip_app/Contents/Info.plist")" == local.musicstrip.app ]]
 if pgrep -x MusicStrip >/dev/null || pgrep -x 'MIDI Touchbar' >/dev/null; then
   printf 'Quit 3£ first. No installed files changed.\n' >&2; exit 1

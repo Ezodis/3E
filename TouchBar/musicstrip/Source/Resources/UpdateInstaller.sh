@@ -8,7 +8,7 @@ helper_pid="$5"
 installer="$0"
 
 # The app starts this detached helper before it quits. Wait until both the
-# outer 3£ process and its bundled MIDI engine have released the app bundle.
+# outer 3E process and its bundled MIDI engine have released the app bundle.
 for attempt in {1..1800}; do
   main_alive=0
   helper_alive=0
@@ -24,7 +24,7 @@ if kill -0 "$main_pid" 2>/dev/null || kill -0 "$helper_pid" 2>/dev/null; then
 fi
 
 parent="${target:h}"
-backup="$parent/.3£-previous-$$.app"
+backup="$parent/.3E-previous-$$.app"
 if [[ -e "$backup" ]]; then exit 1; fi
 mv "$target" "$backup"
 if mv "$candidate" "$target"; then

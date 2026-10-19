@@ -12,7 +12,7 @@ import subprocess
 ROOT = Path(__file__).resolve().parent.parent
 REPO = "Ezodis/3E"
 EDITIONS = {
-    "combined": ("combined", "3E-Combined.zip", "3£ Combined"),
+    "combined": ("combined", "3E-Combined.zip", "3E Combined"),
     "touchbar": ("touchbar", "TouchBar.zip", "TouchBar only"),
     "touchtab": ("touchtab", "TouchTab.zip", "TouchTab only"),
 }
@@ -71,7 +71,7 @@ def package(edition, values):
     destination = ROOT / "build/releases"
     destination.mkdir(parents=True, exist_ok=True)
     app = ROOT / ("build/TouchTab/Build/Products/Release/Touch-Tab.app"
-                  if edition == "touchtab" else "TouchBar/build/musicstrip/3£.app")
+                  if edition == "touchtab" else "TouchBar/build/musicstrip/3E.app")
     info = plistlib.loads((app / "Contents/Info.plist").read_bytes())
     assert info["CFBundleShortVersionString"] == values[edition], "Stale app version"
     assert bool(info.get("ThreeEIncludesTouchTab")) == (edition == "combined"), "Wrong edition"

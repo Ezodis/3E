@@ -12,10 +12,10 @@
 // Change labels only on this engine's own streams. Do not recreate endpoints,
 // change their unique IDs, or touch another application's MIDI connections.
 static void BrandMIDIPorts(void) {
-    NSDictionary *labels=@{@"virtualSurfaceInputStream":@"3£ Surface",
-                           @"virtualSurfaceOutputStream":@"3£ Surface",
-                           @"virtualUserInputStream":@"3£ Keyboard",
-                           @"virtualUserOutputStream":@"3£ Keyboard"};
+    NSDictionary *labels=@{@"virtualSurfaceInputStream":@"3E Surface",
+                           @"virtualSurfaceOutputStream":@"3E Surface",
+                           @"virtualUserInputStream":@"3E Keyboard",
+                           @"virtualUserOutputStream":@"3E Keyboard"};
     for(NSString *key in labels) {
         @try {
             id stream=[(id)NSApp.delegate valueForKey:key];
@@ -681,7 +681,7 @@ static void CleanMenu(NSMenu *menu) {
         [menu insertItem:toggle atIndex:position];
         toggle.state=[combinedGestureState isEqual:@"on"] ? NSControlStateValueOn : NSControlStateValueOff;
         toggle.title=@"Touch Tab";
-        toggle.toolTip=[combinedGestureState isEqual:@"permission"] ? @"Accessibility approval is required for the main 3£ app" : [combinedGestureState isEqual:@"unavailable"] ? @"Trackpad gesture listener unavailable" : @"Toggle trackpad gestures";
+        toggle.toolTip=[combinedGestureState isEqual:@"permission"] ? @"Accessibility approval is required for the main 3E app" : [combinedGestureState isEqual:@"unavailable"] ? @"Trackpad gesture listener unavailable" : @"Toggle trackpad gestures";
     }
     for(NSMenuItem *item in menu.itemArray.copy) {
         NSString *title=item.title.lowercaseString;
@@ -693,19 +693,19 @@ static void CleanMenu(NSMenu *menu) {
         }
         if([title isEqual:@"touch bar midi"] ||
            (([title hasPrefix:@"hide "] || [title hasPrefix:@"show "]) &&
-            ([title containsString:@"3£"] || [title containsString:@"midi touchbar"] || [title containsString:@"touch bar midi"]))) {
+            ([title containsString:@"3E"] || [title containsString:@"3£"] || [title containsString:@"midi touchbar"] || [title containsString:@"touch bar midi"]))) {
             item.title=@"Touch Bar Midi";
             item.target=NSClassFromString(@"MusicStripMidiBridge");
             item.action=NSSelectorFromString(@"toggleMidi:");
             item.state=[[(id)NSApp.delegate valueForKey:@"touchbarShown"] boolValue] ? NSControlStateValueOn : NSControlStateValueOff;
         }
         if(item.action==NSSelectorFromString(@"setKeyCommands:") || [title containsString:@"key command"] || [title containsString:@"keyboard shortcut"]) { [menu removeItem:item]; continue; }
-        if([item.title hasPrefix:@"MIDI Touchbar (v."] || [item.title hasPrefix:@"3£ (v."])
-            item.title=[NSString stringWithFormat:@"3£ (v. %@)",StripInstalledVersion()];
-        else if([title hasPrefix:@"hide "] && ([title containsString:@"3£"] || [title containsString:@"midi touchbar"])) item.title=@"Hide Touch Bar Midi";
-        else if([title hasPrefix:@"show "] && ([title containsString:@"3£"] || [title containsString:@"midi touchbar"])) item.title=@"Show Touch Bar Midi";
-        else if([item.title containsString:@"MIDI Touchbar"]) item.title=[item.title stringByReplacingOccurrencesOfString:@"MIDI Touchbar" withString:@"3£"];
-        else if([item.title containsString:@"Strip3£"]) item.title=[item.title stringByReplacingOccurrencesOfString:@"Strip3£" withString:@"3£"];
+        if([item.title hasPrefix:@"MIDI Touchbar (v."] || [item.title hasPrefix:@"3£ (v."] || [item.title hasPrefix:@"3E (v."])
+            item.title=[NSString stringWithFormat:@"3E (v. %@)",StripInstalledVersion()];
+        else if([title hasPrefix:@"hide "] && ([title containsString:@"3£"] || [title containsString:@"3E"] || [title containsString:@"midi touchbar"])) item.title=@"Hide Touch Bar Midi";
+        else if([title hasPrefix:@"show "] && ([title containsString:@"3£"] || [title containsString:@"3E"] || [title containsString:@"midi touchbar"])) item.title=@"Show Touch Bar Midi";
+        else if([item.title containsString:@"MIDI Touchbar"]) item.title=[item.title stringByReplacingOccurrencesOfString:@"MIDI Touchbar" withString:@"3E"];
+        else if([item.title containsString:@"Strip3£"]) item.title=[item.title stringByReplacingOccurrencesOfString:@"Strip3£" withString:@"3E"];
         item.keyEquivalent=@""; item.keyEquivalentModifierMask=0;
         if(item.submenu) CleanMenu(item.submenu);
     }
@@ -761,7 +761,7 @@ static void CleanMenu(NSMenu *menu) {
 }
 static void ApplyBranding(void) {
     NSStatusItem *item=[(id)NSApp.delegate valueForKey:@"theItem"];
-    item.length=27; item.button.image=BrandMenuIcon(); item.button.title=@""; item.button.toolTip=@"3£";
+    item.length=27; item.button.image=BrandMenuIcon(); item.button.title=@""; item.button.toolTip=@"3E";
     CleanMenu(item.menu); CleanMenu(NSApp.mainMenu);
 }
 static NSArray *MenuTitles(NSMenu *menu) {
@@ -2135,7 +2135,7 @@ static void Command(NSString *command) {
         } else if ([command isEqualToString:@"QUIT"]) {
             midiTerminating=YES;
             // The menu belongs to the bundled MIDI helper, not the parent
-            // Strip3£ process. Quit both so no tray/helper instance remains.
+            // 3E process. Quit both so no tray/helper instance remains.
             QuitMusicStripParent();
             [NSApp terminate:nil];
         }
@@ -2183,7 +2183,7 @@ static void Command(NSString *command) {
     return; // Gesture tests never install helper hooks or add a tray item.
 #endif
     @autoreleasepool {
-        if(!StripInstallUpdateHooks()) NSLog(@"3£ release-update hooks unavailable");
+        if(!StripInstallUpdateHooks()) NSLog(@"3E release-update hooks unavailable");
         Method tray = class_getClassMethod(NSTouchBarItem.class, NSSelectorFromString(@"addSystemTrayItem:"));
         if (tray) method_setImplementation(tray, (IMP)SuppressTray);
         Class keyCenter = NSClassFromString(@"DDHotKeyCenter");
@@ -2198,7 +2198,7 @@ static void Command(NSString *command) {
             midiTerminating=YES;
             // Native menu Quit terminates this bundled helper directly and
             // does not pass through Command(@"QUIT"). Always shut down the
-            // parent Strip3£ process as part of that same user action.
+            // parent 3E process as part of that same user action.
             QuitMusicStripParent();
         }];
         [NSNotificationCenter.defaultCenter addObserverForName:NSApplicationDidFinishLaunchingNotification object:nil queue:nil usingBlock:^(NSNotification *note) {
