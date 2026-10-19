@@ -20,7 +20,8 @@ async function updateFlow(browser,name,url,urlFile,errors){
   const loads=async()=>{try{return await page.evaluate(()=>+sessionStorage.getItem('test-loads'));}catch{return -1;}};
   // Null-safe: right after a reload the new document may not have its DOM yet.
   const live=()=>page.waitForFunction(()=>document.getElementById('status')?.textContent==='Connected');
-  const reloaded=async count=>{for(let i=0;i<100&&await loads()<count;i++)await page.waitForTimeout(100);assert.equal(await loads(),count,'the page reloaded');await live();};
+  const reloaded=async count=>{for(let i=0;i<100&&await loads()<count;i++)await page.waitForTimeout(100);assert.equal(await loads(),count,'the page reloaded');
+   try{await live();}catch(e){throw new Error('reloaded page never connected; status: '+await page.evaluate(()=>document.getElementById('status')?.textContent).catch(()=>'?')+'; '+e.message);}};
   await page.goto(url);await live();
   return {ctx,page,sent,loads,live,reloaded};
  }
