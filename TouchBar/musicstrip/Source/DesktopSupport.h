@@ -78,8 +78,8 @@ static void WaitForDesktopSelection(uint64_t target,NSUInteger sequence,uint64_t
     if(active==target)return;
     BOOL moved=active&&active!=previous;
     if(moved||CFAbsoluteTimeGetCurrent()-started>=1.5) {
-        if(attempts<=1){NSLog(@"Space swipe did not reach its target after %ld attempts.",(long)(DesktopSpaces().count+2));return;}
-        dispatch_after(dispatch_time(DISPATCH_TIME_NOW,(moved?300:300)*NSEC_PER_MSEC),dispatch_get_main_queue(),^{ AdvanceDesktopSelection(target,sequence,attempts-1); });
+        if(attempts<=1)return;
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW,300*NSEC_PER_MSEC),dispatch_get_main_queue(),^{ AdvanceDesktopSelection(target,sequence,attempts-1); });
         return;
     }
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW,80*NSEC_PER_MSEC),dispatch_get_main_queue(),^{ WaitForDesktopSelection(target,sequence,previous,attempts,started); });
@@ -109,7 +109,9 @@ static void StepDesktop(NSInteger direction) {
     NSArray *spaces=DesktopSpaces();NSInteger active=-1;
     if(spaces.count<=1) { PostMacSystemAction(@"missionControl",0);return; }
     for(NSUInteger i=0;i<spaces.count;i++)if([spaces[i][@"active"] boolValue]){active=(NSInteger)i;break;}
-    NSInteger destination=active+(direction>0?1:-1);
+    // On macOS a leftward finger swipe reveals the Space to the right in
+    // Mission Control's ordering; a rightward swipe reveals the previous one.
+    NSInteger destination=active+(direction<0?1:-1);
     if(active<0||destination<0||destination>=(NSInteger)spaces.count)return;
     SelectDesktop([spaces[(NSUInteger)destination][@"id"] unsignedLongLongValue]);
 }
