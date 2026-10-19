@@ -140,6 +140,20 @@ if(require.main===module)(async()=>{
     assert.equal(await p.locator('#clipSheet .clip-text').inputValue(),'Hello from the computer');
     await p.waitForFunction(()=>document.querySelector('#clipSheet .clip-image img').naturalWidth===40);
     await p.screenshot({path:path.join(out,'clipboard-get-'+name+'.png'),fullPage:true});
+    // On a secure page, iPhone WebKit hands files to the share sheet (the
+    // intended phone behavior); elsewhere they download. Cover the share path
+    // with a stub, then force the plain download path and check its bytes.
+    const shares=await p.evaluate(()=>!!(window.isSecureContext&&navigator.canShare));
+    if(shares){
+     await p.evaluate(()=>{window.__shared=null;navigator.canShare=()=>true;navigator.share=async d=>{window.__shared=d.files.map(f=>f.name);};});
+     await p.locator('#clipSheet .clip-list button').click();
+     await p.waitForFunction(()=>window.__shared);
+     assert.deepEqual(await p.evaluate(()=>window.__shared),['Quarterly report.pdf'],'secure iPhone pages hand the file to the share sheet');
+     await p.locator('#clipClose').click();await p.waitForTimeout(1000);
+     await p.locator('#commands').tap();await p.locator('#commandsPane button[data-tool="getClip"]').tap();
+     await p.waitForSelector('#clipSheet .clip-list button');
+    }
+    await p.evaluate(()=>{navigator.canShare=()=>false;});
     const [download]=await Promise.all([p.waitForEvent('download'),p.locator('#clipSheet .clip-list button').click()]);
     assert.equal(download.suggestedFilename(),'Quarterly report.pdf');
     assert.equal(fs.readFileSync(await download.path(),'utf8'),'%PDF-1.4 preview','the copied file downloads to the phone');
