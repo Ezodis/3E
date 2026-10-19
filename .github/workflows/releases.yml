@@ -1,5 +1,7 @@
 name: Build and publish 3E (Mac and Windows)
-# One run builds every platform, so 3£Windows and the Mac base app share one version.
+# Every module shares one version line (release-versions.json base + run number).
+# Only modules whose source changed since their last release are rebuilt and
+# published, taking this run's version; unchanged modules keep their version.
 on:
   push:
     branches: [main]
@@ -10,12 +12,31 @@ concurrency:
   group: mac-releases
   cancel-in-progress: false
 jobs:
+  plan:
+    runs-on: ubuntu-latest
+    outputs:
+      mac: ${{ steps.plan.outputs.mac }}
+      windows: ${{ steps.plan.outputs.windows }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+      - name: Find modules updated since their last release
+        id: plan
+        run: |
+          plan=$(python3 scripts/release.py plan --offset "$GITHUB_RUN_NUMBER")
+          echo "$plan"
+          echo "mac=$(echo "$plan" | jq -c .mac)" >> "$GITHUB_OUTPUT"
+          echo "windows=$(echo "$plan" | jq -r .windows)" >> "$GITHUB_OUTPUT"
   build:
+    needs: plan
+    if: needs.plan.outputs.mac != '[]'
     runs-on: macos-latest
     strategy:
       fail-fast: false
       matrix:
-        edition: [combined, touchbar, touchtab]
+        edition: ${{ fromJSON(needs.plan.outputs.mac) }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-dotnet@v4
@@ -60,7 +81,8 @@ jobs:
           path: build/releases/*
           if-no-files-found: error
   publish:
-    needs: build
+    needs: [plan, build]
+    if: needs.plan.outputs.mac != '[]'
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -70,12 +92,15 @@ jobs:
         with:
           path: build/releases
           merge-multiple: true
-      - name: Publish only after all three editions pass
+      - name: Publish only after every updated edition passes
         env:
           GH_TOKEN: ${{ github.token }}
-        run: python3 scripts/release.py publish --offset "$GITHUB_RUN_NUMBER"
+          EDITIONS: ${{ join(fromJSON(needs.plan.outputs.mac), ',') }}
+        run: python3 scripts/release.py publish --offset "$GITHUB_RUN_NUMBER" --editions "$EDITIONS"
   windows:
-    # Same workflow run number as the Mac editions, so windows-vX.Y.Z == combined-vX.Y.Z.
+    # Same run number as the Mac editions, so an updated Windows build gets this run's version.
+    needs: plan
+    if: needs.plan.outputs.windows == 'true'
     runs-on: windows-latest
     permissions:
       contents: write
@@ -84,7 +109,7 @@ jobs:
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '10.0.x'
-      - name: Stamp the shared 3E version
+      - name: Stamp this run's shared 3E version
         shell: pwsh
         run: |
           python scripts/release.py stamp-windows --offset $env:GITHUB_RUN_NUMBER

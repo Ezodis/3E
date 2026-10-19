@@ -1,6 +1,6 @@
 import unittest
 from unittest.mock import patch
-from release import versions, EDITIONS, verify_architectures, required_module_files, verify_modules
+from release import versions, plan, latest_tag, MODULES, EDITIONS, verify_architectures, required_module_files, verify_modules
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
@@ -34,12 +34,27 @@ class ReleasesTest(unittest.TestCase):
             values = [tuple(map(int, item[edition].split("."))) for item in (base, first, later)]
             self.assertLess(values[0], values[1])
             self.assertLess(values[1], values[2])
-        self.assertEqual(base["combined"], base["touchbar"])
+        self.assertEqual(len(set(base.values())), 1)
 
-    def test_windows_matches_mac_base_app(self):
+    def test_every_module_shares_one_version(self):
         for offset in (0, 1, 66, 500):
-            values = versions(offset)
-            self.assertEqual(values["windows"], values["combined"])
+            self.assertEqual(len(set(versions(offset).values())), 1)
+        self.assertEqual(set(versions(0)), set(MODULES))
+
+    def test_latest_tag_is_numeric_and_per_module(self):
+        tags = ["touchtab-v1.5.69", "touchtab-v3.0.9", "touchtab-v3.0.10", "touchbar-v9.9.9", "touchtab-vbad"]
+        self.assertEqual(latest_tag("touchtab", tags), "touchtab-v3.0.10")
+        self.assertIsNone(latest_tag("windows", tags))
+
+    def test_only_updated_modules_are_released(self):
+        tags = [f"{prefix}-v3.0.80" for prefix, _ in MODULES.values()]
+        touchtab_only = lambda tag, paths: "TouchTab/" in paths
+        # TouchTab is embedded in the Combined base app, so both move together.
+        self.assertEqual(plan(tags, touchtab_only), ["combined", "touchtab"])
+        windows_only = lambda tag, paths: "Windows/" in paths
+        self.assertEqual(plan(tags, windows_only), ["windows"])
+        self.assertEqual(plan(tags, lambda tag, paths: False), [])
+        self.assertEqual(plan([], lambda tag, paths: tag is None), list(MODULES))
 
     def test_portable_architecture_query(self):
         with patch("release.run", return_value="x86_64 arm64") as command:

@@ -1,9 +1,12 @@
 #!/usr/bin/env python3
-"""Stamp, package and publish the macOS editions and give 3£Windows the same version.
+"""Plan, stamp, package and publish every 3E module on one shared version line.
 
-3£Windows and the Mac base app (3E Combined) share one version number: both are
-computed from release-versions.json's "touchbar" base plus the release workflow's
-run number, and both are built by the same workflow run.
+Every module (Combined, TouchBar, TouchTab, 3£Windows) uses the same version:
+release-versions.json's "base" plus the release workflow's run number. A module is
+only rebuilt and re-released when its own source changed since its last release,
+so an unchanged module keeps the version it last shipped with and an updated one
+takes the version of the run that updated it. Editing release-versions.json counts
+as a change for every module, which re-syncs them all to one version.
 """
 import argparse
 import hashlib
@@ -25,16 +28,45 @@ EDITIONS = {
 def run(*args, **kwargs):
     return subprocess.check_output(args, cwd=ROOT, text=True, **kwargs).strip()
 
+# Release tag prefix and the source paths whose changes trigger a new release.
+MODULES = {
+    "combined": ("combined", ("TouchBar/", "TouchTab/", "Shared/")),
+    "touchbar": ("touchbar", ("TouchBar/", "Shared/")),
+    "touchtab": ("touchtab", ("TouchTab/",)),
+    "windows": ("windows", ("Windows/", "Shared/")),
+}
+SYNC_FILE = "release-versions.json"
+
 def versions(offset):
-    bases = json.loads((ROOT / "release-versions.json").read_text())
-    result = {}
-    for edition in EDITIONS:
-        base = bases["touchtab" if edition == "touchtab" else "touchbar"]
-        major, minor, patch = map(int, base.split("."))
-        result[edition] = f"{major}.{minor}.{patch + offset}"
-    # 3£Windows always ships the same version as the Mac base app.
-    result["windows"] = result["combined"]
-    return result
+    base = json.loads((ROOT / SYNC_FILE).read_text())["base"]
+    major, minor, patch = map(int, base.split("."))
+    version = f"{major}.{minor}.{patch + offset}"
+    return {module: version for module in MODULES}
+
+def parse_version(text):
+    return tuple(map(int, text.split("."))) if re.fullmatch(r"\d+\.\d+\.\d+", text) else None
+
+def latest_tag(prefix, tags):
+    found = [(parse_version(tag[len(prefix) + 2:]), tag) for tag in tags if tag.startswith(f"{prefix}-v")]
+    found = [item for item in found if item[0]]
+    return max(found)[1] if found else None
+
+def changed_since(tag, paths):
+    if tag is None:
+        return True
+    try:
+        run("git", "rev-parse", "--verify", f"{tag}^{{commit}}")
+    except subprocess.CalledProcessError:
+        return True
+    changed = run("git", "diff", "--name-only", tag, "HEAD").splitlines()
+    return any(name == SYNC_FILE or name.startswith(paths) for name in changed)
+
+def plan(tags=None, changed=changed_since):
+    """Return the modules whose source changed since their latest release tag."""
+    if tags is None:
+        tags = run("git", "tag", "--list").splitlines()
+    return [module for module, (prefix, paths) in MODULES.items()
+            if changed(latest_tag(prefix, tags), paths)]
 
 def stamp_windows(values):
     path = ROOT / "Windows/version.json"
@@ -112,17 +144,18 @@ def credentials():
         env["GH_TOKEN"] = fields["password"]
     return env
 
-def publish(values):
+def publish(values, editions):
     env = credentials()
     directory = ROOT / "build/releases"
     commit = run("git", "rev-parse", "HEAD")
     prepared = []
     # Validate ALL packages before creating any release; never upload stale files.
-    for edition, (_, asset, _) in EDITIONS.items():
+    selected = {edition: item for edition, item in EDITIONS.items() if edition in editions}
+    for edition, (_, asset, _) in selected.items():
         manifest = json.loads((directory / f"{edition}-build.json").read_text())
         assert manifest["source_commit"] == commit and manifest["version"] == values[edition]
         assert hashlib.sha256((directory / asset).read_bytes()).hexdigest() == manifest["sha256"]
-    for edition, (prefix, asset, title) in EDITIONS.items():
+    for edition, (prefix, asset, title) in selected.items():
         tag = f"{prefix}-v{values[edition]}"
         existing = subprocess.run(["gh", "release", "view", tag, "--repo", REPO],
                                   env=env, capture_output=True)
@@ -150,13 +183,16 @@ def publish(values):
         print(f"Published https://github.com/{REPO}/releases/tag/{tag}")
     # GitHub's generic Latest link should lead to the integrated edition;
     # standalone updaters continue using their own edition-specific tags.
-    run("gh", "release", "edit", prepared[0], "--repo", REPO, "--latest", env=env)
+    if "combined" in selected:
+        run("gh", "release", "edit", prepared[0], "--repo", REPO, "--latest", env=env)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("action", choices=("stamp", "stamp-windows", "package", "publish", "versions"))
+    parser.add_argument("action", choices=("plan", "stamp", "stamp-windows", "package", "publish", "versions"))
     parser.add_argument("--offset", type=int, default=0)
     parser.add_argument("--edition", choices=EDITIONS)
+    parser.add_argument("--editions", default=",".join(EDITIONS),
+                        help="Comma-separated Mac editions to publish")
     args = parser.parse_args()
     assert args.offset >= 0
     values = versions(args.offset)
@@ -167,5 +203,10 @@ if __name__ == "__main__":
     elif args.action == "package":
         assert args.edition
         package(args.edition, values)
-    elif args.action == "publish": publish(values)
+    elif args.action == "publish":
+        publish(values, [item for item in args.editions.split(",") if item])
+    elif args.action == "plan":
+        modules = plan()
+        print(json.dumps({"mac": [m for m in modules if m in EDITIONS],
+                          "windows": "windows" in modules, "versions": values}))
     else: print(json.dumps(values))
