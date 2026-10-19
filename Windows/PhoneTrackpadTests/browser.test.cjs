@@ -12,7 +12,9 @@ async function updateFlow(browser,name,url,urlFile,errors){
  const restart=async build=>{fs.writeFileSync(urlFile+'.restart',build);for(let i=0;i<100&&fs.readFileSync(urlFile+'.restart','utf8').trim();i++)await new Promise(r=>setTimeout(r,100));assert.equal(fs.readFileSync(urlFile+'.restart','utf8').trim(),'','preview receiver restarted');};
  async function open(viewport){
   const ctx=await browser.newContext({viewport,hasTouch:true,isMobile:true}),page=await ctx.newPage(),sent=[];
-  page.on('pageerror',e=>errors.push(e.message));
+  page.on('pageerror',e=>errors.push(e.message));const net=[];
+  page.on('response',r=>{if(r.status()>=300||r.request().isNavigationRequest())net.push(r.status()+' '+new URL(r.url()).pathname);});
+  page.on('requestfailed',r=>net.push('failed '+new URL(r.url()).pathname+' '+r.failure()?.errorText));
   page.on('websocket',s=>s.on('framesent',f=>{try{const c=JSON.parse(f.payload);if(c.type)sent.push(c);}catch{}}));
   page.on('request',r=>{if(r.url().endsWith('/control')){try{const c=JSON.parse(r.postData());for(const x of c.commands||[])sent.push(x);}catch{}}});
   await page.addInitScript(()=>{try{sessionStorage.setItem('test-loads',String(+(sessionStorage.getItem('test-loads')||0)+1));}catch{}
@@ -21,7 +23,7 @@ async function updateFlow(browser,name,url,urlFile,errors){
   // Null-safe: right after a reload the new document may not have its DOM yet.
   const live=()=>page.waitForFunction(()=>document.getElementById('status')?.textContent==='Connected');
   const reloaded=async count=>{for(let i=0;i<100&&await loads()<count;i++)await page.waitForTimeout(100);assert.equal(await loads(),count,'the page reloaded');
-   try{await live();}catch(e){throw new Error('reloaded page never connected; status: '+await page.evaluate(()=>document.getElementById('status')?.textContent).catch(()=>'?')+'; '+e.message);}};
+   try{await live();}catch(e){throw new Error('reloaded page never connected; status: '+await page.evaluate(()=>document.getElementById('status')?.textContent).catch(()=>'?')+'; url '+page.url()+'; body '+JSON.stringify(await page.evaluate(()=>document.documentElement.outerHTML.slice(0,300)).catch(()=>'?'))+'; network '+net.slice(-12).join(', ')+'; '+e.message);}};
   await page.goto(url);await live();
   return {ctx,page,sent,loads,live,reloaded};
  }
