@@ -1,3 +1,11 @@
+3£Windows 1.0.38 uses the 3£ logo everywhere.
+
+- **No more three-finger-drag icon:** the app's icon (taskbar, Alt+Tab, Task Manager, Startup apps, notifications), the settings window, its title bar and all app tiles now show the 3£ logo, the same one the Mac app uses.
+- **Clicks accent picker** tray icon is the 3£ logo instead of a generic Windows "info" icon.
+- The drag engine's upstream credit in Other Settings keeps its name and links, with a neutral info icon.
+
+Includes everything from 1.0.37:
+
 3£Windows 1.0.37 keeps the Phone Bar link the same on every network.
 
 - **One permanent link:** the QR now always shows `http://3e-win.local:17833/#…` instead of the PC's IP address. The saved secret and the `3e-win.local` name stay the same, so the link on your iPhone, Home Screen or Apple Watch keeps working when the IP changes.

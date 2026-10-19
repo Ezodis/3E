@@ -33,6 +33,8 @@ public sealed partial class SettingsWindow {
 
         ExtendsContentIntoTitleBar = true; // enable custom titlebar
         SetTitleBar(TitleBar); // set TitleBar element as titlebar
+        // Taskbar/Alt+Tab show the 3£ logo for this window too.
+        try { AppWindow.SetIcon(System.IO.Path.Combine(AppContext.BaseDirectory, "Assets", "icon.ico")); } catch { }
 
         NavigationView.SelectedItem = openOtherSettings ? OtherSettings : Touchpad;
     }

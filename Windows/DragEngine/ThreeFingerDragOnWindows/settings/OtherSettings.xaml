@@ -68,8 +68,8 @@
                     <wuc:SettingsExpander Description="© 2023-2025. All rights reserved."
                                           Header="ThreeFingerDragOnWindows">
                         <wuc:SettingsExpander.HeaderIcon>
-                            <BitmapIcon ShowAsMonochrome="False"
-                                        UriSource="ms-appx:///Assets/icon-52.png" />
+                            <!-- Upstream credit: a neutral info glyph, not the 3£ logo. -->
+                            <FontIcon FontFamily="{StaticResource SymbolThemeFontFamily}" Glyph="&#xE946;" />
                         </wuc:SettingsExpander.HeaderIcon>
 
                         <TextBlock Foreground="{ThemeResource TextFillColorSecondaryBrush}"

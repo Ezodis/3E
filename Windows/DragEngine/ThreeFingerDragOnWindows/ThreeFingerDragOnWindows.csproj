@@ -106,7 +106,7 @@
     <None Remove="Assets\WideTile.scale-400.png" />
   </ItemGroup>
   <ItemGroup>
-    <Content Include="Assets\icon.ico" />
+    <Content Include="Assets\icon.ico" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="H.NotifyIcon.WinUI" Version="2.3.2" />

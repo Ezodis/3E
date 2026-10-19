@@ -196,7 +196,25 @@ sealed class AccentContext : ApplicationContext {
   var menu=new ContextMenuStrip();var pause=new ToolStripMenuItem("Pause accent picker") {CheckOnClick=true};
   pause.CheckedChanged+=delegate {engine.Enabled=!pause.Checked;engine.Cancel();};menu.Items.Add(pause);
   menu.Items.Add("Exit accent picker",null,delegate {ExitThread();});
-  tray.Icon=SystemIcons.Information;tray.Text="Clicks: hold a letter or number, then pick 1–9";tray.ContextMenuStrip=menu;tray.Visible=true;
+  tray.Icon=Logo();tray.Text="Clicks: hold a letter or number, then pick 1–9";tray.ContextMenuStrip=menu;tray.Visible=true;
+ }
+ [DllImport("user32.dll")] static extern bool DestroyIcon(IntPtr handle);
+ // The 3£ logo (white 3£ on a dark rounded square), drawn so no image file is needed.
+ static Icon Logo() {
+  using(var bitmap=new Bitmap(32,32,System.Drawing.Imaging.PixelFormat.Format32bppArgb))
+  using(var g=Graphics.FromImage(bitmap)) {
+   g.Clear(Color.Transparent);g.SmoothingMode=System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+   g.TextRenderingHint=System.Drawing.Text.TextRenderingHint.AntiAliasGridFit;
+   using(var plate=new System.Drawing.Drawing2D.GraphicsPath()) {
+    plate.AddArc(1,1,12,12,180,90);plate.AddArc(19,1,12,12,270,90);plate.AddArc(19,19,12,12,0,90);plate.AddArc(1,19,12,12,90,90);plate.CloseFigure();
+    using(var dark=new SolidBrush(Color.FromArgb(20,20,20)))g.FillPath(dark,plate);
+   }
+   using(var font=new Font("Segoe UI",12,FontStyle.Bold,GraphicsUnit.Pixel))
+   using(var format=new StringFormat{Alignment=StringAlignment.Center,LineAlignment=StringAlignment.Center})
+    g.DrawString("3£",font,Brushes.White,new RectangleF(0,0,32,32),format);
+   var handle=bitmap.GetHicon();
+   try {using(var borrowed=Icon.FromHandle(handle))return (Icon)borrowed.Clone();} finally {DestroyIcon(handle);}
+  }
  }
  IntPtr OnKey(int code,IntPtr wp,IntPtr lp) {
   try {if(code>=0) {
