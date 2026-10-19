@@ -36,7 +36,13 @@ jobs:
           dotnet run --no-build --project Windows/PhoneTrackpadTests -- --preview "$url" > "$RUNNER_TEMP/preview.log" 2>&1 &
           preview=$!
           for i in $(seq 1 120); do [[ -s "$url" ]] && break; sleep 0.5; done
-          PLAYWRIGHT_MODULE="$RUNNER_TEMP/pw/node_modules/playwright-core" node Windows/PhoneTrackpadTests/browser.test.cjs "$url" "$RUNNER_TEMP/screens" || { cat "$RUNNER_TEMP/preview.log"; kill $preview; exit 1; }
+          if ! PLAYWRIGHT_MODULE="$RUNNER_TEMP/pw/node_modules/playwright-core" node Windows/PhoneTrackpadTests/browser.test.cjs "$url" "$RUNNER_TEMP/screens" > "$RUNNER_TEMP/browser.log" 2>&1; then
+            cat "$RUNNER_TEMP/browser.log" "$RUNNER_TEMP/preview.log"
+            # Surface the failure in the check summary (one annotation, newlines escaped).
+            echo "::error title=Browser tests::$(tail -n 25 "$RUNNER_TEMP/browser.log" | sed 's/%/%25/g' | awk '{printf "%s%%0A", $0}')"
+            kill $preview; exit 1
+          fi
+          cat "$RUNNER_TEMP/browser.log"
           kill $preview
       - name: Build standalone universal Mac app
         run: zsh Shared/PhoneControl/MacHost/build-app.sh
