@@ -114,9 +114,24 @@ static NSString *CanonicalPlayerBundle(NSString *bundle,NSString *parent) {
 }
 // An absent snapshot is unknown, not evidence that a browser has paused.
 static NSInteger MediaSnapshotState(id rate,BOOL hasInfo,BOOL hasPlayingFlag,BOOL playing) {
-    if([rate respondsToSelector:@selector(doubleValue)]) return [rate doubleValue]>0 ? 1 : 0;
     if(playing && hasPlayingFlag) return 1;
+    if([rate respondsToSelector:@selector(doubleValue)]) return [rate doubleValue]>0 ? 1 : 0;
     return hasInfo && hasPlayingFlag ? 0 : -1;
+}
+// Resolve every poll, including transitions after an initially known state.
+// Direct controls win; unavailable controls fall back to the current session.
+static NSInteger ResolvedPlaybackState(NSInteger provider, NSInteger snapshot, BOOL current) {
+    return provider>=0 ? provider : current ? snapshot : -1;
+}
+static NSInteger CurrentMediaState(void) {
+    NSDictionary *info=nil;
+    @try { info=[RequestValue(@"localNowPlayingItem") valueForKey:@"nowPlayingInfo"]; } @catch(NSException *e) {}
+    id rate=info[MediaKey("kMRMediaRemoteNowPlayingInfoPlaybackRate") ?: @"kMRMediaRemoteNowPlayingInfoPlaybackRate"];
+    Class request=NSClassFromString(@"MRNowPlayingRequest");
+    SEL selector=NSSelectorFromString(@"localIsPlaying");
+    BOOL available=[request respondsToSelector:selector];
+    BOOL playing=available && ((BOOL(*)(id,SEL))objc_msgSend)(request,selector);
+    return MediaSnapshotState(rate,info.count>0,available,playing);
 }
 static NSString *CurrentPlayerBundle(void) {
     @try {
@@ -857,9 +872,11 @@ static OSStatus SendSpotifyCommand(pid_t pid, int command) {
         NSInteger liveState=live && !live.terminated ? ReadAbletonState(live.processIdentifier) : -1;
         NSInteger safariState=safari && !safari.terminated ? ReadSafariState(safari.processIdentifier) : -1;
         dispatch_async(dispatch_get_main_queue(), ^{
-            [weakSelf.playbackBook report:@"com.spotify.client" state:spotifyState];
+            NSString *current=CurrentPlayerBundle();
+            NSInteger snapshot=CurrentMediaState();
+            [weakSelf.playbackBook report:@"com.spotify.client" state:ResolvedPlaybackState(spotifyState,snapshot,[current isEqualToString:@"com.spotify.client"])];
             [weakSelf.playbackBook report:@"com.ableton.live" state:liveState];
-            if([CurrentPlayerBundle() isEqualToString:@"com.apple.Safari"]) [weakSelf.playbackBook report:@"com.apple.Safari" state:safariState];
+            if([current isEqualToString:@"com.apple.Safari"]) [weakSelf.playbackBook report:current state:ResolvedPlaybackState(safariState,snapshot,YES)];
             if (!weakSelf.didPollProviders) {
                 [weakSelf.playbackBook prefer:CurrentPlayerBundle()];
                 weakSelf.didPollProviders=YES;
@@ -1056,6 +1073,16 @@ int main(int argc, const char *argv[]) {
             NSCAssert(NSEqualSizes(IconWithAction(ServiceIcon(@"youtube"),-1,NO).size,NSMakeSize(34,20)),@"Unknown status retains an action alongside the source icon");
             NSCAssert(MediaSnapshotState(nil,NO,YES,NO)==-1,@"Missing metadata must not masquerade as paused");
             NSCAssert(MediaSnapshotState(@1,YES,YES,NO)==1,@"Positive playback rate survives a stale global paused flag");
+            NSCAssert(MediaSnapshotState(@0,YES,YES,YES)==1,@"Live playing flag overrides a cached zero playback rate");
+            PlaybackBook *fallbackBook=[PlaybackBook new];
+            [fallbackBook report:@"com.apple.Safari" state:0];
+            [fallbackBook report:@"com.apple.Safari" state:ResolvedPlaybackState(-1,1,YES)];
+            NSCAssert([fallbackBook state:@"com.apple.Safari"]==1,@"Unavailable browser controls must not freeze an initially paused icon");
+            [fallbackBook report:@"com.apple.Safari" state:ResolvedPlaybackState(-1,0,YES)];
+            NSCAssert([fallbackBook state:@"com.apple.Safari"]==0,@"Snapshot fallback follows an external pause as well as play");
+            NSCAssert(ResolvedPlaybackState(1,0,YES)==1 && ResolvedPlaybackState(0,1,YES)==0,@"Direct provider state wins over cached snapshots");
+            NSCAssert(ResolvedPlaybackState(-1,1,NO)==-1,@"Another app's playback cannot change this player's icon");
+            NSCAssert(ResolvedPlaybackState(-1,-1,YES)==-1,@"Missing data remains unknown");
             NSCAssert(SafariTransportLabelState(@"Pausa (k)")==1 && SafariTransportLabelState(@"Reproducir (k)")==0,@"YouTube transport labels reflect playing and paused");
             NSCAssert(YouTubeElapsedLabel(@"7 minutos 34 segundos de 17 minutos 6 segundos")==454 && YouTubeElapsedLabel(@"0 minutos 0 segundos de 17 minutos 6 segundos")==0 && YouTubeElapsedLabel(@"1:02 / 3:45")==62 && isnan(YouTubeElapsedLabel(@"100% volumen")),@"YouTube elapsed time must use the current-time control and exclude volume");
             NSCAssert(!ShouldRestartPrevious(0) && !ShouldRestartPrevious(3) && ShouldRestartPrevious(3.1) && !ShouldRestartPrevious(NAN),@"Previous restarts only beyond the opening three seconds");
