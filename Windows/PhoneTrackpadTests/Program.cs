@@ -462,6 +462,10 @@ Check(!PhoneTrackpad.IsPrivateAddress(IPAddress.Parse("8.8.8.8")) && !PhoneTrack
     using (var ws = await Connect(buildPad.PairingUrl)) {
         using var ready = JsonDocument.Parse(await Receive(ws));
         Check(ready.RootElement.GetProperty("ready").GetBoolean() && ready.RootElement.GetProperty("build").GetString() == build, "The WebSocket ready message includes the build id");
+        // Reloading the page while its socket is still open fetches every file at once.
+        var paths = new[] { "/", "/host.js", "/pad.js", "/surface.js", "/clip.js", "/dock.js", "/surface.css", "/icon.png" };
+        var codes = await Task.WhenAll(paths.Select(async path => { using var r = await http.GetAsync(origin + path); return r.StatusCode; }));
+        Check(codes.All(c => c == HttpStatusCode.OK), "A page reload succeeds in full while the phone's socket is still connected");
     }
     await Until(() => buildPad.Status.Contains("disconnected"));
     async Task<JsonElement> WatchPost(object payload) {

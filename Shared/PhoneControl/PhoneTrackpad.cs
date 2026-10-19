@@ -92,7 +92,12 @@ public sealed class PhoneTrackpad : IDisposable {
 
     private sealed class Session {
         public readonly CancellationTokenSource Cancel = new();
-        public readonly SemaphoreSlim Slots = new(4);
+        // Concurrent HTTP requests. A page load fetches about eight files at
+        // once (page, scripts, styles, icon), so a reload must fit in full.
+        public readonly SemaphoreSlim Slots = new(8);
+        // Open WebSockets are bounded separately: a connected phone must not
+        // hold a request slot, or reloading the page could get 503s.
+        public readonly SemaphoreSlim Sockets = new(4);
         public readonly HttpListener Listener = new();
         public readonly string Token;
         public readonly string Origin, AliasOrigin;
@@ -276,6 +281,7 @@ public sealed class PhoneTrackpad : IDisposable {
     }
 
     private async Task HandleAsync(Session owner, HttpListenerContext context) {
+        bool slotReleased = false;
         try {
             var request = context.Request;
             // Literal bound host and same-origin WebSockets prevent DNS rebinding / cross-site control.
@@ -293,8 +299,12 @@ public sealed class PhoneTrackpad : IDisposable {
                 if (!owner.IsOrigin(request.Headers["Origin"]) || request.Url.Query.Length != 0) {
                     context.Response.StatusCode = 403; context.Response.Close(); return;
                 }
-                using var ws = (await context.AcceptWebSocketAsync(null)).WebSocket;
-                await ControlAsync(owner, ws);
+                if (!owner.Sockets.Wait(0)) { context.Response.StatusCode = 503; context.Response.Close(); return; }
+                slotReleased = true; owner.Slots.Release();
+                try {
+                    using var ws = (await context.AcceptWebSocketAsync(null)).WebSocket;
+                    await ControlAsync(owner, ws);
+                } finally { owner.Sockets.Release(); }
                 return;
             }
             if (request.Url.AbsolutePath == "/alive") {
@@ -326,7 +336,7 @@ public sealed class PhoneTrackpad : IDisposable {
             await stream.CopyToAsync(response.OutputStream, owner.Cancel.Token);
             response.Close();
         } catch { try { context.Response.Abort(); } catch { } }
-        finally { owner.Slots.Release(); }
+        finally { if (!slotReleased) owner.Slots.Release(); }
     }
 
     public static bool CanShowPairing(IPAddress remote, IPAddress local) => IPAddress.IsLoopback(remote) || remote.Equals(local);
