@@ -1,3 +1,10 @@
+3£Windows 1.0.33 simplifies the tray menu further.
+
+- **Simpler settings icon:** the ⚙ is now a quiet ⋯ at the right edge of Three-finger drag, PowerToys shortcuts and Dynamic wallpaper. Click the row to toggle; click the ⋯ for settings.
+- **No "Check for updates…" item** while "Install updates automatically" is on. Turn automatic updates off and the manual check comes back.
+
+Includes everything from 1.0.32:
+
 3£Windows 1.0.32 tidies the tray menu.
 
 - **Gear icons:** Three-finger drag, PowerToys shortcuts and Dynamic wallpaper each have a ⚙ at the right edge. Click the row to switch it on or off; click the ⚙ to open its settings. The separate "Drag settings…", "PowerToys settings…" and "Show wallpaper controls…" items are gone.

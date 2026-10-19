@@ -257,8 +257,8 @@ public sealed class WindowsHub : IDisposable {
     };
 
     private ToggleMenuFlyoutItem ToggleMenuItem(string label, bool value, Action<bool> change, Action openSettings = null) {
-        // "\t" puts the gear in the native menu's right-aligned column.
-        var item = new ToggleMenuFlyoutItem { Text = openSettings == null ? label : label + "\t⚙", IsChecked = value };
+        // "\t" puts the settings dots in the native menu's right-aligned column.
+        var item = new ToggleMenuFlyoutItem { Text = openSettings == null ? label : label + "\t⋯", IsChecked = value };
         item.Command = new MenuCommand(() => {
             if (openSettings != null && ClickedGear()) {
                 try { openSettings(); } catch (Exception ex) { Log(ex); MessageBox(IntPtr.Zero, ex.Message, "3£Windows", 0x10); }
@@ -337,7 +337,8 @@ public sealed class WindowsHub : IDisposable {
         Item("Use dark theme", () => { settings.AutoDark = false; Save(); SetTheme(0); });
         menu.Items.Add(new MenuFlyoutSeparator());
         Item("Restart input engines", () => { StopKeyboard(); Stop("PowerToys.KeyboardManagerEngine"); _ = EnsureComponentsAsync(); });
-        Item(updateTag == null ? "Check for updates…" : "Update available: " + updateTag + "…", () => _ = CheckUpdatesAsync(true));
+        // Automatic updates make a manual check redundant; it returns only when they are off.
+        if (!settings.AutoUpdate) Item(updateTag == null ? "Check for updates…" : "Update available: " + updateTag + "…", () => _ = CheckUpdatesAsync(true));
         Toggle("Install updates automatically", settings.AutoUpdate, enabled => { settings.AutoUpdate = enabled; if (!enabled) pendingUpdate = null; else settings.LastUpdateCheckUtc = default; });
         Item("Open portable installer", () => Process.Start(new ProcessStartInfo("explorer.exe", "/select,\"" + Path.Combine(root, "3£Windows.ps1") + "\"") { UseShellExecute = true }));
         Item("Quit 3£Windows", () => App.Instance.Quit());
