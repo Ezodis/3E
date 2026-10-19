@@ -171,10 +171,9 @@ static void StripCheckRelease(BOOL foreground) {
             stripUpdateChecking=NO;
             NSString *installed=StripInstalledVersion();
             BOOL newer=release && [release[@"version"] compare:installed options:NSNumericSearch]==NSOrderedDescending;
-            // Background installs restart 3£, so wait until the Mac has been idle
-            // for 90 seconds; the next 10-minute check tries again.
+            // New releases install as soon as they are found, even while the Mac is in use.
             if(newer && StripAutomaticUpdatesEnabled()) {
-                if(!foreground && CGEventSourceSecondsSinceLastEventType(kCGEventSourceStateCombinedSessionState,(CGEventType)~0u)<90) return;
+                if(!foreground) StripNotify(@"Updating 3£",[NSString stringWithFormat:@"Installing version %@; 3£ will reopen in a few seconds.",release[@"version"]]);
                 StripDownloadAndInstall(release,foreground); return;
             }
             if(!foreground) return;

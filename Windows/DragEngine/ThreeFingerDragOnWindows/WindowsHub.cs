@@ -587,7 +587,8 @@ public sealed class WindowsHub : IDisposable {
         return new System.Security.Principal.WindowsPrincipal(identity).IsInRole(System.Security.Principal.WindowsBuiltInRole.Administrator);
     }
     private async Task InstallPendingUpdateAsync() {
-        if (installingUpdate || pendingUpdate == null || !settings.AutoUpdate || IdleSeconds() < UpdateIdleSeconds || !Elevated()) return;
+        // New releases install as soon as they are found, even while the PC is in use.
+        if (installingUpdate || pendingUpdate == null || !settings.AutoUpdate || !Elevated()) return;
         var release = pendingUpdate.Value;
         var tag = release.GetProperty("tag_name").GetString();
         if (settings.AutoUpdateTag == tag && settings.AutoUpdateAttempts >= UpdateMaxAttempts) return;

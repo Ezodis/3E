@@ -1,3 +1,9 @@
+3£Windows 1.0.43 installs updates right away.
+
+- **No more waiting for idle:** a new release is installed as soon as the 10-minute check finds it, even while you are using the PC. The suite restarts for a few seconds and keeps all settings.
+
+Includes everything from 1.0.42:
+
 3£Windows 1.0.42 puts the butterfly logo in the last few places.
 
 - **Phone Bar:** the QR popup shows the logo next to "3£ Phone Bar", and the phone page has it as its tab and Home Screen icon (iPhone "Add to Home Screen" now shows the butterfly).
