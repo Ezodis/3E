@@ -2,11 +2,11 @@
 #import "../../../Shared/PhoneControl/MacHost/PhoneBarMenu.h"
 static NSMenu *StripBaseMenu(id target,BOOL gestures) {
     NSMenu *menu=[NSMenu new];
+    [menu addItem:ThreeEPhoneBarMenu(target)];
     if(gestures) {
         NSMenuItem *touchTab=[[NSMenuItem alloc] initWithTitle:@"Touch Tab" action:NSSelectorFromString(@"toggleBaseTouchTab:") keyEquivalent:@""];
         touchTab.identifier=@"local.musicstrip.touchTabToggle";touchTab.target=target;[menu addItem:touchTab];
     }
-    [menu addItem:ThreeEPhoneBarMenu(target)];
     [menu addItem:NSMenuItem.separatorItem];
     NSMenuItem *touchBar=[[NSMenuItem alloc] initWithTitle:@"Touch Bar unavailable on this Mac" action:nil keyEquivalent:@""];
     touchBar.enabled=NO;[menu addItem:touchBar];

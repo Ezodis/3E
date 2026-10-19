@@ -25,7 +25,7 @@ int main(void) { @autoreleasepool {
     NSCAssert(phone!=nil,@"Phone Bar control is present");
     NSCAssert([phone.identifier isEqual:@"local.musicstrip.phone"] && [phone.title isEqual:@"Phone Bar"] && phone.view!=nil,@"Phone Bar is a bundled module in the existing menu");
     NSMenu *base=StripBaseMenu(delegate,YES);
-    NSCAssert([base.itemArray[0].identifier isEqual:@"local.musicstrip.touchTabToggle"] && [base.itemArray[1].identifier isEqual:@"local.musicstrip.phone"],@"Base menu retains gestures and Phone Bar without Touch Bar interfaces");
+    NSCAssert([base.itemArray[0].identifier isEqual:@"local.musicstrip.phone"] && [base.itemArray[1].identifier isEqual:@"local.musicstrip.touchTabToggle"],@"Base menu places Phone Bar before Touch Tab without Touch Bar interfaces");
     NSCAssert(!base.itemArray[2].enabled,@"Only the unavailable Touch Bar module is disabled");
     NSMenuItem *toggle=delegate.theItem.menu.itemArray.firstObject;
     NSCAssert(toggle.target==MusicStripMidiBridge.class && toggle.action==@selector(toggleTouchTab:),@"Use the existing parent/helper pipe action");
@@ -46,7 +46,7 @@ int main(void) { @autoreleasepool {
     [delegate.theItem.menu insertItem:version atIndex:0]; CleanMenu(delegate.theItem.menu); CleanMenu(delegate.theItem.menu);
     NSMenuItem *apps=nil;
     for(NSMenuItem *item in delegate.theItem.menu.itemArray)if([item.identifier isEqual:@"local.musicstrip.appsToggle"])apps=item;
-    NSCAssert(delegate.theItem.menu.itemArray[0]==version && delegate.theItem.menu.itemArray[1]==toggle && delegate.theItem.menu.itemArray[2]==phone && [delegate.theItem.menu.itemArray[3] isSeparatorItem] && delegate.theItem.menu.itemArray[4]==apps && delegate.theItem.menu.itemArray[5]==hide && hide.action==@selector(toggleMidi:),@"Touch Tab, App, phone and MIDI remain in stable order without duplicates");
+    NSCAssert(delegate.theItem.menu.itemArray[0]==version && delegate.theItem.menu.itemArray[1]==phone && delegate.theItem.menu.itemArray[2]==toggle && [delegate.theItem.menu.itemArray[3] isSeparatorItem] && delegate.theItem.menu.itemArray[4]==apps && delegate.theItem.menu.itemArray[5]==hide && hide.action==@selector(toggleMidi:),@"Phone Bar precedes Touch Tab and the existing rows remain in stable order without duplicates");
     NSCAssert(apps.target==MusicStripMidiBridge.class && apps.action==@selector(toggleApps:),@"App menu uses the existing main-process pipe");
     appsMenuVisible=YES; [MusicStripMidiBridge validateMenuItem:apps]; NSCAssert(apps.state==NSControlStateValueOn,@"Visible apps are checked");
     appsMenuVisible=NO; [MusicStripMidiBridge validateMenuItem:apps]; NSCAssert(apps.state==NSControlStateValueOff,@"Hidden apps are unchecked");

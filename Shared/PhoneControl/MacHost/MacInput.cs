@@ -12,6 +12,7 @@ public sealed class MacInput : ITrackpadInput, IDisposable {
     [DllImport(CG)] private static extern IntPtr CGEventCreateMouseEvent(IntPtr source,uint type,Point position,uint button);
     [DllImport(CG)] private static extern IntPtr CGEventCreateKeyboardEvent(IntPtr source,ushort key,[MarshalAs(UnmanagedType.I1)] bool down);
     [DllImport("ThreeEPhoneNative")] private static extern IntPtr ThreeECreateScrollEvent(int y,int x);
+    [DllImport("ThreeEPhoneNative")] private static extern int ThreeEPostSpaceSwipe(int vertical,int direction);
     [DllImport("ThreeEPhoneNative")] public static extern int ThreeEValidateScrollEvent();
     [DllImport("ThreeEPhoneNative")] public static extern int ThreeEHasMultipleSpaces();
     [DllImport(CG)] private static extern void CGEventSetFlags(IntPtr e,ulong flags);
@@ -47,12 +48,12 @@ public sealed class MacInput : ITrackpadInput, IDisposable {
     public void DragStart(int x,int y){if(held)return;lastClick=0;Down();}
     public void Release() { if(held){held=false;var e=CGEventCreateMouseEvent(IntPtr.Zero,2,Location(),0);if(e==IntPtr.Zero)throw new InvalidOperationException("macOS mouse event unavailable");CGEventSetIntegerValueField(e,1,clicks);Post(e);} }
     public void Click(bool right) { if(held)return;if(!right){Down();Release();}else{var p=Location();Post(CGEventCreateMouseEvent(IntPtr.Zero,3,p,1));Post(CGEventCreateMouseEvent(IntPtr.Zero,4,p,1));} }
-    public void TaskView(){ReleaseAll();systemAction("missionControl",0);}
+    public void TaskView(){ReleaseAll();if(ThreeEPostSpaceSwipe(1,1)!=1)systemAction("missionControl",0);}
     // Control–Down opens App Exposé. Use the system Show Desktop key (F11
     // with the Fn modifier) so the Apps dock's downward swipe has the same
     // meaning as Windows, instead of opening Exposé a second time.
     public void ShowDesktop(){ReleaseAll();systemAction("showDesktop",0);}
-    public void Desktop(int direction){if(direction!=0){ReleaseAll();systemAction("space",direction);}}
+    public void Desktop(int direction){if(direction!=0){ReleaseAll();if(ThreeEPostSpaceSwipe(0,direction)!=1)systemAction("space",direction);}}
     // On macOS the Apps dock represents Spaces. Never fall back to Command-Tab:
     // that changes applications instead of moving to the previous/next desktop.
     public void AppsBegin()=>Desktop(1);

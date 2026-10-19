@@ -677,9 +677,13 @@ static void CleanMenu(NSMenu *menu) {
             toggle.target=NSClassFromString(@"MusicStripMidiBridge"); toggle.identifier=@"local.musicstrip.touchTabToggle";
             [menu insertItem:toggle atIndex:0];
         }
-        // First actionable row, immediately below the version header.
+        // Place Touch Tab immediately after Phone Bar in the existing menu.
         [menu removeItem:toggle];
         NSInteger position=menu.numberOfItems && [menu.itemArray.firstObject.title containsString:@"(v."] ? 1 : 0;
+        for(NSInteger index=position;index<menu.numberOfItems;index++) {
+            NSMenuItem *item=menu.itemArray[(NSUInteger)index];
+            if([item.identifier isEqual:@"local.musicstrip.phone"]) { position=index+1; break; }
+        }
         [menu insertItem:toggle atIndex:position];
         toggle.state=[combinedGestureState isEqual:@"on"] ? NSControlStateValueOn : NSControlStateValueOff;
         toggle.title=@"Touch Tab";
