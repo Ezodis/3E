@@ -98,17 +98,19 @@
 }
 - (void)performSystemAction:(NSString *)action direction:(NSInteger)direction {
     if(self.systemAction){self.systemAction(action,direction);return;}
+    if([action isEqual:@"missionControl"]) {
+        NSURL *url=[NSURL fileURLWithPath:@"/System/Applications/Mission Control.app"];
+        NSWorkspaceOpenConfiguration *configuration=[NSWorkspaceOpenConfiguration configuration];configuration.activates=YES;
+        [NSWorkspace.sharedWorkspace openApplicationAtURL:url configuration:configuration completionHandler:nil];
+        return;
+    }
+    if(![action isEqual:@"showDesktop"])return;
     void (^postKey)(CGKeyCode,BOOL,CGEventFlags)=^(CGKeyCode key,BOOL down,CGEventFlags flags){
         CGEventRef event=CGEventCreateKeyboardEvent(NULL,key,down);
         if(event){CGEventSetFlags(event,flags);CGEventPost(kCGSessionEventTap,event);CFRelease(event);}
     };
-    CGEventFlags control=(CGEventFlags)1<<18,fn=(CGEventFlags)1<<23;
-    if([action isEqual:@"missionControl"] || ([action isEqual:@"space"] && direction)) {
-        CGKeyCode arrow=[action isEqual:@"missionControl"] ? 126 : direction<0 ? 123 : 124;
-        postKey(59,YES,control);postKey(arrow,YES,control);postKey(arrow,NO,control);postKey(59,NO,0);
-    } else if([action isEqual:@"showDesktop"]) {
-        postKey(63,YES,fn);postKey(103,YES,fn);postKey(103,NO,fn);postKey(63,NO,0);
-    }
+    CGEventFlags fn=(CGEventFlags)1<<23;
+    postKey(63,YES,fn);postKey(103,YES,fn);postKey(103,NO,fn);postKey(63,NO,0);
 }
 - (void)toggleReceiver {
     if(self.task.running){[self stop];return;}

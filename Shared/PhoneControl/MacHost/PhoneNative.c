@@ -5,32 +5,6 @@
 #include <math.h>
 #include <dlfcn.h>
 #include <pthread.h>
-static void PhonePostSpaceSwipe(int vertical,int direction) {
-    for(int phase=0;phase<3;phase++) {
-        CGEventRef dock=CGEventCreate(NULL),gesture=CGEventCreate(NULL);
-        if(!dock||!gesture){if(dock)CFRelease(dock);if(gesture)CFRelease(gesture);return;}
-        CGEventSetType(dock,(CGEventType)30);CGEventSetIntegerValueField(dock,(CGEventField)55,30);
-        CGEventSetType(gesture,(CGEventType)29);CGEventSetIntegerValueField(gesture,(CGEventField)55,29);
-        CGEventSetIntegerValueField(dock,(CGEventField)110,23);
-        CGEventSetIntegerValueField(dock,(CGEventField)132,phase==0?1:phase==1?2:4);
-        CGEventSetIntegerValueField(dock,(CGEventField)135,vertical?0:direction>0);
-        CGEventSetIntegerValueField(dock,(CGEventField)123,1);
-        CGEventSetDoubleValueField(dock,(CGEventField)119,0);
-        CGEventSetDoubleValueField(dock,(CGEventField)139,FLT_MIN);
-        if(phase>0) {
-            double delta=(phase==1?1.0:2.0)*(direction>0?1:-1);
-            if(vertical) { CGEventSetDoubleValueField(dock,(CGEventField)125,delta);CGEventSetDoubleValueField(dock,(CGEventField)130,direction>0?400:-400); }
-            else { CGEventSetDoubleValueField(dock,(CGEventField)124,delta);CGEventSetDoubleValueField(dock,(CGEventField)129,direction>0?400:-400);CGEventSetDoubleValueField(dock,(CGEventField)130,0); }
-        }
-        CGEventPost(kCGSessionEventTap,dock);CGEventPost(kCGSessionEventTap,gesture);
-        CFRelease(dock);CFRelease(gesture);
-    }
-}
-int ThreeEPostSpaceSwipe(int vertical,int direction) {
-    if((vertical!=0&&vertical!=1)||direction==0)return 0;
-    PhonePostSpaceSwipe(vertical,direction);
-    return 1;
-}
 static int (*phoneConnection)(void);
 static CFArrayRef (*phoneSpaces)(int);
 static uint64_t (*phoneActiveSpace)(int);

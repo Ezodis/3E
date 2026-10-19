@@ -64,18 +64,26 @@ static BOOL AccessibilityTrusted(BOOL prompt) {
     return AXIsProcessTrustedWithOptions((__bridge CFDictionaryRef)options);
 }
 
+static void StepDesktop(NSInteger direction);
 static void PostMacSystemAction(NSString *action,NSInteger direction) {
     BOOL missionControl=[action isEqualToString:@"missionControl"];
     BOOL changeSpace=[action isEqualToString:@"space"];
     BOOL showDesktop=[action isEqualToString:@"showDesktop"];
     if(!missionControl&&!changeSpace&&!showDesktop)return;
+    if(missionControl) {
+        NSURL *url=[NSURL fileURLWithPath:@"/System/Applications/Mission Control.app"];
+        NSWorkspaceOpenConfiguration *configuration=[NSWorkspaceOpenConfiguration configuration];configuration.activates=YES;
+        [NSWorkspace.sharedWorkspace openApplicationAtURL:url configuration:configuration completionHandler:^(NSRunningApplication *app,NSError *error) {
+            if(error)NSLog(@"Could not open Mission Control: %@",error.localizedDescription);
+        }];
+        return;
+    }
+    if(changeSpace) { StepDesktop(direction);return; }
     if(!AccessibilityTrusted(NO)) { AccessibilityTrusted(YES); return; }
-    CGEventFlags modifier=showDesktop ? kCGEventFlagMaskSecondaryFn : kCGEventFlagMaskControl;
-    CGKeyCode modifierKey=showDesktop ? 63 : 59;
-    CGKeyCode key=missionControl ? 126 : showDesktop ? 103 : direction<0 ? 123 : 124;
-    CGEventRef modDown=CGEventCreateKeyboardEvent(NULL,modifierKey,true),down=CGEventCreateKeyboardEvent(NULL,key,true),up=CGEventCreateKeyboardEvent(NULL,key,false),modUp=CGEventCreateKeyboardEvent(NULL,modifierKey,false);
+    CGEventFlags fn=kCGEventFlagMaskSecondaryFn;
+    CGEventRef modDown=CGEventCreateKeyboardEvent(NULL,63,true),down=CGEventCreateKeyboardEvent(NULL,103,true),up=CGEventCreateKeyboardEvent(NULL,103,false),modUp=CGEventCreateKeyboardEvent(NULL,63,false);
     if(modDown&&down&&up&&modUp){
-        CGEventSetFlags(modDown,modifier);CGEventSetFlags(down,modifier);CGEventSetFlags(up,modifier);CGEventSetFlags(modUp,0);
+        CGEventSetFlags(modDown,fn);CGEventSetFlags(down,fn);CGEventSetFlags(up,fn);CGEventSetFlags(modUp,0);
         CGEventPost(kCGHIDEventTap,modDown);CGEventPost(kCGHIDEventTap,down);CGEventPost(kCGHIDEventTap,up);CGEventPost(kCGHIDEventTap,modUp);
     }
     if(modDown)CFRelease(modDown);if(down)CFRelease(down);if(up)CFRelease(up);if(modUp)CFRelease(modUp);
