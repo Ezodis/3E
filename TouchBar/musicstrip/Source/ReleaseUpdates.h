@@ -268,11 +268,25 @@ static void StripRelaunch(void) {
     while(bundlePath.length>1 && ![[NSBundle bundleWithPath:bundlePath].bundleIdentifier isEqual:@"local.musicstrip.app"]) bundlePath=bundlePath.stringByDeletingLastPathComponent;
     if(bundlePath.length<=1) bundlePath=NSBundle.mainBundle.bundlePath;
     NSTask *task=[NSTask new]; task.executableURL=[NSURL fileURLWithPath:@"/bin/sh"];
-    task.arguments=@[@"-c",@"while /bin/kill -0 \"$1\" 2>/dev/null; do /bin/sleep 0.2; done; /usr/bin/open \"$2\"",@"3E-restart",[NSString stringWithFormat:@"%d",getpid()],bundlePath];
+    // Restart everything: this process plus the main 3E app (when Restart is
+    // chosen from the MIDI helper's menu). Wait for all of them to exit, then
+    // reopen 3E.app, which starts its helpers again.
+    NSMutableArray<NSRunningApplication *> *others=[NSMutableArray array];
+    NSMutableString *pids=[NSMutableString stringWithFormat:@"%d",getpid()];
+    for(NSRunningApplication *app in [NSRunningApplication runningApplicationsWithBundleIdentifier:StripAppBundleID]) {
+        if(app.terminated || app.processIdentifier==getpid()) continue;
+        [others addObject:app]; [pids appendFormat:@" %d",app.processIdentifier];
+    }
+    task.arguments=@[@"-c",@"for p in $1; do while /bin/kill -0 \"$p\" 2>/dev/null; do /bin/sleep 0.2; done; done; /usr/bin/open \"$2\"",@"3E-restart",pids,bundlePath];
     task.standardOutput=[NSFileHandle fileHandleWithNullDevice]; task.standardError=[NSFileHandle fileHandleWithNullDevice];
     NSError *error=nil;
-    if(![task launchAndReturnError:&error]) { StripNotify(@"3£ could not restart",error.localizedDescription ?: @"The relaunch helper did not start."); return; }
-    [NSApp terminate:nil];
+    if(![task launchAndReturnError:&error]) { StripNotify(@"3E could not restart",error.localizedDescription ?: @"The relaunch helper did not start."); return; }
+    for(NSRunningApplication *app in others) {
+        [app terminate];
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW,(int64_t)(2*NSEC_PER_SEC)),dispatch_get_main_queue(),^{ if(!app.terminated) [app forceTerminate]; });
+    }
+    if(others.count) dispatch_after(dispatch_time(DISPATCH_TIME_NOW,(int64_t)(0.3*NSEC_PER_SEC)),dispatch_get_main_queue(),^{ [NSApp terminate:nil]; });
+    else [NSApp terminate:nil];
 }
 // Restart checks for an update first: a newer release is installed (its
 // installer reopens 3£); otherwise, or when offline, 3£ simply relaunches.

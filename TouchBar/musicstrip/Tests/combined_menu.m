@@ -19,7 +19,9 @@ int main(void) { @autoreleasepool {
     TestDelegate *delegate=[TestDelegate new]; delegate.theItem=[TestStatus new]; delegate.theItem.menu=[NSMenu new]; NSApp.delegate=delegate;
     NSCAssert(StripCombinedRelease(),@"Build with -DSTRIP_TEST_EDITION_COMBINED=1");
     CleanMenu(delegate.theItem.menu);
-    NSCAssert(delegate.theItem.menu.numberOfItems==8,@"Add gesture, App, Phone Bar, downloads and automatic-update controls to the existing menu");
+    NSCAssert(delegate.theItem.menu.numberOfItems==10,@"Add gesture, App, Phone Bar, downloads, automatic-update and Restart controls to the existing menu");
+    NSMenuItem *restart=delegate.theItem.menu.itemArray.lastObject;
+    NSCAssert([restart.identifier isEqual:@"local.musicstrip.restart"] && [restart.title isEqual:@"Restart"] && restart.target==MusicStripMidiBridge.class && restart.action==@selector(restartAll:),@"Restart (update check + relaunch) is in the full menu, like Windows");
     NSMenuItem *phone=nil;
     for(NSMenuItem *item in delegate.theItem.menu.itemArray)if([item.identifier isEqual:@"local.musicstrip.phone"])phone=item;
     NSCAssert(phone!=nil,@"Phone Bar control is present");
@@ -33,7 +35,7 @@ int main(void) { @autoreleasepool {
     combinedGestureState=@"on"; CleanMenu(delegate.theItem.menu);
     NSCAssert(toggle.state==NSControlStateValueOn && [toggle.title isEqual:@"Touch Tab"],@"Reflect actual enabled runtime state without changing the label");
     combinedGestureState=@"off"; CleanMenu(delegate.theItem.menu);
-    NSCAssert(toggle.state==NSControlStateValueOff && delegate.theItem.menu.numberOfItems==8,@"Disabling never duplicates the menu items");
+    NSCAssert(toggle.state==NSControlStateValueOff && delegate.theItem.menu.numberOfItems==10,@"Disabling never duplicates the menu items");
     combinedGestureState=@"permission"; CleanMenu(delegate.theItem.menu);
     NSCAssert([toggle.title isEqual:@"Touch Tab"] && toggle.toolTip.length>0,@"Permission explanation belongs in tooltip, not the toggle label");
     NSMenuItem *hide=[[NSMenuItem alloc] initWithTitle:@"Hide 3£" action:nil keyEquivalent:@""];
@@ -62,5 +64,12 @@ int main(void) { @autoreleasepool {
     recordController.activeMenuBar=nil;
     NSCAssert([MusicStripMidiBridge validateMenuItem:surface] && surface.state==NSControlStateValueOff,@"Returning from Record-hold clears the check");
     delegate.editCCs=YES; NSCAssert(![MusicStripMidiBridge validateMenuItem:surface],@"Do not interrupt control editing"); recordController=nil;
+    NSMenuItem *reset=[[NSMenuItem alloc] initWithTitle:@"Reset Touch Bar" action:nil keyEquivalent:@""];
+    NSMenuItem *quit=[[NSMenuItem alloc] initWithTitle:@"Quit" action:nil keyEquivalent:@""];
+    [delegate.theItem.menu addItem:quit]; [delegate.theItem.menu addItem:reset]; CleanMenu(delegate.theItem.menu); CleanMenu(delegate.theItem.menu);
+    NSArray<NSMenuItem *> *rows=delegate.theItem.menu.itemArray; NSUInteger n=rows.count;
+    NSCAssert(rows[n-3]==reset && [rows[n-2].identifier isEqual:@"local.musicstrip.restart"] && rows[n-1]==quit,@"Restart sits between Reset Touch Bar and Quit");
+    NSUInteger restarts=0; for(NSMenuItem *row in rows) if([row.identifier isEqual:@"local.musicstrip.restart"]) restarts++;
+    NSCAssert(restarts==1,@"Restart is never duplicated");
     puts("Passed combined gesture toggle target, runtime feedback and duplicate-free menu refresh. No tray icon or keyboard events created.");
 } return 0; }
