@@ -276,7 +276,13 @@ public sealed class PhoneTrackpad : IDisposable {
                 _ = HandleAsync(owner, context);
             }
         } catch {
-            lock (gate) { if (session == owner) StopLocked("Trackpad connection stopped — start again to reconnect."); }
+            bool resume;
+            lock (gate) {
+                if (session != owner) return; // an intentional stop/rebind already owns recovery
+                resume = FollowNetwork && wanted;
+                StopLocked(resume ? "Connection interrupted — reconnecting automatically…" : "Trackpad connection stopped — start again to reconnect.");
+            }
+            if (resume) _ = Task.Run(ResumeAsync);
         }
     }
 

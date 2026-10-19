@@ -15,24 +15,30 @@ internal sealed class PhoneNameResponder : IDisposable {
     private readonly UdpClient udp;
     private readonly CancellationTokenSource stop = new();
     public IPAddress Address => address;
+    private volatile bool healthy=true;
+    public bool Healthy=>healthy&&!stop.IsCancellationRequested;
+    private readonly Timer announcement;
 
     public PhoneNameResponder(IPAddress address) {
         this.address = address;
         udp = new UdpClient(AddressFamily.InterNetwork) { ExclusiveAddressUse = false };
-        udp.Client.SetSocketOption(SocketOptionLevel.Socket, SocketOptionName.ReuseAddress, true);
-        udp.Client.Bind(new IPEndPoint(IPAddress.Any, 5353));
-        udp.JoinMulticastGroup(Group, address);
-        udp.Client.SetSocketOption(SocketOptionLevel.IP, SocketOptionName.MulticastInterface, address.GetAddressBytes());
-        udp.MulticastLoopback = false;
-        _ = Task.Run(Listen);
-        Announce();
+        try {
+            udp.Client.SetSocketOption(SocketOptionLevel.Socket, SocketOptionName.ReuseAddress, true);
+            udp.Client.Bind(new IPEndPoint(IPAddress.Any, 5353));
+            udp.JoinMulticastGroup(Group, address);
+            udp.Client.SetSocketOption(SocketOptionLevel.IP, SocketOptionName.MulticastInterface, address.GetAddressBytes());
+            udp.MulticastLoopback = false;
+            _ = Task.Run(Listen);
+            Announce();
+            announcement=new Timer(_=>Announce(),null,TimeSpan.FromSeconds(30),TimeSpan.FromSeconds(30));
+        } catch {udp.Dispose();stop.Dispose();throw;}
     }
 
     private void Announce() {
         try {
             byte[] packet = BuildResponse(address, 0);
             udp.Send(packet, packet.Length, new IPEndPoint(Group, 5353));
-        } catch { }
+        } catch { healthy=false; }
     }
 
     private async Task Listen() {
@@ -44,6 +50,8 @@ internal sealed class PhoneNameResponder : IDisposable {
                 var target = answer.Value.unicast ? received.RemoteEndPoint : new IPEndPoint(Group, 5353);
                 await udp.SendAsync(answer.Value.packet, target, stop.Token);
             } catch (OperationCanceledException) { return; }
+            catch (ObjectDisposedException) { return; }
+            catch (SocketException) { healthy=false;return; }
             catch { /* Ignore malformed and unrelated multicast traffic. */ }
         }
     }
@@ -99,7 +107,7 @@ internal sealed class PhoneNameResponder : IDisposable {
     }
 
     public void Dispose() {
-        stop.Cancel();
+        healthy=false;announcement?.Dispose();stop.Cancel();
         udp.Dispose();
         stop.Dispose();
     }

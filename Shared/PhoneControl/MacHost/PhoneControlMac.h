@@ -6,6 +6,11 @@
 static NSString *const ThreeEPhoneBarEnabledKey=@"ThreeEPhoneBarEnabled";
 @interface ThreeEPhoneController : NSObject
 @property NSTask *task;
+@property BOOL receiverWanted;
+@property BOOL sleeping;
+@property NSTimer *retryTimer;
+@property NSTimeInterval retryDelay;
+@property NSUInteger receiverGeneration;
 @property NSPipe *input;
 @property NSPipe *output;
 @property NSMutableData *buffer;
@@ -31,6 +36,40 @@ static NSString *const ThreeEPhoneBarEnabledKey=@"ThreeEPhoneBarEnabled";
 @property (weak) ThreeEPhoneController *controller;
 @end
 @implementation ThreeEPhoneController
+- (instancetype)init {
+    if((self=[super init])) {
+        NSNotificationCenter *center=NSWorkspace.sharedWorkspace.notificationCenter;
+        [center addObserver:self selector:@selector(willSleep:) name:NSWorkspaceWillSleepNotification object:nil];
+        [center addObserver:self selector:@selector(didWake:) name:NSWorkspaceDidWakeNotification object:nil];
+    }
+    return self;
+}
+- (void)dealloc { [NSWorkspace.sharedWorkspace.notificationCenter removeObserver:self];[_retryTimer invalidate]; }
+- (void)scheduleRecovery {
+    if(!self.receiverWanted||self.sleeping||self.retryTimer)return;
+    NSTimeInterval delay=self.retryDelay>0?self.retryDelay:1;
+    self.retryDelay=MIN(delay*2,30);
+    __weak ThreeEPhoneController *weak=self;
+    self.retryTimer=[NSTimer scheduledTimerWithTimeInterval:delay repeats:NO block:^(NSTimer *timer){
+        ThreeEPhoneController *strong=weak;strong.retryTimer=nil;
+        if(strong.receiverWanted&&!strong.sleeping)[strong startReceiver];
+    }];
+}
+- (void)willSleep:(NSNotification *)note {
+    self.sleeping=YES;[self.retryTimer invalidate];self.retryTimer=nil;
+    if(self.receiverWanted&&self.task.running)[self send:@"SLEEP"];
+}
+- (void)didWake:(NSNotification *)note {
+    self.sleeping=NO;
+    if(!self.receiverWanted)return;
+    if(self.task.running)[self send:@"WAKE"];else [self startReceiver];
+}
+- (void)receiverExited:(NSTask *)finished {
+    if(self.task!=finished)return;
+    self.output.fileHandleForReading.readabilityHandler=nil;
+    self.task=nil;[self.window close];self.window=nil;
+    [self scheduleRecovery];
+}
 - (NSString *)iconData:(NSImage *)image {
     if(!image)return @"";
     NSBitmapImageRep *rep=[[NSBitmapImageRep alloc] initWithBitmapDataPlanes:NULL pixelsWide:48 pixelsHigh:48 bitsPerSample:8 samplesPerPixel:4 hasAlpha:YES isPlanar:NO colorSpaceName:NSDeviceRGBColorSpace bytesPerRow:0 bitsPerPixel:0];
@@ -54,7 +93,7 @@ static NSString *const ThreeEPhoneBarEnabledKey=@"ThreeEPhoneBarEnabled";
     NSAlert *alert=[NSAlert new];alert.messageText=@"3£ Phone";alert.informativeText=text;[alert runModal];
 }
 - (void)send:(NSString *)line {
-    @try{[self.input.fileHandleForWriting writeData:[[line stringByAppendingString:@"\n"] dataUsingEncoding:NSUTF8StringEncoding]];}@catch(NSException *e){[self message:@"The phone receiver stopped. Open it again to reconnect."];}
+    @try{[self.input.fileHandleForWriting writeData:[[line stringByAppendingString:@"\n"] dataUsingEncoding:NSUTF8StringEncoding]];}@catch(NSException *e){NSLog(@"3E phone receiver pipe interrupted; recovering");if(self.task.running)[self.task terminate];[self scheduleRecovery];}
 }
 - (void)show {
     self.qrRequested=YES;
@@ -64,6 +103,9 @@ static NSString *const ThreeEPhoneBarEnabledKey=@"ThreeEPhoneBarEnabled";
     if(self.url)[self showQR];
 }
 - (void)startReceiver {
+    self.receiverWanted=YES;
+    if(self.sleeping)return;
+    [self.retryTimer invalidate];self.retryTimer=nil;
     if (@available(macOS 14.0,*)) {} else { return; }
     if(self.task.running)return;
     AXIsProcessTrustedWithOptions((__bridge CFDictionaryRef)@{(__bridge NSString *)kAXTrustedCheckOptionPrompt:@YES});
@@ -77,25 +119,26 @@ static NSString *const ThreeEPhoneBarEnabledKey=@"ThreeEPhoneBarEnabled";
     if(![NSFileManager.defaultManager isExecutableFileAtPath:path]){[self message:@"This build does not include the phone receiver."];return;}
     self.task=[NSTask new];self.task.executableURL=[NSURL fileURLWithPath:path];self.input=[NSPipe pipe];self.output=[NSPipe pipe];self.buffer=[NSMutableData new];self.task.standardInput=self.input;self.task.standardOutput=self.output;self.task.standardError=[NSFileHandle fileHandleWithNullDevice];
     __weak ThreeEPhoneController *weak=self;
+    NSUInteger generation=++self.receiverGeneration;
     self.output.fileHandleForReading.readabilityHandler=^(NSFileHandle *handle){
         NSData *data=handle.availableData;if(!data.length){handle.readabilityHandler=nil;return;}
         dispatch_async(dispatch_get_main_queue(),^{
-            ThreeEPhoneController *strong=weak;if(!strong)return;[strong.buffer appendData:data];
+            ThreeEPhoneController *strong=weak;if(!strong||strong.receiverGeneration!=generation)return;[strong.buffer appendData:data];
             const unsigned char *bytes=strong.buffer.bytes;NSUInteger count=strong.buffer.length,start=0;
             for(NSUInteger i=0;i<count;i++)if(bytes[i]=='\n'){
                 NSData *line=[strong.buffer subdataWithRange:NSMakeRange(start,i-start)];start=i+1;
                 NSDictionary *reply=[NSJSONSerialization JSONObjectWithData:line options:0 error:nil];if(![reply isKindOfClass:NSDictionary.class])continue;
                 if([reply[@"media"] isKindOfClass:NSNumber.class]){if(strong.media)strong.media([reply[@"media"] intValue]);continue;}
                 if([reply[@"systemAction"] isKindOfClass:NSString.class]){[strong performSystemAction:reply[@"systemAction"] direction:[reply[@"direction"] integerValue]];continue;}
-                if([reply[@"url"] isKindOfClass:NSString.class]){strong.url=reply[@"url"];if(strong.qrRequested)[strong showQR];}
-                else if([reply[@"error"] isKindOfClass:NSString.class])[strong message:reply[@"error"]];
+                if([reply[@"url"] isKindOfClass:NSString.class]){strong.url=reply[@"url"];strong.retryDelay=1;if(strong.qrRequested)[strong showQR];}
+                else if([reply[@"error"] isKindOfClass:NSString.class])NSLog(@"3E phone receiver: %@",reply[@"error"]);
             }
             if(start)[strong.buffer replaceBytesInRange:NSMakeRange(0,start) withBytes:NULL length:0];
         });
     };
     NSTask *launch=self.task;
-    self.task.terminationHandler=^(NSTask *finished){dispatch_async(dispatch_get_main_queue(),^{if(weak.task==finished){weak.task=nil;weak.url=nil;[weak.window close];weak.window=nil;if(finished.terminationStatus!=0)[weak message:@"The phone receiver could not start. This feature requires macOS 14 or later; the rest of 3£ is unaffected."];}});};
-    NSError *error=nil;if(![launch launchAndReturnError:&error]){self.task=nil;[self message:error.localizedDescription];}
+    self.task.terminationHandler=^(NSTask *finished){dispatch_async(dispatch_get_main_queue(),^{[weak receiverExited:finished];});};
+    NSError *error=nil;if(![launch launchAndReturnError:&error]){self.task=nil;NSLog(@"3E phone receiver launch failed: %@",error.localizedDescription);[self scheduleRecovery];}
     else {self.controlsJSON=nil;[self updateArtwork:nil playing:-1 stop:NO];}
 }
 - (void)performSystemAction:(NSString *)action direction:(NSInteger)direction {
@@ -116,7 +159,7 @@ static NSString *const ThreeEPhoneBarEnabledKey=@"ThreeEPhoneBarEnabled";
 }
 - (void)toggleReceiver {
     // Only the user's own toggle changes the remembered state; quitting does not.
-    if(self.task.running){[NSUserDefaults.standardUserDefaults setBool:NO forKey:ThreeEPhoneBarEnabledKey];[self stop];return;}
+    if(self.receiverWanted){[NSUserDefaults.standardUserDefaults setBool:NO forKey:ThreeEPhoneBarEnabledKey];[self stop];return;}
     [NSUserDefaults.standardUserDefaults setBool:YES forKey:ThreeEPhoneBarEnabledKey];
     if (@available(macOS 14.0,*)) {} else { [self message:@"Phone Bar requires macOS 14 or later. Other 3£ features remain available."]; return; }
     self.qrRequested=self.qrHovering;[self startReceiver];if(self.url&&self.qrRequested)[self showQR];
@@ -138,6 +181,7 @@ static NSString *const ThreeEPhoneBarEnabledKey=@"ThreeEPhoneBarEnabled";
 }
 - (void)copyLink:(id)sender{if(self.url){[NSPasteboard.generalPasteboard clearContents];[NSPasteboard.generalPasteboard setString:self.url forType:NSPasteboardTypeString];}}
 - (void)stop {
+    self.receiverWanted=NO;self.receiverGeneration++;[self.retryTimer invalidate];self.retryTimer=nil;
     self.qrRequested=NO;self.qrHovering=NO;[self.window close];self.window=nil;self.url=nil;
     NSTask *previous=self.task;self.task=nil;previous.terminationHandler=nil;
     if(previous.running){[self send:@"STOP"];[self.input.fileHandleForWriting closeFile];dispatch_after(dispatch_time(DISPATCH_TIME_NOW,NSEC_PER_SEC*3),dispatch_get_main_queue(),^{if(previous.running)[previous terminate];});}

@@ -203,6 +203,16 @@ Check(fake.Commands.Contains("history:-1") && fake.Commands.Contains("zoom:1"),"
     Check(follow.Running && follow.NamedUrl == stableLink && changes >= 1 && followFirewall.IsOpen, "The receiver resumes by itself with the identical link and notifies the host");
     using var web = new HttpClient();
     Check((await web.GetStringAsync(new Uri(stableLink).GetLeftPart(UriPartial.Authority) + "/")).Contains("Trackpad"), "The same saved link serves the page after the network returns");
+    // A listener can fail across sleep even when the LAN address stays the same.
+    var sessionField=typeof(PhoneTrackpad).GetField("session",System.Reflection.BindingFlags.NonPublic|System.Reflection.BindingFlags.Instance);
+    var liveSession=sessionField.GetValue(follow);
+    var listener=(HttpListener)liveSession.GetType().GetField("Listener").GetValue(liveSession);
+    listener.Abort();
+    await Until(()=>!follow.Running);
+    await Until(()=>follow.Running);
+    Check(follow.NamedUrl==stableLink&&(await web.GetStringAsync(new Uri(stableLink).GetLeftPart(UriPartial.Authority)+"/")).Contains("Trackpad"),"Listener failure recovers automatically with the same saved link");
+    // Model the Mac SLEEP/WAKE commands and a later process restart.
+    follow.Stop();Check(follow.Start()&&follow.NamedUrl==stableLink,"Sleep/wake rebind preserves the exact pairing URL");
     follow.Stop(); current = null; await Task.Delay(200); current = IPAddress.Loopback; await Task.Delay(3500);
     Check(!follow.Running, "An explicit Stop is never undone by network recovery");
     using var offline = new PhoneTrackpad(() => current, new FakeInput(), new FakeFirewall(), FreePort()) { FollowNetwork = true };

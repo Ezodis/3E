@@ -32,19 +32,25 @@ if(args.Contains("--midi-self-test")) {
     if(midi.Selected!=0)throw new Exception(midi.Status);
     Console.WriteLine("PASS: CoreMIDI virtual source, CC, note and cleanup");return;
 }
-bool test=args.Contains("--self-test");
+bool recoveryTest=args.Contains("--recovery-self-test");
+bool test=args.Contains("--self-test")||recoveryTest;
+// Read once per host lifetime: temporary file unavailability after sleep must
+// never silently replace a valid bookmark with a random pairing secret.
+string pairingToken=test?new string('A',48):StoredPairingToken();
 ITrackpadInput input=test?new NullInput():new MacInput(action=>Report(new {media=action}),(action,direction)=>Report(new {systemAction=action,direction}));
-using var receiver=new PhoneTrackpad(()=>test ? IPAddress.Loopback : PhoneTrackpad.GetLocalAddress(),input,new NoFirewall(),test?17834:17833) { AliasHost=test ? null : PhoneNameResponder.Name, TokenProvider=test ? null : StoredPairingToken, FollowNetwork=!test };
+using var receiver=new PhoneTrackpad(()=>test ? IPAddress.Loopback : PhoneTrackpad.GetLocalAddress(),input,new NoFirewall(),test?17834:17833) { AliasHost=test ? null : PhoneNameResponder.Name, TokenProvider=()=>pairingToken, FollowNetwork=!test||recoveryTest };
 PhoneNameResponder nameResponder=null;
 object nameGate=new();
 // The link stays http://3e-mac.local:17833/#secret: when the Mac's IP changes
 // the receiver rebinds with the same secret and the mDNS name follows it.
 receiver.AddressChanged+=()=>{RefreshName();Announce();};
 void RefreshName() { lock(nameGate) RefreshNameLocked(); }
+void ForgetName() { lock(nameGate) { nameResponder?.Dispose();nameResponder=null; } }
 void RefreshNameLocked() {
+    if(test)return;
     if(!receiver.Running || receiver.Address==null) { nameResponder?.Dispose(); nameResponder=null; return; }
-    if(nameResponder?.Address.Equals(receiver.Address)==true)return;
-    nameResponder?.Dispose();
+    if(nameResponder?.Address.Equals(receiver.Address)==true&&nameResponder.Healthy)return;
+    nameResponder?.Dispose();nameResponder=null;
     try { nameResponder=new PhoneNameResponder(receiver.Address); } catch { /* The IP pairing link remains available without mDNS. */ }
 }
 void Announce(){Report(receiver.Running ? new {url=receiver.NamedUrl ?? receiver.PairingUrl,error=(string)null} : new {url=(string)null,error=receiver.Status});}
@@ -54,14 +60,25 @@ if(!test) {
     if(initialAddress!=null)try{nameResponder=new PhoneNameResponder(initialAddress);}catch{ /* The receiver can still pair by IP. */ }
 }
 receiver.Start();RefreshName();Announce();
-if(test){if(!receiver.Running)throw new Exception(receiver.Status);using var http=new HttpClient();var html=await http.GetStringAsync(receiver.PairingUrl.Split('#')[0]);if(!html.Contains("surface.js"))throw new Exception("Shared surface missing");Console.WriteLine("PASS: shared receiver and resources on this platform");return;}
+if(test&&!recoveryTest){if(!receiver.Running)throw new Exception(receiver.Status);using var http=new HttpClient();var html=await http.GetStringAsync(receiver.PairingUrl.Split('#')[0]);if(!html.Contains("surface.js"))throw new Exception("Shared surface missing");Console.WriteLine("PASS: shared receiver and resources on this platform");return;}
+// Recover failed multicast sockets even when DHCP kept the same IP.
+using var nameMaintenance=new Timer(_=>{try{RefreshName();}catch{}},null,TimeSpan.FromSeconds(5),TimeSpan.FromSeconds(5));
 string line;
 while((line=await Console.In.ReadLineAsync())!=null){
     if(line=="STOP")break;
-    if(line=="START"){receiver.Start();RefreshName();Announce();}
+    if(line=="SLEEP"){receiver.Stop();ForgetName();}
+    else if(line=="WAKE"){
+        // Even with the same IP, sockets/multicast memberships can be stale.
+        // Recreate both using the persisted token, then resume Wi-Fi retries.
+        receiver.Stop();ForgetName();
+        var address=test?null:PhoneTrackpad.GetLocalAddress();
+        if(address!=null)lock(nameGate)try{nameResponder=new PhoneNameResponder(address);}catch{}
+        receiver.Start();RefreshName();Announce();
+    }
+    else if(line=="START"){receiver.Start();RefreshName();Announce();}
     else if(line.StartsWith("{"))try{using var json=JsonDocument.Parse(line);if(json.RootElement.TryGetProperty("controls",out var state)&&input is MacInput mac)mac.SetControls(state.Clone());}catch(JsonException){}
 }
-nameResponder?.Dispose();
+receiver.Stop();nameMaintenance.Dispose();ForgetName();
 static void Report(object data){lock(Console.Out)Console.WriteLine(JsonSerializer.Serialize(data));}
 static string StoredPairingToken() {
     try {
@@ -77,7 +94,7 @@ static string StoredPairingToken() {
         File.WriteAllText(temporary,token);
         try { File.Move(temporary,path,true); } finally { if(File.Exists(temporary))File.Delete(temporary); }
         return token;
-    } catch { return null; }
+    } catch(Exception error) { throw new IOException("Cannot read or preserve the saved phone pairing link.",error); }
 }
 sealed class NoFirewall:ITrackpadFirewall{public void Open(IPAddress address,int port){}public void Close(){}}
 sealed class NullInput:ITrackpadInput{

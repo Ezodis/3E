@@ -94,3 +94,5 @@ Automated checks cannot establish real iPhone/Watch gesture fidelity, Accessibil
 New phone-control source is MIT-licensed. QRCoder retains its bundled MIT license; existing repository components retain their licenses.
 
 The Windows tray popup shows only the QR and **3£ Phone Bar**. Click outside or press Escape to dismiss it; use **Stop Phone Bar** in the tray menu to stop the receiver. If no local network is available, the popup shows the reason instead of a QR. Pairing returns basic platform/permission information immediately; MIDI output discovery runs only when the MIDI controls open or refresh, including after reconnect.
+
+Mac Phone Bar keeps its saved pairing secret across sleep, restarts and updates. Bookmark the full `3e-mac.local:17833` pairing link (including its fragment). Sleep releases active input; wake recreates the listener and multicast announcement even if the IP is unchanged. Unexpected receiver exits and listener failures retry automatically, while explicitly disabling Phone Bar stays disabled. The Mac must be awake with 3E running on the same local network.
