@@ -27,6 +27,7 @@ jobs:
           node Windows/PhoneTrackpadTests/dock.test.cjs
           node Windows/PhoneTrackpadTests/watch.test.cjs
           node Windows/PhoneTrackpadTests/update.test.cjs
+          node Windows/PhoneTrackpadTests/handoff.test.cjs
       - name: Browser tests (WebKit and Chromium against the preview receiver)
         run: |
           npm install --no-save --prefix "$RUNNER_TEMP/pw" playwright-core@1.56.1

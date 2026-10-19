@@ -4,7 +4,7 @@ const vm = require('node:vm');
 const path = require('node:path');
 const source = fs.readFileSync(path.join(__dirname,'../../Shared/PhoneControl/Web/PhoneTrackpad.js'),'utf8');
 const elements = new Map(), requests = [], timers = new Map();
-let frame, time=1000, timerId=0, failNext=false, waitCommands=false, finishCommand;
+let frame, time=1000, timerId=0, failNext=false, replaceNext=false, waitCommands=false, finishCommand;
 const idle = () => new Promise(resolve => setImmediate(resolve));
 function element(id) {
   if (!elements.has(id)) elements.set(id,{value:'3',handlers:{},disabled:true,
@@ -21,6 +21,7 @@ vm.runInNewContext(source,{document:doc,window:win,URLSearchParams,Uint8Array,cr
   async fetch(url,options){
     const payload=JSON.parse(options.body);requests.push({url,options,payload});
     if(failNext){failNext=false;return {ok:false,status:409};}
+    if(replaceNext&&payload.type!=='disconnect'){replaceNext=false;return {ok:false,status:403,json:async()=>({ready:false,error:'replaced'})};}
     if(waitCommands&&payload.type==='commands'){waitCommands=false;await new Promise(resolve=>finishCommand=resolve);}
     return {ok:true,status:200};
   }
@@ -32,6 +33,7 @@ function commands(){return requests.filter(r=>r.payload.type==='commands').flatM
 (async()=>{
   await idle();
   assert.equal(requests[0].payload.type,'connect');
+  assert.equal(requests[0].payload.takeover,true,'opening the watch page takes control');
   assert.match(requests[0].payload.client,/^[a-f0-9]{32}$/);
   assert.equal(requests[0].options.headers['X-Trackpad-Token'],'A'.repeat(48));
   assert.equal(requests[0].options.referrerPolicy,'same-origin');
@@ -59,6 +61,7 @@ function commands(){return requests.filter(r=>r.payload.type==='commands').flatM
   doc.hidden=false;doc.handlers.visibilitychange();await idle();
   assert.equal(requests.at(-1).payload.type,'connect');
   assert.equal(requests.at(-1).payload.client,previousClient,'wake reuses the page identity to reclaim its lease');
+  assert.equal(requests.at(-1).payload.takeover,false,'waking only resumes; it never takes control from a newer device');
   const before=requests.length;
   element('connect').handlers.click();await idle();
   assert.equal(element('apps').disabled,true);
@@ -68,9 +71,16 @@ function commands(){return requests.filter(r=>r.payload.type==='commands').flatM
   assert.deepEqual(requests.slice(before).map(r=>r.payload.type),['disconnect','connect']);
   failNext=true;time+=600;element('pad').handlers.click();await pump();
   assert.equal(element('apps').disabled,true);
-  assert.match(element('status').textContent,/Another device/);
+  assert.match(element('status').textContent,/reconnecting/);
   const retry=[...timers.entries()].find(([,t])=>t.once&&t.ms===250);assert.ok(retry);
   timers.delete(retry[0]);retry[1].fn();await pump();
   assert.equal(element('apps').disabled,false,'transient failure reconnects without reloading');
-  console.log('PASS: normal-link watch detection, HTTP-only connection, pad click fallback, ordered batches, scrolling, arrows, sleep release, discarded input, pause/reconnect and conflict recovery.');
+  replaceNext=true;time+=600;element('pad').handlers.click();await pump();
+  assert.match(element('status').textContent,/Another device took control/);
+  assert.equal(element('apps').disabled,true);
+  assert.ok(![...timers.values()].some(t=>t.once&&t.ms<=2500),'a replaced watch stops reconnecting');
+  element('connect').handlers.click();await pump();
+  assert.equal(requests.at(-1).payload.type,'connect');assert.equal(requests.at(-1).payload.takeover,true,'tapping Connect takes control back');
+  assert.equal(element('apps').disabled,false);
+  console.log('PASS: normal-link watch detection, HTTP-only connection, pad click fallback, ordered batches, scrolling, arrows, sleep release, discarded input, pause/reconnect, conflict recovery and newest-device handoff.');
 })().catch(error=>{console.error(error);process.exitCode=1;});

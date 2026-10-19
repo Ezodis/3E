@@ -100,6 +100,10 @@ public sealed class PhoneTrackpad : IDisposable {
         public WebSocket Controller;
         public string ControllerClient;
         public string HttpController;
+        // The device that most recently took control. A newly connecting device
+        // always wins; a device it replaced may only auto-reconnect (resume)
+        // while it is still this one, so two pages never fight over input.
+        public string LastClient;
         public long HttpLastSeen, HttpSequence, HttpRateStart;
         public int HttpCount;
         // Last computer clipboard snapshot the phone read; only its picture and
@@ -332,6 +336,25 @@ public sealed class PhoneTrackpad : IDisposable {
         try { input.ReleaseAll(); } catch { }
     }
 
+    // A fresh connection (a newly opened page or the Connect button) takes
+    // input from whichever phone or watch held it. Automatic reconnects only
+    // resume while no other device has taken over since.
+    private static bool MayAcquire(Session owner, string client, bool takeover) =>
+        takeover || owner.LastClient == client ||
+        owner.LastClient == null && owner.Controller == null && owner.HttpController == null;
+
+    // Drops the current phone and/or watch so `client` can become the controller.
+    private void TakeOverLocked(Session owner, string client) {
+        if (owner.Controller != null) {
+            var previous = owner.Controller;
+            owner.Controller = null; owner.ControllerClient = null;
+            try { previous.Abort(); } catch { }
+        }
+        if (owner.HttpController != null && owner.HttpController != client) owner.HttpController = null;
+        try { input.ReleaseAll(); } catch { }
+        owner.LastClient = client;
+    }
+
     // watchOS WebKit disables WebSockets by default. Short authenticated POSTs
     // share the same single-controller lock and disconnect watchdog as the phone.
     private async Task HttpControlAsync(Session owner, HttpListenerContext context) {
@@ -341,7 +364,7 @@ public sealed class PhoneTrackpad : IDisposable {
         response.Headers["X-Content-Type-Options"] = "nosniff";
         string client = null;
         int code = 200;
-        bool describe = false, handshake = false;
+        bool describe = false, handshake = false, replaced = false;
         try {
             var supplied = Encoding.UTF8.GetBytes(request.Headers["X-Trackpad-Token"] ?? "");
             if (!owner.IsOrigin(request.Headers["Origin"]) || request.Url.Query.Length != 0 ||
@@ -370,17 +393,19 @@ public sealed class PhoneTrackpad : IDisposable {
                 if (session != owner) code = 410;
                 else if (type == "connect") {
                     handshake = true;
-                    if (owner.Controller != null || (owner.HttpController != null && owner.HttpController != client) ||
-                        (owner.HttpController == client && sequence <= owner.HttpSequence)) code = 409;
+                    bool takeover = root.TryGetProperty("takeover", out var wants) && wants.ValueKind == JsonValueKind.True;
+                    if (owner.HttpController == client && sequence <= owner.HttpSequence) code = 409;
+                    else if (!MayAcquire(owner, client, takeover)) { code = 409; replaced = true; }
                     else {
-                        // The same page can reclaim its sleeping connection immediately.
-                        // A larger sequence prevents late commands/disconnects from the old connection.
-                        if (owner.HttpController == client) input.ReleaseAll();
+                        // The newest device wins: the phone or watch holding input is
+                        // dropped. The same page also reclaims its sleeping connection;
+                        // a larger sequence prevents late commands/disconnects from it.
+                        TakeOverLocked(owner, client);
                         owner.HttpController = client; owner.HttpSequence = sequence;
                         owner.HttpLastSeen = owner.HttpRateStart = Environment.TickCount64; owner.HttpCount = 0;
                         status = "Connected to your watch";
                     }
-                } else if (owner.HttpController != client) code = 403;
+                } else if (owner.HttpController != client) { code = 403; replaced = owner.LastClient != null && owner.LastClient != client; }
                 else if (sequence <= owner.HttpSequence) code = 409;
                 else {
                     owner.HttpSequence = sequence;
@@ -404,7 +429,7 @@ public sealed class PhoneTrackpad : IDisposable {
         response.StatusCode = code;
         response.ContentType = "application/json";
         byte[] result;
-        lock(gate) result = Encoding.UTF8.GetBytes(code == 200 ? (describe || handshake ? JsonSerializer.Serialize(new { ready=true, build=Build, host=describe ? input.GetInfo() : input.GetConnectionInfo() }) : "{\"ready\":true}") : "{\"ready\":false}");
+        lock(gate) result = Encoding.UTF8.GetBytes(code == 200 ? (describe || handshake ? JsonSerializer.Serialize(new { ready=true, build=Build, host=describe ? input.GetInfo() : input.GetConnectionInfo() }) : "{\"ready\":true}") : replaced ? "{\"ready\":false,\"error\":\"replaced\"}" : "{\"ready\":false}");
         response.ContentLength64 = result.Length;
         await response.OutputStream.WriteAsync(result, owner.Cancel.Token);
         response.Close();
@@ -568,14 +593,22 @@ input{width:100%;padding:13px;border:1px solid #415260;border-radius:10px;backgr
             }
             string client = auth.RootElement.TryGetProperty("client",out var clientProperty) ? clientProperty.GetString() : null;
             if (client != null && (client.Length != 32 || !client.All(Uri.IsHexDigit))) return;
+            bool takeover = auth.RootElement.TryGetProperty("takeover", out var wants) && wants.ValueKind == JsonValueKind.True;
+            string refusal = null;
             lock (gate) {
                 if (session != owner) return;
-                if (owner.HttpController == null && (owner.Controller == null || client != null && owner.ControllerClient == client)) {
-                    if (owner.Controller != null) { input.ReleaseAll(); owner.Controller.Abort(); }
-                    owner.Controller = ws; owner.ControllerClient = client; acquired = true; status = "Connected to your phone";
+                // Pages without an identity cannot be told apart, so they keep
+                // the old rule: they connect only when no device holds input.
+                if (client == null ? owner.Controller != null || owner.HttpController != null : !MayAcquire(owner, client, takeover))
+                    refusal = client == null ? "busy" : "replaced";
+                else {
+                    bool switched = owner.LastClient != null && owner.LastClient != client && (owner.Controller != null || owner.HttpController != null);
+                    TakeOverLocked(owner, client);
+                    owner.Controller = ws; owner.ControllerClient = client; acquired = true;
+                    status = switched ? "Switched to the newest phone" : "Connected to your phone";
                 }
             }
-            if (!acquired) { await ws.SendAsync(Encoding.UTF8.GetBytes("{\"error\":\"busy\"}"), WebSocketMessageType.Text, true, owner.Cancel.Token); return; }
+            if (!acquired) { await ws.SendAsync(Encoding.UTF8.GetBytes("{\"error\":\"" + refusal + "\"}"), WebSocketMessageType.Text, true, owner.Cancel.Token); return; }
             // Connecting the trackpad must not wait on native MIDI driver discovery.
             // The MIDI surface requests the full description when it opens.
             string lastHost = JsonSerializer.Serialize(input.GetConnectionInfo());
