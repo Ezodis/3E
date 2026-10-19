@@ -114,7 +114,7 @@ if(require.main===module)(async()=>{
     assert.equal(typed(),'Hi é😀','typed text reaches the computer');assert.ok(commands.slice(start).some(c=>c.type==='key'&&c.id===0),'Backspace is replayed');
     await p.evaluate(()=>{const s=document.getElementById('typeSink');s.value='teh ';s.setSelectionRange(4,4);s.dispatchEvent(new Event('input'));s.value='the ';s.setSelectionRange(4,4);s.dispatchEvent(new Event('input'));});
     await p.waitForTimeout(150);
-    assert.deepEqual(commands.slice(-3).map(c=>c.type==='text'?'text:'+c.text:'key:'+c.id+'x'+c.n),['text:teh ','key:0x3','text:he '],'an autocorrect replacement becomes backspaces and the corrected letters');
+    assert.deepEqual(commands.filter(c=>c.type!=='ping').slice(-3).map(c=>c.type==='text'?'text:'+c.text:'key:'+c.id+'x'+c.n),['text:teh ','key:0x3','text:he '],'an autocorrect replacement becomes backspaces and the corrected letters');
     await p.screenshot({path:path.join(out,'keyboard-'+name+'.png')});
     for(const id of ['4','3']){await p.locator(`#keyBar button[data-key="${id}"]`).dispatchEvent('pointerdown');await p.locator(`#keyBar button[data-key="${id}"]`).dispatchEvent('pointerup');}
     await p.waitForTimeout(100);assert.ok(commands.some(c=>c.type==='key'&&c.id===4)&&commands.some(c=>c.type==='key'&&c.id===3),'key bar ← and Esc');
