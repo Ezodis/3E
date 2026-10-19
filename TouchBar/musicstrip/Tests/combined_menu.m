@@ -27,7 +27,8 @@ int main(void) { @autoreleasepool {
     NSMenu *base=StripBaseMenu(delegate,YES);
     NSCAssert([base.itemArray[0].identifier isEqual:@"local.musicstrip.phone"] && [base.itemArray[1].identifier isEqual:@"local.musicstrip.touchTabToggle"],@"Base menu places Phone Bar before Touch Tab without Touch Bar interfaces");
     NSCAssert(!base.itemArray[2].enabled,@"Only the unavailable Touch Bar module is disabled");
-    NSMenuItem *toggle=delegate.theItem.menu.itemArray.firstObject;
+    NSMenuItem *toggle=nil;
+    for(NSMenuItem *item in delegate.theItem.menu.itemArray)if([item.identifier isEqual:@"local.musicstrip.touchTabToggle"])toggle=item;
     NSCAssert(toggle.target==MusicStripMidiBridge.class && toggle.action==@selector(toggleTouchTab:),@"Use the existing parent/helper pipe action");
     combinedGestureState=@"on"; CleanMenu(delegate.theItem.menu);
     NSCAssert(toggle.state==NSControlStateValueOn && [toggle.title isEqual:@"Touch Tab"],@"Reflect actual enabled runtime state without changing the label");
