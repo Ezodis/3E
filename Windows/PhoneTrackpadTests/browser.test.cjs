@@ -18,7 +18,8 @@ async function updateFlow(browser,name,url,urlFile,errors){
   await page.addInitScript(()=>{try{sessionStorage.setItem('test-loads',String(+(sessionStorage.getItem('test-loads')||0)+1));}catch{}
    window.testSockets=[];const W=WebSocket;window.WebSocket=class extends W{constructor(...a){super(...a);window.testSockets.push(this);}};});
   const loads=async()=>{try{return await page.evaluate(()=>+sessionStorage.getItem('test-loads'));}catch{return -1;}};
-  const live=()=>page.waitForFunction(()=>document.getElementById('status').textContent==='Connected');
+  // While a reload is still swapping documents #status can briefly be missing.
+  const live=()=>page.waitForFunction(()=>document.getElementById('status')?.textContent==='Connected');
   const reloaded=async count=>{for(let i=0;i<100&&await loads()<count;i++)await page.waitForTimeout(100);assert.equal(await loads(),count,'the page reloaded');await live();};
   await page.goto(url);await live();
   return {ctx,page,sent,loads,live,reloaded};
