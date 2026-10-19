@@ -1,3 +1,9 @@
+3£Windows 1.0.35 shortens the Clicks keyboard row.
+
+- **Clicks keyboard:** the "— running" / "— stopped" text is gone; the check mark now shows it is running. Click an unchecked row to start it, a checked row to stop it.
+
+Includes everything from 1.0.34:
+
 3£Windows 1.0.34 gives the tray menu real icons and one row per feature.
 
 - **Real icons:** rows with settings show a Windows sliders icon at the right edge (Segoe Fluent Icons). Click the row to toggle; click the icon for settings.

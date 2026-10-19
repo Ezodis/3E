@@ -421,7 +421,8 @@ public sealed class WindowsHub : IDisposable {
         }, NewPhoneLink);
         Toggle("Three-finger drag", App.SettingsData.ThreeFingerDrag, enabled => { App.SettingsData.ThreeFingerDrag = enabled; App.SettingsData.save(); },
             () => App.Instance.OpenSettingsWindow());
-        Toggle(File.Exists(KeyboardPath) ? "Clicks keyboard — " + (IsRunning("3EWindows.Keyboard") ? "running" : "stopped") : "Clicks keyboard — connect and run setup", settings.Keyboard, enabled => {
+        // The check mark means the keyboard engine is running; clicking an unchecked row starts it.
+        Toggle(File.Exists(KeyboardPath) ? "Clicks keyboard" : "Clicks keyboard — connect and run setup", settings.Keyboard && IsRunning("3EWindows.Keyboard"), enabled => {
             settings.Keyboard = enabled;
             if (enabled) _ = EnsureComponentsAsync(); else StopKeyboard();
         });
