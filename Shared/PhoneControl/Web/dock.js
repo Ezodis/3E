@@ -17,7 +17,7 @@
     pause:svg('<path d="M8 6h6v20H8zm10 0h6v20h-6z" fill="currentColor"/>'),
     stop:svg('<rect x="6" y="6" width="20" height="20" rx="2" fill="currentColor"/>')
   };
-  let active=null, holdTimer, restoreTimer, lastPointer=-Infinity, controls={}, controlsSignature='';
+  let active=null, holdTimer, restoreTimer, lastPointer=-Infinity, controls={}, controlsSignature='',multipleDesktops=true;
   // Task View / Mission Control is treated as open until it is closed here,
   // any click or other navigation happens, or a minute passes.
   const OVERVIEW_TIMEOUT=60000;let overviewUntil=0;
@@ -199,11 +199,12 @@
     if(a.kind==='media'){if(Math.abs(dx)>=24)paint('media',dx<0?'previous':'next');else paint('media');return;}
     const change=e.clientX-a.stepX,threshold=a.steps?48:26,now=performance.now();
     if(Math.abs(change)<threshold||now-a.lastStep<240)return;
-    // Natural swipes move the surface; the destination is opposite the finger.
-    const direction=change<0?1:-1;
-    C.send(a.held?'appsStep':'navigate',{direction});
+    const direction=change<0?-1:1;
+    if(a.held)C.send('appsStep',{direction});
+    else C.send('navigate',{direction,swipe:true});
     a.steps++;a.stepX=e.clientX;a.lastStep=now;
-    paint('apps',direction<0?'left':'right');
+    const destination=a.held||a.windows?direction:-direction;
+    paint('apps',destination<0?'left':'right');
   }
   for(const kind of ['apps','media']){
     const button=$(kind);
@@ -213,7 +214,7 @@
       if(active)cancel(); // a contact the browser never finished must not swallow this one
       C.release();showCommands(false);lastPointer=performance.now();clearTimeout(restoreTimer);
       button.setPointerCapture(e.pointerId);
-      active={kind,id:e.pointerId,startX:e.clientX,startY:e.clientY,stepX:e.clientX,start:performance.now(),lastStep:-Infinity,steps:0,max:0,axis:null,held:false};
+      active={kind,id:e.pointerId,startX:e.clientX,startY:e.clientY,stepX:e.clientX,start:performance.now(),lastStep:-Infinity,steps:0,max:0,axis:null,held:false,windows:!multipleDesktops};
       button.classList.add('active');
       holdTimer=setTimeout(()=>{
         if(!active||active.kind!==kind||active.axis||active.max>(kind==='media'?6:10))return;
@@ -263,6 +264,7 @@
   // slider being dragged: the page must not reload under the finger.
   const busy=()=>!!active||volumeEditing||trackPointer!==null;
   window.ThreeEDock={cancel,busy,commands:showCommands,overviewEnded(){overviewUntil=0;},describe(info){
+    if(typeof info?.multipleDesktops==='boolean')multipleDesktops=info.multipleDesktops;
     // Windows and macOS hosts map the shortcut palette; unknown hosts hide it.
     if(info?.platform){commandsButton.hidden=!['windows','macos'].includes(info.platform);if(commandsButton.hidden)showCommands(false);}
     // Repaint artwork only when the host state actually changed. Rebuilding

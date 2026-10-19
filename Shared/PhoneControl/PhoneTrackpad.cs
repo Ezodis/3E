@@ -684,7 +684,11 @@ input{width:100%;padding:13px;border:1px solid #415260;border-radius:10px;backgr
             case "taskView": sink.Release(); sink.TaskView(); break;
             case "showDesktop": sink.Release(); sink.ShowDesktop(); break;
             case "desktop": sink.Desktop(Range("direction",-1,1)); break;
-            case "navigate": sink.Navigate(Range("direction",-1,1)); break;
+            case "navigate":
+                int direction=Range("direction",-1,1);
+                if(command.TryGetProperty("swipe",out var swipe)&&swipe.GetBoolean())sink.NavigateSwipe(direction);
+                else sink.Navigate(direction);
+                break;
             case "navigateEnd": sink.NavigateEnd(); break;
             case "appsBegin": sink.Release(); sink.AppsBegin(); break;
             case "appsStep": sink.AppsStep(Range("direction",-1,1)); break;
@@ -726,6 +730,7 @@ public interface ITrackpadInput {
     void ReleaseAll() => Release();
     void Desktop(int direction) { }
     void Navigate(int direction) { }
+    void NavigateSwipe(int direction) => Navigate(-direction);
     void NavigateEnd() => AppsEnd();
     void AppsBegin() { }
     void AppsStep(int direction) { }

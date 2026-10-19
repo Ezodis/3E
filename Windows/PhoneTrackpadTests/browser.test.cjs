@@ -187,12 +187,12 @@ if(require.main===module)(async()=>{
     await p.locator('#clipClose').click();}
    assert.deepEqual(await p.locator('#apps').evaluate(el=>({background:getComputedStyle(el).backgroundColor,border:getComputedStyle(el).borderTopWidth})),{background:'rgba(0, 0, 0, 0)',border:'0px'},'Apps artwork has no enclosing button bezel');
    await drag(p,p.locator('#apps'),70);await drag(p,p.locator('#apps'),-70);
-   assert.deepEqual(commands.filter(c=>c.type==='navigate').map(c=>c.direction),[-1,1],'natural swipes issue one opposite-direction step each');
+   assert.deepEqual(commands.filter(c=>c.type==='navigate').map(c=>c.direction),[1,-1],'swipes send finger direction for host desktop or window routing');
    assert.equal(commands.some(c=>c.type==='appsBegin'),false,'touching Apps must not switch before the swipe');
    assert.ok(commands.some(c=>c.type==='navigateEnd'));
    assert.equal((await p.locator('#apps').innerText()).trim(),'');assert.equal((await p.locator('#media').innerText()).trim(),'');
    await drag(p,p.locator('#apps'),-65,0,600);
-   assert.ok(commands.some(c=>c.type==='appsBegin')&&commands.some(c=>c.type==='appsStep'&&c.direction===1)&&commands.some(c=>c.type==='appsEnd'));
+   assert.ok(commands.some(c=>c.type==='appsBegin')&&commands.some(c=>c.type==='appsStep'&&c.direction===-1)&&commands.some(c=>c.type==='appsEnd'));
    {const before=commands.length;await drag(p,p.locator('#apps'),0,-80);await drag(p,p.locator('#apps'),0,80);
     const vertical=commands.slice(before).filter(c=>['taskView','showDesktop'].includes(c.type)).map(c=>c.type);
     assert.deepEqual(vertical,['taskView','taskView'],'Apps swipe up opens all windows and swipe down closes them');}

@@ -136,6 +136,10 @@ navigation.Step(1);multiple=false;navigation.Step(-1);navigation.End();
 Check(navigationLog.SequenceEqual(new[]{"desktop:1","desktop:-1","end"}),"Desktop navigation keeps its mode until the contact ends");
 navigationLog.Clear();navigation.Step(-1);navigation.Step(1);navigation.End();
 Check(navigationLog.SequenceEqual(new[]{"begin:-1","step:1","end"}),"Single-desktop navigation starts in the requested direction without an extra forward step");
+navigationLog.Clear();multiple=true;navigation.Step(1,true);navigation.Step(-1,true);navigation.End();
+Check(navigationLog.SequenceEqual(new[]{"desktop:-1","desktop:1","end"}),"Desktop swipes move opposite the finger");
+navigationLog.Clear();multiple=false;navigation.Step(1,true);navigation.Step(-1,true);navigation.End();
+Check(navigationLog.SequenceEqual(new[]{"begin:1","step:-1","end"}),"Single-desktop window swipes follow the finger in both directions");
 navigationLog.Clear();var unknownNavigation=new NavigationGesture(()=>throw new Exception("OS unavailable"),d=>navigationLog.Add("desktop"),d=>navigationLog.Add("begin:"+d),d=>{},()=>{});unknownNavigation.Step(1);
 Check(navigationLog.SequenceEqual(new[]{"begin:1"}),"Unavailable desktop discovery falls back to window switching");
 Check(!NativeTrackpadInput.HasMultipleDesktopIds(null)&&!NativeTrackpadInput.HasMultipleDesktopIds(new byte[16])&&!NativeTrackpadInput.HasMultipleDesktopIds(new byte[33])&&NativeTrackpadInput.HasMultipleDesktopIds(new byte[32]),"Desktop discovery handles missing, single and malformed Explorer data");
@@ -171,6 +175,8 @@ foreach(ushort key in new ushort[]{0x12,0x09,0x10,0x11,0x5B,0x25,0x27,0xB3,0x2C,
 }
 Check(marked,"Fixed shortcut presses and releases bypass the suite's PowerToys remappings without injecting test input");
 void ApplyText(string command) { using var parsed=JsonDocument.Parse(command); PhoneTrackpad.Apply(parsed.RootElement,fake); }
+ApplyText("{\"type\":\"navigate\",\"direction\":1,\"swipe\":true}");
+Check(fake.Commands.Contains("navigateSwipe:1"),"Swipe packet preserves finger direction at the native boundary");
 ApplyText("{\"type\":\"appsBegin\"}"); ApplyText("{\"type\":\"appsStep\",\"direction\":-1}");
 Check(fake.Switching && fake.Commands.Contains("appsStep:-1"),"App switcher begins and steps through the native boundary");
 ApplyText("{\"type\":\"midiNote\",\"channel\":15,\"number\":36,\"value\":127}");
@@ -556,6 +562,7 @@ sealed class FakeInput : ITrackpadInput {
     public void AppsStep(int direction)=>Commands.Enqueue($"appsStep:{direction}");
     public void AppsEnd(){if(Switching)Commands.Enqueue("appsEnd");Switching=false;}
     public void Desktop(int direction)=>Commands.Enqueue($"desktop:{direction}");
+    public void NavigateSwipe(int direction){Switching=true;Commands.Enqueue($"navigateSwipe:{direction}");}
     public void Navigate(int direction){Switching=true;Commands.Enqueue($"navigate:{direction}");}
     public void NavigateEnd(){Commands.Enqueue("navigateEnd");AppsEnd();}
     public void Media(int action)=>Commands.Enqueue($"media:{action}");

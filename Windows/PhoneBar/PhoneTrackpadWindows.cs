@@ -67,8 +67,8 @@ public sealed class NativeTrackpadInput : ITrackpadInput, IDisposable {
         this.controls=controls;this.media=media;this.volumeState=volumeState;this.volume=volume;this.cancelVolume=cancelVolume;this.refreshVolume=refreshVolume;
         navigation=new(HasMultipleDesktops,SendDesktopShortcut,BeginApps,AppsStep,AppsEnd);
     }
-    public object GetConnectionInfo() => new {platform="windows",volume=volumeState?.Invoke(),controls=controls?.Invoke()};
-    public object GetInfo() => new {platform="windows",volume=volumeState?.Invoke(),controls=controls?.Invoke(),midi=midi.Info()};
+    public object GetConnectionInfo() => new {platform="windows",multipleDesktops=HasMultipleDesktops(),volume=volumeState?.Invoke(),controls=controls?.Invoke()};
+    public object GetInfo() => new {platform="windows",multipleDesktops=HasMultipleDesktops(),volume=volumeState?.Invoke(),controls=controls?.Invoke(),midi=midi.Info()};
     public static bool HasMultipleDesktops() {
         // Explorer's list includes empty desktops that cannot be found by
         // enumerating windows. Missing/changed OS data falls back to windows.
@@ -163,6 +163,7 @@ public sealed class NativeTrackpadInput : ITrackpadInput, IDisposable {
         ReleaseAll(); SendDesktopShortcut(direction);
     }
     public void Navigate(int direction) => navigation.Step(direction);
+    public void NavigateSwipe(int direction) => navigation.Step(direction,true);
     public void NavigateEnd() => navigation.End();
     private void SendDesktopShortcut(int direction) {
         ushort arrow=direction<0?(ushort)0x25:(ushort)0x27;

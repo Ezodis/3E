@@ -33,6 +33,7 @@ public sealed class MacInput : ITrackpadInput, IDisposable {
     private readonly Action<string,int> systemAction;
     private bool held;
     private readonly MacPointerMotion pointer;
+    private readonly NavigationGesture navigation;
     private IntPtr mouseSource;
     private readonly uint[] displayIds=new uint[32];
     private readonly List<MacPointerMotion.Display> displays=new();
@@ -40,11 +41,11 @@ public sealed class MacInput : ITrackpadInput, IDisposable {
     private bool appSwitcherHeld;
     private object controls;
     private long lastClick; private Point lastClickPoint; private int clicks;
-    public MacInput(Action<int> media,Action<string,int> systemAction) { this.media=media;this.systemAction=systemAction;pointer=new(ClampPointer);midi.Select(0); }
+    public MacInput(Action<int> media,Action<string,int> systemAction) { this.media=media;this.systemAction=systemAction;pointer=new(ClampPointer);navigation=new(()=>ThreeEHasMultipleSpaces()!=0,d=>systemAction("space",d),BeginApps,AppsStep,AppsEnd);midi.Select(0); }
     public void SetControls(object snapshot) => Volatile.Write(ref controls,snapshot);
     public string Platform => "macos";
-    public object GetConnectionInfo() => new {platform=Platform,volume=volume.State,inputPermission=CGPreflightPostEventAccess(),controls=Volatile.Read(ref controls)};
-    public object GetInfo() => new {platform=Platform,volume=volume.State,inputPermission=CGPreflightPostEventAccess(),controls=Volatile.Read(ref controls),midi=midi.Info()};
+    public object GetConnectionInfo() => new {platform=Platform,multipleDesktops=ThreeEHasMultipleSpaces()!=0,volume=volume.State,inputPermission=CGPreflightPostEventAccess(),controls=Volatile.Read(ref controls)};
+    public object GetInfo() => new {platform=Platform,multipleDesktops=ThreeEHasMultipleSpaces()!=0,volume=volume.State,inputPermission=CGPreflightPostEventAccess(),controls=Volatile.Read(ref controls),midi=midi.Info()};
     private static Point Location() { var e=CGEventCreate(IntPtr.Zero);if(e==IntPtr.Zero)throw new InvalidOperationException("macOS pointer event unavailable");try{return CGEventGetLocation(e);}finally{if(e!=IntPtr.Zero)CFRelease(e);} }
     private static void Post(IntPtr e) { if(e==IntPtr.Zero)throw new InvalidOperationException("macOS event unavailable");try{CGEventPost(0,e);}finally{CFRelease(e);} }
     private static void Key(ushort key,bool down,ulong flags=0) { var e=CGEventCreateKeyboardEvent(IntPtr.Zero,key,down);if(e==IntPtr.Zero)throw new InvalidOperationException("macOS keyboard event unavailable");CGEventSetFlags(e,flags);Post(e); }
@@ -124,9 +125,11 @@ public sealed class MacInput : ITrackpadInput, IDisposable {
     public void Desktop(int direction){if(direction!=0){ReleaseAll();systemAction("space",direction);}}
     // An unheld horizontal swipe changes Spaces when there is more than one;
     // otherwise it cycles apps. Holding Apps always opens the app switcher.
-    public void Navigate(int direction){if(direction==0)return;if(ThreeEHasMultipleSpaces()!=0)Desktop(direction);else CycleApp(direction);}
-    public void AppsBegin(){if(appSwitcherHeld)return;Release();Key(55,true,Cmd);appSwitcherHeld=true;CycleAppKey(1);}
-    public void NavigateEnd()=>AppsEnd();
+    public void Navigate(int direction)=>navigation.Step(direction);
+    public void NavigateSwipe(int direction)=>navigation.Step(direction,true);
+    public void AppsBegin()=>BeginApps(1);
+    private void BeginApps(int direction){if(appSwitcherHeld)return;Release();Key(55,true,Cmd);appSwitcherHeld=true;CycleAppKey(direction);}
+    public void NavigateEnd()=>navigation.End();
     public void AppsStep(int direction){if(direction!=0){if(!appSwitcherHeld)AppsBegin();CycleAppKey(direction);}}
     public void AppsEnd(){if(!appSwitcherHeld)return;try{Key(55,false,0);}finally{appSwitcherHeld=false;}}
     // Same palette ids as Web/dock.js and PhoneTrackpad.ShortcutCount; real Command keys on macOS.
@@ -136,12 +139,6 @@ public sealed class MacInput : ITrackpadInput, IDisposable {
         if(reverse)Key(56,true,flags);
         try{Key(48,true,flags);Key(48,false,flags);}
         finally{if(reverse)Key(56,false,Cmd);}
-    }
-    private void CycleApp(int direction){
-        if(direction==0)return;
-        Key(55,true,Cmd);
-        try{CycleAppKey(direction);}
-        finally{Key(55,false,0);}
     }
     private static readonly (ushort key,ulong flags)[] shortcuts={
         (8,Cmd),(9,Cmd),(7,Cmd),(0,Cmd),(6,Cmd),(6,Cmd|Shift),(17,Cmd),(17,Cmd|Shift),(13,Cmd),(45,Cmd),(3,Cmd),(1,Cmd),
@@ -194,7 +191,7 @@ public sealed class MacInput : ITrackpadInput, IDisposable {
     public void Midi(bool note,int channel,int number,int value)=>midi.Send(note,channel,number,value);
     public void MidiPanic()=>midi.Panic();
     public void VolumeStep(int direction){if(direction==0)return;int level=ThreeEGetOutputVolume();if(level>=0)volume.Set(Math.Clamp(level+direction*6,0,100));}
-    public void ReleaseAll(){volume.CancelPending();try{Release();AppsEnd();}finally{pointer.Reset();midi.Panic();}}
+    public void ReleaseAll(){volume.CancelPending();try{Release();navigation.End();}finally{pointer.Reset();midi.Panic();}}
     public void Dispose(){try{ReleaseAll();}finally{volume.Dispose();midi.Dispose();if(mouseSource!=IntPtr.Zero){CFRelease(mouseSource);mouseSource=IntPtr.Zero;}}}
 }
 

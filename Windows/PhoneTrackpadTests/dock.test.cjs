@@ -10,9 +10,9 @@ function commands(type){return sent.filter(c=>c.type===type);}
 function check(value,message){assert.ok(value,message);checks++;}
 event('apps','pointerdown');check(!sent.length,'Apps does not switch on touch-down');
 event('apps','pointermove',60);event('apps','pointermove',-200);
-check(commands('navigate').length===1&&commands('navigate')[0].direction===1,'A left swipe moves to the desktop on the right');
+check(commands('navigate').length===1&&commands('navigate')[0].direction===-1&&commands('navigate')[0].swipe===true,'A left swipe moves to the desktop on the right');
 check(elements.get('apps').dataset.icon==='right','Left swipe shows the right destination arrow');
-now+=250;event('apps','pointermove',120);check(commands('navigate').at(-1).direction===-1,'Direction reversal works after the repeat interval');
+now+=250;event('apps','pointermove',120);check(commands('navigate').at(-1).direction===1,'Direction reversal works after the repeat interval');
 event('apps','lostpointercapture',0,0,99);now+=250;event('apps','pointermove',30);
 check(commands('navigate').length===3,'A different pointer cannot cancel the active contact');
 event('apps','pointerup',30);check(commands('navigateEnd').length===1,'Lift ends fallback app switching');
@@ -26,7 +26,13 @@ sent.length=0;event('apps','pointerdown');event('apps','pointermove',100,60);eve
 win.ThreeEDock.overviewEnded();sent.length=0;event('apps','pointerdown');event('apps','pointermove',100,150);event('apps','pointermove',100,220);event('apps','pointerup',100,220);check(commands('showDesktop').length===1&&!commands('taskView').length,'After a click picks a window, swipe down shows the desktop');
 sent.length=0;event('apps','pointerdown');event('apps','pointermove',100,120);event('apps','pointerup',100,120);check(!commands('showDesktop').length&&!commands('taskView').length,'A short vertical nudge on Apps does nothing');
 sent.length=0;event('apps','pointerdown');hold();event('apps','pointermove',60);event('apps','pointerup',60);
-check(commands('appsBegin').length===1&&commands('appsStep').length===1&&commands('appsStep')[0].direction===1&&commands('appsEnd').length===1,'Holding Apps keeps the explicit native app chooser');
+check(commands('appsBegin').length===1&&commands('appsStep').length===1&&commands('appsStep')[0].direction===-1&&commands('appsEnd').length===1,'Holding Apps keeps the explicit native app chooser');
+sent.length=0;event('apps','pointerdown');hold();event('apps','pointermove',150);
+check(commands('appsStep')[0].direction===1&&elements.get('apps').dataset.icon==='right','Held right swipe advances the app chooser to the right');event('apps','pointerup',150);
+win.ThreeEDock.describe({multipleDesktops:false});sent.length=0;event('apps','pointerdown');event('apps','pointermove',60);
+check(commands('navigate')[0].direction===-1&&commands('navigate')[0].swipe&&elements.get('apps').dataset.icon==='left','Single-desktop left swipe selects the previous app and shows left');
+win.ThreeEDock.describe({multipleDesktops:true});now+=250;event('apps','pointermove',150);
+check(commands('navigate').at(-1).direction===1&&elements.get('apps').dataset.icon==='right','Window direction stays latched through a contact');event('apps','pointerup',150);
 sent.length=0;event('media','pointerdown');event('media','pointermove',150);check(elements.get('media').dataset.icon==='next','Media previews the same next-track symbol as Touch Bar');event('media','pointerup',150);
 check(commands('media').length===1&&commands('media')[0].action===2,'Swipe sends exactly one next-track action');
 sent.length=0;event('media','pointerdown');event('media','pointermove',104,30);event('media','pointerup',104,30);
