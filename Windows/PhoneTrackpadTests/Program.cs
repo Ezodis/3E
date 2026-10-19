@@ -22,39 +22,58 @@ async Task Send(ClientWebSocket ws, string text) => await ws.SendAsync(Encoding.
 async Task<string> Receive(ClientWebSocket ws) { using var timeout = new CancellationTokenSource(3000); var buffer = new byte[2048]; var result = await ws.ReceiveAsync(buffer, timeout.Token); return Encoding.UTF8.GetString(buffer, 0, result.Count); }
 
 // Preview mode exercises the real server and resource delivery, but never injects input or opens the firewall.
+// The receiver runs in a child process so an "update" is simulated faithfully:
+// writing a build id to <url-file>.restart ends that process and starts a new
+// one (same port and link) serving that build, as installing an update does;
+// <url-file>.restart is emptied once the new receiver is listening.
 if (args.Length == 2 && args[0] == "--preview") {
+    var urlFile = args[1];
+    var previewToken = Convert.ToHexString(System.Security.Cryptography.RandomNumberGenerator.GetBytes(24));
+    System.Diagnostics.Process child = null;
+    var self = Environment.ProcessPath;
+    var dotnetHost = Path.GetFileNameWithoutExtension(self).Equals("dotnet", StringComparison.OrdinalIgnoreCase);
+    AppDomain.CurrentDomain.ProcessExit += (_, _) => { try { child?.Kill(true); } catch { } };
+    void Launch(string build) {
+        File.Delete(urlFile + ".ready");
+        var start = new System.Diagnostics.ProcessStartInfo(self) { UseShellExecute = false };
+        if (dotnetHost) start.ArgumentList.Add(typeof(FakeInput).Assembly.Location);
+        foreach (var a in new[] { "--preview-receiver", urlFile, previewToken, build }) start.ArgumentList.Add(a);
+        child = System.Diagnostics.Process.Start(start);
+        for (int i = 0; i < 300 && !File.Exists(urlFile + ".ready"); i++) { if (child.HasExited) throw new Exception("Preview receiver exited: " + child.ExitCode); Thread.Sleep(100); }
+        if (!File.Exists(urlFile + ".ready")) throw new Exception("Preview receiver did not start.");
+    }
+    File.WriteAllText(urlFile + ".restart", "");
+    Launch("");
+    while (true) {
+        await Task.Delay(100);
+        string next; try { next = File.ReadAllText(urlFile + ".restart").Trim(); } catch { continue; }
+        if (next.Length == 0) continue;
+        child.Kill(true); child.WaitForExit();
+        Launch(next);
+        File.WriteAllText(urlFile + ".restart", "");
+    }
+}
+if (args.Length == 4 && args[0] == "--preview-receiver") {
     var previewInput = new FakeInput();
     // A computer clipboard for the page's "Copy from" sheet: text, HTML, a picture and a file.
     var previewFile = Path.Combine(Directory.CreateTempSubdirectory().FullName, "Quarterly report.pdf");
     File.WriteAllText(previewFile, "%PDF-1.4 preview");
     previewInput.Clip.Snapshot = new ClipSnapshot { Text = "Hello from the computer", Html = "<b>Hello</b> from the <span style=\"color:red\">computer</span><script>window.bad=1</script><style>body{display:none}</style>", Png = ThreeE.PhoneBar.Windows.WindowsPhoneClipboard.EncodePng(Enumerable.Repeat((byte)200, 40 * 30 * 4).ToArray(), 40, 30), Files = { previewFile } };
-    var preview = new PhoneTrackpad(() => IPAddress.Loopback, previewInput, new FakeFirewall(), 17834);
-    if (!preview.Start()) throw new Exception(preview.Status);
+    string previewToken = args[2], previewBuild = args[3];
+    PhoneTrackpad preview = null;
+    // The previous receiver process has just exited; its port can take a moment to free.
+    for (int attempt = 0; ; attempt++) {
+        preview = new PhoneTrackpad(() => IPAddress.Loopback, previewInput, new FakeFirewall(), 17834) { TokenProvider = () => previewToken, Build = previewBuild.Length == 0 ? null : previewBuild };
+        if (preview.Start()) break;
+        preview.Dispose();
+        if (attempt > 100) throw new Exception(preview.Status);
+        await Task.Delay(100);
+    }
     File.WriteAllText(args[1], preview.PairingUrl);
-    // Simulates the computer installing an update: writing a build id to
-    // <url-file>.restart restarts the receiver (same port and link) serving that
-    // build, then <url-file>.restart is emptied once it is listening again.
-    var previewToken = new Uri(preview.PairingUrl).Fragment[1..];
-    File.WriteAllText(args[1] + ".restart", "");
-    _ = Task.Run(async () => {
-        while (true) {
-            await Task.Delay(100);
-            string next; try { next = File.ReadAllText(args[1] + ".restart").Trim(); } catch { continue; }
-            if (next.Length == 0) continue;
-            preview.Dispose();
-            for (int attempt = 0; ; attempt++) {
-                var restarted = new PhoneTrackpad(() => IPAddress.Loopback, previewInput, new FakeFirewall(), 17834) { TokenProvider = () => previewToken, Build = next };
-                if (restarted.Start()) { preview = restarted; break; }
-                restarted.Dispose();
-                if (attempt > 50) throw new Exception("Preview receiver could not restart: " + restarted.Status);
-                await Task.Delay(100);
-            }
-            File.WriteAllText(args[1] + ".restart", "");
-        }
-    });
     // Report what the page sends so browser.test.cjs can check uploads.
     File.WriteAllText(args[1] + ".clip", "");
     _ = Task.Run(async () => { List<ClipPart> seen = null; while (true) { await Task.Delay(100); var written = previewInput.Clip.Written; if (written != null && written != seen) { seen = written; File.WriteAllText(args[1] + ".clip", JsonSerializer.Serialize(written.Select(c => new { kind = c.Kind, name = c.Name, size = c.Data.Length, head = c.Kind is "text" or "html" ? Encoding.UTF8.GetString(c.Data) : Convert.ToHexString(c.Data.Take(8).ToArray()) }))); } } });
+    File.WriteAllText(args[1] + ".ready", Environment.ProcessId.ToString());
     await Task.Delay(Timeout.Infinite);
     return;
 }

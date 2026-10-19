@@ -41,10 +41,10 @@ jobs:
             cat "$RUNNER_TEMP/browser.log" "$RUNNER_TEMP/preview.log"
             # Surface the failure in the check summary (one annotation, newlines escaped).
             echo "::error title=Browser tests::$(tail -n 25 "$RUNNER_TEMP/browser.log" | sed 's/%/%25/g' | awk '{printf "%s%%0A", $0}')"
-            kill $preview; exit 1
+            kill $preview; pkill -f -- '--preview' || true; exit 1
           fi
           cat "$RUNNER_TEMP/browser.log"
-          kill $preview
+          kill $preview; pkill -f -- '--preview' || true
       - name: Build standalone universal Mac app
         run: zsh Shared/PhoneControl/MacHost/build-app.sh
       - name: Run receiver, CoreMIDI and pasteboard smoke tests
