@@ -3,6 +3,7 @@
   <ItemGroup>
     <ProjectReference Include="../../Shared/PhoneControl/PhoneControlCore.csproj" />
     <Compile Include="../PhoneBar/PhoneTrackpadWindows.cs" />
+    <Compile Include="../../Shared/PhoneControl/MacHost/MacPointerMotion.cs" />
     <Compile Include="../PhoneBar/PhoneMidiWindows.cs" />
     <Compile Include="../PhoneBar/PhoneNameResponder.cs" />
     <Compile Include="../PhoneBar/PhoneClipboardWindows.cs" />

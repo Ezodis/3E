@@ -68,4 +68,29 @@ sent.length=0;time+=2000;pings.length=0;fire('touchstart',[touch(10,10)]);assert
 doc.hidden=true;doc.handlers.visibilitychange();doc.hidden=false;doc.handlers.visibilitychange();const reconnecting=ws;
 fire('touchstart',[touch(10,10)]);fire('touchmove',[touch(30,10)]);fire('touchend',[]);fire('touchstart',[touch(50,50)]);fire('touchend',[]);
 reconnecting.onopen();sent.length=0;assert.equal(ws,reconnecting);reconnecting.onmessage({data:'{"ready":true}'});expect([{type:'move',x:60,y:0},{type:'left'}],'motion and a tap made while waking are delivered on connect');
+// The low-latency stream must win over duplicate compatibility touches.
+time+=2000;sent.length=0;
+function pointer(type,id,x,y){element('pad').handlers[type]({pointerType:'touch',pointerId:id,clientX:x,clientY:y,preventDefault(){}});}
+pointer('pointerdown',1,10,10);
+pointer('pointermove',1,11,10);
+assert.deepEqual(sent,[{type:'move',x:3,y:0}],'first 1px pointer sample is sent synchronously without a touchmove or animation frame');
+time+=4;pointer('pointermove',1,12,10);
+assert.equal(sent.length,1,'pointer packets remain capped at 125 Hz');
+time+=4;timer(4);
+assert.deepEqual(sent,[{type:'move',x:3,y:0},{type:'move',x:3,y:0}],'pending pointer movement sends at the 8ms deadline without a display frame');
+fire('touchstart',[touch(10,10)]);fire('touchmove',[touch(30,10)]);
+assert.deepEqual(sent,[{type:'move',x:3,y:0},{type:'move',x:3,y:0}],'compatibility touch events never duplicate pointer motion');
+pointer('pointercancel',1,11,10);assert.equal(sent.at(-1).type,'releaseAll','pointer cancellation releases held controls');
+sent.length=0;time+=700;
+pointer('pointerdown',1,10,10);pointer('pointerdown',2,30,10);time+=15;
+pointer('pointermove',1,10,50);pointer('pointermove',2,30,50);pointer('pointerup',1,10,50);pointer('pointerup',2,30,50);
+assert.equal(sent.filter(c=>c.type==='scroll').reduce((n,c)=>n+c.y,0),-120,'pointer two-finger scroll keeps the Windows direction and total distance');
+assert.ok(!sent.some(c=>c.type==='move'||c.type==='left'||c.type==='right'),'two-finger scroll never leaks pointer motion or clicks');
+checks+=4;sent.length=0;
+ws.onclose();
+pointer('pointerdown',7,20,20);pointer('pointermove',7,24,20);
+const pointerWakeSocket=ws;pointerWakeSocket.onopen();sent.length=0;pointerWakeSocket.onmessage({data:'{"ready":true}'});
+assert.deepEqual(sent,[{type:'move',x:12,y:0}],'a pointer contact that wakes the connection is retained and delivered');
+pointer('pointercancel',7,24,20);sent.length=0;checks++;
+
 ws.onmessage({data:'{"error":"pairing"}'});assert.equal(element('connect').textContent,'Connect');assert.ok(![...timers.values()].some(t=>t.ms===250));checks++;console.log('PASS: '+checks+' shared gesture and connection checks.');

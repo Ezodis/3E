@@ -57,7 +57,7 @@
   const loadedBuild = typeof window.ThreeEHost?.build === 'string' ? window.ThreeEHost.build : null;
   const UPDATE_KEY = '3e-update', UPDATE_GAP = 30000, UPDATE_POLL = 400, UPDATE_DELAY = 600;
   let receiverBuild = null, pendingBuild = null, updateTimer = null, updating = false;
-  let dx = 0, dy = 0, sx = 0, sy = 0;
+  let dx = 0, dy = 0, sx = 0, sy = 0, motionTimer = null;
   const speed = $('speed');
   try { const saved = Number(localStorage.getItem('3e-speed')); if (saved >= .5 && saved <= 20) speed.value = saved; } catch {}
   const showSpeed = () => { $('speedValue').textContent = Number(speed.value).toFixed(1) + '×'; };
@@ -93,10 +93,10 @@
     pad.classList.toggle('dragging', value);
   }
   function reset(message) {
-    ready = false; dragging = false; threeDrag = false;
+    ready = false; dragging = false; threeDrag = false; contacts.clear();
     mode = peak = 0; last = null; cancelled = false;
     lastTap = null; tapCandidate = tapDrag = fourDone = false; gestureOrigin = fourOrigin = null;
-    dx = dy = sx = sy = 0;
+    dx = dy = sx = sy = 0; clearTimeout(motionTimer); motionTimer = null;
     clearInterval(heartbeat); clearTimeout(updateTimer); updateTimer = null; receiverBuild = null;
     clearTimeout(holdTimer); clearTimeout(pressTimer); clearTimeout(releaseTimer); releaseTimer=null; httpQueue = []; pendingTap = null; dragArmed = false; owedClick = false; clearTimeout(owedTimer);
     buttons.forEach(b => b.disabled = true); window.ThreeEDock?.commands(false);
@@ -267,7 +267,34 @@
     return { x: Array.from(touches).reduce((n, t) => n + t.clientX, 0) / touches.length,
              y: Array.from(touches).reduce((n, t) => n + t.clientY, 0) / touches.length };
   }
-  pad.addEventListener('touchstart', e => {
+  // Pointer events supply contact motion without waiting for touch-move
+  // recognition. Keep touch events for older/watch viewers, but never process
+  // both streams for the same contact. Feed the existing gesture recognizer so
+  // scrolling, pinch, navigation and button ordering keep their behavior.
+  const contacts = new Map(), contactHandlers = {};
+  let pointerInput = false;
+  function onContact(type, handler) {
+    contactHandlers[type] = handler;
+    pad.addEventListener(type, e => { if (!pointerInput) handler(e); }, { passive:false });
+  }
+  function pointerContact(type, e) {
+    if (e.pointerType !== 'touch' && e.pointerType !== 'pen') return;
+    if (type === 'touchstart') {
+      if (!ready) wake(); // reset the connection before retaining this contact
+      pointerInput = true;
+      contacts.set(e.pointerId, e);
+      try { pad.setPointerCapture(e.pointerId); } catch {}
+    } else {
+      if (!contacts.has(e.pointerId)) return;
+      if (type === 'touchmove') contacts.set(e.pointerId, e);
+      else if (type === 'touchcancel') contacts.clear();
+      else contacts.delete(e.pointerId);
+    }
+    contactHandlers[type]({touches:Array.from(contacts.values()),preventDefault:()=>e.preventDefault()});
+  }
+  for (const [pointer, touch] of [['pointerdown','touchstart'],['pointermove','touchmove'],['pointerup','touchend'],['pointercancel','touchcancel']])
+    pad.addEventListener(pointer, e => pointerContact(touch,e), {passive:false});
+  onContact('touchstart', e => {
     e.preventDefault(); lastTouchAt = performance.now(); touching = e.touches.length; if (!e.touches.length) return;
     // Keep the gesture even while (re)connecting; flush() holds its motion.
     if (!ready) wake();
@@ -280,7 +307,7 @@
     momentum = null; // any touch stops a gliding scroll
     if (count === 2 && !two) two = { start: performance.now(), origin: point, spread0: spread(e.touches), zoomRef: 0, axis: null, decided: false, nav: false, bufX: 0, samples: [] };
     if (!mode) {
-      started = performance.now(); distance = 0; offset = 0; peak = 0; cancelled = false; motionHistory = [];
+      started = performance.now(); distance = 0; offset = 0; peak = 0; cancelled = false; motionHistory = []; lastMotionSent = -Infinity;
       if (Math.abs(dx) < 1) dx = 0; if (Math.abs(dy) < 1) dy = 0; if (Math.abs(sx) < 1) sx = 0; if (Math.abs(sy) < 1) sy = 0; // drop sub-unit leftovers from the last gesture
       gestureOrigin = point; fourOrigin = null; fourDone = false;
       tapCandidate = count === 1 && !dragging && !scrollMode && lastTap && started - lastTap.time < SECOND_TAP && Math.hypot(point.x-lastTap.x,point.y-lastTap.y) < SECOND_TAP_DISTANCE;
@@ -305,7 +332,7 @@
       if (count > 4) cancelled = true;
     }
   }, { passive: false });
-  pad.addEventListener('touchmove', e => {
+  onContact('touchmove', e => {
     e.preventDefault(); lastTouchAt = performance.now(); touching = e.touches.length; if (cancelled || !e.touches.length) return;
     const point = center(e.touches), count = e.touches.length;
     if (peak >= 4) {
@@ -425,7 +452,15 @@
     // Button edges still flush immediately to preserve drag/click ordering.
     if (!all && socket?.bufferedAmount > 512) return;
     const now = performance.now();
-    if (!all && now-lastMotionSent < 8) return;
+    if (!all && now-lastMotionSent < 8) {
+      // Send the next pointer packet at its deadline, rather than waiting for
+      // another display frame (which can turn 120 Hz samples into 60 Hz jumps).
+      // Leave scroll scheduling and momentum exactly as before.
+      if ((dx || dy) && motionTimer === null)
+        motionTimer = setTimeout(() => { motionTimer = null; flush(); }, 8-(now-lastMotionSent));
+      return;
+    }
+    clearTimeout(motionTimer); motionTimer = null;
     const bounded = n => Math.max(-1000, Math.min(1000, Math.trunc(n)));
     const x = Math.trunc(dx), y = Math.trunc(dy);
     dx -= x; dy -= y;
@@ -437,7 +472,7 @@
       else break;
     }
   }
-  pad.addEventListener('touchend', e => {
+  onContact('touchend', e => {
     e.preventDefault(); clearTimeout(holdTimer); lastTouchAt = performance.now(); touching = e.touches.length; flush(true);
     if (peak >= 4) {
       if (!e.touches.length) { mode = peak = 0; last = lastTap = fourOrigin = null; cancelled = false; }
@@ -469,7 +504,7 @@
       mode = peak = 0; last = null; cancelled = false; tapCandidate = false;
     } else { mode = e.touches.length; last = center(e.touches); }
   }, { passive: false });
-  pad.addEventListener('touchcancel', e => { e.preventDefault(); touching = 0; releaseControls(); }, { passive: false });
+  onContact('touchcancel', e => { e.preventDefault(); touching = 0; releaseControls(); }, { passive: false });
   // Some watch viewers expose taps as clicks but consume continuous touch events.
   pad.addEventListener('click', () => { if (performance.now()-lastTouchAt > 500 && !scrollMode) send('left'); });
   pad.addEventListener('contextmenu', e => e.preventDefault());
@@ -520,6 +555,7 @@
     if (window.innerWidth !== viewportWidth) { viewportWidth = window.innerWidth; releaseControls(); }
   });
   function releaseControls() {
+    contacts.clear(); clearTimeout(motionTimer); motionTimer = null;
     clearTimeout(holdTimer); clearTimeout(pressTimer); clearTimeout(releaseTimer); releaseTimer=null;
     dx=dy=sx=sy=0; two=null; momentum=null; dropClick(); drag(false); dragArmed=false; send('releaseAll'); pad.classList.remove('dragging'); hint();
     threeDrag=tapDrag=tapCandidate=false; mode=peak=0; last=lastTap=null; cancelled=true;

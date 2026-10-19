@@ -11,7 +11,7 @@ public sealed class MacInput : ITrackpadInput, IDisposable {
     [DllImport(CG)] private static extern Point CGEventGetLocation(IntPtr e);
     [DllImport(CG)] private static extern IntPtr CGEventCreateMouseEvent(IntPtr source,uint type,Point position,uint button);
     [DllImport(CG)] private static extern IntPtr CGEventCreateKeyboardEvent(IntPtr source,ushort key,[MarshalAs(UnmanagedType.I1)] bool down);
-    [DllImport("ThreeEPhoneNative")] private static extern IntPtr ThreeECreateScrollEvent(int y,int x);
+    [DllImport("ThreeEPhoneNative")] private static extern IntPtr ThreeECreateScrollEvent(int x,int y);
     [DllImport("ThreeEPhoneNative")] public static extern int ThreeEValidateScrollEvent();
     [DllImport("ThreeEPhoneNative")] public static extern int ThreeEHasMultipleSpaces();
     [DllImport(CG)] private static extern void CGEventSetFlags(IntPtr e,ulong flags);
@@ -27,6 +27,7 @@ public sealed class MacInput : ITrackpadInput, IDisposable {
     private readonly Action<int> media;
     private readonly Action<string,int> systemAction;
     private bool held;
+    private readonly MacPointerMotion pointer = new();
     private bool appSwitcherHeld;
     private object controls;
     private long lastClick; private Point lastClickPoint; private int clicks;
@@ -38,17 +39,28 @@ public sealed class MacInput : ITrackpadInput, IDisposable {
     private static Point Location() { var e=CGEventCreate(IntPtr.Zero);if(e==IntPtr.Zero)throw new InvalidOperationException("macOS pointer event unavailable");try{return CGEventGetLocation(e);}finally{if(e!=IntPtr.Zero)CFRelease(e);} }
     private static void Post(IntPtr e) { if(e==IntPtr.Zero)throw new InvalidOperationException("macOS event unavailable");try{CGEventPost(0,e);}finally{CFRelease(e);} }
     private static void Key(ushort key,bool down,ulong flags=0) { var e=CGEventCreateKeyboardEvent(IntPtr.Zero,key,down);if(e==IntPtr.Zero)throw new InvalidOperationException("macOS keyboard event unavailable");CGEventSetFlags(e,flags);Post(e); }
-    public void Move(int x,int y) { var p=Location();p.X+=x;p.Y+=y;Post(CGEventCreateMouseEvent(IntPtr.Zero,held?6u:5u,p,0)); }
-    public void Scroll(int x,int y) => Post(ThreeECreateScrollEvent(y,-x));
+    private Point PointerLocation() {
+        var observed=Location();var target=pointer.Resolve(observed.X,observed.Y,Environment.TickCount64);
+        return new Point {X=target.X,Y=target.Y};
+    }
+    public void Move(int x,int y) {
+        if(x==0&&y==0)return;
+        var observed=Location();var target=pointer.Move(observed.X,observed.Y,x,y,Environment.TickCount64);
+        var e=CGEventCreateMouseEvent(IntPtr.Zero,held?6u:5u,new Point {X=target.X,Y=target.Y},0);
+        if(e==IntPtr.Zero)throw new InvalidOperationException("macOS pointer event unavailable");
+        CGEventSetIntegerValueField(e,4,x);CGEventSetIntegerValueField(e,5,y);
+        Post(e);
+    }
+    public void Scroll(int x,int y) => Post(ThreeECreateScrollEvent(x,y));
     public void Down() {
-        if(held)return;var p=Location();long now=Environment.TickCount64;
+        if(held)return;var p=PointerLocation();long now=Environment.TickCount64;
         clicks=now-lastClick<550 && Math.Abs(p.X-lastClickPoint.X)<5 && Math.Abs(p.Y-lastClickPoint.Y)<5 ? Math.Min(2,clicks+1):1;
         lastClick=now;lastClickPoint=p;var e=CGEventCreateMouseEvent(IntPtr.Zero,1,p,0);if(e==IntPtr.Zero)throw new InvalidOperationException("macOS mouse event unavailable");CGEventSetIntegerValueField(e,1,clicks);held=true;Post(e);
     }
     // A fresh click count keeps tap-then-drag from becoming a double-click drag.
     public void DragStart(int x,int y){if(held)return;lastClick=0;Down();}
-    public void Release() { if(held){held=false;var e=CGEventCreateMouseEvent(IntPtr.Zero,2,Location(),0);if(e==IntPtr.Zero)throw new InvalidOperationException("macOS mouse event unavailable");CGEventSetIntegerValueField(e,1,clicks);Post(e);} }
-    public void Click(bool right) { if(held)return;if(!right){Down();Release();}else{var p=Location();Post(CGEventCreateMouseEvent(IntPtr.Zero,3,p,1));Post(CGEventCreateMouseEvent(IntPtr.Zero,4,p,1));} }
+    public void Release() { if(held){held=false;var e=CGEventCreateMouseEvent(IntPtr.Zero,2,PointerLocation(),0);if(e==IntPtr.Zero)throw new InvalidOperationException("macOS mouse event unavailable");CGEventSetIntegerValueField(e,1,clicks);Post(e);} }
+    public void Click(bool right) { if(held)return;if(!right){Down();Release();}else{var p=PointerLocation();Post(CGEventCreateMouseEvent(IntPtr.Zero,3,p,1));Post(CGEventCreateMouseEvent(IntPtr.Zero,4,p,1));} }
     public void TaskView(){ReleaseAll();systemAction("missionControl",0);}
     // Control–Down opens App Exposé. Use the system Show Desktop key (F11
     // with the Fn modifier) so the Apps dock's downward swipe has the same
@@ -127,7 +139,7 @@ public sealed class MacInput : ITrackpadInput, IDisposable {
     public void Midi(bool note,int channel,int number,int value)=>midi.Send(note,channel,number,value);
     public void MidiPanic()=>midi.Panic();
     public void VolumeStep(int direction){if(direction==0)return;int level=ThreeEGetOutputVolume();if(level>=0)volume.Set(Math.Clamp(level+direction*6,0,100));}
-    public void ReleaseAll(){volume.CancelPending();try{Release();AppsEnd();}finally{midi.Panic();}}
+    public void ReleaseAll(){volume.CancelPending();try{Release();AppsEnd();}finally{pointer.Reset();midi.Panic();}}
     public void Dispose(){try{ReleaseAll();}finally{volume.Dispose();midi.Dispose();}}
 }
 

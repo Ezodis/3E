@@ -9,6 +9,18 @@ using ThreeE.PhoneBar.Windows;
 
 var results = new List<string>();
 void Check(bool value, string name) { if (!value) throw new Exception("FAIL: " + name); results.Add(name); Console.WriteLine("PASS: " + name); }
+// Simulate Quartz acknowledgement lag without moving a real cursor.
+var pointerMotion=new ThreeE.PhoneHost.MacPointerMotion();
+Check(pointerMotion.Move(100,100,3,2,0)==(103d,102d),"Mac first movement has no warm-up delay");
+Check(pointerMotion.Move(100,100,3,2,8)==(106d,104d),"Mac retains movement before Quartz acknowledges the first event");
+Check(pointerMotion.Move(103,102,3,2,16)==(109d,106d),"Mac partial acknowledgement never moves backwards");
+Check(pointerMotion.Resolve(103,102,17)==(109d,106d),"Mac click uses the latest queued pointer location");
+Check(pointerMotion.Move(109,106,-2,-1,24)==(107d,105d),"Mac acknowledged movement reverses immediately");
+Check(pointerMotion.Move(200,300,1,2,32)==(201d,302d),"Mac physical pointer movement rebases immediately");
+Check(pointerMotion.Move(180,300,1,2,40)==(181d,302d),"Mac display-edge clamping rebases");
+Check(pointerMotion.Move(180,300,1,2,200)==(181d,302d),"Mac idle contact starts at the actual pointer");
+pointerMotion.Reset();
+Check(pointerMotion.Resolve(5,8,201)==(5d,8d),"Mac controller release discards pending positions");
 int FreePort() { var socket = new TcpListener(IPAddress.Loopback, 0); socket.Start(); int port = ((IPEndPoint)socket.LocalEndpoint).Port; socket.Stop(); return port; }
 async Task Until(Func<bool> condition) { for (int i=0;i<100;i++) { if (condition()) return; await Task.Delay(50); } throw new Exception("Timed out waiting for state."); }
 async Task<ClientWebSocket> Connect(string url, string token = null, string origin = null, string controller = null, bool takeover = false) {

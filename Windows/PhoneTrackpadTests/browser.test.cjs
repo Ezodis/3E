@@ -92,6 +92,11 @@ if(require.main===module)(async()=>{
    await p.addInitScript(()=>{window.testSockets=[];const W=WebSocket;window.WebSocket=class extends W{constructor(...a){super(...a);window.testSockets.push(this);}};});
    const connectStart=Date.now();await p.goto(url);await p.waitForFunction(()=>document.getElementById('status').textContent==='Connected');
    console.log(name+' local page load + connection: '+(Date.now()-connectStart)+' ms (simulated input, loopback network)');
+   // Real browser PointerEvent dispatch, independent of legacy touchmove.
+   const moveStart=commands.length;
+   await p.evaluate(()=>{const pad=document.getElementById('pad');for(const [type,x] of [['pointerdown',100],['pointermove',101],['pointercancel',101]])pad.dispatchEvent(new PointerEvent(type,{pointerType:'touch',pointerId:71,clientX:x,clientY:300,bubbles:true,cancelable:true}));});
+   await p.waitForTimeout(100);
+   assert.ok(commands.slice(moveStart).some(c=>c.type==='move'&&c.x>0&&c.y===0),'first small pointer sample reaches receiver without touchmove');
    assert.equal(await p.locator('#drag,#left,#right').count(),0);
    assert.deepEqual(await p.locator('#pad').boundingBox(),{x:0,y:0,width:390,height:844});
    assert.equal(await p.locator('#pad').evaluate(el=>getComputedStyle(el).boxShadow),'none','full-screen pad has no square frame');
