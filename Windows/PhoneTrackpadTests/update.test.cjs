@@ -6,7 +6,7 @@ const idle=()=>new Promise(resolve=>setImmediate(resolve));
 let checks=0;const check=(value,label)=>{assert.ok(value,label);checks++;};
 
 function page({watch=false,build='aaaa',storage=new Map()}={}){
-  const elements=new Map(),timers=new Map(),sent=[];let time=1000,clock=1_000_000,nextTimer=0,ws=null,reloads=0,hostBuild=build;
+  const elements=new Map(),timers=new Map(),sent=[],pages=[];let pageDown=0;let time=1000,clock=1_000_000,nextTimer=0,ws=null,reloads=0,hostBuild=build;
   const element=id=>{if(!elements.has(id))elements.set(id,{id,value:'3',handlers:{},disabled:true,hidden:true,textContent:'',classList:{add(){},remove(){},toggle(){}},addEventListener(type,fn){this.handlers[type]=fn;},setAttribute(){}});return elements.get(id);};
   const doc={hidden:false,handlers:{},activeElement:null,documentElement:element('html'),getElementById:element,addEventListener(type,fn){this.handlers[type]=fn;}};
   const dock={held:false},surface={held:false};
@@ -18,17 +18,19 @@ function page({watch=false,build='aaaa',storage=new Map()}={}){
     location:{hash:'#'+'A'.repeat(48),host:'127.0.0.1:17834',search:'',reload(){reloads++;}},WebSocket:Socket,sessionStorage,
     localStorage:{getItem(){return null;},setItem(){}},performance:{now:()=>time},Date:{now:()=>clock},requestAnimationFrame(){},
     setInterval(){return 0;},clearInterval(){},setTimeout(fn,ms){const id=++nextTimer;timers.set(id,{fn,ms});return id;},clearTimeout(id){timers.delete(id);},
-    async fetch(url,options){const payload=JSON.parse(options.body);sent.push(payload);
+    async fetch(url,options){if(options?.method!=='POST'){pages.push(url);if(pageDown){pageDown--;throw new TypeError('Load failed');}return {ok:true,status:200};}
+      const payload=JSON.parse(options.body);sent.push(payload);
       return {ok:true,status:200,json:async()=>payload.type==='connect'?{ready:true,build:hostBuild,host:{platform:'windows'}}:{ready:true}};}});
   const p={sent,storage,dock,surface,doc,element,win,
     get reloads(){return reloads;},
     advance(ms){time+=ms;clock+=ms;},
     // Run every pending timer once per step; enough to model polling.
-    run(steps=1){for(let i=0;i<steps;i++){time+=400;clock+=400;const due=[...timers.entries()];for(const [id,t] of due){timers.delete(id);t.fn();}}},
+    async run(steps=1){for(let i=0;i<steps;i++){await idle();time+=400;clock+=400;const due=[...timers.entries()];for(const [id,t] of due){timers.delete(id);t.fn();}await idle();await idle();}},
+    pages,set pageDown(n){pageDown=n;},
     status:()=>element('status').textContent,
     // A receiver restart: the socket drops, the page reconnects, the new receiver reports its build.
-    async restart(next){hostBuild=next;if(watch){win.handlers.offline();p.run();await idle();await idle();return;}
-      ws.close();p.run();ws.onopen();ws.onmessage({data:JSON.stringify({ready:true,build:next,host:{platform:'windows'}})});},
+    async restart(next){hostBuild=next;if(watch){win.handlers.offline();await p.run();await idle();await idle();return;}
+      ws.close();await p.run();ws.onopen();ws.onmessage({data:JSON.stringify({ready:true,build:next,host:{platform:'windows'}})});},
     touch(type,n){element('pad').handlers[type]({touches:Array.from({length:n},(_,i)=>({clientX:100+i*20,clientY:200})),preventDefault(){}});time+=15;}
   };
   return p;
@@ -36,23 +38,23 @@ function page({watch=false,build='aaaa',storage=new Map()}={}){
 
 (async()=>{
   {// Phone (WebSocket): a different build reloads exactly once, after releasing input.
-    const p=page();p.restart('aaaa');p.run(3);
+    const p=page();await p.restart('aaaa');await p.run(3);
     check(p.reloads===0,'the same build never reloads');
     await p.restart('bbbb');
     check(p.status()==='Updating…','a new build shows Updating… before reloading');
     check(p.sent.some(c=>c.type==='releaseAll'),'releaseAll is sent before reloading');
-    p.run();check(p.reloads===1,'the page reloads once after a short pause');
+    await p.run();check(p.reloads===1,'the page reloads once after a short pause');
     check(JSON.parse(p.storage.get('3e-update')).build==='bbbb','the attempted build is remembered for this tab');
-    p.run(5);check(p.reloads===1,'it reloads only once');
+    await p.run(5);check(p.reloads===1,'it reloads only once');
     // The reloaded page somehow still has the old build (a cached copy): never loop.
-    const again=page({storage:p.storage});again.run(100);await again.restart('bbbb');again.run(5);
+    const again=page({storage:p.storage});await again.run(100);await again.restart('bbbb');await again.run(5);
     check(again.reloads===0&&again.status()==='Connected','a build already attempted in this tab is never reloaded again');
   }
   {// Never twice within 30 s, even for a newer build; it reloads once the gap passes.
     const storage=new Map([['3e-update',JSON.stringify({build:'old',at:1_000_000})]]);
-    const p=page({storage});await p.restart('cccc');p.run(10);
+    const p=page({storage});await p.restart('cccc');await p.run(10);
     check(p.reloads===0,'a second update within 30 s waits');
-    p.run(75);check(p.reloads===1,'it reloads once 30 s have passed');
+    await p.run(75);check(p.reloads===1,'it reloads once 30 s have passed');
   }
   {// Deferred while a touch, a drag, the keyboard, the clipboard sheet or a dock/MIDI control is in use.
     for(const [label,hold,free] of [
@@ -63,18 +65,23 @@ function page({watch=false,build='aaaa',storage=new Map()}={}){
       ['the app switcher or volume slider',p=>{p.dock.held=true;},p=>{p.dock.held=false;}],
       ['a MIDI note or the studio',p=>{p.surface.held=true;},p=>{p.surface.held=false;}],
     ]){
-      const p=page();p.run();hold(p);await p.restart('dddd');p.run(10);
+      const p=page();await p.run();hold(p);await p.restart('dddd');await p.run(10);
       check(p.reloads===0&&p.status()==='Connected','no reload while '+label+' is in use');
-      free(p);p.run(3);check(p.reloads===1,'reloads once '+label+' is released');
+      free(p);await p.run(3);check(p.reloads===1,'reloads once '+label+' is released');
     }
   }
+  {// The receiver cannot serve the page right now: stay put (no error page) and retry later.
+    const p=page();p.pageDown=3;await p.restart('9999');await p.run(3);
+    check(p.reloads===0&&p.status()==='Connected'&&p.pages.length===3,'no reload while the page cannot be fetched; the trackpad stays usable');
+    await p.run(10);check(p.reloads===1&&p.pages.length===4,'it reloads once the receiver serves the page');
+  }
   {// A receiver without build ids (older version) or a page without one never reloads.
-    const p=page({build:null});await p.restart('eeee');p.run(10);check(p.reloads===0,'a page that predates build ids never reloads');
+    const p=page({build:null});await p.restart('eeee');await p.run(10);check(p.reloads===0,'a page that predates build ids never reloads');
   }
   {// Apple Watch (HTTP /control): the connect reply carries the build.
     const p=page({watch:true});await idle();await idle();
     check(p.sent[0].type==='connect'&&p.reloads===0,'the watch connects over HTTP');
-    await p.restart('ffff');p.run();await idle();await idle();p.run(3);await idle();
+    await p.restart('ffff');await p.run();await idle();await idle();await p.run(3);await idle();
     check(p.sent.some(c=>c.type==='commands'&&c.commands.some(x=>x.type==='releaseAll')),'the watch releases input before reloading');
     check(p.reloads===1,'the watch reloads once after the computer updates');
   }

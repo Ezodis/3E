@@ -154,11 +154,35 @@
     const since = Math.abs(Date.now() - (Number(lastUpdate().at) || 0));
     if (busyForUpdate() || since < UPDATE_GAP) { updateTimer = setTimeout(tryUpdate, UPDATE_POLL); return; }
     updating = true;
-    try { sessionStorage.setItem(UPDATE_KEY, JSON.stringify({ build: pendingBuild, at: Date.now() })); } catch {}
+    const build = pendingBuild;
     releaseControls();
     status.textContent = 'Updating…';
-    // location.reload() keeps the #token hash, so the same link reconnects.
-    setTimeout(() => location.reload(), UPDATE_DELAY);
+    // Reload only once the receiver is seen serving the page: a failed
+    // navigation would leave an error page (with no reload button in a Home
+    // Screen web app). This request also uses up any stale kept-alive
+    // connection, so the reload itself starts on a fresh one.
+    pageReachable().then(ok => {
+      if (!ok) {
+        updating = false;
+        if (ready) status.textContent = 'Connected';
+        updateTimer = setTimeout(tryUpdate, UPDATE_POLL * 5);
+        return;
+      }
+      try { sessionStorage.setItem(UPDATE_KEY, JSON.stringify({ build, at: Date.now() })); } catch {}
+      // location.reload() keeps the #token hash, so the same link reconnects.
+      setTimeout(() => location.reload(), UPDATE_DELAY);
+    });
+  }
+  async function pageReachable() {
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        const abort = new AbortController(), timer = setTimeout(() => abort.abort(), 2500);
+        try { const response = await fetch('/', { cache: 'no-store', signal: abort.signal }); if (response.ok) return true; }
+        finally { clearTimeout(timer); }
+      } catch {}
+      await new Promise(resolve => setTimeout(resolve, 300));
+    }
+    return false;
   }
   async function post(client, type, extra = {}, keepalive = false) {
     const sequence = ++httpSequence;
