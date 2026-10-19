@@ -754,8 +754,8 @@ static void CleanMenu(NSMenu *menu) {
 
         [menu removeAllItems];
         if(version)[menu addItem:version];
-        if(trackTab)[menu addItem:trackTab];
-        [menu addItem:phone];[menu addItem:MenuSeparator()];
+        [menu addItem:phone];if(trackTab)[menu addItem:trackTab];
+        [menu addItem:MenuSeparator()];
         [menu addItem:apps];if(midi)[menu addItem:midi];if(surface)[menu addItem:surface];
         [menu addItem:MenuSeparator()];
         for(NSMenuItem *item in remaining)[menu addItem:item];
