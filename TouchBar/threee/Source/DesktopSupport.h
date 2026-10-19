@@ -184,14 +184,29 @@ static void AdvanceDesktopSelection(uint64_t target,NSUInteger sequence,NSIntege
 static void SelectDesktop(uint64_t target) {
     AdvanceDesktopSelection(target,++desktopSelectionSequence,DesktopSpaces().count+2);
 }
+// The phone sends a destination direction, already opposite the finger swipe.
+// Use the regular Control-arrow shortcut so Dock owns the normal animation.
+static CGEventRef DesktopShortcutEvent(NSInteger direction,BOOL down) {
+    CGEventRef event=CGEventCreateKeyboardEvent(NULL,direction>0?124:123,down);
+    if(event)CGEventSetFlags(event,kCGEventFlagMaskControl);
+    return event;
+}
+static CFAbsoluteTime desktopStepReadyAt=0;
 static void StepDesktop(NSInteger direction) {
     if(!direction)return;
+    CFAbsoluteTime now=CFAbsoluteTimeGetCurrent();
+    if(now<desktopStepReadyAt)return;
     NSArray *spaces=DesktopSpaces();NSInteger active=-1;
     if(spaces.count<=1) { PostMacSystemAction(@"missionControl",0);return; }
     for(NSUInteger i=0;i<spaces.count;i++)if([spaces[i][@"active"] boolValue]){active=(NSInteger)i;break;}
-    // On macOS a leftward finger swipe reveals the Space to the right in
-    // Mission Control's ordering; a rightward swipe reveals the previous one.
-    NSInteger destination=active+(direction<0?1:-1);
+    NSInteger destination=active+(direction>0?1:-1);
     if(active<0||destination<0||destination>=(NSInteger)spaces.count)return;
-    SelectDesktop([spaces[(NSUInteger)destination][@"id"] unsignedLongLongValue]);
+    if(!AccessibilityTrusted(NO)){AccessibilityTrusted(YES);return;}
+    CGEventRef down=DesktopShortcutEvent(direction,YES),up=DesktopShortcutEvent(direction,NO);
+    if(down&&up){
+        // Invalidate any older picker retry and allow this transition to settle.
+        ++desktopSelectionSequence;desktopStepReadyAt=now+.5;
+        CGEventPost(kCGHIDEventTap,down);CGEventPost(kCGHIDEventTap,up);
+    }
+    if(down)CFRelease(down);if(up)CFRelease(up);
 }

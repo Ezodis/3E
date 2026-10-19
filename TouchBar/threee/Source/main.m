@@ -1057,6 +1057,13 @@ int main(int argc, const char *argv[]) {
             }
             NSDictionary *folderFixture=@{@"persistent-others":@[@{@"tile-type":@"directory-tile",@"tile-data":@{@"file-data":@{@"_CFURLString":@"file:///tmp/Downloads/"}}},@{@"tile-type":@"url-tile",@"tile-data":@{@"file-data":@{@"_CFURLString":@"https://example.com"}}}]};
             NSCAssert(DockFolderURLs(folderFixture).count==1,@"Read only Dock folder tiles");
+            for(NSNumber *direction in @[@(-1),@1]) for(NSNumber *pressed in @[@YES,@NO]) {
+                CGEventRef event=DesktopShortcutEvent(direction.integerValue,pressed.boolValue);
+                NSCAssert(event && CGEventGetIntegerValueField(event,kCGKeyboardEventKeycode)==(direction.integerValue>0?124:123),@"Desktop shortcut follows the destination arrow, not the finger direction");
+                NSCAssert(CGEventGetFlags(event)==kCGEventFlagMaskControl,@"Desktop changes use the standard animated Control-arrow shortcut");
+                NSCAssert(CGEventGetType(event)==(pressed.boolValue?kCGEventKeyDown:kCGEventKeyUp),@"Every desktop shortcut has a matching key release");
+                CFRelease(event);
+            }
             NSSet *players = [NSSet setWithArray:@[@"com.spotify.client", @"com.apple.Safari", @"com.apple.Music"]];
             NSCAssert([ChoosePlayer(@"com.apple.Safari", @"com.apple.Safari", nil, players) isEqualToString:@"com.apple.Safari"], @"A newly observed browser must be selected");
             NSCAssert([ChoosePlayer(nil, @"com.spotify.client", nil, players) isEqualToString:@"com.spotify.client"], @"Reopened Spotify must be resumed");
