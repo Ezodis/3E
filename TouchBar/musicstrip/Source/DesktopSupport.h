@@ -70,6 +70,20 @@ static void PostDesktopSwipe(BOOL right) {
     PostDesktopSwipePhase(2,right,progress/2.0,velocity);
     PostDesktopSwipePhase(4,right,progress,velocity);
 }
+static void AdvanceDesktopSelection(uint64_t target,NSUInteger sequence,NSInteger attempts);
+static void WaitForDesktopSelection(uint64_t target,NSUInteger sequence,uint64_t previous,NSInteger attempts,CFAbsoluteTime started) {
+    if(sequence!=desktopSelectionSequence)return;
+    NSArray *spaces=DesktopSpaces();uint64_t active=0;
+    for(NSDictionary *space in spaces)if([space[@"active"] boolValue]){active=[space[@"id"] unsignedLongLongValue];break;}
+    if(active==target)return;
+    BOOL moved=active&&active!=previous;
+    if(moved||CFAbsoluteTimeGetCurrent()-started>=1.5) {
+        if(attempts<=1){NSLog(@"Space swipe did not reach its target after %ld attempts.",(long)(DesktopSpaces().count+2));return;}
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW,(moved?300:300)*NSEC_PER_MSEC),dispatch_get_main_queue(),^{ AdvanceDesktopSelection(target,sequence,attempts-1); });
+        return;
+    }
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW,80*NSEC_PER_MSEC),dispatch_get_main_queue(),^{ WaitForDesktopSelection(target,sequence,previous,attempts,started); });
+}
 static void AdvanceDesktopSelection(uint64_t target,NSUInteger sequence,NSInteger attempts) {
     if(sequence!=desktopSelectionSequence || attempts<=0) return;
     NSArray *spaces=DesktopSpaces(); NSInteger active=-1,destination=-1;
@@ -83,8 +97,9 @@ static void AdvanceDesktopSelection(uint64_t target,NSUInteger sequence,NSIntege
         if(!requested) { requested=YES; AXIsProcessTrustedWithOptions((__bridge CFDictionaryRef)@{(__bridge NSString *)kAXTrustedCheckOptionPrompt:@YES}); }
         NSLog(@"Desktop selection requires MusicStrip's Accessibility permission."); return;
     }
+    uint64_t previous=[spaces[(NSUInteger)active][@"id"] unsignedLongLongValue];
     PostDesktopSwipe(destination>active);
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW,600*NSEC_PER_MSEC),dispatch_get_main_queue(),^{ AdvanceDesktopSelection(target,sequence,attempts-1); });
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW,80*NSEC_PER_MSEC),dispatch_get_main_queue(),^{ WaitForDesktopSelection(target,sequence,previous,attempts,CFAbsoluteTimeGetCurrent()); });
 }
 static void SelectDesktop(uint64_t target) {
     AdvanceDesktopSelection(target,++desktopSelectionSequence,DesktopSpaces().count+2);
