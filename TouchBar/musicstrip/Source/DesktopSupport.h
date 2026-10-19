@@ -1,5 +1,5 @@
-// Space metadata uses SkyLight's managed-display APIs; no synthetic key or
-// undocumented CGEventType values are posted for Spaces navigation.
+// Space metadata uses SkyLight's managed-display APIs. Space changes use the
+// complete Dock swipe gesture sequence (MIT-licensed; see Resources/SpacesManager-LICENSE.txt).
 static NSArray<NSDictionary *> *DesktopSpaces(void) {
     static int (*connection)(void);
     static CFArrayRef (*copySpaces)(int);
@@ -43,6 +43,33 @@ static NSImage *DesktopIcon(NSDictionary *space) {
     }];
 }
 static NSUInteger desktopSelectionSequence=0;
+static void PostDesktopSwipePhase(int64_t phase,BOOL right,double progress,double velocity) {
+    CGEventRef gesture=CGEventCreate(NULL),dock=CGEventCreate(NULL);
+    if(!gesture||!dock){if(gesture)CFRelease(gesture);if(dock)CFRelease(dock);return;}
+    CGEventSetType(gesture,(CGEventType)29);
+    CGEventSetIntegerValueField(gesture,(CGEventField)55,29);
+    CGEventSetType(dock,(CGEventType)30);
+    CGEventSetIntegerValueField(dock,(CGEventField)55,30);
+    CGEventSetIntegerValueField(dock,(CGEventField)110,23);
+    CGEventSetIntegerValueField(dock,(CGEventField)132,phase);
+    CGEventSetIntegerValueField(dock,(CGEventField)135,right?1:0);
+    CGEventSetIntegerValueField(dock,(CGEventField)123,1);
+    CGEventSetDoubleValueField(dock,(CGEventField)119,0);
+    CGEventSetDoubleValueField(dock,(CGEventField)139,nextafterf(0.0f,1.0f));
+    if(phase!=1){
+        CGEventSetDoubleValueField(dock,(CGEventField)124,progress);
+        CGEventSetDoubleValueField(dock,(CGEventField)129,velocity);
+        CGEventSetDoubleValueField(dock,(CGEventField)130,0);
+    }
+    CGEventPost(kCGSessionEventTap,dock);CGEventPost(kCGSessionEventTap,gesture);
+    CFRelease(dock);CFRelease(gesture);
+}
+static void PostDesktopSwipe(BOOL right) {
+    const double progress=right?2.0:-2.0,velocity=right?400.0:-400.0;
+    PostDesktopSwipePhase(1,right,0,0);
+    PostDesktopSwipePhase(2,right,progress/2.0,velocity);
+    PostDesktopSwipePhase(4,right,progress,velocity);
+}
 static void AdvanceDesktopSelection(uint64_t target,NSUInteger sequence,NSInteger attempts) {
     if(sequence!=desktopSelectionSequence || attempts<=0) return;
     NSArray *spaces=DesktopSpaces(); NSInteger active=-1,destination=-1;
@@ -56,15 +83,8 @@ static void AdvanceDesktopSelection(uint64_t target,NSUInteger sequence,NSIntege
         if(!requested) { requested=YES; AXIsProcessTrustedWithOptions((__bridge CFDictionaryRef)@{(__bridge NSString *)kAXTrustedCheckOptionPrompt:@YES}); }
         NSLog(@"Desktop selection requires MusicStrip's Accessibility permission."); return;
     }
-    NSString *display=spaces[(NSUInteger)destination][@"display"];
-    if(!display.length) { NSLog(@"Cannot identify the display for this Space."); return; }
-    void *sky=dlopen("/System/Library/PrivateFrameworks/SkyLight.framework/SkyLight",RTLD_LAZY);
-    int (*connection)(void)=dlsym(sky,"CGSMainConnectionID");
-    int (*setCurrentSpace)(int,CFStringRef,uint64_t)=dlsym(sky,"SLSManagedDisplaySetCurrentSpace");
-    if(!setCurrentSpace)setCurrentSpace=dlsym(sky,"CGSManagedDisplaySetCurrentSpace");
-    if(!connection||!setCurrentSpace) { NSLog(@"This macOS version does not expose direct Space selection."); return; }
-    setCurrentSpace(connection(),(__bridge CFStringRef)display,target);
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW,1800*NSEC_PER_MSEC),dispatch_get_main_queue(),^{ AdvanceDesktopSelection(target,sequence,attempts-1); });
+    PostDesktopSwipe(destination>active);
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW,600*NSEC_PER_MSEC),dispatch_get_main_queue(),^{ AdvanceDesktopSelection(target,sequence,attempts-1); });
 }
 static void SelectDesktop(uint64_t target) {
     AdvanceDesktopSelection(target,++desktopSelectionSequence,DesktopSpaces().count+2);
