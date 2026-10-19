@@ -1,3 +1,9 @@
+3£Windows 1.0.41 refines the butterfly logo.
+
+- **No gap at the top:** the tops of the 3 and £ now meet, so the wings join like a butterfly's. Same logo on Mac.
+
+Includes everything from 1.0.40:
+
 3£Windows 1.0.40 has the new 3£ butterfly logo.
 
 - **New logo everywhere:** a 3 and a £ back to back, spread like a butterfly's wings, in black and white. It replaces the old icon on the app (taskbar, Alt+Tab, Task Manager, Start), the settings window, the tray icon and the Clicks accent picker's tray icon. The Mac app uses the same logo.
