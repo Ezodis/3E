@@ -82,6 +82,9 @@ if(require.main===module)(async()=>{
    const ctx=await browser.newContext({viewport:{width:390,height:844},hasTouch:true,isMobile:true});
    const p=await ctx.newPage();p.on('pageerror',e=>errors.push(e.message));
    p.on('websocket',s=>s.on('framesent',f=>{try{const c=JSON.parse(f.payload);if(c.type)commands.push(c);}catch{}}));
+   // 127.0.0.1 is a secure context, where macOS WebKit offers Web Share instead of a
+   // download. A phone reaches the computer at http://<LAN IP> (not secure) and downloads.
+   await p.addInitScript(()=>{try{Object.defineProperty(navigator,'canShare',{value:undefined,configurable:true});}catch{}});
    await p.addInitScript(()=>{window.testSockets=[];const W=WebSocket;window.WebSocket=class extends W{constructor(...a){super(...a);window.testSockets.push(this);}};});
    const connectStart=Date.now();await p.goto(url);await p.waitForFunction(()=>document.getElementById('status').textContent==='Connected');
    console.log(name+' local page load + connection: '+(Date.now()-connectStart)+' ms (simulated input, loopback network)');
