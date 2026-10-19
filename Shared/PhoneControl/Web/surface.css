@@ -49,8 +49,8 @@
 #keyBar{position:fixed;left:0;right:0;top:0;z-index:4;display:flex;gap:4px;padding:6px max(8px,env(safe-area-inset-right)) 6px max(8px,env(safe-area-inset-left));background:#17222cf7;border-top:1px solid #405462;overflow-x:auto;scrollbar-width:none;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
 #keyBar::-webkit-scrollbar{display:none}#keyBar button{flex:1 1 0;min-width:0;min-height:42px;padding:4px 1px;font-size:14px;border-radius:10px;touch-action:none;white-space:nowrap}#keyBar button.done{flex:1.7 1 0}#keyBar button.held{background:#a8e5cd;color:#0e2420}#keyBar .done{background:#a8e5cd;color:#0e2420}
 #clipSheet h2{font-size:15px;margin:18px 0 6px;color:#eef5fa}#clipSheet .row button{flex:1}#clipSheet button.primary{background:#a8e5cd;color:#0e2420;border-color:#a8e5cd}
-#clipSheet .clip-zone{margin-top:12px;min-height:110px;max-height:30vh;overflow:auto;padding:14px;border:1.5px dashed #56736e;border-radius:14px;background:#111820;color:#eef5fa;font-size:16px;-webkit-user-select:text;user-select:text;outline:none}
-#clipSheet .clip-zone:focus{border-color:#a8e5cd}#clipSheet .clip-zone:empty::before{content:attr(data-placeholder);color:#8da69f}
+#clipSheet .clip-paste{margin-top:12px;min-height:24px;padding:14px;border:1px solid #56736e;border-radius:14px;background:#111820;color:#eef5fa;font-size:16px;-webkit-user-select:text;user-select:text;outline:none}
+#clipSheet .clip-paste:focus{border-color:#a8e5cd}#clipSheet .clip-paste:empty::before{content:attr(data-placeholder);color:#8da69f}
 #clipSheet .clip-list{list-style:none;padding:0;margin:12px 0 0}#clipSheet .clip-list li{padding:10px 0;border-top:1px solid #2c3e4a;font-size:14px;color:#c0d0da;overflow-wrap:anywhere}#clipSheet .clip-list li button{display:block;width:100%}
 #clipSheet .clip-snippet{display:block;margin-top:4px;color:#8da69f;white-space:pre-wrap;max-height:4.5em;overflow:hidden}
 #clipSheet .clip-thumb{display:block;margin-top:8px;max-width:100%;max-height:160px;border-radius:10px}

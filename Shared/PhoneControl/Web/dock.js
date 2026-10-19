@@ -199,10 +199,11 @@
     if(a.kind==='media'){if(Math.abs(dx)>=24)paint('media',dx<0?'previous':'next');else paint('media');return;}
     const change=e.clientX-a.stepX,threshold=a.steps?48:26,now=performance.now();
     if(Math.abs(change)<threshold||now-a.lastStep<240)return;
-    const direction=change<0?-1:1;
+    // Natural swipes move the surface; the destination is opposite the finger.
+    const direction=change<0?1:-1;
     C.send(a.held?'appsStep':'navigate',{direction});
     a.steps++;a.stepX=e.clientX;a.lastStep=now;
-    paint('apps',change<0?'left':'right');
+    paint('apps',direction<0?'left':'right');
   }
   for(const kind of ['apps','media']){
     const button=$(kind);
@@ -233,7 +234,7 @@
       else if(!a.held&&a.axis!=='vertical'){
         if(!a.axis&&a.max<12){
           if(kind==='apps'){C.send('appsBegin');C.send('appsEnd');feedback='windows';}
-          else {C.send('media',{action:0});const playing=controls.media?.playing;if(typeof playing==='boolean')feedback=playing?'play':'pause';}
+          else C.send('media',{action:0}); // Wait for confirmed host state; never guess an opposite icon.
         }
       }
       if(a.volume)flushVolume();cancel(null,a.volume);if(a.volume)finishVolume();if(feedback)finishFeedback(kind,feedback);
@@ -244,7 +245,7 @@
     button.addEventListener('click',()=>{
       if(performance.now()-lastPointer<700||!C.connected())return;
       if(kind==='apps'){C.send('appsBegin');C.send('appsEnd');finishFeedback('apps','windows');}
-      else {C.send('media',{action:0});const playing=controls.media?.playing;if(typeof playing==='boolean')finishFeedback('media',playing?'play':'pause');}
+      else C.send('media',{action:0});
     });
     button.addEventListener('keydown',e=>{
       if(kind==='media'&&C.connected()&&['ArrowUp','ArrowDown'].includes(e.key)){

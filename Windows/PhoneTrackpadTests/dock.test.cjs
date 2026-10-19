@@ -10,8 +10,9 @@ function commands(type){return sent.filter(c=>c.type===type);}
 function check(value,message){assert.ok(value,message);checks++;}
 event('apps','pointerdown');check(!sent.length,'Apps does not switch on touch-down');
 event('apps','pointermove',60);event('apps','pointermove',-200);
-check(commands('navigate').length===1&&commands('navigate')[0].direction===-1,'A fast long left swipe sends one previous-desktop step');
-now+=250;event('apps','pointermove',120);check(commands('navigate').at(-1).direction===1,'Direction reversal works after the repeat interval');
+check(commands('navigate').length===1&&commands('navigate')[0].direction===1,'A left swipe moves to the desktop on the right');
+check(elements.get('apps').dataset.icon==='right','Left swipe shows the right destination arrow');
+now+=250;event('apps','pointermove',120);check(commands('navigate').at(-1).direction===-1,'Direction reversal works after the repeat interval');
 event('apps','lostpointercapture',0,0,99);now+=250;event('apps','pointermove',30);
 check(commands('navigate').length===3,'A different pointer cannot cancel the active contact');
 event('apps','pointerup',30);check(commands('navigateEnd').length===1,'Lift ends fallback app switching');
@@ -25,7 +26,7 @@ sent.length=0;event('apps','pointerdown');event('apps','pointermove',100,60);eve
 win.ThreeEDock.overviewEnded();sent.length=0;event('apps','pointerdown');event('apps','pointermove',100,150);event('apps','pointermove',100,220);event('apps','pointerup',100,220);check(commands('showDesktop').length===1&&!commands('taskView').length,'After a click picks a window, swipe down shows the desktop');
 sent.length=0;event('apps','pointerdown');event('apps','pointermove',100,120);event('apps','pointerup',100,120);check(!commands('showDesktop').length&&!commands('taskView').length,'A short vertical nudge on Apps does nothing');
 sent.length=0;event('apps','pointerdown');hold();event('apps','pointermove',60);event('apps','pointerup',60);
-check(commands('appsBegin').length===1&&commands('appsStep').length===1&&commands('appsStep')[0].direction===-1&&commands('appsEnd').length===1,'Holding Apps keeps the explicit native app chooser');
+check(commands('appsBegin').length===1&&commands('appsStep').length===1&&commands('appsStep')[0].direction===1&&commands('appsEnd').length===1,'Holding Apps keeps the explicit native app chooser');
 sent.length=0;event('media','pointerdown');event('media','pointermove',150);check(elements.get('media').dataset.icon==='next','Media previews the same next-track symbol as Touch Bar');event('media','pointerup',150);
 check(commands('media').length===1&&commands('media')[0].action===2,'Swipe sends exactly one next-track action');
 sent.length=0;event('media','pointerdown');event('media','pointermove',104,30);event('media','pointerup',104,30);
@@ -34,6 +35,14 @@ sent.length=0;event('media','pointerdown');hold();event('media','pointerup');ele
 check(commands('studio').length===1&&!commands('media').length,'Long MIDI hold and its synthetic click never toggle playback');
 sent.length=0;event('media','pointerdown');event('media','pointercancel');elements.get('media').handlers.click();check(!commands('media').length,'Cancelled touch never generates a fallback click');
 win.ThreeEDock.describe({controls:{media:{playing:true,stop:false}}});check(elements.get('media').dataset.icon==='pause','Confirmed playing state shows Pause');
+event('media','pointerdown');event('media','pointerup');
+check(elements.get('media').dataset.icon==='pause','Tap keeps the confirmed action while the host processes pause');
+win.ThreeEDock.describe({controls:{media:{playing:true,stop:false}}});
+check(elements.get('media').dataset.icon==='pause','An unchanged heartbeat cannot flash a guessed opposite icon');
+win.ThreeEDock.describe({controls:{media:{playing:false}}});
+check(elements.get('media').dataset.icon==='play','Confirmed pause changes the icon once');
+now+=800;elements.get('media').handlers.click();
+check(elements.get('media').dataset.icon==='play','Keyboard or accessibility click also waits for confirmed playback');
 win.ThreeEDock.describe({controls:{media:{playing:true,stop:true}}});check(elements.get('media').dataset.icon==='stop','Ableton playing state shows Stop');
 win.ThreeEDock.describe({controls:{media:{playing:false}}});check(elements.get('media').dataset.icon==='play','Paused state shows Play');
 win.ThreeEDock.describe({controls:{media:{playing:true,source:'browser'}}});
@@ -47,7 +56,7 @@ win.ThreeEDock.describe({controls:{}});
 check(elements.get('media').children.length===1&&elements.get('media').dataset.icon==='play','Clearing the media source removes stale artwork');
 sent.length=0;
 for(const key of ['ArrowLeft','ArrowRight'])elements.get('apps').handlers.keydown({key,preventDefault(){}});
-check(JSON.stringify(commands('navigate').map(c=>c.direction))==='[-1,1]','Keyboard directions match left-previous and right-next swipes');
+check(JSON.stringify(commands('navigate').map(c=>c.direction))==='[-1,1]','Keyboard arrows retain their literal destination directions');
 win.ThreeEDock.describe({volume:{available:true,level:40}});
 sent.length=0;event('media','pointerdown');event('media','pointermove',100,70);
 check(!elements.get('volumePane').hidden&&+elements.get('outputVolume').value===40&&!commands('volume').length,'Upward swipe reveals the current volume without jumping');

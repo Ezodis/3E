@@ -78,6 +78,35 @@ async function updateFlow(browser,name,url,urlFile,errors){
   await w.ctx.close();}
  console.log('PASS '+name+': update reloads once after the computer updates; waits for drags, keyboard and clipboard; 30 s and per-build loop guards; watch too.');
 }
+// Real secure-context entry point: one tap reads and transfers, no staging click.
+async function directClipFlow(browser,name,url){
+ const ctx=await browser.newContext({viewport:{width:390,height:844},hasTouch:true,isMobile:true});
+ try{
+  const p=await ctx.newPage(),commands=[];let writes=0;
+  p.on('websocket',s=>s.on('framesent',f=>{try{const c=JSON.parse(f.payload);if(c.type)commands.push(c);}catch{}}));
+  p.on('request',r=>{if(r.url().endsWith('/clipboard/write'))writes++;});
+  await p.addInitScript(()=>{
+   Object.defineProperty(navigator,'clipboard',{configurable:true,value:{read:async()=>{
+    window.clipReadCount=(window.clipReadCount||0)+1;
+    if(window.rejectClip)throw new Error('denied');
+    return [{types:['text/plain','text/html'],getType:async type=>new Blob([type==='text/html'?'<b>Direct paste</b>':'Direct paste'],{type})}];
+   }}});
+  });
+  await p.goto(url);await p.waitForFunction(()=>document.getElementById('status').textContent==='Connected');
+  await p.locator('#commands').tap();await p.locator('[data-tool="sendClip"]').tap();
+  for(let i=0;i<40&&!commands.some(c=>c.type==='shortcut'&&c.id===1);i++)await p.waitForTimeout(100);
+  assert.equal(writes,1,'one tap uploads once');assert.equal(await p.evaluate(()=>window.clipReadCount),1);
+  assert.ok(commands.some(c=>c.type==='shortcut'&&c.id===1),'one tap also pastes on the computer');
+  await p.waitForFunction(()=>document.getElementById('clipSheet').hidden);
+  await p.evaluate(()=>window.rejectClip=true);
+  await p.locator('#commands').tap();await p.locator('[data-tool="sendClip"]').tap();
+  await p.waitForSelector('.clip-paste:visible');assert.equal(writes,1,'denied access never uploads stale content');
+  await p.evaluate(()=>{const d=new DataTransfer();d.setData('text/plain','Fallback paste');document.querySelector('.clip-paste').dispatchEvent(new ClipboardEvent('paste',{clipboardData:d,bubbles:true,cancelable:true}));});
+  for(let i=0;i<40&&writes<2;i++)await p.waitForTimeout(100);
+  assert.equal(writes,2,'native paste after denial transfers automatically');
+  console.log('PASS '+name+': direct clipboard read and permission-denied automatic-paste fallback.');
+ }finally{await ctx.close();}
+}
 if(require.main===module)(async()=>{
  for(const [name,engine] of [['webkit',webkit],['chromium',chromium]]){
   const browser=await engine.launch({headless:true});
@@ -88,7 +117,7 @@ if(require.main===module)(async()=>{
    p.on('websocket',s=>s.on('framesent',f=>{try{const c=JSON.parse(f.payload);if(c.type)commands.push(c);}catch{}}));
    // 127.0.0.1 is a secure context, where macOS WebKit offers Web Share instead of a
    // download. A phone reaches the computer at http://<LAN IP> (not secure) and downloads.
-   await p.addInitScript(()=>{try{Object.defineProperty(navigator,'canShare',{value:undefined,configurable:true});}catch{}});
+   await p.addInitScript(()=>{try{Object.defineProperty(navigator,'canShare',{value:undefined,configurable:true});Object.defineProperty(window,'isSecureContext',{value:false,configurable:true});}catch{}});
    await p.addInitScript(()=>{window.testSockets=[];const W=WebSocket;window.WebSocket=class extends W{constructor(...a){super(...a);window.testSockets.push(this);}};});
    const connectStart=Date.now();await p.goto(url);await p.waitForFunction(()=>document.getElementById('status').textContent==='Connected');
    console.log(name+' local page load + connection: '+(Date.now()-connectStart)+' ms (simulated input, loopback network)');
@@ -131,14 +160,14 @@ if(require.main===module)(async()=>{
    {// Paste to: text, formatting, a photo and a PDF arrive and Ctrl/⌘+V follows.
     await p.locator('#commands').tap();await p.locator('#commandsPane button[data-tool="sendClip"]').tap();
     assert.equal(await p.locator('#clipSheet').isVisible(),true);
+    const before=commands.length;
     await p.evaluate(async()=>{
      const c=document.createElement('canvas');c.width=64;c.height=48;const g=c.getContext('2d');g.fillStyle='#e33';g.fillRect(0,0,64,48);
      const jpeg=await new Promise(r=>c.toBlob(r,'image/jpeg',.9)),dt=new DataTransfer();
      dt.setData('text/plain','Meeting notes');dt.setData('text/html','<p>Meeting <b>notes</b></p>');
      dt.items.add(new File([jpeg],'IMG_0001.jpg',{type:'image/jpeg'}));dt.items.add(new File(['%PDF-1.7 x'],'Invoice März.pdf',{type:'application/pdf'}));
-     document.querySelector('#clipSheet .clip-zone').dispatchEvent(new ClipboardEvent('paste',{clipboardData:dt,bubbles:true,cancelable:true}));});
-    await p.waitForSelector('#clipActions:not([hidden])');await p.screenshot({path:path.join(out,'clipboard-send-'+name+'.png'),fullPage:true});
-    const before=commands.length;await p.locator('#clipActions button.primary').click();
+     document.querySelector('#clipSheet .clip-paste').dispatchEvent(new ClipboardEvent('paste',{clipboardData:dt,bubbles:true,cancelable:true}));});
+    assert.equal(await p.locator('#clipActions').isVisible(),false,'paste transfers immediately without a second confirmation');
     let sentClip=[];for(let i=0;i<40&&!sentClip.length;i++){await p.waitForTimeout(100);try{sentClip=JSON.parse(fs.readFileSync(process.argv[2]+'.clip','utf8')||'[]');}catch{}}
     assert.deepEqual(sentClip.map(c=>c.kind),['text','html','image','file','file'],'text, HTML, the picture and both files reach the computer clipboard');
     assert.ok(sentClip[2].head.startsWith('89504E47')&&sentClip[4].name==='Invoice März.pdf','the photo arrives as PNG and files keep their names');
@@ -158,12 +187,12 @@ if(require.main===module)(async()=>{
     await p.locator('#clipClose').click();}
    assert.deepEqual(await p.locator('#apps').evaluate(el=>({background:getComputedStyle(el).backgroundColor,border:getComputedStyle(el).borderTopWidth})),{background:'rgba(0, 0, 0, 0)',border:'0px'},'Apps artwork has no enclosing button bezel');
    await drag(p,p.locator('#apps'),70);await drag(p,p.locator('#apps'),-70);
-   assert.deepEqual(commands.filter(c=>c.type==='navigate').map(c=>c.direction),[1,-1],'fast swipes issue one deliberate step each');
+   assert.deepEqual(commands.filter(c=>c.type==='navigate').map(c=>c.direction),[-1,1],'natural swipes issue one opposite-direction step each');
    assert.equal(commands.some(c=>c.type==='appsBegin'),false,'touching Apps must not switch before the swipe');
    assert.ok(commands.some(c=>c.type==='navigateEnd'));
    assert.equal((await p.locator('#apps').innerText()).trim(),'');assert.equal((await p.locator('#media').innerText()).trim(),'');
    await drag(p,p.locator('#apps'),-65,0,600);
-   assert.ok(commands.some(c=>c.type==='appsBegin')&&commands.some(c=>c.type==='appsStep'&&c.direction===-1)&&commands.some(c=>c.type==='appsEnd'));
+   assert.ok(commands.some(c=>c.type==='appsBegin')&&commands.some(c=>c.type==='appsStep'&&c.direction===1)&&commands.some(c=>c.type==='appsEnd'));
    {const before=commands.length;await drag(p,p.locator('#apps'),0,-80);await drag(p,p.locator('#apps'),0,80);
     const vertical=commands.slice(before).filter(c=>['taskView','showDesktop'].includes(c.type)).map(c=>c.type);
     assert.deepEqual(vertical,['taskView','taskView'],'Apps swipe up opens all windows and swipe down closes them');}
@@ -291,10 +320,11 @@ if(require.main===module)(async()=>{
    await w.screenshot({path:path.join(out,'studio-watch-'+name+'.png')});
    assert.ok(posts.filter(p=>p.type==='commands').flatMap(p=>p.commands).some(c=>c.type==='navigateEnd'));
    await w.goto('about:blank');
+   await directClipFlow(browser,name,url);
    await updateFlow(browser,name,url,process.argv[2],errors);
    assert.deepEqual(errors,[]);
    console.log('PASS '+name+': keyboard typing and key bar, clipboard send/receive, Apps hold/swipe/release, Media tap/swipe/hold, linear/circular knobs, MIDI notes/CC/jogs, eight-channel mixer, wake/reconnect and watch HTTP layout.');
   }finally{await browser.close();}
  }
 })().catch(e=>{console.error(e);process.exitCode=1;});
-module.exports={updateFlow};
+module.exports={updateFlow,directClipFlow};

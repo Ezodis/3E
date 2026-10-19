@@ -92,8 +92,8 @@
   // ---------- Clipboard ----------
   const sheet=$('clipSheet'), body=$('clipBody'), title=$('clipTitle'), note=$('clipNote');
   $('clipClose').addEventListener('click',()=>closeSheet());
-  function closeSheet(){sheet.hidden=true;body.replaceChildren();note.textContent='';pending=null;urls.forEach(URL.revokeObjectURL);urls=[];}
-  let pending=null, urls=[];
+  function closeSheet(){clipGeneration++;transferBusy=false;sheet.hidden=true;body.replaceChildren();note.textContent='';pending=null;urls.forEach(URL.revokeObjectURL);urls=[];}
+  let pending=null, urls=[], clipGeneration=0, transferBusy=false;
   const el=(tag,props={},...kids)=>{const n=Object.assign(document.createElement(tag),props);n.append(...kids.filter(k=>k!=null));return n;};
   const size=n=>n<1024?n+' B':n<1048576?(n/1024).toFixed(0)+' KB':(n/1048576).toFixed(1)+' MB';
   const say=(text,error=false)=>{note.textContent=text;note.classList.toggle('error',error);};
@@ -123,7 +123,8 @@
     if(!blob)throw new Error('image');
     return {blob,width:canvas.width,height:canvas.height};
   }
-  async function stage({text='',html='',files=[]}){
+  async function stage({text='',html='',files=[]},generation=clipGeneration){
+    pending=null;
     if(files.length&&html&&!text.trim())html=''; // an image paste's HTML is just a placeholder <img>
     const parts=[],rows=[];
     if(text){parts.push({kind:'text',blob:new Blob([text])});rows.push(el('li',{},el('strong',{textContent:'Text'}),' · '+cp(text)+' characters',el('span',{className:'clip-snippet',textContent:text.slice(0,160)})));}
@@ -145,57 +146,64 @@
     if(!parts.length){say('Nothing to send — that item has no text, picture or file the page can read.',true);return;}
     const total=parts.reduce((n,p)=>n+p.blob.size,0);
     if(total>200*1048576){say('Too large — 200 MB maximum.',true);return;}
+    if(generation!==clipGeneration||sheet.hidden)return;
     pending=parts;
     $('clipPreview')?.replaceChildren(el('ul',{className:'clip-list'},...rows));
-    $('clipActions').hidden=false;say('');
+    say('');
   }
   async function upload(paste){
     if(!pending)return;
-    const parts=pending, manifest=parts.map(p=>({kind:p.kind,name:p.name||'',size:p.blob.size}));
+    const generation=clipGeneration, parts=pending, manifest=parts.map(p=>({kind:p.kind,name:p.name||'',size:p.blob.size}));
     const bytes=new TextEncoder().encode(JSON.stringify(manifest));let binary='';bytes.forEach(b=>binary+=String.fromCharCode(b));
     if(binary.length>9000||parts.length>64){say('Too many files at once — send fewer.',true);return;}
     for(const b of $('clipActions').querySelectorAll('button'))b.disabled=true;say('Sending…');
     try{
       await post('/clipboard/write',{headers:{'Content-Type':'application/octet-stream','X-Clip-Manifest':btoa(binary)},body:new Blob(parts.map(p=>p.blob))});
+      if(generation!==clipGeneration||sheet.hidden)return;
       if(paste){C.release();C.send('shortcut',{id:1});}
       say(paste?'Pasted on the '+computer+'.':'On the '+computer+' clipboard — press '+pasteKeys+' where you want it.');
       setTimeout(()=>{if(!sheet.hidden&&pending===parts)closeSheet();},900);
-    }catch(e){say(e.message,true);for(const b of $('clipActions').querySelectorAll('button'))b.disabled=false;}
+    }catch(e){if(generation!==clipGeneration)return;say(e.message,true);$('clipActions').hidden=false;for(const b of $('clipActions').querySelectorAll('button'))b.disabled=false;}
   }
-  function sendClip(){
-    if(!open('Send to '+computer))return;
-    const zone=el('div',{className:'clip-zone',contentEditable:'true',role:'textbox',ariaLabel:'Paste here'});
-    zone.setAttribute('inputmode','none');zone.dataset.placeholder='Tap here, then tap Paste';
+  async function sendClip(){
+    if(!open('Paste on '+computer))return;
+    const generation=clipGeneration;
+    // This small native-paste target is needed only when the browser cannot
+    // read the clipboard. Content goes straight to the host, without staging.
+    const zone=el('div',{className:'clip-paste',contentEditable:'true',role:'textbox',ariaLabel:'Paste from phone'});
+    zone.setAttribute('inputmode','none');zone.dataset.placeholder='Touch and hold → Paste';
     zone.addEventListener('beforeinput',e=>{if(e.inputType!=='insertFromPaste')e.preventDefault();});
+    async function receive(data){
+      if(transferBusy||generation!==clipGeneration)return;
+      transferBusy=true;
+      try{await stage(data,generation);if(generation===clipGeneration&&pending)await upload(true);}
+      catch(e){if(generation===clipGeneration)say(e.message||'Could not read that item.',true);}
+      finally{if(generation===clipGeneration)transferBusy=false;}
+    }
     zone.addEventListener('paste',e=>{
       e.preventDefault();const data=e.clipboardData;if(!data)return;
       let files=[...(data.files||[])];
       if(!files.length)for(const item of data.items||[])if(item.kind==='file'){const f=item.getAsFile();if(f)files.push(f);}
-      zone.blur();stage({text:data.getData('text/plain'),html:data.getData('text/html'),files});
+      zone.blur();receive({text:data.getData('text/plain'),html:data.getData('text/html'),files});
     });
     const picker=el('input',{type:'file',multiple:true,hidden:true});
-    picker.addEventListener('change',()=>{if(picker.files.length)stage({files:[...picker.files]});});
+    picker.addEventListener('change',()=>{if(picker.files.length)receive({files:[...picker.files]});});
     const choose=el('button',{type:'button',textContent:'Choose photo or file'});choose.addEventListener('click',()=>picker.click());
-    const row=el('div',{className:'row'},choose);
+    const retry=el('button',{type:'button',className:'primary',textContent:'Retry paste'});retry.addEventListener('click',()=>upload(true));
+    const fallback=el('div',{},el('p',{textContent:'Choose Paste in your phone’s menu. It will paste on the '+computer+' immediately.'}),zone,el('div',{className:'row'},choose),picker);
+    body.append(fallback,el('div',{id:'clipActions',className:'row',hidden:true},retry));
     if(secure&&navigator.clipboard?.read){
-      // Only on HTTPS/localhost: read the clipboard without the Paste menu.
-      const read=el('button',{type:'button',textContent:'Read phone clipboard'});
-      read.addEventListener('click',async()=>{
-        try{
-          const items=await navigator.clipboard.read();let text='',html='';const files=[];
-          for(const item of items)for(const type of item.types){const blob=await item.getType(type);
-            if(type==='text/plain')text=await blob.text();else if(type==='text/html')html=await blob.text();
-            else files.push(new File([blob],type.startsWith('image/')?'Phone picture.'+type.split('/')[1]:'Phone file',{type}));}
-          stage({text,html,files});
-        }catch{say('The phone did not allow clipboard access — use Paste instead.',true);}
-      });
-      row.prepend(read);
-    }
-    const paste=el('button',{type:'button',className:'primary',textContent:'Paste on '+computer});paste.addEventListener('click',()=>upload(true));
-    const copy=el('button',{type:'button',textContent:'Copy to '+computer+' clipboard'});copy.addEventListener('click',()=>upload(false));
-    body.append(
-      el('p',{textContent:'Copy anything on your phone — text, formatted text, a photo or a PDF — then paste it below. It goes to the '+computer+' clipboard and is pasted where the cursor is.'}),
-      zone,row,picker,el('div',{id:'clipPreview'}),el('div',{id:'clipActions',className:'row',hidden:true},paste,copy));
+      fallback.hidden=true;say('Reading phone clipboard…');
+      try{
+        // Start inside the original tap so Safari retains user activation.
+        const items=await navigator.clipboard.read();let text='',html='';const files=[];
+        for(const item of items)for(const type of item.types){const blob=await item.getType(type);
+          if(type==='text/plain')text=await blob.text();else if(type==='text/html')html=await blob.text();
+          else files.push(new File([blob],type.startsWith('image/')?'Phone picture.'+type.split('/')[1]:'Phone file',{type}));}
+        if(generation!==clipGeneration)return;
+        fallback.hidden=false;await receive({text,html,files});
+      }catch{if(generation!==clipGeneration)return;fallback.hidden=false;say('Use your phone’s Paste menu to continue.');zone.focus({preventScroll:true});}
+    }else zone.focus({preventScroll:true});
   }
 
   // Computer → phone. Copying uses the page's selection (works over plain HTTP);

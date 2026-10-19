@@ -80,10 +80,11 @@ if (args.Length == 4 && args[0] == "--preview-receiver") {
     File.WriteAllText(previewFile, "%PDF-1.4 preview");
     previewInput.Clip.Snapshot = new ClipSnapshot { Text = "Hello from the computer", Html = "<b>Hello</b> from the <span style=\"color:red\">computer</span><script>window.bad=1</script><style>body{display:none}</style>", Png = ThreeE.PhoneBar.Windows.WindowsPhoneClipboard.EncodePng(Enumerable.Repeat((byte)200, 40 * 30 * 4).ToArray(), 40, 30), Files = { previewFile } };
     string previewToken = args[2], previewBuild = args[3];
+    int previewPort=int.TryParse(Environment.GetEnvironmentVariable("THREEE_PREVIEW_PORT"),out int configuredPort)?configuredPort:17834;
     PhoneTrackpad preview = null;
     // The previous receiver process has just exited; its port can take a moment to free.
     for (int attempt = 0; ; attempt++) {
-        preview = new PhoneTrackpad(() => IPAddress.Loopback, previewInput, new FakeFirewall(), 17834) { TokenProvider = () => previewToken, Build = previewBuild.Length == 0 ? null : previewBuild };
+        preview = new PhoneTrackpad(() => IPAddress.Loopback, previewInput, new FakeFirewall(), previewPort) { TokenProvider = () => previewToken, Build = previewBuild.Length == 0 ? null : previewBuild };
         if (preview.Start()) break;
         preview.Dispose();
         if (attempt > 100) throw new Exception(preview.Status);
