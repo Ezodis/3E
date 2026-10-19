@@ -1,3 +1,9 @@
+3£Windows 1.0.39 makes Restart check for updates.
+
+- **Restart checks for updates first:** if a newer 3£Windows is available it is downloaded, verified and installed, and the whole suite comes back on the new version. Otherwise (or offline) everything restarts as before. All your toggles and settings are kept.
+
+Includes everything from 1.0.38:
+
 3£Windows 1.0.38 uses the 3£ logo everywhere.
 
 - **No more three-finger-drag icon:** the app's icon (taskbar, Alt+Tab, Task Manager, Startup apps, notifications), the settings window, its title bar and all app tiles now show the 3£ logo, the same one the Mac app uses.

@@ -199,6 +199,42 @@ static void StripToggleAutomaticUpdates(id self,SEL selector,id sender) {
     BOOL enabled=!StripAutomaticUpdatesEnabled(); StripSetAutomaticUpdates(enabled);
     if(enabled) StripCheckRelease(NO);
 }
+// Restart: quit and reopen the same app bundle. Settings live in user
+// defaults (Phone Bar and Touch Tab on/off, players, automatic updates), so
+// the new instance comes back exactly as it was left.
+static void StripRelaunch(void) {
+    NSString *bundlePath=NSBundle.mainBundle.bundlePath;
+    while(bundlePath.length>1 && ![[NSBundle bundleWithPath:bundlePath].bundleIdentifier isEqual:@"local.musicstrip.app"]) bundlePath=bundlePath.stringByDeletingLastPathComponent;
+    if(bundlePath.length<=1) bundlePath=NSBundle.mainBundle.bundlePath;
+    NSTask *task=[NSTask new]; task.executableURL=[NSURL fileURLWithPath:@"/bin/sh"];
+    task.arguments=@[@"-c",@"while /bin/kill -0 \"$1\" 2>/dev/null; do /bin/sleep 0.2; done; /usr/bin/open \"$2\"",@"3E-restart",[NSString stringWithFormat:@"%d",getpid()],bundlePath];
+    task.standardOutput=[NSFileHandle fileHandleWithNullDevice]; task.standardError=[NSFileHandle fileHandleWithNullDevice];
+    NSError *error=nil;
+    if(![task launchAndReturnError:&error]) { StripNotify(@"3£ could not restart",error.localizedDescription ?: @"The relaunch helper did not start."); return; }
+    [NSApp terminate:nil];
+}
+// Restart checks for an update first: a newer release is installed (its
+// installer reopens 3£); otherwise, or when offline, 3£ simply relaunches.
+static void StripRestart(void) {
+    if(stripUpdateInstalling) return;
+    NSMutableURLRequest *request=[NSMutableURLRequest requestWithURL:[NSURL URLWithString:StripReleasesAPI]];
+    request.timeoutInterval=15;
+    [request setValue:@"application/vnd.github+json" forHTTPHeaderField:@"Accept"];
+    [request setValue:@"3E-TouchBar" forHTTPHeaderField:@"User-Agent"];
+    [[[NSURLSession sharedSession] dataTaskWithRequest:request completionHandler:^(NSData *data,NSURLResponse *response,NSError *error) {
+        NSDictionary *release=nil;
+        if(!error && data && [(NSHTTPURLResponse *)response statusCode]==200)
+            release=StripNewestRelease([NSJSONSerialization JSONObjectWithData:data options:0 error:nil]);
+        dispatch_async(dispatch_get_main_queue(),^{
+            if(release && [release[@"version"] compare:StripInstalledVersion() options:NSNumericSearch]==NSOrderedDescending) {
+                StripNotify(@"Updating 3£",[NSString stringWithFormat:@"Installing version %@; 3£ will reopen when it is ready.",release[@"version"]]);
+                StripDownloadAndInstall(release,YES);
+                return;
+            }
+            StripRelaunch();
+        });
+    }] resume];
+}
 static BOOL StripInstallUpdateHooks(void) {
     Class cls=NSClassFromString(@"AppDelegate");
     Method background=class_getInstanceMethod(cls,NSSelectorFromString(@"startUpdateCheckBackground"));

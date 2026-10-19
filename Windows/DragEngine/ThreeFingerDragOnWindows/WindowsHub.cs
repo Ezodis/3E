@@ -408,7 +408,24 @@ public sealed class WindowsHub : IDisposable {
             "else { Start-Process -FilePath " + Quote(app) + " -WorkingDirectory " + Quote(Path.GetDirectoryName(app)) + " -Verb RunAs }\n";
     }
 
+    // Restart checks for an update first. A newer release is installed silently;
+    // its installer stops and relaunches the whole suite. Otherwise (up to date
+    // or offline) the suite restarts as is. Settings are saved files, so every
+    // toggle comes back as it was.
+    private async Task RestartAsync() {
+        try {
+            var newest = await CheckUpdatesAsync(false);
+            if (newest != null) {
+                installingUpdate = true;
+                await InstallUpdateAsync(newest.Value, silent: true);
+                return;
+            }
+        } catch (Exception ex) { Log(ex); installingUpdate = false; }
+        try { RestartSuite(); } catch (Exception ex) { Log(ex); MessageBox(IntPtr.Zero, ex.Message, "3£Windows", 0x10 | ForegroundDialog); }
+    }
+
     private void RestartSuite() {
+        Save();
         string script = RestartScript(Environment.ProcessId, Path.Combine(root, "Launch-3EWindows.ps1"), Environment.ProcessPath);
         string encoded = Convert.ToBase64String(System.Text.Encoding.Unicode.GetBytes(script));
         Process.Start(new ProcessStartInfo(Path.Combine(Environment.SystemDirectory, "WindowsPowerShell", "v1.0", "powershell.exe"),
@@ -464,7 +481,7 @@ public sealed class WindowsHub : IDisposable {
         Item("Use light theme", () => { settings.AutoDark = false; Save(); SetTheme(1); });
         Item("Use dark theme", () => { settings.AutoDark = false; Save(); SetTheme(0); });
         menu.Items.Add(new MenuFlyoutSeparator());
-        Item("Restart", RestartSuite);
+        Item("Restart", () => _ = RestartAsync());
         // Automatic updates make a manual check redundant; it returns only when they are off.
         if (!settings.AutoUpdate) Item(updateTag == null ? "Check for updates…" : "Update available: " + updateTag + "…", () => _ = CheckUpdatesAsync(true));
         Toggle("Install updates automatically", settings.AutoUpdate, enabled => { settings.AutoUpdate = enabled; if (!enabled) pendingUpdate = null; else settings.LastUpdateCheckUtc = default; });
@@ -506,7 +523,8 @@ public sealed class WindowsHub : IDisposable {
 
     // MB_SETFOREGROUND | MB_TOPMOST: a tray app's dialogs must not open behind other windows.
     private const uint ForegroundDialog = 0x10000 | 0x40000;
-    public async Task CheckUpdatesAsync(bool interactive) {
+    // Returns the newest newer Windows release, or null when up to date or offline.
+    public async Task<JsonElement?> CheckUpdatesAsync(bool interactive) {
         try {
             JsonElement? newest = null;
             var newestVersion = System.Version.Parse(Version);
@@ -525,16 +543,18 @@ public sealed class WindowsHub : IDisposable {
             Save();
             updateTag = newest?.GetProperty("tag_name").GetString();
             pendingUpdate = settings.AutoUpdate && newest != null ? newest.Value.Clone() : null;
-            if (!interactive) { RefreshMenu(); return; }
-            if (newest == null) { MessageBox(IntPtr.Zero, "3£Windows " + Version + " is up to date.", "3£Windows", 0x40 | ForegroundDialog); return; }
-            if (MessageBox(IntPtr.Zero, "Install 3£Windows " + newestVersion + "?\n\nThe portable installer will be downloaded, its SHA-256 checksum verified, and Windows will request administrator approval.", "3£Windows update", 0x24 | ForegroundDialog) != 6) return;
+            if (!interactive) { RefreshMenu(); return newest; }
+            if (newest == null) { MessageBox(IntPtr.Zero, "3£Windows " + Version + " is up to date.", "3£Windows", 0x40 | ForegroundDialog); return null; }
+            if (MessageBox(IntPtr.Zero, "Install 3£Windows " + newestVersion + "?\n\nThe portable installer will be downloaded, its SHA-256 checksum verified, and Windows will request administrator approval.", "3£Windows update", 0x24 | ForegroundDialog) != 6) return newest;
             await InstallUpdateAsync(newest.Value);
+            return newest;
         } catch (Exception ex) {
             Log(ex);
             // Throttle failures too, so an offline device never polls every 20 seconds.
             settings.LastUpdateCheckUtc = DateTime.UtcNow;
             Save();
             if (interactive) MessageBox(IntPtr.Zero, "Could not check or install the update.\n\n" + ex.Message, "3£Windows", 0x10 | ForegroundDialog);
+            return null;
         }
     }
 

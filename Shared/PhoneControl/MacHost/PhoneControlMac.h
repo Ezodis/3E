@@ -3,6 +3,7 @@
 #import <AppKit/AppKit.h>
 #import <CoreImage/CoreImage.h>
 #import <ApplicationServices/ApplicationServices.h>
+static NSString *const ThreeEPhoneBarEnabledKey=@"ThreeEPhoneBarEnabled";
 @interface ThreeEPhoneController : NSObject
 @property NSTask *task;
 @property NSPipe *input;
@@ -57,6 +58,7 @@
 }
 - (void)show {
     self.qrRequested=YES;
+    [NSUserDefaults.standardUserDefaults setBool:YES forKey:ThreeEPhoneBarEnabledKey];
     if (@available(macOS 14.0,*)) {} else { [self message:@"Phone Bar requires macOS 14 or later. Other 3£ modules remain available."]; return; }
     [self startReceiver];
     if(self.url)[self showQR];
@@ -113,7 +115,9 @@
     postKey(63,YES,fn);postKey(103,YES,fn);postKey(103,NO,fn);postKey(63,NO,0);
 }
 - (void)toggleReceiver {
-    if(self.task.running){[self stop];return;}
+    // Only the user's own toggle changes the remembered state; quitting does not.
+    if(self.task.running){[NSUserDefaults.standardUserDefaults setBool:NO forKey:ThreeEPhoneBarEnabledKey];[self stop];return;}
+    [NSUserDefaults.standardUserDefaults setBool:YES forKey:ThreeEPhoneBarEnabledKey];
     if (@available(macOS 14.0,*)) {} else { [self message:@"Phone Bar requires macOS 14 or later. Other 3£ features remain available."]; return; }
     self.qrRequested=self.qrHovering;[self startReceiver];if(self.url&&self.qrRequested)[self showQR];
 }

@@ -14,6 +14,8 @@ static NSMenu *StripBaseMenu(id target,BOOL gestures) {
     NSMenuItem *automatic=[[NSMenuItem alloc] initWithTitle:@"Automatically Install Updates" action:NSSelectorFromString(@"toggleBaseAutomaticUpdates:") keyEquivalent:@""];
     automatic.target=target; automatic.state=StripAutomaticUpdatesEnabled()?NSControlStateValueOn:NSControlStateValueOff; [menu addItem:automatic];
     [menu addItem:NSMenuItem.separatorItem];
+    NSMenuItem *restart=[[NSMenuItem alloc] initWithTitle:@"Restart" action:NSSelectorFromString(@"restartBase:") keyEquivalent:@""];
+    restart.target=target;[menu addItem:restart];
     NSMenuItem *quit=[[NSMenuItem alloc] initWithTitle:@"Quit 3£" action:NSSelectorFromString(@"quitBase:") keyEquivalent:@""];
     quit.target=target;[menu addItem:quit];return menu;
 }

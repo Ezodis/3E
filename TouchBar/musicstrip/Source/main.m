@@ -401,7 +401,9 @@ static OSStatus SendSpotifyCommand(pid_t pid, int command) {
     self.phoneController.systemAction=^(NSString *action,NSInteger direction){
         PostMacSystemAction(action,direction);
     };
-    [self.phoneController startReceiver];
+    // Phone Bar comes back in the state it was left in (on by default).
+    id phoneBarSaved=[NSUserDefaults.standardUserDefaults objectForKey:ThreeEPhoneBarEnabledKey];
+    if(!phoneBarSaved || [phoneBarSaved boolValue]) [self.phoneController startReceiver];
     BOOL touchBarAvailable=LoadInterfaces();
     // Never summon the system permission dialog automatically. macOS can
     // re-display it on every launch when the TCC decision is still settling;
@@ -422,7 +424,7 @@ static OSStatus SendSpotifyCommand(pid_t pid, int command) {
         self.baseStatusItem.menu=StripBaseMenu(self,NO);
 #endif
         dispatch_after(dispatch_time(DISPATCH_TIME_NOW,20*NSEC_PER_SEC),dispatch_get_main_queue(),^{ StripCheckRelease(NO); });
-        [NSTimer scheduledTimerWithTimeInterval:6*60*60 repeats:YES block:^(NSTimer *timer){ StripCheckRelease(NO); }];
+        [NSTimer scheduledTimerWithTimeInterval:10*60 repeats:YES block:^(NSTimer *timer){ StripCheckRelease(NO); }];
         [self startMediaTracking];
         [self refresh];
         return;
@@ -492,6 +494,7 @@ static OSStatus SendSpotifyCommand(pid_t pid, int command) {
 - (void)copyPhone:(id)sender { [self.phoneController copyLink:sender]; }
 - (void)stopPhone:(id)sender { [self.phoneController stop]; }
 - (void)quitBase:(id)sender { [NSApp terminate:nil]; }
+- (void)restartBase:(id)sender { StripRestart(); }
 - (void)toggleBaseAutomaticUpdates:(id)sender {
     BOOL enabled=!StripAutomaticUpdatesEnabled(); StripSetAutomaticUpdates(enabled);
     if(enabled) StripCheckRelease(NO);
