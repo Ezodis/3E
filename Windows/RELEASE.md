@@ -1,6 +1,7 @@
-3£Windows 1.0.45 updates the Phone Bar page on your phone by itself.
+3£Windows now updates the Phone Bar page on your phone by itself.
 
-- **No manual reload after an update:** when the PC or Mac installs an update and restarts, the open Phone Bar page (Safari tab or Home Screen web app, iPhone or Apple Watch) reloads itself once as soon as it reconnects, so new features appear right away. It waits until you lift your finger, finish a drag or the app switcher, and close the keyboard or clipboard sheet, and shows "Updating…" for a moment. This starts with the next update after 1.0.45; reload the page once by hand after installing 1.0.45.
+- **No manual reload after an update:** when the PC or Mac installs an update and restarts, the open Phone Bar page (Safari tab or Home Screen web app, iPhone or Apple Watch) reloads itself once as soon as it reconnects, so new features appear right away. It waits until you lift your finger, finish a drag or the app switcher, and close the keyboard or clipboard sheet, and shows "Updating…" for a moment. If the page on your phone is from before this update, reload it once by hand; every update after that is automatic.
+- **Reliable reloads:** reloading the Phone Bar page while the phone is connected no longer occasionally comes up blank or with an error page.
 
 Includes everything from 1.0.44:
 
