@@ -265,14 +265,14 @@ public sealed class PhoneTrackpad : IDisposable {
             if (pairing && !CanShowPairing(request.RemoteEndPoint.Address, owner.Address)) {
                 context.Response.StatusCode = 403; context.Response.Close(); return;
             }
-            var resource = request.Url.AbsolutePath switch { "/" => "PhoneTrackpad.html", "/pad.js" => "PhoneTrackpad.js", "/surface.js" => "surface.js", "/dock.js" => "dock.js", "/surface.css" => "surface.css", "/host.js" => "host.js", "/pair" => "pair", _ => null };
+            var resource = request.Url.AbsolutePath switch { "/" => "PhoneTrackpad.html", "/pad.js" => "PhoneTrackpad.js", "/surface.js" => "surface.js", "/dock.js" => "dock.js", "/surface.css" => "surface.css", "/host.js" => "host.js", "/pair" => "pair", "/icon.png" => "icon.png", _ => null };
             if (resource == null) { context.Response.StatusCode = 404; context.Response.Close(); return; }
             var response = context.Response;
-            response.ContentType = resource.EndsWith(".js") ? "text/javascript; charset=utf-8" : resource.EndsWith(".css") ? "text/css; charset=utf-8" : "text/html; charset=utf-8";
+            response.ContentType = resource.EndsWith(".png") ? "image/png" : resource.EndsWith(".js") ? "text/javascript; charset=utf-8" : resource.EndsWith(".css") ? "text/css; charset=utf-8" : "text/html; charset=utf-8";
             response.Headers["Cache-Control"] = "no-store";
             response.Headers["Referrer-Policy"] = "no-referrer";
             response.Headers["X-Content-Type-Options"] = "nosniff";
-            response.Headers["Content-Security-Policy"] = "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src data:; connect-src " + string.Join(" ", new[] { owner.Origin, owner.AliasOrigin }.Where(o => o != null).SelectMany(o => new[] { o, o.Replace("http:", "ws:") })) + "; frame-ancestors 'none'; base-uri 'none'; form-action 'none'";
+            response.Headers["Content-Security-Policy"] = "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src " + string.Join(" ", new[] { owner.Origin, owner.AliasOrigin }.Where(o => o != null).SelectMany(o => new[] { o, o.Replace("http:", "ws:") })) + "; frame-ancestors 'none'; base-uri 'none'; form-action 'none'";
             using var stream = pairing
                 ? new MemoryStream(Encoding.UTF8.GetBytes(PairingPage(owner.Origin + "/#" + owner.Token)))
                 : resource == "PhoneTrackpad.html" ? new MemoryStream(Encoding.UTF8.GetBytes(BrandedPage(input.Platform)))
@@ -389,6 +389,7 @@ public sealed class PhoneTrackpad : IDisposable {
         return """
 <!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>3£Windows · Pair your iPhone</title>
+<link rel="icon" type="image/png" href="/icon.png">
 <style>
 *{box-sizing:border-box}body{margin:0;background:#111820;color:#eaf2f7;font:16px/1.65 system-ui,sans-serif;min-height:100vh;display:grid;place-items:center;padding:28px}
 main{width:100%;max-width:620px}small{color:#a8e5cd;font-weight:600;letter-spacing:.08em}h1{font-size:38px;line-height:1.15;letter-spacing:-1.2px;margin:12px 0 20px}p{color:#b9cbd8}

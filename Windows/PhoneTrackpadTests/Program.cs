@@ -201,7 +201,8 @@ string page = await client.GetStringAsync(new Uri(firstUrl).GetLeftPart(UriParti
 Check(page.Contains("Trackpad") && !page.Contains(new Uri(firstUrl).Fragment[1..]), "Public page does not disclose the pairing secret");
 Check((await client.GetStringAsync(pad.DesktopUrl)).Contains("<svg"), "Desktop pairing page renders a local QR code");
 Check(!PhoneTrackpad.CanShowPairing(IPAddress.Parse("192.168.1.5"), IPAddress.Parse("192.168.1.4")), "Other LAN devices cannot request the desktop pairing secret");
-using (var headers = await client.GetAsync(new Uri(firstUrl).GetLeftPart(UriPartial.Path))) Check(headers.Headers.GetValues("Content-Security-Policy").Single().Contains("img-src data:;"), "Browser resource allows embedded app icons without remote image access");
+using (var headers = await client.GetAsync(new Uri(firstUrl).GetLeftPart(UriPartial.Path))) Check(headers.Headers.GetValues("Content-Security-Policy").Single().Contains("img-src 'self' data:;"), "Browser resource allows embedded app icons and its own 3£ icon without remote image access");
+Check((await client.GetAsync(new Uri(new Uri(firstUrl), "/icon.png"))).Content.Headers.ContentType?.MediaType == "image/png", "The 3£ butterfly icon is served for the Home Screen and tab");
 Check((await client.GetAsync(new Uri(new Uri(firstUrl), "/not-a-file"))).StatusCode == HttpStatusCode.NotFound, "No arbitrary file access");
 using (var forged = new HttpRequestMessage(HttpMethod.Get, new Uri(firstUrl).GetLeftPart(UriPartial.Path))) {
     forged.Headers.Host = "attacker.example";

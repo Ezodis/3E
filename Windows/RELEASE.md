@@ -1,3 +1,10 @@
+3£Windows 1.0.42 puts the butterfly logo in the last few places.
+
+- **Phone Bar:** the QR popup shows the logo next to "3£ Phone Bar", and the phone page has it as its tab and Home Screen icon (iPhone "Add to Home Screen" now shows the butterfly).
+- The Mac menu bar and the standalone TouchTab app (app icon and menu bar icon) use it too.
+
+Includes everything from 1.0.41:
+
 3£Windows 1.0.41 refines the butterfly logo.
 
 - **No gap at the top:** the tops of the 3 and £ now meet, so the wings join like a butterfly's. Same logo on Mac.

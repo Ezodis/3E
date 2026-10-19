@@ -89,6 +89,31 @@ def main():
     # Mac menu bar template image: black mark cropped to its bounds (22x14 pt @4x).
     m = mark(512, frac=1.0); m = m.crop(m.getbbox()).resize((88, 56), Image.LANCZOS)
     embed("Shared/Brand/ThreeEBrand.h", "menu", png64(m))
+    # Windows Phone Bar QR popup label: the mark in the label's grey, cropped.
+    g = mark(512, fg=(74, 84, 92, 255), frac=1.0); g = g.crop(g.getbbox()).resize((96, 62), Image.LANCZOS)
+    embed("Windows/PhoneBar/PhoneTrackpadPopup.cs", "popup", png64(g))
+
+    # Phone page: browser tab and iPhone/Watch Home Screen icon.
+    icon(180).save(ROOT / "Shared/PhoneControl/Web/icon.png", optimize=True)
+
+    # Standalone TouchTab: app icon set and template menu bar icons.
+    tt = ROOT / "TouchTab/Touch-Tab/Assets.xcassets"
+    for f in (tt / "AppIcon.appiconset").glob("AppIcon_*.png"):
+        icon(Image.open(f).size[0]).save(f, optimize=True)
+    def status(size, warning=False):
+        S = size * 8
+        im = Image.new("RGBA", (S, S), (0, 0, 0, 0))
+        im.alpha_composite(mark(S, frac=0.98 if not warning else 0.8, ss=1), (0, 0) if not warning else (0, round(S * 0.02)))
+        if warning:  # small "!" badge, bottom right
+            d = ImageDraw.Draw(im); r = S * 0.2; cx, cy = S - r - 1, S - r - 1
+            d.ellipse((cx - r, cy - r, cx + r, cy + r), fill=(0, 0, 0, 255))
+            d.rectangle((cx - r * 0.16, cy - r * 0.62, cx + r * 0.16, cy + r * 0.12), fill=(0, 0, 0, 0))
+            d.ellipse((cx - r * 0.18, cy + r * 0.3, cx + r * 0.18, cy + r * 0.66), fill=(0, 0, 0, 0))
+        return im.resize((size, size), Image.LANCZOS)
+    for f in (tt / "StatusIcon.imageset").glob("*.png"):
+        status(Image.open(f).size[0]).save(f, optimize=True)
+    for f in (tt / "StatusIcon-Warning.imageset").glob("*.png"):
+        status(Image.open(f).size[0], warning=True).save(f, optimize=True)
     print("Icons regenerated.")
 
 if __name__ == "__main__":
