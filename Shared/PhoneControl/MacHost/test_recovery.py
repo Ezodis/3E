@@ -30,6 +30,8 @@ def alive(url):
     with urllib.request.urlopen(url.split("#")[0] + "alive", timeout=3) as response:
         assert response.status in (200, 204)
 
+subprocess.run([str(host), "--bonjour-self-test"], check=True, timeout=30)
+
 original = None
 for attempt in range(2):
     process = launch()

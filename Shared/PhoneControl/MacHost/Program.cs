@@ -5,6 +5,15 @@ using System.Security.Cryptography;
 using ThreeE.PhoneControl;
 using ThreeE.PhoneHost;
 
+if(args.Contains("--bonjour-self-test")) {
+    string name=$"threee-recovery-{Environment.ProcessId}.local";
+    for(int attempt=0;attempt<3;attempt++) {
+        using var responder=new PhoneNameResponder(IPAddress.Loopback,name);
+        var addresses=await Dns.GetHostAddressesAsync(name).WaitAsync(TimeSpan.FromSeconds(8));
+        if(!responder.Healthy||!addresses.Contains(IPAddress.Loopback))throw new Exception("Bonjour registration did not resolve");
+    }
+    Console.WriteLine("PASS: native Bonjour registers and re-registers a stable local-only name (no LAN advertisement or native input)");return;
+}
 if(args.Contains("--native-self-test")) {
     if(MacInput.ThreeEValidateScrollEvent()!=1)throw new Exception("Quartz scroll event mismatch");
     if(MacInput.ThreeEHasMultipleSpaces() is <0 or >1)throw new Exception("Space discovery mismatch");
