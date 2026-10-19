@@ -199,6 +199,13 @@ if(require.main===module)(async()=>{
    await drag(p,p.locator('#media'),0,0,900);
    assert.equal(await p.locator('#studio').isVisible(),true);
    assert.equal(await p.locator('#studio h1').innerText(),'3£ Phone Bar');
+   const returnTarget=async page=>{
+    const media=await page.locator('#media').boundingBox(),back=await page.locator('#closeStudio').boundingBox();
+    for(const axis of ['x','y','width','height'])assert.ok(Math.abs(media[axis]-back[axis])<1,'return target matches Media '+axis);
+    for(const property of ['backgroundColor','color','borderRadius','borderColor'])assert.equal(await page.locator('#closeStudio').evaluate((el,p)=>getComputedStyle(el)[p],property),await page.locator('#media').evaluate((el,p)=>getComputedStyle(el)[p],property));
+    const nav=await page.locator('.studio-tabs').boundingBox();assert.ok(nav.y>400&&nav.x+nav.width<=back.x,'view buttons sit beside return at the bottom');
+   };
+   await returnTarget(p);
    await p.waitForFunction(()=>document.getElementById('midiOutput').options.length>1);
    assert.equal(commands.filter(c=>c.type==='media').length,mediaCount,'holding Media must not play/pause on release');
    await p.locator('#midiOutput').selectOption('0');await p.waitForFunction(()=>document.getElementById('midiStatus').textContent.startsWith('Sending to'));
@@ -221,7 +228,41 @@ if(require.main===module)(async()=>{
    await p.locator('.strip .fader').first().fill('80');await p.waitForTimeout(50);
    assert.equal(await p.locator('.deck-a .knob[data-cc="16"]').getAttribute('aria-valuenow'),'80');
    await p.screenshot({path:path.join(out,'studio-mixer-'+name+'.png')});
-   await p.setViewportSize({width:844,height:390});await p.screenshot({path:path.join(out,'studio-landscape-'+name+'.png')});
+   await p.locator('#midiTab').click();assert.equal(await p.locator('#midiView').isVisible(),true);
+   assert.equal(await p.locator('#piano .piano-key').count(),25);
+   assert.equal(await p.locator('#crossfader').isVisible(),false);
+   await returnTarget(p);
+   const key=p.locator('#piano [data-note="60"]'),kb=await key.boundingBox(),next=await p.locator('#piano [data-note="62"]').boundingBox();
+   let noteStart=commands.length;
+   await p.mouse.move(kb.x+kb.width/2,kb.y+kb.height*.85);await p.mouse.down();
+   await p.mouse.move(next.x+next.width/2,next.y+next.height*.85);await p.mouse.up();await p.waitForTimeout(100);
+   assert.deepEqual(commands.slice(noteStart).filter(c=>c.type==='midiNote').map(c=>[c.number,c.value]),[[60,100],[60,0],[62,100],[62,0]],'piano glissando releases the previous key and final key');
+   noteStart=commands.length;await key.focus();await p.keyboard.press('Space');await p.waitForTimeout(100);
+   assert.deepEqual(commands.slice(noteStart).filter(c=>c.type==='midiNote').map(c=>[c.number,c.value]),[[60,100],[60,0]],'keyboard activation plays exactly once');
+   await p.mouse.move(kb.x+kb.width/2,kb.y+kb.height*.85);await p.mouse.down();
+   await p.evaluate(()=>document.getElementById('mixerTab').click());await p.mouse.up();await p.waitForTimeout(100);
+   assert.equal(commands.filter(c=>c.type==='midiNote').at(-1).value,0,'changing views releases held notes');
+   await p.locator('#midiTab').click();await p.locator('#octaveDown').click();assert.equal(await p.locator('#piano [data-note="48"]').count(),1);
+   noteStart=commands.length;
+   await p.evaluate(()=>{
+    const piano=document.getElementById('piano'),captured=new Set();
+    const original=['setPointerCapture','hasPointerCapture','releasePointerCapture'].map(k=>piano[k]);
+    piano.setPointerCapture=id=>captured.add(id);piano.hasPointerCapture=id=>captured.has(id);piano.releasePointerCapture=id=>captured.delete(id);
+    const touch=(type,id,n)=>{const r=piano.querySelector('[data-note="'+n+'"]').getBoundingClientRect();piano.dispatchEvent(new PointerEvent(type,{pointerId:id,pointerType:'touch',clientX:r.x+r.width/2,clientY:r.y+r.height*.85,bubbles:true,cancelable:true}));};
+    try {
+     touch('pointerdown',501,48);touch('pointerdown',502,48);touch('pointerup',501,48);
+     if(!piano.querySelector('[data-note="48"]').classList.contains('held'))throw new Error('lifting one finger must keep the shared note held');
+     touch('pointermove',502,52);touch('pointerdown',503,55);
+     document.getElementById('panic').click();
+     touch('pointermove',502,53);touch('pointerup',502,53);touch('pointerup',503,55);
+    } finally {['setPointerCapture','hasPointerCapture','releasePointerCapture'].forEach((k,i)=>{piano[k]=original[i];});}
+   });await p.waitForTimeout(100);
+   assert.deepEqual(commands.slice(noteStart).filter(c=>c.type==='midiNote').map(c=>[c.number,c.value]),[[48,100],[48,0],[52,100],[55,100],[52,0],[55,0]],'multi-touch shares held notes, plays chords and cannot restart after panic');
+   await p.screenshot({path:path.join(out,'studio-midi-'+name+'.png')});
+   await p.setViewportSize({width:844,height:390});await p.waitForTimeout(100);await p.screenshot({path:path.join(out,'studio-landscape-'+name+'.png')});
+   const landscapeMedia=await p.locator('#media').boundingBox(),landscapeBack=await p.locator('#closeStudio').boundingBox();
+   assert.deepEqual(landscapeBack,landscapeMedia,'return target follows Media after rotation');
+
    await wake(p);
    await p.waitForFunction(()=>document.getElementById('midiStatus').textContent.startsWith('Sending to'));
    await p.locator('#closeStudio').click();await p.evaluate(()=>window.testSockets.at(-1).close());

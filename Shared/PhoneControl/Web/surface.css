@@ -62,3 +62,28 @@
 .watch #keyBar,.watch #clipSheet,.watch #typeSink{display:none!important}
 /* Watch keeps its original compact row: Apps, scroll toggle, Media. */
 .watch .dock{display:flex}.watch .dock-side{display:contents}
+
+/* Studio navigation stays in thumb reach; its return target mirrors Media. */
+#studio{padding-bottom:var(--studio-bottom,90px)}
+#studio .studio-nav{position:fixed;z-index:4;left:0;right:0;bottom:0;height:var(--studio-bottom,90px);background:#101317f5;border-top:1px solid #343b41}
+#studio .studio-tabs{position:fixed;left:max(12px,env(safe-area-inset-left));top:var(--studio-return-top);width:calc(var(--studio-return-left) - max(12px,env(safe-area-inset-left)) - 10px);height:var(--studio-return-height);display:flex;gap:5px;align-items:stretch}
+#studio .studio-tabs button{flex:1;min-width:0;padding:6px 3px;font-size:12px;white-space:nowrap}
+#studio #closeStudio{display:flex;align-items:center;justify-content:center;touch-action:manipulation;grid-column:auto;grid-row:auto}
+#studio #closeStudio:active{background:#a8e5cd!important;color:#0e2420!important}
+#closeStudio svg{width:30px;height:30px;pointer-events:none}
+.piano-toolbar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:12px 0 18px}
+.piano-toolbar output{font-variant-numeric:tabular-nums;color:#bedacb;flex:1;text-align:center}
+.piano-toolbar label{display:flex;gap:10px;align-items:center;width:100%;color:#acb7bc}.piano-toolbar input{flex:1;min-width:0;accent-color:#bedacb}
+#piano{height:clamp(150px,35vh,300px);position:relative;touch-action:none;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none}
+#studio .piano-key{position:absolute;top:0;min-width:0;min-height:0;padding:0 0 10px;display:flex;align-items:flex-end;justify-content:center;border-radius:0 0 7px 7px;touch-action:none;font-size:10px}
+#studio .piano-key.white{width:calc(100% / 15);height:100%;background:#e8eeeb;color:#33423b;border:1px solid #82958a;z-index:0}
+#studio .piano-key.black{width:calc(100% / 15 * .62);height:62%;background:linear-gradient(#303b37,#111916);border:1px solid #0a100d;z-index:1}
+#studio .piano-key.held{background:#8ddbb8;color:#10261b;box-shadow:inset 0 -5px 0 #57a481}
+.piano-hint{color:#9bb1a4;font-size:12px;text-align:center;margin:16px 0}
+.watch #studio .studio-tabs{top:calc(var(--studio-return-top) - 38px);left:6px;width:calc(100% - 12px);height:32px}
+.watch #studio{padding-bottom:calc(var(--studio-bottom,60px) + 38px)}
+.watch #studio .studio-nav{height:calc(var(--studio-bottom,60px) + 38px)}
+.watch #closeStudio svg{width:24px;height:24px}.watch #piano{height:130px;min-width:250px}.watch #midiView{overflow-x:auto}.watch .piano-toolbar{gap:4px}.watch .piano-toolbar button{padding:5px!important;font-size:10px!important}.watch .piano-toolbar output{font-size:10px}
+@media(max-height:450px) and (min-width:301px){#piano{height:150px}.piano-toolbar{margin:4px 0 8px}.piano-toolbar label{width:auto;flex:1}.piano-hint{margin:8px 0}}
+
+.watch #studio .studio-tabs button{min-height:0;padding:3px!important;font-size:10px!important;white-space:normal}
