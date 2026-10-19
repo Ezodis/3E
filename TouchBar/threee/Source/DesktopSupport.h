@@ -115,7 +115,7 @@ static double DesktopModernSign(BOOL right) {
     double sign=right?-1.0:1.0;
     return (!valid||natural)?sign:-sign;
 }
-static BOOL PostDesktopSwipePhase(int64_t phase,BOOL right) {
+static BOOL PostDesktopSwipeMotion(int64_t phase,BOOL right,double progress,double speed) {
     CGEventRef dock=CGEventCreate(NULL);
     if(!dock)return NO;
     CGEventSetIntegerValueField(dock,(CGEventField)55,30);   // DockControl
@@ -123,20 +123,20 @@ static BOOL PostDesktopSwipePhase(int64_t phase,BOOL right) {
     CGEventSetIntegerValueField(dock,(CGEventField)132,phase);
     CGEventSetIntegerValueField(dock,(CGEventField)123,1);   // horizontal
     if(!DesktopSwipeNeedsPayload()) {
-        double velocity=right?2000.0:-2000.0;
-        CGEventSetDoubleValueField(dock,(CGEventField)124,right?0.000016:-0.000016);
+        double velocity=(right?1:-1)*speed;
+        CGEventSetDoubleValueField(dock,(CGEventField)124,(right?1:-1)*progress);
         CGEventSetDoubleValueField(dock,(CGEventField)129,velocity);
         CGEventSetDoubleValueField(dock,(CGEventField)130,velocity);
         CGEventPost(kCGSessionEventTap,dock);CFRelease(dock);
         return YES;
     }
     double sign=DesktopModernSign(right);
-    CGEventSetDoubleValueField(dock,(CGEventField)124,sign*0.000016);
+    CGEventSetDoubleValueField(dock,(CGEventField)124,sign*progress);
     CGEventSetIntegerValueField(dock,(CGEventField)134,phase);
     CGEventSetDoubleValueField(dock,(CGEventField)138,3.0);
     CGEventSetDoubleValueField(dock,(CGEventField)169,(double)mach_absolute_time());
     CGEventSetDoubleValueField(dock,(CGEventField)125,0.1);
-    if(phase==4)CGEventSetDoubleValueField(dock,(CGEventField)129,sign*9999.0);
+    if(phase==4)CGEventSetDoubleValueField(dock,(CGEventField)129,sign*speed);
     CGEventRef augmented=DesktopAugmentedSwipe(dock);CFRelease(dock);
     if(!augmented)return NO;
     CGEventRef companion=CGEventCreate(NULL);
@@ -145,6 +145,9 @@ static BOOL PostDesktopSwipePhase(int64_t phase,BOOL right) {
     CGEventPost(kCGSessionEventTap,augmented);CGEventPost(kCGSessionEventTap,companion);
     CFRelease(augmented);CFRelease(companion);
     return YES;
+}
+static BOOL PostDesktopSwipePhase(int64_t phase,BOOL right) {
+    return PostDesktopSwipeMotion(phase,right,0.000016,DesktopSwipeNeedsPayload()?9999:2000);
 }
 // Began, Changed and Ended; with fewer phases the Dock ignores the gesture.
 static void PostDesktopSwipe(BOOL right) {
@@ -184,13 +187,9 @@ static void AdvanceDesktopSelection(uint64_t target,NSUInteger sequence,NSIntege
 static void SelectDesktop(uint64_t target) {
     AdvanceDesktopSelection(target,++desktopSelectionSequence,DesktopSpaces().count+2);
 }
-// The phone sends a destination direction, already opposite the finger swipe.
-// Use the regular Control-arrow shortcut so Dock owns the normal animation.
-static CGEventRef DesktopShortcutEvent(NSInteger direction,BOOL down) {
-    CGEventRef event=CGEventCreateKeyboardEvent(NULL,direction>0?124:123,down);
-    if(event)CGEventSetFlags(event,kCGEventFlagMaskControl);
-    return event;
-}
+// The phone sends the destination direction, opposite its finger movement.
+// Advance the Dock's real gesture over time rather than sending an instant
+// high-velocity fling or depending on the user's keyboard shortcuts.
 static CFAbsoluteTime desktopStepReadyAt=0;
 static void StepDesktop(NSInteger direction) {
     if(!direction)return;
@@ -202,11 +201,13 @@ static void StepDesktop(NSInteger direction) {
     NSInteger destination=active+(direction>0?1:-1);
     if(active<0||destination<0||destination>=(NSInteger)spaces.count)return;
     if(!AccessibilityTrusted(NO)){AccessibilityTrusted(YES);return;}
-    CGEventRef down=DesktopShortcutEvent(direction,YES),up=DesktopShortcutEvent(direction,NO);
-    if(down&&up){
-        // Invalidate any older picker retry and allow this transition to settle.
-        ++desktopSelectionSequence;desktopStepReadyAt=now+.5;
-        CGEventPost(kCGHIDEventTap,down);CGEventPost(kCGHIDEventTap,up);
+    BOOL right=direction>0;
+    ++desktopSelectionSequence;desktopStepReadyAt=now+.6;
+    if(!PostDesktopSwipeMotion(1,right,0.000016,0))return;
+    for(int frame=1;frame<=12;frame++) {
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW,frame*20*NSEC_PER_MSEC),dispatch_get_main_queue(),^{
+            PostDesktopSwipeMotion(2,right,.65*frame/12,0);
+            if(frame==12)PostDesktopSwipeMotion(4,right,.65,2);
+        });
     }
-    if(down)CFRelease(down);if(up)CFRelease(up);
 }

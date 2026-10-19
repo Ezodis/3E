@@ -995,6 +995,21 @@ int main(int argc, const char *argv[]) {
     if(argc>1 && strcmp(argv[1],"--accessibility-status")==0) { printf("Accessibility: %s\n",AXIsProcessTrusted() ? "approved" : "not approved for this build"); return 0; }
     @autoreleasepool {
         signal(SIGPIPE, SIG_IGN);
+        if(argc>1 && strcmp(argv[1],"--desktop-swipe-test")==0) {
+            [StripApplication sharedApplication];LoadInterfaces();
+            NSArray *spaces=DesktopSpaces();NSInteger start=-1;
+            for(NSUInteger i=0;i<spaces.count;i++)if([spaces[i][@"active"] boolValue])start=i;
+            if(start<0||spaces.count<2||!AccessibilityTrusted(NO)){fprintf(stderr,"Need two desktops and Accessibility access\n");return 1;}
+            NSInteger direction=start+1<(NSInteger)spaces.count?1:-1;
+            uint64_t original=[spaces[start][@"id"] unsignedLongLongValue],target=[spaces[start+direction][@"id"] unsignedLongLongValue];
+            StepDesktop(direction);
+            [NSRunLoop.currentRunLoop runUntilDate:[NSDate dateWithTimeIntervalSinceNow:1.5]];
+            BOOL moved=NO;for(NSDictionary *space in DesktopSpaces())if([space[@"active"] boolValue]&&[space[@"id"] unsignedLongLongValue]==target)moved=YES;
+            printf("Animated switch to adjacent desktop: %s\n",moved?"PASS":"FAIL");
+            if(moved){StepDesktop(-direction);[NSRunLoop.currentRunLoop runUntilDate:[NSDate dateWithTimeIntervalSinceNow:1.5]];}
+            BOOL restored=NO;for(NSDictionary *space in DesktopSpaces())if([space[@"active"] boolValue]&&[space[@"id"] unsignedLongLongValue]==original)restored=YES;
+            printf("Return to original desktop: %s\n",restored?"PASS":"FAIL");return moved&&restored?0:1;
+        }
         if (argc > 1 && strcmp(argv[1], "--diagnose") == 0) {
             BOOL ready = LoadInterfaces();
             printf("Control Strip and media command interfaces: %s\n", ready ? "available" : "unavailable");
@@ -1057,13 +1072,6 @@ int main(int argc, const char *argv[]) {
             }
             NSDictionary *folderFixture=@{@"persistent-others":@[@{@"tile-type":@"directory-tile",@"tile-data":@{@"file-data":@{@"_CFURLString":@"file:///tmp/Downloads/"}}},@{@"tile-type":@"url-tile",@"tile-data":@{@"file-data":@{@"_CFURLString":@"https://example.com"}}}]};
             NSCAssert(DockFolderURLs(folderFixture).count==1,@"Read only Dock folder tiles");
-            for(NSNumber *direction in @[@(-1),@1]) for(NSNumber *pressed in @[@YES,@NO]) {
-                CGEventRef event=DesktopShortcutEvent(direction.integerValue,pressed.boolValue);
-                NSCAssert(event && CGEventGetIntegerValueField(event,kCGKeyboardEventKeycode)==(direction.integerValue>0?124:123),@"Desktop shortcut follows the destination arrow, not the finger direction");
-                NSCAssert(CGEventGetFlags(event)==kCGEventFlagMaskControl,@"Desktop changes use the standard animated Control-arrow shortcut");
-                NSCAssert(CGEventGetType(event)==(pressed.boolValue?kCGEventKeyDown:kCGEventKeyUp),@"Every desktop shortcut has a matching key release");
-                CFRelease(event);
-            }
             NSSet *players = [NSSet setWithArray:@[@"com.spotify.client", @"com.apple.Safari", @"com.apple.Music"]];
             NSCAssert([ChoosePlayer(@"com.apple.Safari", @"com.apple.Safari", nil, players) isEqualToString:@"com.apple.Safari"], @"A newly observed browser must be selected");
             NSCAssert([ChoosePlayer(nil, @"com.spotify.client", nil, players) isEqualToString:@"com.spotify.client"], @"Reopened Spotify must be resumed");
