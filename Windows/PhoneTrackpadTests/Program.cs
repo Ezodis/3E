@@ -11,11 +11,11 @@ var results = new List<string>();
 void Check(bool value, string name) { if (!value) throw new Exception("FAIL: " + name); results.Add(name); Console.WriteLine("PASS: " + name); }
 int FreePort() { var socket = new TcpListener(IPAddress.Loopback, 0); socket.Start(); int port = ((IPEndPoint)socket.LocalEndpoint).Port; socket.Stop(); return port; }
 async Task Until(Func<bool> condition) { for (int i=0;i<100;i++) { if (condition()) return; await Task.Delay(50); } throw new Exception("Timed out waiting for state."); }
-async Task<ClientWebSocket> Connect(string url, string token = null, string origin = null, string controller = null) {
+async Task<ClientWebSocket> Connect(string url, string token = null, string origin = null, string controller = null, bool takeover = false) {
     var ws = new ClientWebSocket(); var uri = new Uri(url);
     ws.Options.SetRequestHeader("Origin", origin ?? uri.GetLeftPart(UriPartial.Authority));
     await ws.ConnectAsync(new Uri("ws://" + uri.Authority + "/ws"), CancellationToken.None);
-    await ws.SendAsync(Encoding.UTF8.GetBytes(JsonSerializer.Serialize(new { token = token ?? uri.Fragment[1..], client = controller })), WebSocketMessageType.Text, true, CancellationToken.None);
+    await ws.SendAsync(Encoding.UTF8.GetBytes(JsonSerializer.Serialize(new { token = token ?? uri.Fragment[1..], client = controller, takeover })), WebSocketMessageType.Text, true, CancellationToken.None);
     return ws;
 }
 async Task Send(ClientWebSocket ws, string text) => await ws.SendAsync(Encoding.UTF8.GetBytes(text), WebSocketMessageType.Text, true, CancellationToken.None);
@@ -283,6 +283,27 @@ using (var sleeping = await Connect(firstUrl, controller:"CCCCCCCCCCCCCCCCCCCCCC
     Check(fake.Held,"Fast movement fits one bounded packet without dropping the controller");
 }
 await Until(() => !fake.Held);
+// The newest device wins: a freshly opened phone takes input from the old one,
+// and the old phone's automatic reconnect stops instead of taking it back.
+const string oldPhone = "DDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDD", newPhone = "EEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEE";
+using (var first = await Connect(firstUrl, controller:oldPhone, takeover:true)) {
+    Check((await Receive(first)).Contains("ready"), "A phone connects with an identity");
+    await Send(first,"{\"type\":\"down\"}"); await Until(() => fake.Held);
+    using var second = await Connect(firstUrl, controller:newPhone, takeover:true);
+    Check((await Receive(second)).Contains("ready") && !fake.Held, "A newly connected phone takes control and releases the old phone's drag");
+    bool oldClosed; try { oldClosed = (await Receive(first)).Length == 0; } catch { oldClosed = true; }
+    Check(oldClosed, "The previous phone is disconnected when a new one connects");
+    using (var retry = await Connect(firstUrl, controller:oldPhone)) {
+        Check((await Receive(retry)).Contains("replaced"), "The replaced phone's automatic reconnect is told to stop instead of taking control back");
+    }
+    fake.Commands.Clear();
+    await Send(second,"{\"type\":\"move\",\"x\":3,\"y\":4}");
+    await Until(() => fake.Commands.Contains("move:3,4"));
+    Check(true, "The new phone keeps control after the old one tries to reconnect");
+    using var reclaimed = await Connect(firstUrl, controller:oldPhone, takeover:true);
+    Check((await Receive(reclaimed)).Contains("ready"), "Tapping Connect on the old phone makes it the newest device again");
+}
+await Until(() => pad.Status.Contains("disconnected"));
 using (var ws = await Connect(firstUrl)) {
     await Receive(ws); await Send(ws, "{\"type\":\"down\"}"); await Until(() => fake.Held);
     await Send(ws, "{\"type\":\"move\",\"x\":999999,\"y\":0}");
@@ -325,7 +346,7 @@ fake.FailMidiDiscovery = true;
 Check(await Post(new { client=watch,type="connect",sequence=1 }) == HttpStatusCode.OK, "Watch connects over HTTP without WebSockets");
 Check(httpReply.Contains("platform") && !httpReply.Contains("midi"), "Watch pairing returns platform information without MIDI driver discovery");
 fake.FailMidiDiscovery = false;
-Check(await Post(new { client=otherWatch,type="connect",sequence=1 }) == HttpStatusCode.Conflict, "A second watch cannot take over");
+Check(await Post(new { client=otherWatch,type="connect",sequence=1 }) == HttpStatusCode.Conflict && httpReply.Contains("replaced"), "A watch's automatic reconnect cannot take over the active watch");
 using (var ws = await Connect(pad.PairingUrl)) {
     bool accepted = false; try { accepted = (await Receive(ws)).Contains("ready"); } catch (WebSocketException) { }
     Check(!accepted, "Phone WebSocket cannot take over an active watch");
@@ -362,6 +383,18 @@ await Post(new { client=watch,type="commands",sequence=13,commands=new[]{new {ty
 address = null; await Until(() => !pad.Running);
 Check(!fake.Held && !firewall.IsOpen, "Network loss releases watch control and closes only the receiver");
 address = IPAddress.Loopback; pad.Start();
+Check(await Post(new { client=watch,type="connect",sequence=30,takeover=true }) == HttpStatusCode.OK, "Watch connects to the restarted receiver");
+await Post(new { client=watch,type="commands",sequence=31,commands=new[]{new {type="down"}} }); await Until(() => fake.Held);
+Check(await Post(new { client=otherWatch,type="connect",sequence=1,takeover=true }) == HttpStatusCode.OK && !fake.Held, "A newly opened watch takes control from the previous watch and releases its drag");
+Check(await Post(new { client=watch,type="commands",sequence=32,commands=new[]{new {type="down"}} }) == HttpStatusCode.Forbidden && httpReply.Contains("replaced") && !fake.Held, "The replaced watch is told another device took control");
+Check(await Post(new { client=watch,type="connect",sequence=33 }) == HttpStatusCode.Conflict && httpReply.Contains("replaced"), "The replaced watch's automatic reconnect cannot take control back");
+using (var ws = await Connect(pad.PairingUrl, controller:newPhone, takeover:true)) {
+    Check((await Receive(ws)).Contains("ready"), "A newly opened phone takes control from a watch");
+    Check(await Post(new { client=otherWatch,type="commands",sequence=2,commands=new[]{new {type="left"}} }) == HttpStatusCode.Forbidden && httpReply.Contains("replaced"), "The watch stops once a phone takes over");
+    Check(await Post(new { client=otherWatch,type="connect",sequence=3,takeover=true }) == HttpStatusCode.OK, "A watch can take control back from a phone when its Connect is tapped");
+    bool phoneClosed; try { phoneClosed = (await Receive(ws)).Length == 0; } catch { phoneClosed = true; }
+    Check(phoneClosed, "The phone is disconnected when the watch takes over");
+}
 pad.Stop(); Check(!firewall.IsOpen && !pad.Running, "Explicit stop closes the optional service");
 using var failing = new PhoneTrackpad(() => throw new NetworkInformationExceptionForTest(), fake, firewall, FreePort());
 Check(!failing.Start(), "Network enumeration failure is contained");

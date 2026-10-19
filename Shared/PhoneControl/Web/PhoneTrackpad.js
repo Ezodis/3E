@@ -37,6 +37,11 @@
   const clientBytes = new Uint8Array(16); crypto.getRandomValues(clientBytes);
   const controllerId = Array.from(clientBytes,b => b.toString(16).padStart(2,'0')).join('');
   let connectionAttempt = 0, connecting = false, wanted = true, reconnectTimer, connectTimeout;
+  // Opening the page or tapping Connect takes control from any other phone or
+  // watch (the newest device wins). Automatic reconnects only resume, so a
+  // device that was replaced stops instead of taking control back.
+  let takeover = true;
+  const REPLACED = 'Another device took control — tap Connect to use this one.';
   let retryDelay = 250, lastReply = 0, lastMotionSent = -Infinity, lastSentAt = -Infinity, pendingTap = null;
   // distance = path length (for drags); offset = farthest point from where the
   // touch began. Holds and taps use offset so natural finger jitter on a real
@@ -100,7 +105,7 @@
     status.textContent = message; connectButton.textContent = wanted ? 'Pause connection' : 'Connect';
   }
   function connected() {
-    clearTimeout(connectTimeout); connecting = false; retryDelay = 250; lastReply = performance.now();
+    clearTimeout(connectTimeout); connecting = false; retryDelay = 250; lastReply = performance.now(); takeover = false;
     ready = true; buttons.forEach(b => b.disabled = false); pad.classList.add('live');
     status.textContent = window.ThreeEControl?.info?.inputPermission===false ? 'Allow Accessibility on your Mac for pointer control.' : 'Connected'; connectButton.textContent = 'Pause connection';
     window.ThreeESurface?.state(true);
@@ -166,8 +171,12 @@
         headers:{'Content-Type':'application/json','X-Trackpad-Token':token}, signal:abort.signal,
         body:JSON.stringify({client,type,sequence,...extra}) });
       if (!response.ok) {
-        const error = new Error(response.status === 409 ? 'Another device is connected — waiting…' : 'Connection interrupted — reconnecting…');
+        const error = new Error('Connection interrupted — reconnecting…');
         if (response.status === 401) { error.terminal = true; error.message = 'This link expired. Scan the latest QR code.'; }
+        else if (response.json) {
+          let result = null; try { result = await response.json(); } catch {}
+          if (result?.error === 'replaced') { error.terminal = true; error.message = REPLACED; }
+        }
         throw error;
       }
       if(response.json) { const result=await response.json(); if(result.host) describe(result.host); noteBuild(result.build); }
@@ -185,7 +194,7 @@
     const client = httpClient = controllerId, attempt = connectionAttempt;
     httpBusy = false;
     try {
-      await post(client, 'connect');
+      await post(client, 'connect', { takeover });
       if (attempt !== connectionAttempt) return;
       connected();
     } catch (error) { if (attempt === connectionAttempt) recover(error.message || 'Cannot reach laptop — retrying…',error.terminal); }
@@ -201,7 +210,7 @@
     try { next = socket = new WebSocket('ws://' + location.host + '/ws'); }
     catch { recover('Cannot reach laptop — retrying…'); return; }
     connectTimeout = setTimeout(() => { if (socket === next) recover('Cannot reach laptop — retrying…'); },4000);
-    next.onopen = () => { if (socket === next) next.send(JSON.stringify({ token,client:controllerId })); };
+    next.onopen = () => { if (socket === next) next.send(JSON.stringify({ token,client:controllerId,takeover })); };
     next.onmessage = event => {
       if (socket !== next) return;
       try {
@@ -209,6 +218,7 @@
         if(message.host) describe(message.host);
         if (message.ready) receiverBuild = typeof message.build === 'string' ? message.build : null;
         if (message.error === 'pairing') recover('This link expired. Scan the latest QR code.',true);
+        else if (message.error === 'replaced') recover(REPLACED,true);
         else if (message.error === 'busy') recover('Another device is connected — waiting…');
         else if (message.ready && !ready) connected();
         else if (message.pong) lastReply = performance.now();
@@ -219,7 +229,7 @@
   }
   connectButton.addEventListener('click', () => {
     if (wanted) { wanted = false; suspend('Paused — tap Connect to resume.'); }
-    else { wanted = true; retryDelay = 250; connect(); }
+    else { wanted = true; takeover = true; retryDelay = 250; connect(); }
   });
   $('scrollMode').addEventListener('click', () => {
     drag(false); flush(); scrollMode = !scrollMode; mode = peak = 0; last = null;
