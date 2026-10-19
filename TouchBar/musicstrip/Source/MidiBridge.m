@@ -713,7 +713,7 @@ static void CleanMenu(NSMenu *menu) {
     }
     if(menu==statusItem.menu) {
         NSMenuItem *version=nil,*trackTab=nil,*phone=nil,*apps=nil,*midi=nil,*surface=nil,*downloads=nil,*automatic=nil;
-        NSMenuItem *reset=nil,*quit=nil;NSMutableArray<NSMenuItem *> *remaining=[NSMutableArray array];
+        NSMenuItem *reset=nil,*restart=nil,*quit=nil;NSMutableArray<NSMenuItem *> *remaining=[NSMutableArray array];
         for(NSMenuItem *item in menu.itemArray.copy) {
             NSString *title=item.title.lowercaseString;
             if(!version && [title containsString:@"(v."])version=item;
@@ -725,6 +725,7 @@ static void CleanMenu(NSMenu *menu) {
             else if([item.identifier isEqual:@"local.musicstrip.downloads"])downloads=item;
             else if([item.identifier isEqual:@"local.musicstrip.automaticUpdates"])automatic=item;
             else if([title containsString:@"check for update"] || item.isSeparatorItem || [item.identifier hasPrefix:@"local.musicstrip.section."]) continue;
+            else if([item.identifier isEqual:@"local.musicstrip.restart"])restart=item;
             else if([title isEqual:@"reset touch bar"])reset=item;
             else if([title isEqual:@"quit"])quit=item;
             else [remaining addObject:item];
@@ -742,6 +743,11 @@ static void CleanMenu(NSMenu *menu) {
             automatic=[[NSMenuItem alloc] initWithTitle:@"Automatically Install Updates" action:NSSelectorFromString(@"toggleAutomaticUpdates:") keyEquivalent:@""];
             automatic.identifier=@"local.musicstrip.automaticUpdates";automatic.target=NSClassFromString(@"MusicStripMidiBridge");
         }
+        if(!restart) {
+            restart=[[NSMenuItem alloc] initWithTitle:@"Restart" action:NSSelectorFromString(@"restartAll:") keyEquivalent:@""];
+            restart.identifier=@"local.musicstrip.restart";restart.target=NSClassFromString(@"MusicStripMidiBridge");
+            restart.toolTip=@"Restart 3E and check for updates";
+        }
         apps.state=appsMenuVisible&&!recordController.activeMenuBar?NSControlStateValueOn:NSControlStateValueOff;
         if(midi)midi.state=[[(id)NSApp.delegate valueForKey:@"touchbarShown"] boolValue] && !recordController.activeMenuBar && !appsMenuVisible ? NSControlStateValueOn:NSControlStateValueOff;
         downloads.title=@"Auto-move Downloads to Desktop";downloads.state=downloadsEnabled?NSControlStateValueOn:NSControlStateValueOff;
@@ -757,8 +763,8 @@ static void CleanMenu(NSMenu *menu) {
         for(NSMenuItem *item in remaining)[menu addItem:item];
         [menu addItem:MenuSeparator()];
         [menu addItem:downloads];[menu addItem:automatic];
-        if(reset||quit)[menu addItem:MenuSeparator()];
-        if(reset)[menu addItem:reset];if(quit)[menu addItem:quit];
+        [menu addItem:MenuSeparator()];
+        if(reset)[menu addItem:reset];[menu addItem:restart];if(quit)[menu addItem:quit];
     }
 }
 static void ApplyBranding(void) {
@@ -786,6 +792,7 @@ static NSArray *MenuTitles(NSMenu *menu) {
 + (void)hoverPhoneBar:(id)sender;
 + (void)hidePhoneBarQR:(id)sender;
 + (void)toggleDownloads:(id)sender;
++ (void)restartAll:(id)sender;
 @end
 static void SuppressTray(id cls, SEL sel, id item) { Report("TRAY_SUPPRESSED\n"); }
 static void Open(id self, SEL sel, NSTouchBar *bar, id identifier) {
@@ -2153,6 +2160,9 @@ static void Command(NSString *command) {
 + (void)hoverPhoneBar:(id)sender { Report("PHONE_HOVER\n"); }
 + (void)hidePhoneBarQR:(id)sender { Report("PHONE_HIDE_QR\n"); }
 + (void)toggleDownloads:(id)sender { Report("DOWNLOADS_TOGGLE\n"); }
+// Restart quits the whole suite, checks for an update (installing it if
+// newer, or if this is the wrong edition), and reopens 3E — like Windows.
++ (void)restartAll:(id)sender { StripRestart(); }
 + (void)toggleMidi:(id)sender { Command([[(id)NSApp.delegate valueForKey:@"touchbarShown"] boolValue] ? @"HIDE" : @"SHOW"); ApplyBranding(); }
 + (void)toggleAutomaticUpdates:(id)sender { StripToggleAutomaticUpdates(self,_cmd,sender); }
 + (void)toggleSurfaceMode:(id)sender { ChangeMode(NSApp.delegate,NSSelectorFromString(@"changeMode:"),sender); }
