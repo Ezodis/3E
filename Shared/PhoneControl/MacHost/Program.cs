@@ -11,6 +11,20 @@ if(args.Contains("--native-self-test")) {
     if(MacInput.ThreeEGetOutputVolume() is < -1 or >100)throw new Exception("Output volume probe mismatch");
     Console.WriteLine("PASS: native Quartz scroll event ABI and read-only Space/output-volume discovery (no posted input)");return;
 }
+if(args.Contains("--clipboard-self-test")) {
+    // Round-trips text, HTML, a picture and then a file through the real pasteboard.
+    var clipboard=new MacClipboard();
+    var png=Convert.FromBase64String("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAFAAH/q842iQAAAABJRU5ErkJggg==");
+    clipboard.Write(new[]{new ClipPart{Kind="text",Data="3E clipboard ✓"u8.ToArray()},new ClipPart{Kind="html",Data="<b>3E</b> clipboard"u8.ToArray()},new ClipPart{Kind="image",Name="p.png",Data=png}});
+    var back=clipboard.Read();
+    if(back.Text!="3E clipboard ✓")throw new Exception("Pasteboard text mismatch: "+back.Text);
+    if(back.Html==null||!back.Html.Contains("<b>3E</b>"))throw new Exception("Pasteboard HTML missing");
+    if(back.Png==null||back.Width!=1||back.Height!=1)throw new Exception("Pasteboard picture missing");
+    clipboard.Write(new[]{new ClipPart{Kind="file",Name="../report?.pdf",Data="%PDF-1.4"u8.ToArray()}});
+    back=clipboard.Read();
+    if(back.Files.Count!=1||Path.GetFileName(back.Files[0])!="report_.pdf"||File.ReadAllText(back.Files[0])!="%PDF-1.4"||back.Png!=null)throw new Exception("Pasteboard file mismatch");
+    Console.WriteLine("PASS: pasteboard text, HTML, picture and file round trip");return;
+}
 if(args.Contains("--midi-self-test")) {
     using var midi=new MacMidi();midi.Select(0);
     if(midi.Selected!=0)throw new Exception(midi.Status);

@@ -23,9 +23,17 @@ async Task<string> Receive(ClientWebSocket ws) { using var timeout = new Cancell
 
 // Preview mode exercises the real server and resource delivery, but never injects input or opens the firewall.
 if (args.Length == 2 && args[0] == "--preview") {
-    using var preview = new PhoneTrackpad(() => IPAddress.Loopback, new FakeInput(), new FakeFirewall(), 17834);
+    var previewInput = new FakeInput();
+    // A computer clipboard for the page's "Copy from" sheet: text, HTML, a picture and a file.
+    var previewFile = Path.Combine(Directory.CreateTempSubdirectory().FullName, "Quarterly report.pdf");
+    File.WriteAllText(previewFile, "%PDF-1.4 preview");
+    previewInput.Clip.Snapshot = new ClipSnapshot { Text = "Hello from the computer", Html = "<b>Hello</b> from the <span style=\"color:red\">computer</span><script>window.bad=1</script><style>body{display:none}</style>", Png = ThreeE.PhoneBar.Windows.WindowsPhoneClipboard.EncodePng(Enumerable.Repeat((byte)200, 40 * 30 * 4).ToArray(), 40, 30), Files = { previewFile } };
+    using var preview = new PhoneTrackpad(() => IPAddress.Loopback, previewInput, new FakeFirewall(), 17834);
     if (!preview.Start()) throw new Exception(preview.Status);
     File.WriteAllText(args[1], preview.PairingUrl);
+    // Report what the page sends so browser.test.cjs can check uploads.
+    File.WriteAllText(args[1] + ".clip", "");
+    _ = Task.Run(async () => { List<ClipPart> seen = null; while (true) { await Task.Delay(100); var written = previewInput.Clip.Written; if (written != null && written != seen) { seen = written; File.WriteAllText(args[1] + ".clip", JsonSerializer.Serialize(written.Select(c => new { kind = c.Kind, name = c.Name, size = c.Data.Length, head = c.Kind is "text" or "html" ? Encoding.UTF8.GetString(c.Data) : Convert.ToHexString(c.Data.Take(8).ToArray()) }))); } } });
     await Task.Delay(Timeout.Infinite);
     return;
 }
@@ -43,6 +51,7 @@ if (args.Length == 1 && args[0] == "--firewall-smoke") {
 
 await MediaRouterTests.Run(Check);
 await OutputVolumeTests.Run(Check);
+ClipboardTests.Run(Check);
 var fake = new FakeInput(); var firewall = new FakeFirewall();
 using(var volumeCommand=JsonDocument.Parse("{\"type\":\"volume\",\"level\":37}"))PhoneTrackpad.Apply(volumeCommand.RootElement,fake);
 Check(fake.Commands.Contains("volume:37"),"Volume commands reach the native boundary");
@@ -201,7 +210,7 @@ string page = await client.GetStringAsync(new Uri(firstUrl).GetLeftPart(UriParti
 Check(page.Contains("Trackpad") && !page.Contains(new Uri(firstUrl).Fragment[1..]), "Public page does not disclose the pairing secret");
 Check((await client.GetStringAsync(pad.DesktopUrl)).Contains("<svg"), "Desktop pairing page renders a local QR code");
 Check(!PhoneTrackpad.CanShowPairing(IPAddress.Parse("192.168.1.5"), IPAddress.Parse("192.168.1.4")), "Other LAN devices cannot request the desktop pairing secret");
-using (var headers = await client.GetAsync(new Uri(firstUrl).GetLeftPart(UriPartial.Path))) Check(headers.Headers.GetValues("Content-Security-Policy").Single().Contains("img-src 'self' data:;"), "Browser resource allows embedded app icons and its own 3£ icon without remote image access");
+using (var headers = await client.GetAsync(new Uri(firstUrl).GetLeftPart(UriPartial.Path))) Check(headers.Headers.GetValues("Content-Security-Policy").Single().Contains("img-src 'self' data: blob:;"), "Browser resource allows embedded app icons, clipboard pictures and its own 3£ icon without remote image access");
 Check((await client.GetAsync(new Uri(new Uri(firstUrl), "/icon.png"))).Content.Headers.ContentType?.MediaType == "image/png", "The 3£ butterfly icon is served for the Home Screen and tab");
 Check((await client.GetAsync(new Uri(new Uri(firstUrl), "/not-a-file"))).StatusCode == HttpStatusCode.NotFound, "No arbitrary file access");
 using (var forged = new HttpRequestMessage(HttpMethod.Get, new Uri(firstUrl).GetLeftPart(UriPartial.Path))) {
@@ -339,6 +348,43 @@ var failingFirewall = new FakeFirewall { FailOpen = true };
 using var blocked = new PhoneTrackpad(() => IPAddress.Loopback, fake, failingFirewall, FreePort());
 Check(!blocked.Start() && !blocked.Running && !failingFirewall.IsOpen, "Firewall policy failure rolls back listener startup");
 Check(!PhoneTrackpad.IsPrivateAddress(IPAddress.Parse("8.8.8.8")) && !PhoneTrackpad.IsPrivateAddress(IPAddress.Parse("169.254.1.2")) && PhoneTrackpad.IsPrivateAddress(IPAddress.Parse("172.20.10.2")), "Public and self-assigned IPs are excluded; hotspot LAN is accepted");
+{
+    // Clipboard transfer over the authenticated same-origin endpoints.
+    var clipInput = new FakeInput(); var clipFirewall = new FakeFirewall();
+    using var clipPad = new PhoneTrackpad(() => IPAddress.Loopback, clipInput, clipFirewall, FreePort());
+    Check(clipPad.Start(), "Receiver starts for clipboard transfer");
+    var origin = new Uri(clipPad.PairingUrl).GetLeftPart(UriPartial.Authority); var token = new Uri(clipPad.PairingUrl).Fragment[1..];
+    using var http = new HttpClient();
+    var host = await http.GetStringAsync(origin + "/host.js");
+    Check(host.Contains("\"keyboard\":true") && host.Contains("\"clipboard\":true"), "The page learns that this computer supports the keyboard and clipboard buttons");
+    Check((await http.GetStringAsync(origin + "/clip.js")).Contains("ThreeEClip"), "The keyboard and clipboard script is served");
+    async Task<HttpResponseMessage> Clip(string path, HttpContent content, string withToken = null, string withOrigin = null, string manifest = null) {
+        var request = new HttpRequestMessage(HttpMethod.Post, origin + path) { Content = content };
+        request.Headers.Add("Origin", withOrigin ?? origin); request.Headers.Add("X-Trackpad-Token", withToken ?? token);
+        if (manifest != null) request.Headers.Add("X-Clip-Manifest", Convert.ToBase64String(Encoding.UTF8.GetBytes(manifest)));
+        return await http.SendAsync(request);
+    }
+    Check((await Clip("/clipboard/read", new StringContent("{}"))).StatusCode == HttpStatusCode.Conflict, "Clipboard is refused until the phone is connected");
+    using var controller = await Connect(clipPad.PairingUrl);
+    Check((await Receive(controller)).Contains("ready"), "Phone connects before using the clipboard");
+    Check((await Clip("/clipboard/read", new StringContent("{}"), withToken: new string('0', 48))).StatusCode == HttpStatusCode.Unauthorized, "A wrong pairing secret cannot read the clipboard");
+    Check((await Clip("/clipboard/read", new StringContent("{}"), withOrigin: "http://evil.example")).StatusCode == HttpStatusCode.Forbidden, "Other sites cannot read the clipboard");
+    var body = new byte[] { (byte)'h', (byte)'i', (byte)'<', (byte)'b', (byte)'>', 1, 2, 3 };
+    var write = await Clip("/clipboard/write", new ByteArrayContent(body), manifest: "[{\"kind\":\"text\",\"size\":2},{\"kind\":\"html\",\"size\":3},{\"kind\":\"file\",\"name\":\"r.pdf\",\"size\":3}]");
+    Check(write.IsSuccessStatusCode && clipInput.Clip.Written?.Count == 3 && Encoding.UTF8.GetString(clipInput.Clip.Written[0].Data) == "hi" && clipInput.Clip.Written[2].Name == "r.pdf" && clipInput.Clip.Written[2].Data.SequenceEqual(new byte[] { 1, 2, 3 }), "Phone text, HTML and files arrive intact on the computer clipboard");
+    clipInput.Clip.Written = null;
+    Check((await Clip("/clipboard/write", new ByteArrayContent(body), manifest: "[{\"kind\":\"text\",\"size\":5}]")).StatusCode == HttpStatusCode.BadRequest && clipInput.Clip.Written == null, "A manifest that does not match the upload is rejected");
+    Check((await Clip("/clipboard/write", new ByteArrayContent(body), manifest: "[{\"kind\":\"script\",\"size\":8}]")).StatusCode == HttpStatusCode.BadRequest, "Unknown clipboard kinds are rejected");
+    var file = Path.Combine(Directory.CreateTempSubdirectory().FullName, "notes.txt"); File.WriteAllText(file, "from the computer");
+    clipInput.Clip.Snapshot = new ClipSnapshot { Text = "copied", Png = WindowsPhoneClipboard.EncodePng(new byte[16], 2, 2), Files = { file } };
+    using (var read = JsonDocument.Parse(await (await Clip("/clipboard/read", new StringContent("{}"))).Content.ReadAsStringAsync())) {
+        var root = read.RootElement;
+        Check(root.GetProperty("text").GetString() == "copied" && root.GetProperty("image").GetProperty("width").GetInt32() == 2 && root.GetProperty("files")[0].GetProperty("name").GetString() == "notes.txt" && root.GetProperty("files")[0].GetProperty("size").GetInt64() == 17, "The computer clipboard is described to the phone");
+    }
+    Check((await (await Clip("/clipboard/item", new StringContent("{\"index\":0}"))).Content.ReadAsStringAsync()) == "from the computer", "A copied file downloads to the phone");
+    Check((await (await Clip("/clipboard/item", new StringContent("{\"index\":-1}"))).Content.ReadAsByteArrayAsync()).AsSpan(1, 3).SequenceEqual("PNG"u8), "The copied picture downloads as PNG");
+    Check((await Clip("/clipboard/item", new StringContent("{\"index\":1}"))).StatusCode == HttpStatusCode.NotFound, "Only files from the snapshot the phone read can be downloaded");
+}
 Console.WriteLine($"All {results.Count} checks passed.");
 
 sealed class FakeInput : ITrackpadInput {
@@ -360,6 +406,11 @@ sealed class FakeInput : ITrackpadInput {
     public void Shortcut(int id)=>Commands.Enqueue($"shortcut:{id}");
     public void VolumeStep(int direction)=>Commands.Enqueue($"volumeStep:{direction}");
     public void History(int direction)=>Commands.Enqueue($"history:{direction}");
+    public bool SupportsTyping=>true;
+    public void TypeText(string text)=>Commands.Enqueue("text:"+text);
+    public void PressKey(int id,int repeat)=>Commands.Enqueue($"key:{id}x{repeat}");
+    public readonly FakeClipboard Clip=new();
+    public IPhoneClipboard Clipboard=>Clip;
     public void Zoom(int direction)=>Commands.Enqueue($"zoom:{direction}");
     public void DragStart(int x,int y){Commands.Enqueue($"dragStart:{x},{y}");Held=true;}
     public void MidiPort(int id){selected=id;Commands.Enqueue($"midiPort:{id}");}

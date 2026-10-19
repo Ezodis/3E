@@ -220,6 +220,44 @@ public sealed class NativeTrackpadInput : ITrackpadInput, IDisposable {
         ushort key = next ? (ushort)0xB0 : (ushort)0xB1;
         return SendInput(2, new[] { KeyEvent(key), KeyEvent(key, true) }, Marshal.SizeOf<Input>()) == 2;
     }
+    // Phone keyboard. Text is sent as Unicode keystrokes (accents, emoji and
+    // dictation work in any app that accepts Unicode input); Enter and Tab use
+    // their real keys. Marked like the shortcuts so PowerToys leaves them alone.
+    private readonly WindowsPhoneClipboard clipboard = new();
+    public IPhoneClipboard Clipboard => clipboard;
+    public bool SupportsTyping => true;
+    private static Input UnicodeEvent(char c, bool up) => new() { Type=1,Data=new InputData { Keyboard=new Keyboard { Scan=c,Extra=(UIntPtr)ShortcutMarker,Flags=4u | (up?2u:0u) } } };
+    public void TypeText(string text) {
+        if (string.IsNullOrEmpty(text)) return;
+        Release(); AppsEnd();
+        var inputs = new System.Collections.Generic.List<Input>(text.Length * 2);
+        for (int i = 0; i < text.Length; i++) {
+            char c = text[i];
+            if (c == '\r') { if (i + 1 < text.Length && text[i + 1] == '\n') continue; c = '\n'; }
+            if (c == '\n') { inputs.Add(KeyEvent(0x0D)); inputs.Add(KeyEvent(0x0D, true)); }
+            else if (c == '\t') { inputs.Add(KeyEvent(0x09)); inputs.Add(KeyEvent(0x09, true)); }
+            else if (c >= 0x20 && c != 0x7F) { inputs.Add(UnicodeEvent(c, false)); inputs.Add(UnicodeEvent(c, true)); }
+        }
+        if (inputs.Count > 0) SendInput((uint)inputs.Count, inputs.ToArray(), Marshal.SizeOf<Input>());
+    }
+    // Ids match PhoneClipboard.KeyCount / Web/clip.js. Extended keys need flag 1.
+    private static readonly (ushort Key, bool Extended, bool Ctrl)[] phoneKeys = {
+        (0x08,false,false), (0x0D,false,false), (0x09,false,false), (0x1B,false,false), // Backspace, Enter, Tab, Esc
+        (0x25,true,false), (0x26,true,false), (0x27,true,false), (0x28,true,false),     // Left, Up, Right, Down
+        (0x2E,true,false), (0x24,true,false), (0x23,true,false), (0x08,false,true),     // Delete, Home, End, Ctrl+Backspace
+    };
+    private static Input PhoneKey(ushort key, bool extended, bool up) => new() { Type=1,Data=new InputData { Keyboard=new Keyboard { Key=key,Extra=(UIntPtr)ShortcutMarker,Flags=(up?2u:0u) | (extended?1u:0u) } } };
+    public void PressKey(int id, int repeat) {
+        if ((uint)id >= (uint)phoneKeys.Length) return;
+        Release(); AppsEnd();
+        var (key, extended, ctrl) = phoneKeys[id];
+        var inputs = new System.Collections.Generic.List<Input>();
+        if (ctrl) inputs.Add(KeyEvent(0x11));
+        for (int i = 0; i < Math.Clamp(repeat, 1, 64); i++) { inputs.Add(PhoneKey(key, extended, false)); inputs.Add(PhoneKey(key, extended, true)); }
+        if (ctrl) inputs.Add(KeyEvent(0x11, true));
+        // A rejected injection must never leave Ctrl held.
+        if (SendInput((uint)inputs.Count, inputs.ToArray(), Marshal.SizeOf<Input>()) != inputs.Count && ctrl) ReleaseKeys(0x11);
+    }
     public void Media(int action) => media?.Invoke(action);
     public void Volume(int level) => volume?.Invoke(level);
     // The real Windows volume keys: same 2% steps and on-screen volume flyout as the keyboard.

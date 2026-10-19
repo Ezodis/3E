@@ -23,13 +23,58 @@ async function wake(page){await page.evaluate(()=>{Object.defineProperty(documen
    const [commandsBox,appsBox,mediaBox]=[await dockBox('#commands'),await dockBox('#apps'),await dockBox('#media')];
    assert.ok(Math.abs(appsBox.x+appsBox.width/2-195)<=1,'Apps is centred in the dock');
    assert.ok(commandsBox.x<=16&&mediaBox.x+mediaBox.width>=374,'Shortcuts sit in the left corner and Media on the right');
-   await p.locator('#commands').tap();assert.equal(await p.locator('#commandsPane button').count(),18);
-   await p.locator('#commandsPane button[aria-label^="Copy"]').tap();await p.waitForTimeout(250);
+   await p.locator('#commands').tap();assert.equal(await p.locator('#commandsPane button[data-shortcut]').count(),18);
+   assert.equal(await p.locator('#commandsPane button[data-tool]:visible').count(),3,'Keyboard, Paste to and Copy from appear for a host that supports them');
+   await p.locator('#commandsPane button[aria-label^="Copy ("]').tap();await p.waitForTimeout(250);
    assert.ok(commands.some(c=>c.type==='shortcut'&&c.id===0),'Copy sends its fixed shortcut id');assert.equal(await p.locator('#commandsPane').isVisible(),false);
    {const c=await p.locator('#commands').boundingBox();await p.mouse.move(c.x+c.width/2,c.y+c.height/2);await p.mouse.down();
     const target=await p.locator('#commandsPane button[aria-label^="Area shot"]').boundingBox();
     await p.mouse.move(target.x+target.width/2,target.y+target.height/2,{steps:6});await p.mouse.up();await p.waitForTimeout(250);
     assert.ok(commands.some(c=>c.type==='shortcut'&&c.id===14),'press ⌘, slide to ⇧⌘4 and release sends it');assert.equal(await p.locator('#commandsPane').isVisible(),false);}
+   {// Phone keyboard: typing, autocorrect-style replacement, key bar and Done.
+    await p.locator('#commands').tap();await p.locator('#commandsPane button[data-tool="keyboard"]').tap();
+    assert.equal(await p.evaluate(()=>document.activeElement.id),'typeSink','Keyboard focuses the typing field (opens the phone keyboard)');
+    assert.equal(await p.locator('#keyBar').isVisible(),true);
+    const typed=()=>commands.filter(c=>c.type==='text').map(c=>c.text).join('');const start=commands.length;
+    await p.keyboard.type('Hi é😀');await p.keyboard.press('Backspace');await p.waitForTimeout(150);
+    assert.equal(typed(),'Hi é😀','typed text reaches the computer');assert.ok(commands.slice(start).some(c=>c.type==='key'&&c.id===0),'Backspace is replayed');
+    await p.evaluate(()=>{const s=document.getElementById('typeSink');s.value='teh ';s.setSelectionRange(4,4);s.dispatchEvent(new Event('input'));s.value='the ';s.setSelectionRange(4,4);s.dispatchEvent(new Event('input'));});
+    await p.waitForTimeout(150);
+    assert.deepEqual(commands.slice(-3).map(c=>c.type==='text'?'text:'+c.text:'key:'+c.id+'x'+c.n),['text:teh ','key:0x3','text:he '],'an autocorrect replacement becomes backspaces and the corrected letters');
+    await p.screenshot({path:path.join(out,'keyboard-'+name+'.png')});
+    for(const id of ['4','3']){await p.locator(`#keyBar button[data-key="${id}"]`).dispatchEvent('pointerdown');await p.locator(`#keyBar button[data-key="${id}"]`).dispatchEvent('pointerup');}
+    await p.waitForTimeout(100);assert.ok(commands.some(c=>c.type==='key'&&c.id===4)&&commands.some(c=>c.type==='key'&&c.id===3),'key bar ← and Esc');
+    assert.equal(await p.evaluate(()=>document.activeElement.id),'typeSink','the phone keyboard stays open while using the key bar');
+    await p.locator('#keyBar .done').dispatchEvent('pointerdown');await p.waitForTimeout(100);
+    assert.equal(await p.locator('#keyBar').isVisible(),false,'Done closes the keyboard');}
+   {// Paste to: text, formatting, a photo and a PDF arrive and Ctrl/⌘+V follows.
+    await p.locator('#commands').tap();await p.locator('#commandsPane button[data-tool="sendClip"]').tap();
+    assert.equal(await p.locator('#clipSheet').isVisible(),true);
+    await p.evaluate(async()=>{
+     const c=document.createElement('canvas');c.width=64;c.height=48;const g=c.getContext('2d');g.fillStyle='#e33';g.fillRect(0,0,64,48);
+     const jpeg=await new Promise(r=>c.toBlob(r,'image/jpeg',.9)),dt=new DataTransfer();
+     dt.setData('text/plain','Meeting notes');dt.setData('text/html','<p>Meeting <b>notes</b></p>');
+     dt.items.add(new File([jpeg],'IMG_0001.jpg',{type:'image/jpeg'}));dt.items.add(new File(['%PDF-1.7 x'],'Invoice März.pdf',{type:'application/pdf'}));
+     document.querySelector('#clipSheet .clip-zone').dispatchEvent(new ClipboardEvent('paste',{clipboardData:dt,bubbles:true,cancelable:true}));});
+    await p.waitForSelector('#clipActions:not([hidden])');await p.screenshot({path:path.join(out,'clipboard-send-'+name+'.png'),fullPage:true});
+    const before=commands.length;await p.locator('#clipActions button.primary').click();
+    let sentClip=[];for(let i=0;i<40&&!sentClip.length;i++){await p.waitForTimeout(100);try{sentClip=JSON.parse(fs.readFileSync(process.argv[2]+'.clip','utf8')||'[]');}catch{}}
+    assert.deepEqual(sentClip.map(c=>c.kind),['text','html','image','file','file'],'text, HTML, the picture and both files reach the computer clipboard');
+    assert.ok(sentClip[2].head.startsWith('89504E47')&&sentClip[4].name==='Invoice März.pdf','the photo arrives as PNG and files keep their names');
+    await p.waitForTimeout(200);assert.ok(commands.slice(before).some(c=>c.type==='shortcut'&&c.id===1),'then paste is pressed on the computer');}
+   {// Copy from: formatted text (sanitized), text, picture and a file download.
+    await p.waitForTimeout(1000);await p.locator('#commands').tap();await p.locator('#commandsPane button[data-tool="getClip"]').tap();
+    await p.waitForSelector('#clipSheet .clip-image img');
+    const rich=p.locator('#clipSheet .clip-rich');
+    assert.equal((await rich.innerText()).trim(),'Hello from the computer');assert.equal(await rich.locator('script,style').count(),0,'copied scripts and styles are stripped');
+    assert.equal(await p.evaluate(()=>window.bad),undefined,'copied HTML never runs');
+    assert.equal(await p.locator('#clipSheet .clip-text').inputValue(),'Hello from the computer');
+    await p.waitForFunction(()=>document.querySelector('#clipSheet .clip-image img').naturalWidth===40);
+    await p.screenshot({path:path.join(out,'clipboard-get-'+name+'.png'),fullPage:true});
+    const [download]=await Promise.all([p.waitForEvent('download'),p.locator('#clipSheet .clip-list button').click()]);
+    assert.equal(download.suggestedFilename(),'Quarterly report.pdf');
+    assert.equal(fs.readFileSync(await download.path(),'utf8'),'%PDF-1.4 preview','the copied file downloads to the phone');
+    await p.locator('#clipClose').click();}
    assert.deepEqual(await p.locator('#apps').evaluate(el=>({background:getComputedStyle(el).backgroundColor,border:getComputedStyle(el).borderTopWidth})),{background:'rgba(0, 0, 0, 0)',border:'0px'},'Apps artwork has no enclosing button bezel');
    await drag(p,p.locator('#apps'),70);await drag(p,p.locator('#apps'),-70);
    assert.deepEqual(commands.filter(c=>c.type==='navigate').map(c=>c.direction),[1,-1],'fast swipes issue one deliberate step each');
@@ -124,7 +169,7 @@ async function wake(page){await page.evaluate(()=>{Object.defineProperty(documen
    await w.screenshot({path:path.join(out,'studio-watch-'+name+'.png')});
    assert.ok(posts.filter(p=>p.type==='commands').flatMap(p=>p.commands).some(c=>c.type==='navigateEnd'));
    await w.goto('about:blank');assert.deepEqual(errors,[]);
-   console.log('PASS '+name+': Apps hold/swipe/release, Media tap/swipe/hold, linear/circular knobs, MIDI notes/CC/jogs, eight-channel mixer, wake/reconnect and watch HTTP layout.');
+   console.log('PASS '+name+': keyboard typing and key bar, clipboard send/receive, Apps hold/swipe/release, Media tap/swipe/hold, linear/circular knobs, MIDI notes/CC/jogs, eight-channel mixer, wake/reconnect and watch HTTP layout.');
   }finally{await browser.close();}
  }
 })().catch(e=>{console.error(e);process.exitCode=1;});

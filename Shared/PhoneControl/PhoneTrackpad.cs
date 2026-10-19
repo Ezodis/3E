@@ -68,6 +68,9 @@ public sealed class PhoneTrackpad : IDisposable {
         public string HttpController;
         public long HttpLastSeen, HttpSequence, HttpRateStart;
         public int HttpCount;
+        // Last computer clipboard snapshot the phone read; only its picture and
+        // files can be downloaded, never an arbitrary path.
+        public ClipSnapshot Clip;
         public Session(IPAddress address, int port, string token, string alias) {
             Address = address; Origin = $"http://{address}:{port}"; Token = token;
             AliasOrigin = string.IsNullOrEmpty(alias) ? null : $"http://{alias}:{port}";
@@ -244,6 +247,9 @@ public sealed class PhoneTrackpad : IDisposable {
             if (request.Url.AbsolutePath == "/control" && request.HttpMethod == "POST") {
                 await HttpControlAsync(owner, context); return;
             }
+            if (request.HttpMethod == "POST" && request.Url.AbsolutePath.StartsWith("/clipboard/", StringComparison.Ordinal)) {
+                await ClipboardAsync(owner, context); return;
+            }
             if (request.HttpMethod != "GET") { context.Response.StatusCode = 403; context.Response.Close(); return; }
             if (request.Url.AbsolutePath == "/ws" && request.IsWebSocketRequest) {
                 if (!owner.IsOrigin(request.Headers["Origin"]) || request.Url.Query.Length != 0) {
@@ -265,18 +271,18 @@ public sealed class PhoneTrackpad : IDisposable {
             if (pairing && !CanShowPairing(request.RemoteEndPoint.Address, owner.Address)) {
                 context.Response.StatusCode = 403; context.Response.Close(); return;
             }
-            var resource = request.Url.AbsolutePath switch { "/" => "PhoneTrackpad.html", "/pad.js" => "PhoneTrackpad.js", "/surface.js" => "surface.js", "/dock.js" => "dock.js", "/surface.css" => "surface.css", "/host.js" => "host.js", "/pair" => "pair", "/icon.png" => "icon.png", _ => null };
+            var resource = request.Url.AbsolutePath switch { "/" => "PhoneTrackpad.html", "/pad.js" => "PhoneTrackpad.js", "/surface.js" => "surface.js", "/dock.js" => "dock.js", "/clip.js" => "clip.js", "/surface.css" => "surface.css", "/host.js" => "host.js", "/pair" => "pair", "/icon.png" => "icon.png", _ => null };
             if (resource == null) { context.Response.StatusCode = 404; context.Response.Close(); return; }
             var response = context.Response;
             response.ContentType = resource.EndsWith(".png") ? "image/png" : resource.EndsWith(".js") ? "text/javascript; charset=utf-8" : resource.EndsWith(".css") ? "text/css; charset=utf-8" : "text/html; charset=utf-8";
             response.Headers["Cache-Control"] = "no-store";
             response.Headers["Referrer-Policy"] = "no-referrer";
             response.Headers["X-Content-Type-Options"] = "nosniff";
-            response.Headers["Content-Security-Policy"] = "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src " + string.Join(" ", new[] { owner.Origin, owner.AliasOrigin }.Where(o => o != null).SelectMany(o => new[] { o, o.Replace("http:", "ws:") })) + "; frame-ancestors 'none'; base-uri 'none'; form-action 'none'";
+            response.Headers["Content-Security-Policy"] = "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src " + string.Join(" ", new[] { owner.Origin, owner.AliasOrigin }.Where(o => o != null).SelectMany(o => new[] { o, o.Replace("http:", "ws:") })) + "; frame-ancestors 'none'; base-uri 'none'; form-action 'none'";
             using var stream = pairing
                 ? new MemoryStream(Encoding.UTF8.GetBytes(PairingPage(owner.Origin + "/#" + owner.Token)))
                 : resource == "PhoneTrackpad.html" ? new MemoryStream(Encoding.UTF8.GetBytes(BrandedPage(input.Platform)))
-                : resource == "host.js" ? new MemoryStream(Encoding.UTF8.GetBytes("window.ThreeEHost="+JsonSerializer.Serialize(new { platform=input.Platform, http=false, alias=owner.AliasOrigin == null ? null : new Uri(owner.AliasOrigin).Authority })+";"))
+                : resource == "host.js" ? new MemoryStream(Encoding.UTF8.GetBytes("window.ThreeEHost="+JsonSerializer.Serialize(new { platform=input.Platform, http=false, keyboard=input.SupportsTyping, clipboard=input.Clipboard != null, alias=owner.AliasOrigin == null ? null : new Uri(owner.AliasOrigin).Authority })+";"))
                 : typeof(PhoneTrackpad).Assembly.GetManifestResourceStream("ThreeE.PhoneControl.Web." + resource);
             response.ContentLength64 = stream.Length;
             await stream.CopyToAsync(response.OutputStream, owner.Cancel.Token);
@@ -381,6 +387,99 @@ public sealed class PhoneTrackpad : IDisposable {
         return reader.ReadToEnd()
             .Replace("<title>3£ Phone Bar</title>", "<title>" + title + "</title>\n<meta name=\"apple-mobile-web-app-title\" content=\"" + title + "\">")
             .Replace("<meta property=\"og:title\" content=\"3£ Phone Bar\">", "<meta property=\"og:title\" content=\"" + title + "\">");
+    }
+
+    // Clipboard transfer uses authenticated same-origin POSTs: photos and PDFs
+    // are far larger than the 1 KB control messages. Only the connected
+    // controller may use it, and downloads are limited to the snapshot it read.
+    private async Task ClipboardAsync(Session owner, HttpListenerContext context) {
+        var request = context.Request;
+        var response = context.Response;
+        response.Headers["Cache-Control"] = "no-store";
+        response.Headers["X-Content-Type-Options"] = "nosniff";
+        async Task Reply(int code, object body) {
+            var bytes = Encoding.UTF8.GetBytes(JsonSerializer.Serialize(body));
+            response.StatusCode = code; response.ContentType = "application/json"; response.ContentLength64 = bytes.Length;
+            await response.OutputStream.WriteAsync(bytes, owner.Cancel.Token); response.Close();
+        }
+        try {
+            var supplied = Encoding.UTF8.GetBytes(request.Headers["X-Trackpad-Token"] ?? "");
+            if (!owner.IsOrigin(request.Headers["Origin"]) || request.Url.Query.Length != 0) { await Reply(403, new { error = "origin" }); return; }
+            if (!CryptographicOperations.FixedTimeEquals(supplied, Encoding.UTF8.GetBytes(owner.Token))) { await Reply(401, new { error = "pairing" }); return; }
+            bool idle;
+            lock (gate) idle = session != owner || owner.Controller == null && owner.HttpController == null;
+            if (idle) { await Reply(409, new { error = "Connect the trackpad first." }); return; }
+            var clipboard = input.Clipboard;
+            if (clipboard == null) { await Reply(501, new { error = "This computer does not support clipboard transfer." }); return; }
+            using var timeout = CancellationTokenSource.CreateLinkedTokenSource(owner.Cancel.Token);
+            timeout.CancelAfter(TimeSpan.FromMinutes(5));
+            switch (request.Url.AbsolutePath) {
+                case "/clipboard/write": {
+                    long total = request.ContentLength64;
+                    if (total < 0 || total > PhoneClipboard.MaxUpload) { await Reply(413, new { error = "Too large — 200 MB maximum." }); return; }
+                    using var manifest = JsonDocument.Parse(Convert.FromBase64String(request.Headers["X-Clip-Manifest"] ?? ""), new JsonDocumentOptions { MaxDepth = 4 });
+                    var entries = manifest.RootElement;
+                    if (entries.ValueKind != JsonValueKind.Array || entries.GetArrayLength() == 0 || entries.GetArrayLength() > 64) throw new InvalidDataException();
+                    var parts = new System.Collections.Generic.List<ClipPart>();
+                    long sum = 0;
+                    foreach (var entry in entries.EnumerateArray()) {
+                        string kind = entry.GetProperty("kind").GetString();
+                        if (kind is not ("text" or "html" or "image" or "file")) throw new InvalidDataException();
+                        long size = entry.GetProperty("size").GetInt64();
+                        if (size < 0 || size > PhoneClipboard.MaxUpload) throw new InvalidDataException();
+                        sum += size;
+                        string name = entry.TryGetProperty("name", out var n) && n.ValueKind == JsonValueKind.String ? n.GetString() : "";
+                        if (name.Length > 255) name = name[..255];
+                        parts.Add(new ClipPart { Kind = kind, Name = name, Data = new byte[size] });
+                    }
+                    if (sum != total) throw new InvalidDataException();
+                    foreach (var part in parts) await request.InputStream.ReadExactlyAsync(part.Data, timeout.Token);
+                    await Task.Run(() => clipboard.Write(parts), timeout.Token);
+                    lock (gate) { if (session == owner) status = "Phone clipboard sent to this computer"; }
+                    await Reply(200, new { ok = true });
+                    return;
+                }
+                case "/clipboard/read": {
+                    var snap = await Task.Run(clipboard.Read, timeout.Token) ?? new ClipSnapshot();
+                    if (snap.Png != null && (snap.Width <= 0 || snap.Height <= 0)) (snap.Width, snap.Height) = PhoneClipboard.PngSize(snap.Png);
+                    lock (gate) owner.Clip = snap;
+                    var files = snap.Files.Select(path => {
+                        bool folder = Directory.Exists(path);
+                        long size = !folder && File.Exists(path) ? new FileInfo(path).Length : -1;
+                        return new { name = Path.GetFileName(path.TrimEnd('\\', '/')), size, folder };
+                    }).ToArray();
+                    await Reply(200, new {
+                        ok = true, text = string.IsNullOrEmpty(snap.Text) ? null : snap.Text, html = string.IsNullOrWhiteSpace(snap.Html) ? null : snap.Html,
+                        image = snap.Png == null ? null : new { width = snap.Width, height = snap.Height, size = snap.Png.Length },
+                        files
+                    });
+                    return;
+                }
+                case "/clipboard/item": {
+                    var buffer = new byte[256]; int count = 0, read;
+                    while ((read = await request.InputStream.ReadAsync(buffer.AsMemory(count), timeout.Token)) > 0) { count += read; if (count >= buffer.Length) throw new InvalidDataException(); }
+                    using var body = JsonDocument.Parse(buffer.AsMemory(0, count));
+                    int index = body.RootElement.GetProperty("index").GetInt32();
+                    ClipSnapshot snap; lock (gate) snap = owner.Clip;
+                    if (snap == null) { await Reply(404, new { error = "Read the clipboard again." }); return; }
+                    if (index == -1) {
+                        if (snap.Png == null) { await Reply(404, new { error = "No picture." }); return; }
+                        response.ContentType = "image/png"; response.ContentLength64 = snap.Png.Length;
+                        await response.OutputStream.WriteAsync(snap.Png, timeout.Token); response.Close(); return;
+                    }
+                    if (index < 0 || index >= snap.Files.Count || !File.Exists(snap.Files[index])) { await Reply(404, new { error = "That file is no longer available." }); return; }
+                    using var file = new FileStream(snap.Files[index], FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+                    if (file.Length > PhoneClipboard.MaxDownload) { await Reply(413, new { error = "Too large — 512 MB maximum." }); return; }
+                    response.ContentType = "application/octet-stream"; response.ContentLength64 = file.Length;
+                    await file.CopyToAsync(response.OutputStream, timeout.Token); response.Close(); return;
+                }
+                default: await Reply(404, new { error = "Unknown clipboard request." }); return;
+            }
+        } catch (Exception ex) when (ex is InvalidDataException or JsonException or FormatException or System.Collections.Generic.KeyNotFoundException or InvalidOperationException) {
+            try { await Reply(400, new { error = "Invalid clipboard request." }); } catch { try { response.Abort(); } catch { } }
+        } catch (Exception ex) {
+            try { await Reply(500, new { error = ex is IOException or TimeoutException ? ex.Message : "The computer could not complete the clipboard transfer." }); } catch { try { response.Abort(); } catch { } }
+        }
     }
 
     private static string PairingPage(string link) {
@@ -512,6 +611,14 @@ input{width:100%;padding:13px;border:1px solid #415260;border-radius:10px;backgr
             case "volumeStep": sink.VolumeStep(Range("direction",-1,1)); break;
             case "history": sink.History(Range("direction",-1,1)); break;
             case "zoom": sink.Zoom(Range("direction",-1,1)); break;
+            case "text": {
+                // Phone keyboard text (short chunks; the page splits longer input).
+                if (!command.TryGetProperty("text", out var text) || text.ValueKind != JsonValueKind.String) throw new InvalidDataException("Invalid text.");
+                var value = text.GetString();
+                if (value.Length == 0 || value.Length > 256) throw new InvalidDataException("Invalid text.");
+                sink.TypeText(value); break;
+            }
+            case "key": sink.PressKey(Range("id",0,PhoneClipboard.KeyCount-1), command.TryGetProperty("n", out _) ? Range("n",1,64) : 1); break;
             case "midiPort": sink.MidiPort(Range("id",-1,1024)); break;
             case "midiCC": sink.Midi(false,Range("channel",0,15),Range("number",0,119),Range("value",0,127)); break;
             case "midiNote": sink.Midi(true,Range("channel",0,15),Range("number",0,127),Range("value",0,127)); break;
@@ -552,6 +659,13 @@ public interface ITrackpadInput {
     void Midi(bool note,int channel,int number,int value) { }
     void MidiPanic() { }
     void Shortcut(int id) { }
+    // Phone keyboard: Unicode text and the fixed PhoneClipboard key palette.
+    // Hosts that implement them return true so the phone shows the Keyboard button.
+    bool SupportsTyping => false;
+    void TypeText(string text) { }
+    void PressKey(int id, int repeat) { }
+    // The system clipboard, or null when this host cannot transfer it.
+    IPhoneClipboard Clipboard => null;
     // Press for a tap-then-drag. Hosts must not let it complete a double-click.
     void DragStart(int x, int y) => Down();
 }

@@ -1,3 +1,11 @@
+3£Windows 1.0.44 adds a phone keyboard and two-way clipboard to Phone Bar (Windows and Mac).
+
+- **Keyboard:** the new bottom row of the ⌘ palette opens your phone keyboard and types on the computer, including autocorrect, dictation, accents and emoji. A key bar adds Esc, Tab, arrows, ⌫, Delete and Enter.
+- **Paste to PC / Mac:** send text, formatted text, photos, PDFs or other files you copied on the phone; they are pasted where the cursor is.
+- **Copy from PC / Mac:** bring the computer's clipboard to the phone: copy its text or formatting, save its picture, or download copied files.
+
+Includes everything from 1.0.43:
+
 3£Windows 1.0.43 installs updates right away.
 
 - **No more waiting for idle:** a new release is installed as soon as the 10-minute check finds it, even while you are using the PC. The suite restarts for a few seconds and keeps all settings.

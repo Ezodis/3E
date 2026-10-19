@@ -66,8 +66,11 @@ now+=1500;win.ThreeEDock.describe({volume:{available:false,level:null}});
 sent.length=0;event('media','pointerdown');event('media','pointermove',100,70);event('media','pointermove',100,40);event('media','pointerup',100,40);
 check(elements.get('outputVolume').disabled&&!commands('volume').length,'Unsupported audio outputs never receive fabricated volume values');
 const pane=elements.get('commandsPane'),commandsButton=elements.get('commands');
-check(pane.children.length===18,'Shortcut palette has 18 fixed buttons');
-check(pane.children.slice(-3).map(b=>+b.dataset.shortcut).join()==='0,1,2','Copy, Paste and Cut sit in the row nearest the thumb');
+const shortcutButtons=pane.children.filter(b=>b.dataset.shortcut!==undefined),toolButtons=pane.children.filter(b=>b.dataset.tool);
+check(shortcutButtons.length===18,'Shortcut palette has 18 fixed buttons');
+check(shortcutButtons.slice(-3).map(b=>+b.dataset.shortcut).join()==='0,1,2','Copy, Paste and Cut sit in the last shortcut row');
+check(pane.children.slice(-3).map(b=>b.dataset.tool).join()==='keyboard,sendClip,getClip','Keyboard, Paste to and Copy from form the bottom row');
+check(toolButtons.every(b=>b.hidden),'Hosts that do not report keyboard/clipboard support hide the new row');
 const copy=pane.children.find(b=>b['aria-label'].startsWith('Copy'));copy.closest=()=>copy;
 sent.length=0;event('commands','pointerdown',20,800);check(!pane.hidden,'Pressing ⌘ shows the shortcuts at once');
 pointTarget=copy;event('commands','pointermove',60,700);event('commands','pointerup',60,700);
@@ -102,4 +105,19 @@ check(![...timers.values()].some(t=>t.ms===500),'A slow start past 6 px cannot t
 check(commands('media').length===1&&commands('media')[0].action===2&&!commands('studio').length,'A slow-starting swipe still skips');
 sent.length=0;event('media','pointerdown',200,100,7);event('media','pointerdown',200,100,8);event('media','pointermove',240,100,8);event('media','pointerup',240,100,8);
 check(commands('media').length===1&&commands('media')[0].action===2,'A touch the browser never finished does not swallow the next swipe');
+{
+ // A host that supports the keyboard and clipboard (here: a Mac) shows the bottom row.
+ const opened=[],els=new Map();for(const id of ['apps','media','volumePane','outputVolume','volumeValue','commands','commandsPane','volumeTrack','volumeUp','volumeDown'])els.set(id,element());
+ let target=null;
+ const host={ThreeEHost:{platform:'macos',keyboard:true,clipboard:true},ThreeEClip:{keyboard:()=>opened.push('keyboard'),sendClip:()=>opened.push('sendClip'),getClip:()=>opened.push('getClip')},
+  ThreeEControl:{connected:()=>true,send(){},release(){}},ThreeESurface:{openStudio(){}}};
+ vm.runInNewContext(fs.readFileSync(path.join(__dirname,'../../Shared/PhoneControl/Web/dock.js'),'utf8'),{window:host,document:{addEventListener(){},getElementById:id=>els.get(id),createElement:element,elementFromPoint:()=>target},performance:{now:()=>now},setTimeout(){return 0;},clearTimeout(){}});
+ const row=els.get('commandsPane').children.filter(b=>b.dataset.tool);
+ check(row.every(b=>!b.hidden)&&row.map(b=>b['aria-label']).join('|')==='Type on the Mac with the phone keyboard|Send the phone clipboard to the Mac and paste it|Copy the Mac clipboard to this phone','Mac hosts show the keyboard and clipboard buttons, named for the Mac');
+ now+=1000;row[0].handlers.click();check(opened.join()==='keyboard'&&els.get('commandsPane').hidden,'Tapping Keyboard closes the palette and opens the phone keyboard');
+ const hit=row[2];hit.closest=()=>hit;target=hit;
+ const press=(type,x,y)=>els.get('commands').handlers[type]({pointerId:3,clientX:x,clientY:y,button:0,preventDefault(){}});
+ press('pointerdown',20,800);press('pointermove',200,700);press('pointerup',200,700);
+ check(opened.join()==='keyboard,getClip','Sliding from ⌘ onto Copy from and releasing opens it');
+}
 console.log('PASS: '+checks+' dock gesture and icon-state checks.');
