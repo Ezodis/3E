@@ -171,7 +171,12 @@ static void StripCheckRelease(BOOL foreground) {
             stripUpdateChecking=NO;
             NSString *installed=StripInstalledVersion();
             BOOL newer=release && [release[@"version"] compare:installed options:NSNumericSearch]==NSOrderedDescending;
-            if(newer && StripAutomaticUpdatesEnabled()) { StripDownloadAndInstall(release,foreground); return; }
+            // Background installs restart 3£, so wait until the Mac has been idle
+            // for 90 seconds; the next 10-minute check tries again.
+            if(newer && StripAutomaticUpdatesEnabled()) {
+                if(!foreground && CGEventSourceSecondsSinceLastEventType(kCGEventSourceStateCombinedSessionState,(CGEventType)~0u)<90) return;
+                StripDownloadAndInstall(release,foreground); return;
+            }
             if(!foreground) return;
             NSAlert *alert=[NSAlert new];
             alert.messageText=newer ? @"A 3£ update is available" : (release ? @"3£ is up to date" : @"Could not check for updates");
@@ -203,7 +208,7 @@ static BOOL StripInstallUpdateHooks(void) {
     method_setImplementation(foreground,(IMP)StripUpdateForeground);
     StripAutomaticUpdatesEnabled();
     if(!stripUpdateTimer) {
-        stripUpdateTimer=[NSTimer scheduledTimerWithTimeInterval:6*60*60 repeats:YES block:^(NSTimer *timer){ StripCheckRelease(NO); }];
+        stripUpdateTimer=[NSTimer scheduledTimerWithTimeInterval:10*60 repeats:YES block:^(NSTimer *timer){ StripCheckRelease(NO); }];
         dispatch_after(dispatch_time(DISPATCH_TIME_NOW,20*NSEC_PER_SEC),dispatch_get_main_queue(),^{ StripCheckRelease(NO); });
     }
     return YES;
