@@ -26,6 +26,7 @@ public sealed class MacInput : ITrackpadInput, IDisposable {
     private readonly Action<int> media;
     private readonly Action<string,int> systemAction;
     private bool held;
+    private bool appSwitcherHeld;
     private object controls;
     private long lastClick; private Point lastClickPoint; private int clicks;
     public MacInput(Action<int> media,Action<string,int> systemAction) { this.media=media;this.systemAction=systemAction;midi.Select(0); }
@@ -53,15 +54,27 @@ public sealed class MacInput : ITrackpadInput, IDisposable {
     // meaning as Windows, instead of opening Exposé a second time.
     public void ShowDesktop(){ReleaseAll();systemAction("showDesktop",0);}
     public void Desktop(int direction){if(direction!=0){ReleaseAll();systemAction("space",direction);}}
-    // On macOS the Apps dock represents Spaces. Never fall back to Command-Tab:
-    // that changes applications instead of moving to the previous/next desktop.
-    public void AppsBegin()=>Desktop(1);
-    public void Navigate(int direction)=>Desktop(direction);
-    public void NavigateEnd(){}
-    public void AppsStep(int direction)=>Desktop(direction);
-    public void AppsEnd(){}
+    // An unheld horizontal swipe changes Spaces when there is more than one;
+    // otherwise it cycles apps. Holding Apps always opens the app switcher.
+    public void Navigate(int direction){if(direction==0)return;if(ThreeEHasMultipleSpaces()!=0)Desktop(direction);else CycleApp(direction);}
+    public void AppsBegin(){if(appSwitcherHeld)return;Release();Key(55,true,Cmd);appSwitcherHeld=true;CycleAppKey(1);}
+    public void NavigateEnd()=>AppsEnd();
+    public void AppsStep(int direction){if(direction!=0){if(!appSwitcherHeld)AppsBegin();CycleAppKey(direction);}}
+    public void AppsEnd(){if(!appSwitcherHeld)return;try{Key(55,false,0);}finally{appSwitcherHeld=false;}}
     // Same palette ids as Web/dock.js and PhoneTrackpad.ShortcutCount; real Command keys on macOS.
     private const ulong Cmd=1UL<<20,Shift=1UL<<17;
+    private void CycleAppKey(int direction){
+        ulong flags=Cmd|(direction<0?Shift:0);bool reverse=direction<0;
+        if(reverse)Key(56,true,flags);
+        try{Key(48,true,flags);Key(48,false,flags);}
+        finally{if(reverse)Key(56,false,Cmd);}
+    }
+    private void CycleApp(int direction){
+        if(direction==0)return;
+        Key(55,true,Cmd);
+        try{CycleAppKey(direction);}
+        finally{Key(55,false,0);}
+    }
     private static readonly (ushort key,ulong flags)[] shortcuts={
         (8,Cmd),(9,Cmd),(7,Cmd),(0,Cmd),(6,Cmd),(6,Cmd|Shift),(17,Cmd),(17,Cmd|Shift),(13,Cmd),(45,Cmd),(3,Cmd),(1,Cmd),
         (15,Cmd),(20,Cmd|Shift),(21,Cmd|Shift),(23,Cmd|Shift),(49,Cmd),(12,Cmd)};
@@ -78,7 +91,7 @@ public sealed class MacInput : ITrackpadInput, IDisposable {
     public void Midi(bool note,int channel,int number,int value)=>midi.Send(note,channel,number,value);
     public void MidiPanic()=>midi.Panic();
     public void VolumeStep(int direction){if(direction==0)return;int level=ThreeEGetOutputVolume();if(level>=0)volume.Set(Math.Clamp(level+direction*6,0,100));}
-    public void ReleaseAll(){volume.CancelPending();try{Release();}finally{midi.Panic();}}
+    public void ReleaseAll(){volume.CancelPending();try{Release();AppsEnd();}finally{midi.Panic();}}
     public void Dispose(){try{ReleaseAll();}finally{volume.Dispose();midi.Dispose();}}
 }
 
