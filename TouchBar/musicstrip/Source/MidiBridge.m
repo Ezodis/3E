@@ -663,7 +663,9 @@ static BOOL downloadsEnabled;
 static NSMenuItem *MenuSeparator(void) { return [NSMenuItem separatorItem]; }
 static void CleanMenu(NSMenu *menu) {
     NSStatusItem *statusItem=[(id)NSApp.delegate valueForKey:@"theItem"];
-    if([NSProcessInfo.processInfo.environment[@"STRIP_COMBINED_TOUCHTAB"] isEqual:@"1"] && menu==statusItem.menu) {
+    // Touch Tab is shown whenever the installed bundle is the combined edition
+    // (Info.plist), never based on environment variables or build flags.
+    if(StripInstalledIncludesTouchTab() && menu==statusItem.menu) {
         NSMenuItem *toggle=nil;
         for(NSMenuItem *item in menu.itemArray) if([item.identifier isEqual:@"local.musicstrip.touchTabToggle"]) toggle=item;
         if(!toggle) {

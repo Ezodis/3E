@@ -411,6 +411,9 @@ static OSStatus SendSpotifyCommand(pid_t pid, int command) {
     // use a silent check and let the swipe path report the actual state.
     AccessibilityTrusted(NO);
 #ifdef STRIP_COMBINED_TOUCHTAB
+    // Remember that this Mac runs the combined edition, so a wrongly swapped
+    // Touch Bar-only install can find its way back (see ReleaseUpdates.h).
+    [NSUserDefaults.standardUserDefaults setObject:@"combined" forKey:@"ThreeEEdition"];
     [self refreshTouchTab];
     __weak AppDelegate *gestureSelf=self;
     self.gestureTimer=[NSTimer scheduledTimerWithTimeInterval:1 repeats:YES block:^(NSTimer *timer) { [gestureSelf refreshTouchTab]; }];

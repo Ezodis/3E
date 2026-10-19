@@ -26,15 +26,77 @@ static BOOL StripAutomaticUpdatesEnabled(void) {
 static void StripSetAutomaticUpdates(BOOL enabled) {
     [NSUserDefaults.standardUserDefaults setBool:enabled forKey:StripAutomaticUpdatesKey];
 }
-static BOOL StripCombinedRelease(void) {
-#ifdef STRIP_COMBINED_TOUCHTAB
-    // The edition is fixed when the main executable is built. The runtime
-    // environment flag is passed only to helper processes, so consulting it
-    // here made the combined app look like Touch Bar-only to its updater.
-    return YES;
-#else
+// ---- Edition: one source of truth ------------------------------------------
+// The installed 3E.app's Info.plist key ThreeEIncludesTouchTab (stamped by
+// build.sh, asserted by release.py) is the ONLY authority for the edition.
+//
+// History: this header is compiled into three binaries — the main app (built
+// with -DSTRIP_COMBINED_TOUCHTAB in the combined edition), the MIDI helper's
+// bridge dylib (always built WITHOUT that flag), and tests. The updater and
+// the menu run inside the bridge, so a compile-time or environment check made
+// the combined app's bridge think it was Touch Bar-only: it downloaded
+// TouchBar.zip and replaced the combined app, and Touch Tab vanished from the
+// menu. Reading the bundle's own Info.plist gives the same answer in every
+// process, whatever flags it was built with.
+static NSString *const StripAppBundleID=@"local.musicstrip.app";
+static NSString *const StripEditionMarkerKey=@"ThreeEEdition";
+// Walk up from any process's bundle (main app, MIDI helper, Apps helper) to
+// the enclosing 3E.app. Reads Info.plist directly; NSBundle caches.
+static NSString *StripAppBundlePathFrom(NSString *path) {
+    while(path.length>1) {
+        NSDictionary *info=[NSDictionary dictionaryWithContentsOfFile:[path stringByAppendingPathComponent:@"Contents/Info.plist"]];
+        if([info[@"CFBundleIdentifier"] isEqual:StripAppBundleID]) return path;
+        path=path.stringByDeletingLastPathComponent;
+    }
+    return nil;
+}
+static NSString *StripAppBundlePath(void) { return StripAppBundlePathFrom(NSBundle.mainBundle.bundlePath); }
+static BOOL StripBundleIncludesTouchTab(NSString *appPath) {
+    if(!appPath) return NO;
+    NSDictionary *info=[NSDictionary dictionaryWithContentsOfFile:[appPath stringByAppendingPathComponent:@"Contents/Info.plist"]];
+    return [info[@"ThreeEIncludesTouchTab"] boolValue];
+}
+static BOOL StripInstalledIncludesTouchTab(void) {
+#if defined(STRIP_TEST_EDITION_COMBINED)
+    return YES; // Tests run outside an app bundle.
+#elif defined(STRIP_TEST_EDITION_TOUCHBAR)
     return NO;
 #endif
+    return StripBundleIncludesTouchTab(StripAppBundlePath());
+}
+// Read the main app's defaults from any process (helper or main) without
+// relying on which NSUserDefaults domain this process owns.
+static id StripAppPreference(NSString *key) {
+    return CFBridgingRelease(CFPreferencesCopyAppValue((__bridge CFStringRef)key,(__bridge CFStringRef)StripAppBundleID));
+}
+// One-time recovery for installs the old bug already swapped to the Touch
+// Bar-only edition: if this Mac has run the combined edition before, and the
+// standalone TouchTab app is not installed (never run two gesture engines),
+// the updater moves back to the combined edition.
+static BOOL StripPreviouslyCombined(void) {
+#if defined(STRIP_TEST_EDITION_COMBINED) || defined(STRIP_TEST_EDITION_TOUCHBAR)
+    return NO; // Tests never read this Mac's real preferences.
+#endif
+    if([NSWorkspace.sharedWorkspace URLForApplicationWithBundleIdentifier:@"ris58h.Touch-Tab"]) return NO;
+    return [StripAppPreference(StripEditionMarkerKey) isEqual:@"combined"] ||
+        StripAppPreference(@"TouchTabGesturesEnabled")!=nil ||
+        StripAppPreference(@"WindowAccessRuntimeState")!=nil;
+}
+static BOOL StripResolveCombined(BOOL bundleIncludesTouchTab,BOOL previouslyCombined) {
+    return bundleIncludesTouchTab || previouslyCombined;
+}
+static BOOL StripCombinedRelease(void) {
+    static BOOL combined; static dispatch_once_t once;
+    dispatch_once(&once,^{ combined=StripResolveCombined(StripInstalledIncludesTouchTab(),StripPreviouslyCombined()); });
+    return combined;
+}
+// Install when the release is newer, or when it is the same version but the
+// installed bundle is the wrong edition (recovery from the old swap).
+static BOOL StripShouldInstall(NSString *releaseVersion,NSString *installedVersion,BOOL installedIncludesTouchTab,BOOL wantCombined) {
+    if(!releaseVersion) return NO;
+    NSComparisonResult order=[releaseVersion compare:installedVersion options:NSNumericSearch];
+    if(order==NSOrderedDescending) return YES;
+    return order==NSOrderedSame && installedIncludesTouchTab!=wantCombined;
 }
 static NSDictionary *StripValidRelease(id value) {
     if(![value isKindOfClass:NSDictionary.class] || [value[@"draft"] boolValue] || [value[@"prerelease"] boolValue]) return nil;
@@ -170,7 +232,7 @@ static void StripCheckRelease(BOOL foreground) {
         dispatch_async(dispatch_get_main_queue(),^{
             stripUpdateChecking=NO;
             NSString *installed=StripInstalledVersion();
-            BOOL newer=release && [release[@"version"] compare:installed options:NSNumericSearch]==NSOrderedDescending;
+            BOOL newer=release && StripShouldInstall(release[@"version"],installed,StripInstalledIncludesTouchTab(),StripCombinedRelease());
             // New releases install as soon as they are found, even while the Mac is in use.
             if(newer && StripAutomaticUpdatesEnabled()) {
                 if(!foreground) StripNotify(@"Updating 3£",[NSString stringWithFormat:@"Installing version %@; 3£ will reopen in a few seconds.",release[@"version"]]);
@@ -225,7 +287,7 @@ static void StripRestart(void) {
         if(!error && data && [(NSHTTPURLResponse *)response statusCode]==200)
             release=StripNewestRelease([NSJSONSerialization JSONObjectWithData:data options:0 error:nil]);
         dispatch_async(dispatch_get_main_queue(),^{
-            if(release && [release[@"version"] compare:StripInstalledVersion() options:NSNumericSearch]==NSOrderedDescending) {
+            if(release && StripShouldInstall(release[@"version"],StripInstalledVersion(),StripInstalledIncludesTouchTab(),StripCombinedRelease())) {
                 StripNotify(@"Updating 3£",[NSString stringWithFormat:@"Installing version %@; 3£ will reopen when it is ready.",release[@"version"]]);
                 StripDownloadAndInstall(release,YES);
                 return;
