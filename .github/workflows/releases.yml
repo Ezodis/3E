@@ -59,6 +59,7 @@ jobs:
         run: |
           python3 -m unittest discover -s TouchBar/threee/Tests -p test_record.py
           python3 -m unittest discover -s scripts -p test_release.py
+          python3 Shared/PhoneControl/Ableton/test_mapping.py
           xcrun clang -fobjc-arc -framework AppKit -framework CoreImage -framework ApplicationServices TouchBar/threee/Tests/phone_recovery.m -o /tmp/phone-recovery-test
           /tmp/phone-recovery-test
           if [[ "${{ matrix.edition }}" != touchtab ]]; then python3 Shared/PhoneControl/MacHost/test_recovery.py TouchBar/build/threee/3E.app; fi

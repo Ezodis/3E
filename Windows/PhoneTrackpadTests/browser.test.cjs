@@ -259,6 +259,8 @@ if(require.main===module)(async()=>{
    await p.screenshot({path:path.join(out,'studio-mixer-'+name+'.png')});
    await p.locator('#midiTab').click();assert.equal(await p.locator('#midiView').isVisible(),true);
    assert.equal(await p.locator('#piano .piano-key').count(),25);
+   assert.equal(await p.locator('#midiChannel').inputValue(),'0','piano is separate from mixer channel 16');
+   assert.equal(await p.locator('#midiChannel option[value="15"]').evaluate(option=>option.disabled),true,'piano cannot trigger control-surface notes');
    assert.equal(await p.locator('#crossfader').isVisible(),false);
    await returnTarget(p);
    const key=p.locator('#piano [data-note="60"]'),kb=await key.boundingBox(),next=await p.locator('#piano [data-note="62"]').boundingBox();
@@ -266,6 +268,7 @@ if(require.main===module)(async()=>{
    await p.mouse.move(kb.x+kb.width/2,kb.y+kb.height*.85);await p.mouse.down();
    await p.mouse.move(next.x+next.width/2,next.y+next.height*.85);await p.mouse.up();await p.waitForTimeout(100);
    assert.deepEqual(commands.slice(noteStart).filter(c=>c.type==='midiNote').map(c=>[c.number,c.value]),[[60,100],[60,0],[62,100],[62,0]],'piano glissando releases the previous key and final key');
+   assert.ok(commands.slice(noteStart).filter(c=>c.type==='midiNote').every(c=>c.channel===0),'piano notes reach the instrument channel');
    noteStart=commands.length;await key.focus();await p.keyboard.press('Space');await p.waitForTimeout(100);
    assert.deepEqual(commands.slice(noteStart).filter(c=>c.type==='midiNote').map(c=>[c.number,c.value]),[[60,100],[60,0]],'keyboard activation plays exactly once');
    await p.mouse.move(kb.x+kb.width/2,kb.y+kb.height*.85);await p.mouse.down();

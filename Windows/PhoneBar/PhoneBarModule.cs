@@ -35,6 +35,7 @@ public sealed class PhoneBarModule : IDisposable {
 
     private void EnsureReceiver() {
         ObjectDisposedException.ThrowIf(disposed, this);
+        if(receiver==null)AbletonIntegration.Install();
         media ??= new();
         volume ??= new(WindowsOutputVolume.Read,WindowsOutputVolume.Write);
         receiver ??= new(PhoneTrackpad.GetLocalAddress,

@@ -29,6 +29,15 @@ Check(edgeMotion.Move(98,50,-1,0,160)==(98d,50d),"Mac leaves the screen edge imm
 Check(ThreeE.PhoneHost.MacPointerMotion.Clamp(-50,50,screens)==(-50d,50d),"Mac supports displays with negative coordinates");
 Check(ThreeE.PhoneHost.MacPointerMotion.Clamp(-11,10,screens)==(-11d,20d),"Mac clamps display gaps to the nearest screen");
 Check(ThreeE.PhoneHost.MacPointerMotion.Clamp(10,10,Array.Empty<ThreeE.PhoneHost.MacPointerMotion.Display>())==(10d,10d),"Mac tolerates a temporarily unavailable display list");
+var scriptLibrary=Path.Combine(Path.GetTempPath(),"threee-ableton-test-"+Guid.NewGuid().ToString("N"));
+try {
+    AbletonIntegration.InstallTo(scriptLibrary);
+    var scriptPath=Path.Combine(scriptLibrary,"Remote Scripts","_3E_Phone_Bar");
+    Check(File.ReadAllText(Path.Combine(scriptPath,"phone_bar.py")).Contains("class PhoneBar"),"Ableton Phone Bar script is embedded and installed");
+    var entry=Path.Combine(scriptPath,"__init__.py");var stamp=File.GetLastWriteTimeUtc(entry);
+    File.WriteAllText(Path.Combine(scriptPath,"custom.txt"),"preserve");AbletonIntegration.InstallTo(scriptLibrary);
+    Check(File.GetLastWriteTimeUtc(entry)==stamp&&File.ReadAllText(Path.Combine(scriptPath,"custom.txt"))=="preserve","Ableton script installation is idempotent and preserves unrelated files");
+} finally {if(Directory.Exists(scriptLibrary))Directory.Delete(scriptLibrary,true);}
 int FreePort() { var socket = new TcpListener(IPAddress.Loopback, 0); socket.Start(); int port = ((IPEndPoint)socket.LocalEndpoint).Port; socket.Stop(); return port; }
 async Task Until(Func<bool> condition) { for (int i=0;i<100;i++) { if (condition()) return; await Task.Delay(50); } throw new Exception("Timed out waiting for state."); }
 async Task<ClientWebSocket> Connect(string url, string token = null, string origin = null, string controller = null, bool takeover = false) {

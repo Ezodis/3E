@@ -46,6 +46,7 @@ bool recoveryTest=args.Contains("--recovery-self-test");
 bool test=args.Contains("--self-test")||recoveryTest;
 // Read once per host lifetime: temporary file unavailability after sleep must
 // never silently replace a valid bookmark with a random pairing secret.
+if(!test)AbletonIntegration.Install();
 string pairingToken=test?new string('A',48):StoredPairingToken();
 ITrackpadInput input=test?new NullInput():new MacInput(action=>Report(new {media=action}),(action,direction)=>Report(new {systemAction=action,direction}));
 using var receiver=new PhoneTrackpad(()=>test ? IPAddress.Loopback : PhoneTrackpad.GetLocalAddress(),input,new NoFirewall(),test?17834:17833) { AliasHost=test ? null : PhoneNameResponder.Name, TokenProvider=()=>pairingToken, FollowNetwork=!test||recoveryTest };

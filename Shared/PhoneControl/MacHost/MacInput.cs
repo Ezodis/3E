@@ -210,9 +210,9 @@ public sealed class MacMidi : MidiOutput {
     [DllImport(MIDI)] private static extern IntPtr MIDIPacketListAdd(IntPtr list,nuint size,IntPtr packet,ulong time,nuint length,byte[] data);
     [DllImport(MIDI)] private static extern int MIDIReceived(uint source,IntPtr list);
     private uint client,source;
-    public override MidiPort[] Ports()=>new[]{new MidiPort(0,"3E Phone")};
+    public override MidiPort[] Ports()=>new[]{new MidiPort(0,"3E Phone Bar")};
     protected override void Open(int id) {
-        var name=CFStringCreateWithCString(IntPtr.Zero,"3E Phone",0x08000100);
+        var name=CFStringCreateWithCString(IntPtr.Zero,"3E Phone Bar",0x08000100);
         try{if(MIDIClientCreate(name,IntPtr.Zero,IntPtr.Zero,out client)!=0 || MIDISourceCreate(client,name,out source)!=0){Close();throw new InvalidOperationException("Cannot create the 3E Phone MIDI source");}}
         finally{CFRelease(name);}
     }
