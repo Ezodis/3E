@@ -1,6 +1,6 @@
 // Adapted from Pock/PockV2's MIT-licensed DockFolderController,
 // DockFolderRepository and DockFolderItemView. See Resources/Pock-LICENSE.txt.
-// The original compiled interface is retained; routing uses MusicStrip's panel.
+// The original compiled interface is retained; routing uses ThreeE's panel.
 @interface PockFolderItemView : NSScrubberItemView
 @property NSImageView *iconView;
 @property NSTextField *nameLabel;

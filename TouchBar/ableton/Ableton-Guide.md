@@ -7,7 +7,7 @@ Saved October 11, 2026 from the working Controlla setup. This kit preserves the 
 1. Extract the entire `TouchBar-Ableton.zip` together into your Music folder or Ableton User Library. Keep its subfolders together.
 2. Use Ableton Live 12.2.5 or newer with Max for Live, and the 3£ Touch Bar app from this repository. A physical Touch Bar is needed for the hardware controls.
 3. Open `TouchBar Rhythm Starter.als`. This is a copy containing AI DRUMS and SONG RHYTHMS, plus the existing return effects. The original song project is untouched. Both MIDI tracks are saved disarmed.
-4. In Live's MIDI settings, enable **Track** input for **3£ Keyboard**. The separate **3£ Surface** port is for the `_3E` control-surface script, not these drum buttons. The script already lives at `TouchBar/musicstrip/Ableton/_3E` in this repository. Its transport integration is optional for the tap/hold device.
+4. In Live's MIDI settings, enable **Track** input for **3£ Keyboard**. The separate **3£ Surface** port is for the `_3E` control-surface script, not these drum buttons. The script already lives at `TouchBar/threee/Ableton/_3E` in this repository. Its transport integration is optional for the tap/hold device.
 5. AI DRUMS should have Monitor **In**. SONG RHYTHMS should have Monitor **Off** and MIDI To **AI DRUMS / Track In**. These routings are preserved in the starter.
 6. Use your first Touch Bar preset: piano plus four momentary CC pads. If restoring on another Mac, follow Configuration below.
 7. Start playback. Tap a pad for a hit, or hold it for about 300 ms to let that part of the rhythm through. Release stops new hits; a sample already playing may finish its tail.

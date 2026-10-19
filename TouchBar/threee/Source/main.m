@@ -644,7 +644,7 @@ static OSStatus SendSpotifyCommand(pid_t pid, int command) {
 #ifdef STRIP_COMBINED_TOUCHTAB
     environment[@"STRIP_COMBINED_TOUCHTAB"]=@"1";
 #endif
-    environment[@"DYLD_INSERT_LIBRARIES"] = [helper stringByAppendingPathComponent:@"Contents/Frameworks/MusicStripMidiBridge.dylib"];
+    environment[@"DYLD_INSERT_LIBRARIES"] = [helper stringByAppendingPathComponent:@"Contents/Frameworks/ThreeEMidiBridge.dylib"];
     self.midiTask.environment = environment;
     self.midiTask.standardInput = self.midiInput;
     self.midiTask.standardOutput = self.midiOutput;

@@ -2,23 +2,23 @@
 # Additive update of the canonical app: never replaces its working main/engine.
 set -eu
 cd "${0:A:h:h}"
-zsh musicstrip/rename-installed.sh
+zsh threee/rename-installed.sh
 strip_app='/Applications/3E.app'
 strip_helper="$strip_app/Contents/Helpers/MIDI Touchbar.app"
 strip_framework="$strip_helper/Contents/Frameworks/SnoizeMIDI.framework"
 strip_identity="${STRIP_SIGNING_IDENTITY:-EDA0E1C9F0DD46BE3437CD2733933E31D3A8623D}"
-if pgrep -x MusicStrip >/dev/null || pgrep -x 'MIDI Touchbar' >/dev/null; then
+if pgrep -x ThreeE >/dev/null || pgrep -x 'MIDI Touchbar' >/dev/null; then
   printf 'Quit Strip3 from its menu first. No files changed.\n' >&2
   exit 1
 fi
-[[ -f "$strip_app/Contents/MacOS/MusicStrip" ]]
+[[ -f "$strip_app/Contents/MacOS/ThreeE" ]]
 strip_combined=$(/usr/libexec/PlistBuddy -c 'Print ThreeEIncludesTouchTab' "$strip_app/Contents/Info.plist" 2>/dev/null || true)
 strip_installed_version=$(/usr/libexec/PlistBuddy -c 'Print CFBundleShortVersionString' "$strip_app/Contents/Info.plist")
 strip_version="${STRIP_RELEASE_VERSION:-$strip_installed_version}"
 [[ "$strip_version" =~ '^[0-9]+\.[0-9]+\.[0-9]+$' ]] || { printf 'Invalid release version\n' >&2; exit 1; }
-zsh musicstrip/Source/build.sh --bridge-only
-cp build/musicstrip/MusicStripMidiBridge.dylib "$strip_helper/Contents/Frameworks/MusicStripMidiBridge.dylib"
-cp musicstrip/Source/Info.plist "$strip_app/Contents/Info.plist"
+zsh threee/Source/build.sh --bridge-only
+cp build/threee/ThreeEMidiBridge.dylib "$strip_helper/Contents/Frameworks/ThreeEMidiBridge.dylib"
+cp threee/Source/Info.plist "$strip_app/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c "Set CFBundleShortVersionString $strip_version" "$strip_app/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c "Set CFBundleVersion $strip_version" "$strip_app/Contents/Info.plist"
 if [[ "$strip_combined" == true ]]; then
@@ -29,10 +29,10 @@ fi
 [[ -e "$strip_framework/SnoizeMIDI" ]] || ln -s Versions/Current/SnoizeMIDI "$strip_framework/SnoizeMIDI"
 [[ -e "$strip_framework/Resources" ]] || ln -s Versions/Current/Resources "$strip_framework/Resources"
 mkdir -p "$strip_app/Contents/Resources/Ableton/_3E"
-cp 'musicstrip/Ableton/_3E/'*.py "$strip_app/Contents/Resources/Ableton/_3E/"
+cp 'threee/Ableton/_3E/'*.py "$strip_app/Contents/Resources/Ableton/_3E/"
 strip_user_script="${STRIP_ABLETON_SCRIPT_DIR:-$HOME/Music/Ableton/User Library/Remote Scripts/_3E}"
 mkdir -p "$strip_user_script"
-cp 'musicstrip/Ableton/_3E/'*.py "$strip_user_script/"
+cp 'threee/Ableton/_3E/'*.py "$strip_user_script/"
 codesign --force --sign - "$strip_framework"
 codesign --force --sign - "$strip_helper"
 codesign --force --sign "$strip_identity" --timestamp=none "$strip_app"

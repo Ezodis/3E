@@ -74,12 +74,12 @@ def stamp_windows(values):
         handle.write(json.dumps({"version": values["windows"]}, separators=(",", ":")))
 
 def stamp(values):
-    path = ROOT / "TouchBar/musicstrip/Source/Info.plist"
+    path = ROOT / "TouchBar/threee/Source/Info.plist"
     info = plistlib.loads(path.read_bytes())
     info["CFBundleShortVersionString"] = values["touchbar"]
     info["CFBundleVersion"] = values["touchbar"]
     path.write_bytes(plistlib.dumps(info, sort_keys=False))
-    path = ROOT / "TouchBar/musicstrip/Source/ReleaseUpdates.h"
+    path = ROOT / "TouchBar/threee/Source/ReleaseUpdates.h"
     source, count = re.subn(r'StripReleaseVersion=@"[0-9.]+"',
                            f'StripReleaseVersion=@"{values["touchbar"]}"', path.read_text())
     assert count == 1, "Missing release-version declaration"
@@ -115,7 +115,7 @@ def package(edition, values):
     destination = ROOT / "build/releases"
     destination.mkdir(parents=True, exist_ok=True)
     app = ROOT / ("build/TouchTab/Build/Products/Release/Touch-Tab.app"
-                  if edition == "touchtab" else "TouchBar/build/musicstrip/3E.app")
+                  if edition == "touchtab" else "TouchBar/build/threee/3E.app")
     info = plistlib.loads((app / "Contents/Info.plist").read_bytes())
     assert info["CFBundleShortVersionString"] == values[edition], "Stale app version"
     assert bool(info.get("ThreeEIncludesTouchTab")) == (edition == "combined"), "Wrong edition"

@@ -370,7 +370,7 @@ static NSArray<NSString *> *AbletonRecordOptionNames(void) { return @[@"Arrangem
     if (!LoadInterfaces()) {
         NSAlert *alert = [NSAlert new];
         alert.messageText = @"This macOS version does not expose the required Touch Bar interfaces.";
-        alert.informativeText = @"MusicStrip could not add its music button.";
+        alert.informativeText = @"ThreeE could not add its music button.";
         [alert runModal];
         [NSApp terminate:nil];
         return;
@@ -412,7 +412,7 @@ static NSArray<NSString *> *AbletonRecordOptionNames(void) { return @[@"Arrangem
     [NSTouchBarItem addSystemTrayItem:self.item];
     [NSTouchBarItem addSystemTrayItem:self.recordItem];
     SetPresence(ItemID, YES);
-    NSLog(@"Registered adjacent Music and Apps Control Strip buttons. Open MusicStrip again to quit.");
+    NSLog(@"Registered adjacent Music and Apps Control Strip buttons. Open ThreeE again to quit.");
     if (RegisterNotifications) RegisterNotifications(dispatch_get_main_queue());
     self.notificationToken = [NSNotificationCenter.defaultCenter addObserverForName:nil object:nil queue:NSOperationQueue.mainQueue usingBlock:^(NSNotification *note) {
         if ([note.name hasPrefix:@"kMR"] && ![note.name containsString:@"Volume"]) {
@@ -458,7 +458,7 @@ static NSArray<NSString *> *AbletonRecordOptionNames(void) { return @[@"Arrangem
             self.midiPermissionPrompted = YES;
             AXIsProcessTrustedWithOptions((__bridge CFDictionaryRef)@{(__bridge NSString *)kAXTrustedCheckOptionPrompt: @YES});
         }
-        NSLog(@"MIDI hold needs Accessibility permission for MusicStrip; no keyboard shortcut was sent.");
+        NSLog(@"MIDI hold needs Accessibility permission for ThreeE; no keyboard shortcut was sent.");
         return;
     }
     if ([NSRunningApplication runningApplicationsWithBundleIdentifier:MidiBundle].count) {

@@ -36,7 +36,7 @@
 			<key>requirement</key>
 			<string>cdhash H"778e1ac7f971b1d4cc3f5878be309572cfb8d4fe" or cdhash H"8743c921347c0b93223172b547b4e97e05a91e6d"</string>
 		</dict>
-		<key>Helpers/MusicStrip Apps.app</key>
+		<key>Helpers/ThreeE Apps.app</key>
 		<dict>
 			<key>cdhash</key>
 			<data>

@@ -107,13 +107,13 @@ static void RaiseSystemEventsWindow(NSRunningApplication *app, NSUInteger index)
 }
 
 typedef int CGSConnectionID;
-typedef int (*MusicStripCGSMainConnectionID)(void);
-typedef int (*MusicStripCGSOrderWindow)(CGSConnectionID, CGWindowID, int, CGWindowID);
+typedef int (*ThreeECGSMainConnectionID)(void);
+typedef int (*ThreeECGSOrderWindow)(CGSConnectionID, CGWindowID, int, CGWindowID);
 static void RaiseWindowServerWindow(CGWindowID windowID) {
     if(!windowID) return;
     void *skyLight=dlopen("/System/Library/PrivateFrameworks/SkyLight.framework/SkyLight",RTLD_LAZY);
-    MusicStripCGSMainConnectionID mainConnection=(MusicStripCGSMainConnectionID)dlsym(skyLight,"CGSMainConnectionID");
-    MusicStripCGSOrderWindow orderWindow=(MusicStripCGSOrderWindow)dlsym(skyLight,"CGSOrderWindow");
+    ThreeECGSMainConnectionID mainConnection=(ThreeECGSMainConnectionID)dlsym(skyLight,"CGSMainConnectionID");
+    ThreeECGSOrderWindow orderWindow=(ThreeECGSOrderWindow)dlsym(skyLight,"CGSOrderWindow");
     if(mainConnection && orderWindow) orderWindow(mainConnection(),windowID,1,0);
     if(skyLight) dlclose(skyLight);
 }

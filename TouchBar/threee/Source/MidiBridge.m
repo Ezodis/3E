@@ -43,7 +43,7 @@ static void BrandMIDIPorts(void) {
 // Loaded only into our bundled personal copy of MIDI Touchbar. Its original
 // MIDI engine, storyboard, menus, defaults domain and DAW integrations remain.
 static void Report(const char *message) { write(STDOUT_FILENO, message, strlen(message)); }
-static void QuitMusicStripParent(void) {
+static void QuitThreeEParent(void) {
     for(NSRunningApplication *app in [NSRunningApplication runningApplicationsWithBundleIdentifier:@"local.musicstrip.app"]) {
         if(app.processIdentifier==NSProcessInfo.processInfo.processIdentifier || app.terminated) continue;
         [app terminate];
@@ -476,7 +476,7 @@ static NSView *pianoConfigurationGroup;
     BOOL octaves=self.octaveControl;
     dispatch_async(dispatch_get_main_queue(), ^{
         if(octaves) ChangeOctaves(direction);
-        else Cycle(NSApp.delegate,NSSelectorFromString(direction<0 ? @"musicStripCycleBack:" : @"musicStripCycle:"),nil);
+        else Cycle(NSApp.delegate,NSSelectorFromString(direction<0 ? @"threeECycleBack:" : @"threeECycle:"),nil);
     });
 }
 - (void)moveAt:(NSPoint)point {
@@ -525,7 +525,7 @@ static NSView *pianoConfigurationGroup;
 - (void)mouseDown:(NSEvent *)event { [self beginAt:[self convertPoint:event.locationInWindow fromView:nil] identity:nil]; }
 - (void)mouseDragged:(NSEvent *)event { [self moveAt:[self convertPoint:event.locationInWindow fromView:nil]]; }
 - (void)mouseUp:(NSEvent *)event { [self finishAt:[self convertPoint:event.locationInWindow fromView:nil]]; }
-- (BOOL)accessibilityPerformPress { if(self.octaveControl) CycleOctaves(); else Cycle(NSApp.delegate,NSSelectorFromString(@"musicStripCycle:"),nil); return YES; }
+- (BOOL)accessibilityPerformPress { if(self.octaveControl) CycleOctaves(); else Cycle(NSApp.delegate,NSSelectorFromString(@"threeECycle:"),nil); return YES; }
 - (void)dealloc { [self.holdTimer invalidate]; }
 @end
 static void UpdateNavigationColor(void);
@@ -646,7 +646,7 @@ static NSView *JoinCloseNavigation(NSButton *close,MidiNavigationButton *navigat
 }
 static void RemoveCycleKey(id delegate) {
     id center = [delegate valueForKey:@"keyCenter"];
-    for (NSString *action in @[@"musicStripCycle:", @"musicStripCycleBack:"]) {
+    for (NSString *action in @[@"threeECycle:", @"threeECycleBack:"]) {
         ((void (*)(id, SEL, id, SEL))objc_msgSend)(center, NSSelectorFromString(@"unregisterHotKeysWithTarget:action:"), delegate, NSSelectorFromString(action));
     }
 }
@@ -670,7 +670,7 @@ static void CleanMenu(NSMenu *menu) {
         for(NSMenuItem *item in menu.itemArray) if([item.identifier isEqual:@"local.musicstrip.touchTabToggle"]) toggle=item;
         if(!toggle) {
             toggle=[[NSMenuItem alloc] initWithTitle:@"Touch Tab" action:NSSelectorFromString(@"toggleTouchTab:") keyEquivalent:@""];
-            toggle.target=NSClassFromString(@"MusicStripMidiBridge"); toggle.identifier=@"local.musicstrip.touchTabToggle";
+            toggle.target=NSClassFromString(@"ThreeEMidiBridge"); toggle.identifier=@"local.musicstrip.touchTabToggle";
             [menu insertItem:toggle atIndex:0];
         }
         // Place Touch Tab immediately after Phone Bar in the existing menu.
@@ -689,7 +689,7 @@ static void CleanMenu(NSMenu *menu) {
         NSString *title=item.title.lowercaseString;
         if([title containsString:@"check for update"]) { [menu removeItem:item]; continue; }
         if([title isEqual:@"control surface mode"]) {
-            item.target=NSClassFromString(@"MusicStripMidiBridge");
+            item.target=NSClassFromString(@"ThreeEMidiBridge");
             item.action=NSSelectorFromString(@"toggleSurfaceMode:");
             item.state=recordController.activeMenuBar ? NSControlStateValueOn : NSControlStateValueOff;
         }
@@ -697,7 +697,7 @@ static void CleanMenu(NSMenu *menu) {
            (([title hasPrefix:@"hide "] || [title hasPrefix:@"show "]) &&
             ([title containsString:@"3E"] || [title containsString:@"3£"] || [title containsString:@"midi touchbar"] || [title containsString:@"touch bar midi"]))) {
             item.title=@"Touch Bar Midi";
-            item.target=NSClassFromString(@"MusicStripMidiBridge");
+            item.target=NSClassFromString(@"ThreeEMidiBridge");
             item.action=NSSelectorFromString(@"toggleMidi:");
             item.state=[[(id)NSApp.delegate valueForKey:@"touchbarShown"] boolValue] ? NSControlStateValueOn : NSControlStateValueOff;
         }
@@ -730,22 +730,22 @@ static void CleanMenu(NSMenu *menu) {
             else if([title isEqual:@"quit"])quit=item;
             else [remaining addObject:item];
         }
-        if(!phone)phone=ThreeEPhoneBarMenu(NSClassFromString(@"MusicStripMidiBridge"));
+        if(!phone)phone=ThreeEPhoneBarMenu(NSClassFromString(@"ThreeEMidiBridge"));
         if(!apps) {
             apps=[[NSMenuItem alloc] initWithTitle:@"Touch Bar App" action:NSSelectorFromString(@"toggleApps:") keyEquivalent:@""];
-            apps.identifier=@"local.musicstrip.appsToggle";apps.target=NSClassFromString(@"MusicStripMidiBridge");
+            apps.identifier=@"local.musicstrip.appsToggle";apps.target=NSClassFromString(@"ThreeEMidiBridge");
         }
         if(!downloads) {
             downloads=[[NSMenuItem alloc] initWithTitle:@"Auto-move Downloads to Desktop" action:NSSelectorFromString(@"toggleDownloads:") keyEquivalent:@""];
-            downloads.identifier=@"local.musicstrip.downloads";downloads.target=NSClassFromString(@"MusicStripMidiBridge");
+            downloads.identifier=@"local.musicstrip.downloads";downloads.target=NSClassFromString(@"ThreeEMidiBridge");
         }
         if(!automatic) {
             automatic=[[NSMenuItem alloc] initWithTitle:@"Automatically Install Updates" action:NSSelectorFromString(@"toggleAutomaticUpdates:") keyEquivalent:@""];
-            automatic.identifier=@"local.musicstrip.automaticUpdates";automatic.target=NSClassFromString(@"MusicStripMidiBridge");
+            automatic.identifier=@"local.musicstrip.automaticUpdates";automatic.target=NSClassFromString(@"ThreeEMidiBridge");
         }
         if(!restart) {
             restart=[[NSMenuItem alloc] initWithTitle:@"Restart" action:NSSelectorFromString(@"restartAll:") keyEquivalent:@""];
-            restart.identifier=@"local.musicstrip.restart";restart.target=NSClassFromString(@"MusicStripMidiBridge");
+            restart.identifier=@"local.musicstrip.restart";restart.target=NSClassFromString(@"ThreeEMidiBridge");
             restart.toolTip=@"Restart 3E and check for updates";
         }
         apps.state=appsMenuVisible&&!recordController.activeMenuBar?NSControlStateValueOn:NSControlStateValueOff;
@@ -778,7 +778,7 @@ static NSArray *MenuTitles(NSMenu *menu) {
     return titles;
 }
 
-@interface MusicStripMidiBridge : NSObject
+@interface ThreeEMidiBridge : NSObject
 + (void)closeMidi:(id)sender;
 + (void)toggleTouchTab:(id)sender;
 + (void)toggleSurfaceMode:(id)sender;
@@ -830,7 +830,7 @@ static void Open(id self, SEL sel, NSTouchBar *bar, id identifier) {
     NSTouchBar *outer = [NSTouchBar new];
     NSCustomTouchBarItem *close = [[NSCustomTouchBarItem alloc] initWithIdentifier:CloseID];
     NSImage *image = [NSImage imageWithSystemSymbolName:@"xmark.circle.fill" accessibilityDescription:@"Close MIDI Touchbar"];
-    closeButton = [NSButton buttonWithImage:image target:MusicStripMidiBridge.class action:@selector(closeMidi:)];
+    closeButton = [NSButton buttonWithImage:image target:ThreeEMidiBridge.class action:@selector(closeMidi:)];
     [closeButton setAccessibilityLabel:pianoExpanded ? @"Back to normal piano layout" : @"Close MIDI Touchbar"];
     closeButton.bordered = NO;
     closeButton.imagePosition = NSImageOnly;
@@ -1217,7 +1217,7 @@ static void Cycle(id delegate, SEL selector, id sender) {
     BOOL daw = [[delegate valueForKey:@"controlSurfadeMode"] boolValue];
     NSInteger current = [[delegate valueForKey:@"userTouchbarNumber"] integerValue];
     NSInteger count = (NSInteger)bars.count;
-    NSInteger direction = selector == NSSelectorFromString(@"musicStripCycleBack:") ? -1 : 1;
+    NSInteger direction = selector == NSSelectorFromString(@"threeECycleBack:") ? -1 : 1;
     NSInteger next = daw ? (direction < 0 ? count - 1 : 0) : (current + direction + count) % count;
     [delegate setValue:@NO forKey:@"controlSurfadeMode"];
     // Use the original preset-switch handler so all mappings, settings and
@@ -1459,9 +1459,9 @@ static void TestArrangementLayout(BOOL viaMenu,BOOL fromHidden) {
                 NSCAssert(!controller.activeMenuBar && controller.menuStack.count==0 && recordController==controller,@"Holding Record returns directly to the original MIDI bar even from nested device controls");
                 Report("COMBINED_NATIVE_SURFACE_ARRANGEMENT_DEVICE_AND_RECORD_HOLD_RETURN_PASSED\n");
                 if(viaMenu) {
-                    [MusicStripMidiBridge toggleSurfaceMode:nil];
+                    [ThreeEMidiBridge toggleSurfaceMode:nil];
                     NSCAssert(controller.activeMenuBar,@"Menu can re-open the same combined bar");
-                    [MusicStripMidiBridge toggleSurfaceMode:nil];
+                    [ThreeEMidiBridge toggleSurfaceMode:nil];
                     NSCAssert(!controller.activeMenuBar,@"Selecting the menu again returns to MIDI");
                     Report(fromHidden ? "SURFACE_MENU_FROM_HIDDEN_PASSED\n" : "SURFACE_MENU_FROM_MIDI_PASSED\n");
                 }
@@ -2039,9 +2039,9 @@ static void Command(NSString *command) {
                 ((void (*)(id, SEL, id))objc_msgSend)(delegate, NSSelectorFromString(@"closeTouchbar:"), bar);
             }
         } else if ([command isEqualToString:@"CYCLE"]) {
-            Cycle(delegate, NSSelectorFromString(@"musicStripCycle:"), nil);
+            Cycle(delegate, NSSelectorFromString(@"threeECycle:"), nil);
         } else if ([command isEqualToString:@"CYCLE_BACK"]) {
-            Cycle(delegate, NSSelectorFromString(@"musicStripCycleBack:"), nil);
+            Cycle(delegate, NSSelectorFromString(@"threeECycleBack:"), nil);
         } else if ([command isEqualToString:@"CLOSE_BUTTON"]) {
             [closeButton performClick:nil];
         } else if ([command hasPrefix:@"PIANO_CAPTURE_"]) {
@@ -2145,12 +2145,12 @@ static void Command(NSString *command) {
             midiTerminating=YES;
             // The menu belongs to the bundled MIDI helper, not the parent
             // 3E process. Quit both so no tray/helper instance remains.
-            QuitMusicStripParent();
+            QuitThreeEParent();
             [NSApp terminate:nil];
         }
-    } @catch (NSException *e) { Report("BRIDGE_ERROR\n"); NSLog(@"MusicStrip MIDI bridge: %@", e); }
+    } @catch (NSException *e) { Report("BRIDGE_ERROR\n"); NSLog(@"ThreeE MIDI bridge: %@", e); }
 }
-@implementation MusicStripMidiBridge
+@implementation ThreeEMidiBridge
 + (void)toggleTouchTab:(id)sender { Report("TOUCHTAB_TOGGLE\n"); }
 + (void)toggleApps:(id)sender { Report("APPS_TOGGLE\n"); }
 + (void)openPhone:(id)sender { Report("PHONE_OPEN\n"); }
@@ -2211,7 +2211,7 @@ static void Command(NSString *command) {
             // Native menu Quit terminates this bundled helper directly and
             // does not pass through Command(@"QUIT"). Always shut down the
             // parent 3E process as part of that same user action.
-            QuitMusicStripParent();
+            QuitThreeEParent();
         }];
         [NSNotificationCenter.defaultCenter addObserverForName:NSApplicationDidFinishLaunchingNotification object:nil queue:nil usingBlock:^(NSNotification *note) {
             Class cls = [NSApp.delegate class];
@@ -2235,8 +2235,8 @@ static void Command(NSString *command) {
             Method open = class_getInstanceMethod(cls, NSSelectorFromString(@"openTouchbar:fromIdentifier:"));
             Method close = class_getInstanceMethod(cls, NSSelectorFromString(@"closeTouchbar:"));
             if (!open || !close || ![NSApp.delegate respondsToSelector:NSSelectorFromString(@"showTouchbar:")]) { Report("BRIDGE_ERROR\n"); return; }
-            class_addMethod(cls, NSSelectorFromString(@"musicStripCycle:"), (IMP)Cycle, "v@:@");
-            class_addMethod(cls, NSSelectorFromString(@"musicStripCycleBack:"), (IMP)Cycle, "v@:@");
+            class_addMethod(cls, NSSelectorFromString(@"threeECycle:"), (IMP)Cycle, "v@:@");
+            class_addMethod(cls, NSSelectorFromString(@"threeECycleBack:"), (IMP)Cycle, "v@:@");
             originalPresetHandler=method_setImplementation(class_getInstanceMethod(cls,NSSelectorFromString(@"receivedGlobalKeyFrom:key:")),(IMP)PresetKey);
             originalChangeMode=method_setImplementation(class_getInstanceMethod(cls,NSSelectorFromString(@"changeMode:")),(IMP)ChangeMode);
             pianoHolds=[NSMapTable weakToStrongObjectsMapTable];

@@ -36,7 +36,7 @@ The combined menu places Touch Tab immediately below Phone Bar, then lists Touch
 
 On October 11 the macOS permission log identified the enabled-but-denied cause: the stored approval required an obsolete binary `cdhash`, failing code-requirement validation (`-67050`) against the certificate-signed current app. Toggling the old entry did not replace that requirement. Removing only its Device Control and Data Access entry, adding the exact installed `/Applications/3E.app` through the system chooser, and restarting fixed the actual host: AX trust, event-listening access, event-posting access and the gesture listener all reported true. No TCC database edits or global resets were used. The engine now tests an actual enabled event tap and posting permission rather than treating AX trust alone as gesture readiness; runtime diagnostics include both input capabilities. This does not prove a physical swipe was performed; verify that interactively after permission recovery.
 
-`Source/main.m`, the existing MIDI customization bridge, all seven supporting headers, `Info.plist`, icon generator and resources were recovered from the original iCloud project at `Documents/Codex/2026-10-01/i-l/outputs/MusicStrip/Source`. The 84,361-byte main source matches the restored local iCloud file. This is not the earlier incomplete reconstruction.
+`Source/main.m`, the existing MIDI customization bridge, all seven supporting headers, `Info.plist`, icon generator and resources were recovered from the original iCloud project at `Documents/Codex/2026-10-01/i-l/outputs/ThreeE/Source`. The 84,361-byte main source matches the restored local iCloud file. This is not the earlier incomplete reconstruction.
 
 The bundled original MIDI Touchbar engine (Urban Lienert, bundle ID `ch.uebe.MIDI-Touchbar`) and SnoizeMIDI framework remain binary dependencies in `recovered/`. Their original engine source has not been recovered; do not claim those binaries were compiled from our Objective-C bridge. The `DCisHurt/midiBar` GitHub project is Micro:Bit/Trill hardware firmware, not this Mac engine.
 
@@ -130,25 +130,25 @@ Apply/live reload. The Apply test restores its temporary channel change. Native
 two/three-piano sizing/note regressions also pass. Final physical finger testing
 is still required on the Touch Bar.
 
-The default `zsh musicstrip/Source/build.sh` builds the full Combined base app with TouchBar, TouchTab and Phone Bar. `--combined` remains an alias; use `--touchbar-only` explicitly for the smaller edition. The combined app embeds the shared TouchTab Swift gesture module in its main process, adds a **Touch Tab** menu toggle through the existing MIDI-helper pipe, and preserves the original MIDI engine. On the development Mac, quit 3E and run `zsh musicstrip/install-combined.sh` for an in-place installation. The main executable is rebuilt from the maintained original source with narrowly scoped gesture lifecycle/pipe hooks; the working app-picker helper, piano engine, resources, MIDI mappings and user settings are retained. Root README describes the separate combined/standalone update feeds and permissions.
+The default `zsh threee/Source/build.sh` builds the full Combined base app with TouchBar, TouchTab and Phone Bar. `--combined` remains an alias; use `--touchbar-only` explicitly for the smaller edition. The combined app embeds the shared TouchTab Swift gesture module in its main process, adds a **Touch Tab** menu toggle through the existing MIDI-helper pipe, and preserves the original MIDI engine. On the development Mac, quit 3E and run `zsh threee/install-combined.sh` for an in-place installation. The main executable is rebuilt from the maintained original source with narrowly scoped gesture lifecycle/pipe hooks; the working app-picker helper, piano engine, resources, MIDI mappings and user settings are retained. Root README describes the separate combined/standalone update feeds and permissions.
 
 Requires macOS/Xcode command-line tools. The original engine is already vendored as a bundle dependency; no download from Documents/Downloads is required to build.
 
 ```sh
-zsh musicstrip/Source/build.sh
-zsh musicstrip/Source/build.sh --bridge-only
+zsh threee/Source/build.sh
+zsh threee/Source/build.sh --bridge-only
 ```
 
-Full output goes to ignored `build/musicstrip/3E.app`. This builds and verifies the complete package but does not replace the installed main app. Set `STRIP_SIGNING_IDENTITY` to the existing stable certificate identity on another build machine; changing signing identity may require a new macOS approval.
+Full output goes to ignored `build/threee/3E.app`. This builds and verifies the complete package but does not replace the installed main app. Set `STRIP_SIGNING_IDENTITY` to the existing stable certificate identity on another build machine; changing signing identity may require a new macOS approval.
 
 For the additive Record update, quit the canonical app first, then:
 
 ```sh
-zsh musicstrip/install-record.sh
+zsh threee/install-record.sh
 open '/Applications/3E.app'
 ```
 
-The installer updates only the injected MIDI bridge, required framework links/signatures and packaged Ableton script. It refuses to update while MusicStrip or its MIDI helper is running. It never creates an installed companion app or backup. Override `STRIP_ABLETON_SCRIPT_DIR` if your configured User Library is elsewhere. Restart Live after changing its script, then choose _3E once.
+The installer updates only the injected MIDI bridge, required framework links/signatures and packaged Ableton script. It refuses to update while ThreeE or its MIDI helper is running. It never creates an installed companion app or backup. Override `STRIP_ABLETON_SCRIPT_DIR` if your configured User Library is elsewhere. Restart Live after changing its script, then choose _3E once.
 
 ## Verification
 
@@ -157,14 +157,14 @@ In 3.0.9 the actual `showTouchbar:` preset-switch path is intercepted: it no lon
 Multi-piano presentation is prepared before opening: the flexible spacer is omitted from the initial outer row, equal sizing is applied synchronously without implicit animation, and unchanged width constraints are retained across refreshes. Multi-piano groups use AppKit's compact alert-style grouping. Arrow regions are fixed at 14 points on each side (formerly 18), reclaiming 8 points per piano for keys while preserving arrow taps/holds. Native tests cover two/three-piano row stability and dense arrow hit regions through ten octaves; perceived switching smoothness still requires a physical finger test.
 
 ```sh
-python3 musicstrip/Tests/test_record.py
+python3 threee/Tests/test_record.py
 xcrun clang -fobjc-arc -O0 -Wno-unused-parameter -framework AppKit -framework CoreMIDI \
-  musicstrip/Tests/record_gestures.m -o /tmp/3pounds-record-gestures
+  threee/Tests/record_gestures.m -o /tmp/3pounds-record-gestures
 /tmp/3pounds-record-gestures
 xcrun clang -fobjc-arc -O0 -Wno-unused-parameter -framework AppKit -framework CoreMIDI \
-  musicstrip/Tests/multi_piano.m -o /tmp/3pounds-multi-piano-test
+  threee/Tests/multi_piano.m -o /tmp/3pounds-multi-piano-test
 /tmp/3pounds-multi-piano-test
-'build/musicstrip/3E.app/Contents/MacOS/MusicStrip' --self-test
+'build/threee/3E.app/Contents/MacOS/ThreeE' --self-test
 ```
 
 The gesture tests call the actual direct-touch handlers (including identity, movement, release, hold and cancellation), without launching another tray app or sending Live commands. `Tests/record_live.m` is an explicit opt-in diagnostic that sends actual commands to a connected Live session; do not run it on an active recording or important project. Automated tests are not a substitute for a user's finger test on the physical Touch Bar.

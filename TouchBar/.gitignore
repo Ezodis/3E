@@ -5,10 +5,10 @@ node_modules/
 *.log
 .DS_Store
 coverage/
-legacy-source/Source/MusicStrip
+legacy-source/Source/ThreeE
 midiBar-upstream/
 legacy-build/
 record-companion/build/
-build/musicstrip/
+build/threee/
 __pycache__/
 *.pyc

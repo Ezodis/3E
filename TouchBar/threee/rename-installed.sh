@@ -9,7 +9,7 @@ if [[ ( -e "$threee_old" || -e "$threee_legacy" ) && -e "$threee_new" ]]; then
   exit 1
 fi
 if [[ -e "$threee_old" || -e "$threee_legacy" ]]; then
-  if pgrep -x MusicStrip >/dev/null || pgrep -x 'MIDI Touchbar' >/dev/null; then
+  if pgrep -x ThreeE >/dev/null || pgrep -x 'MIDI Touchbar' >/dev/null; then
     printf 'Quit 3E before renaming. No files changed.\n' >&2; exit 1
   fi
   threee_source="$threee_legacy"

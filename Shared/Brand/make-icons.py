@@ -6,7 +6,7 @@ their bottoms swung down and out so the pair reads as butterfly wings. It is
 black and white only. Run from anywhere: python3 Shared/Brand/make-icons.py
 (needs Pillow). Outputs:
   * Shared/Brand/mark-1024.png, icon-1024.png, 3E.icns
-  * TouchBar/musicstrip/Source/Resources/StripIcon.icns (Mac app icon)
+  * TouchBar/threee/Source/Resources/StripIcon.icns (Mac app icon)
   * Windows/DragEngine/ThreeFingerDragOnWindows/Assets/* (exe icon, tiles, logos)
   * embedded PNGs in TrayIconArtwork.cs (Windows tray), ClicksAccents.cs
     (Clicks tray) and Shared/Brand/ThreeEBrand.h (Mac menu bar)
@@ -71,7 +71,7 @@ def main():
     mark(1024).save(BRAND / "mark-1024.png", optimize=True)
     big = icon(1024); big.save(BRAND / "icon-1024.png", optimize=True)
     big.save(BRAND / "3E.icns", sizes=[(16, 16), (32, 32), (64, 64), (128, 128), (256, 256), (512, 512), (1024, 1024)])
-    shutil.copyfile(BRAND / "3E.icns", ROOT / "TouchBar/musicstrip/Source/Resources/StripIcon.icns")
+    shutil.copyfile(BRAND / "3E.icns", ROOT / "TouchBar/threee/Source/Resources/StripIcon.icns")
 
     assets = ROOT / "Windows/DragEngine/ThreeFingerDragOnWindows/Assets"
     for f in assets.glob("*.png"):

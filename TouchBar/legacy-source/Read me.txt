@@ -1,11 +1,11 @@
-MusicStrip 0.2 — experimental music-only Control Strip helper
+ThreeE 0.2 — experimental music-only Control Strip helper
 
 1. Quit PockV2 from its menu first, so your normal Touch Bar is visible.
-2. Open MusicStrip.app. It adds one music item to the normal Control Strip.
+2. Open ThreeE.app. It adds one music item to the normal Control Strip.
    It is inserted automatically; it does not appear in Apple's Customize
    Control Strip palette and cannot be added by dragging from that screen.
 3. Tap: play/pause. Swipe left: previous track. Swipe right: next track.
-4. Open MusicStrip.app again to quit it and remove its item.
+4. Open ThreeE.app again to quit it and remove its item.
 
 It does not replace the Touch Bar, add volume/brightness controls, install a
 login item, change your keyboard preferences, or modify PockV2. The app must
@@ -29,7 +29,7 @@ that player over the remembered player. Only choose a running application.
 Apple Music and iTunes are excluded. Spotify uses documented Spotify Apple
 Events addressed to its current process ID, so quitting and reopening it
 cannot cause a command to launch a different app. The first Spotify command
-may ask permission for MusicStrip to control Spotify. Other players use
+may ask permission for ThreeE to control Spotify. Other players use
 targeted MediaRemote commands with implicit application launching disabled.
 There is no fallback to a generic media key or to launching any app.
 

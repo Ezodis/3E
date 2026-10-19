@@ -179,7 +179,7 @@
 	</dict>
 	<key>files2</key>
 	<dict>
-		<key>Frameworks/MusicStripMidiBridge.dylib</key>
+		<key>Frameworks/ThreeEMidiBridge.dylib</key>
 		<dict>
 			<key>cdhash</key>
 			<data>

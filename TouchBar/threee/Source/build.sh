@@ -3,7 +3,7 @@ set -eu
 cd "${0:A:h}"
 strip_repo="${PWD:h:h}"
 strip_identity="${STRIP_SIGNING_IDENTITY:-EDA0E1C9F0DD46BE3437CD2733933E31D3A8623D}"
-mkdir -p "$strip_repo/build/musicstrip"
+mkdir -p "$strip_repo/build/threee"
 strip_edition="${1:---combined}"
 case "$strip_edition" in
   --combined|--combined-main-only|--touchbar-only|--bridge-only) ;;
@@ -17,10 +17,10 @@ if [[ "$strip_edition" == --combined || "$strip_edition" == --combined-main-only
     "$strip_repo/../TouchTab/Touch-Tab/AppSwitcher.swift" \
     "$strip_repo/../TouchTab/Touch-Tab/SwipeManager.swift" \
     "$strip_repo/../TouchTab/CombinedModule.swift" \
-    -o "$strip_repo/build/musicstrip/ThreeEGestureEngine-$strip_arch.dylib"
+    -o "$strip_repo/build/threee/ThreeEGestureEngine-$strip_arch.dylib"
   done
-  xcrun lipo -create "$strip_repo/build/musicstrip/ThreeEGestureEngine-arm64.dylib" "$strip_repo/build/musicstrip/ThreeEGestureEngine-x86_64.dylib" -output "$strip_repo/build/musicstrip/ThreeEGestureEngine.dylib"
-  codesign --force --sign - "$strip_repo/build/musicstrip/ThreeEGestureEngine.dylib"
+  xcrun lipo -create "$strip_repo/build/threee/ThreeEGestureEngine-arm64.dylib" "$strip_repo/build/threee/ThreeEGestureEngine-x86_64.dylib" -output "$strip_repo/build/threee/ThreeEGestureEngine.dylib"
+  codesign --force --sign - "$strip_repo/build/threee/ThreeEGestureEngine.dylib"
 fi
 strip_main_flags=()
 strip_minimum=11.0
@@ -28,14 +28,14 @@ if [[ "$strip_combined" == YES ]]; then strip_main_flags=(-DSTRIP_COMBINED_TOUCH
 if [[ "$strip_edition" == --combined-main-only ]]; then
   xcrun clang -arch arm64 -arch x86_64 -fobjc-arc -Wall -Wextra -Wno-unused-parameter -O2 \
     -mmacosx-version-min=12.0 "${strip_main_flags[@]}" -framework AppKit -framework Carbon \
-    -framework ApplicationServices -framework QuartzCore -framework CoreImage main.m -o "$strip_repo/build/musicstrip/MusicStripCombinedMain"
+    -framework ApplicationServices -framework QuartzCore -framework CoreImage main.m -o "$strip_repo/build/threee/ThreeECombinedMain"
   exit 0
 fi
 if [[ "$strip_edition" == --bridge-only ]]; then
   xcrun clang -arch arm64 -arch x86_64 -dynamiclib -fobjc-arc -Wall -Wextra -Wno-unused-parameter -O2 \
     -mmacosx-version-min=11.0 -framework AppKit -framework CoreMIDI MidiBridge.m \
-    -o "$strip_repo/build/musicstrip/MusicStripMidiBridge.dylib"
-  codesign --force --sign - "$strip_repo/build/musicstrip/MusicStripMidiBridge.dylib"
+    -o "$strip_repo/build/threee/ThreeEMidiBridge.dylib"
+  codesign --force --sign - "$strip_repo/build/threee/ThreeEMidiBridge.dylib"
   exit 0
 fi
 strip_stage=$(mktemp -d /tmp/strip3-build.XXXXXX)
@@ -45,19 +45,19 @@ ditto --norsrc --noextattr "$strip_repo/recovered/Strip3£.app" "$strip_app"
 cp Info.plist "$strip_app/Contents/Info.plist"
 if [[ "$strip_combined" == YES ]]; then
   mkdir -p "$strip_app/Contents/Frameworks"
-  cp "$strip_repo/build/musicstrip/ThreeEGestureEngine.dylib" "$strip_app/Contents/Frameworks/"
+  cp "$strip_repo/build/threee/ThreeEGestureEngine.dylib" "$strip_app/Contents/Frameworks/"
   /usr/libexec/PlistBuddy -c 'Add ThreeEIncludesTouchTab bool true' "$strip_app/Contents/Info.plist"
   /usr/libexec/PlistBuddy -c 'Set LSMinimumSystemVersion 12.0' "$strip_app/Contents/Info.plist"
 fi
 ditto --norsrc --noextattr Resources "$strip_app/Contents/Resources"
 mkdir -p "$strip_app/Contents/Resources/Ableton/_3E"
-cp "$strip_repo/musicstrip/Ableton/_3E/"*.py "$strip_app/Contents/Resources/Ableton/_3E/"
+cp "$strip_repo/threee/Ableton/_3E/"*.py "$strip_app/Contents/Resources/Ableton/_3E/"
 xcrun clang -arch arm64 -arch x86_64 -fobjc-arc -Wall -Wextra -Wno-unused-parameter -O2 \
   -mmacosx-version-min="$strip_minimum" "${strip_main_flags[@]}" -framework AppKit -framework Carbon \
-  -framework ApplicationServices -framework QuartzCore -framework CoreImage main.m -o "$strip_app/Contents/MacOS/MusicStrip"
+  -framework ApplicationServices -framework QuartzCore -framework CoreImage main.m -o "$strip_app/Contents/MacOS/ThreeE"
 zsh "$strip_repo/../Shared/PhoneControl/MacHost/build-hosts.sh" "$strip_app"
-strip_apps_helper="$strip_app/Contents/Helpers/MusicStrip Apps.app"
-cp "$strip_app/Contents/MacOS/MusicStrip" "$strip_apps_helper/Contents/MacOS/MusicStripApps"
+strip_apps_helper="$strip_app/Contents/Helpers/ThreeE Apps.app"
+cp "$strip_app/Contents/MacOS/ThreeE" "$strip_apps_helper/Contents/MacOS/ThreeEApps"
 strip_midi="$strip_app/Contents/Helpers/MIDI Touchbar.app"
 plutil -replace CFBundleName -string '3E' "$strip_midi/Contents/Info.plist"
 plutil -replace CFBundleDisplayName -string '3E' "$strip_midi/Contents/Info.plist"
@@ -67,21 +67,21 @@ strip_framework="$strip_midi/Contents/Frameworks/SnoizeMIDI.framework"
 [[ -e "$strip_framework/Resources" ]] || ln -s Versions/Current/Resources "$strip_framework/Resources"
 xcrun clang -arch arm64 -arch x86_64 -dynamiclib -fobjc-arc -Wall -Wextra -Wno-unused-parameter -O2 \
   -mmacosx-version-min=11.0 -framework AppKit -framework ApplicationServices -framework CoreMIDI MidiBridge.m \
-  -o "$strip_midi/Contents/Frameworks/MusicStripMidiBridge.dylib"
+  -o "$strip_midi/Contents/Frameworks/ThreeEMidiBridge.dylib"
 xattr -cr "$strip_app"
 codesign --force --sign - "$strip_framework"
-codesign --force --sign - "$strip_midi/Contents/Frameworks/MusicStripMidiBridge.dylib"
+codesign --force --sign - "$strip_midi/Contents/Frameworks/ThreeEMidiBridge.dylib"
 codesign --force --sign - "$strip_midi"
 codesign --force --sign - "$strip_apps_helper"
 codesign --force --sign "$strip_identity" --timestamp=none "$strip_app"
 codesign --verify --deep --strict "$strip_app"
-strip_output="$strip_repo/build/musicstrip/3E.app"
+strip_output="$strip_repo/build/threee/3E.app"
 if [[ -e "$strip_output" ]]; then
-  [[ -f "$strip_output/Contents/Info.plist" && -f "$strip_output/Contents/MacOS/MusicStrip" ]]
+  [[ -f "$strip_output/Contents/Info.plist" && -f "$strip_output/Contents/MacOS/ThreeE" ]]
   [[ "$(/usr/libexec/PlistBuddy -c 'Print CFBundleIdentifier' "$strip_output/Contents/Info.plist")" == local.musicstrip.app ]]
   /bin/rm -r -- "$strip_output" # Only this verified generated build artifact.
 fi
 ditto --norsrc --noextattr "$strip_app" "$strip_output"
 codesign --verify --deep --strict "$strip_output"
-printf 'Built and verified: %s\n' "$strip_repo/build/musicstrip/3E.app"
+printf 'Built and verified: %s\n' "$strip_repo/build/threee/3E.app"
 # No installation, launch, zip or persistent backup happens automatically.

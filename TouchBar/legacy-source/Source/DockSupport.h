@@ -1,4 +1,4 @@
-// The Dock is read, never rewritten. This panel belongs to MusicStrip and
+// The Dock is read, never rewritten. This panel belongs to ThreeE and
 // does not load Pock or replace the system's brightness/volume controls.
 static NSString *const DockCloseID = @"local.musicstrip.dock.close";
 static NSString *const DockAppsID = @"local.musicstrip.dock.apps";

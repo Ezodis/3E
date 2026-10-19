@@ -175,7 +175,7 @@ static void AdvanceDesktopSelection(uint64_t target,NSUInteger sequence,NSIntege
     if(!AXIsProcessTrusted()) {
         static BOOL requested=NO;
         if(!requested) { requested=YES; AXIsProcessTrustedWithOptions((__bridge CFDictionaryRef)@{(__bridge NSString *)kAXTrustedCheckOptionPrompt:@YES}); }
-        NSLog(@"Desktop selection requires MusicStrip's Accessibility permission."); return;
+        NSLog(@"Desktop selection requires ThreeE's Accessibility permission."); return;
     }
     uint64_t previous=[spaces[(NSUInteger)active][@"id"] unsignedLongLongValue];
     PostDesktopSwipe(destination>active);

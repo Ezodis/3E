@@ -60,23 +60,23 @@ jobs:
         env:
           STRIP_SIGNING_IDENTITY: '-'
         run: |
-          zsh TouchBar/musicstrip/Source/build.sh
+          zsh TouchBar/threee/Source/build.sh
           python3 -m unittest discover -s scripts -p test_release.py
-          python3 -c 'import sys; from pathlib import Path; sys.path.insert(0,"scripts"); from release import verify_modules; verify_modules(Path("TouchBar/build/musicstrip/3E.app"),"combined")'
-          ditto -c -k --sequesterRsrc --keepParent 'TouchBar/build/musicstrip/3E.app' build/phone/3E-Combined.zip
+          python3 -c 'import sys; from pathlib import Path; sys.path.insert(0,"scripts"); from release import verify_modules; verify_modules(Path("TouchBar/build/threee/3E.app"),"combined")'
+          ditto -c -k --sequesterRsrc --keepParent 'TouchBar/build/threee/3E.app' build/phone/3E-Combined.zip
       - name: Touch Bar media handoff regression tests
-        run: 'TouchBar/build/musicstrip/3E.app/Contents/MacOS/MusicStrip --self-test'
+        run: 'TouchBar/build/threee/3E.app/Contents/MacOS/ThreeE --self-test'
       - name: Existing native menu and app-switcher regression tests
         run: |
-          xcrun clang -fobjc-arc -framework AppKit -framework Carbon -framework ApplicationServices -framework QuartzCore -framework CoreImage TouchBar/musicstrip/Tests/window_chooser.m -o /tmp/window-test
+          xcrun clang -fobjc-arc -framework AppKit -framework Carbon -framework ApplicationServices -framework QuartzCore -framework CoreImage TouchBar/threee/Tests/window_chooser.m -o /tmp/window-test
           /tmp/window-test
-          xcrun clang -fobjc-arc -Wno-deprecated-declarations -framework AppKit -framework Carbon -framework ApplicationServices -framework QuartzCore -framework CoreImage TouchBar/musicstrip/Tests/apps_launcher_hold.m -o /tmp/apps-test
+          xcrun clang -fobjc-arc -Wno-deprecated-declarations -framework AppKit -framework Carbon -framework ApplicationServices -framework QuartzCore -framework CoreImage TouchBar/threee/Tests/apps_launcher_hold.m -o /tmp/apps-test
           /tmp/apps-test
-          xcrun clang -fobjc-arc -DSTRIP_TEST_EDITION_COMBINED=1 -framework AppKit -framework CoreMIDI TouchBar/musicstrip/Tests/combined_menu.m -o /tmp/menu-test
+          xcrun clang -fobjc-arc -DSTRIP_TEST_EDITION_COMBINED=1 -framework AppKit -framework CoreMIDI TouchBar/threee/Tests/combined_menu.m -o /tmp/menu-test
           /tmp/menu-test
-          xcrun clang -fobjc-arc -DSTRIP_TEST_EDITION_TOUCHBAR=1 -framework AppKit -framework ApplicationServices TouchBar/musicstrip/Tests/release_updates.m -o /tmp/release-updates-touchbar
+          xcrun clang -fobjc-arc -DSTRIP_TEST_EDITION_TOUCHBAR=1 -framework AppKit -framework ApplicationServices TouchBar/threee/Tests/release_updates.m -o /tmp/release-updates-touchbar
           /tmp/release-updates-touchbar
-          xcrun clang -fobjc-arc -DSTRIP_TEST_EDITION_COMBINED=1 -framework AppKit -framework ApplicationServices TouchBar/musicstrip/Tests/release_updates.m -o /tmp/release-updates-combined
+          xcrun clang -fobjc-arc -DSTRIP_TEST_EDITION_COMBINED=1 -framework AppKit -framework ApplicationServices TouchBar/threee/Tests/release_updates.m -o /tmp/release-updates-combined
           /tmp/release-updates-combined
       - uses: actions/upload-artifact@v4
         with:

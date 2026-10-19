@@ -1,4 +1,4 @@
-// The Dock is read, never rewritten. This panel belongs to MusicStrip and
+// The Dock is read, never rewritten. This panel belongs to ThreeE and
 // keeps the system's brightness/volume controls.
 #import "PockFolderUI.h"
 #import <objc/runtime.h>
