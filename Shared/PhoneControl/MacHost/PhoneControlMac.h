@@ -85,7 +85,7 @@ static NSString *const ThreeEPhoneBarEnabledKey=@"ThreeEPhoneBarEnabled";
         if(![NSFileManager.defaultManager fileExistsAtPath:path])path=@"/System/Applications/Launchpad.app";
         self.appsIcon=[NSFileManager.defaultManager fileExistsAtPath:path] ? [self iconData:[NSWorkspace.sharedWorkspace iconForFile:path]] : @"";
     }
-    NSDictionary *controls=@{@"appsIcon":self.appsIcon,@"media":@{@"artwork":[self iconData:image],@"playing":playing<0 ? NSNull.null : @(playing==1),@"stop":@(stop)}};
+    NSDictionary *controls=@{@"appsIcon":self.appsIcon,@"media":@{@"artwork":[self iconData:image],@"playing":playing<0 ? NSNull.null : (playing==1 ? @YES : @NO),@"stop":@(stop)}};
     NSString *json=[[NSString alloc] initWithData:[NSJSONSerialization dataWithJSONObject:@{@"controls":controls} options:0 error:nil] encoding:NSUTF8StringEncoding];
     if(![json isEqual:self.controlsJSON]){self.controlsJSON=json;[self send:json];}
 }
