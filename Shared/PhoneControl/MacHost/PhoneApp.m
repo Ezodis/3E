@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 #import "PhoneControlMac.h"
+#import "../../Brand/ThreeEBrand.h"
 #import "PhoneBarMenu.h"
 @interface PhoneAppDelegate:NSObject<NSApplicationDelegate>
 @property ThreeEPhoneController *phone;
@@ -15,7 +16,7 @@
             if(e.CGEvent)CGEventPost(kCGHIDEventTap,e.CGEvent);
         }
     };
-    self.item=[NSStatusBar.systemStatusBar statusItemWithLength:NSVariableStatusItemLength];self.item.button.title=@"3£";
+    self.item=[NSStatusBar.systemStatusBar statusItemWithLength:NSVariableStatusItemLength];self.item.button.image=ThreeEBrandMenuImage();self.item.button.title=@"";self.item.button.toolTip=@"3£ Phone Bar";
     NSMenu *menu=[NSMenu new];
     [menu addItem:ThreeEPhoneBarMenu(self)];
     for(NSArray *row in @[@[@"Quit Phone Bar",@"quit:"]]){

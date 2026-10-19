@@ -1,4 +1,5 @@
 #import <AppKit/AppKit.h>
+#import "../../../Shared/Brand/ThreeEBrand.h"
 #import <ApplicationServices/ApplicationServices.h>
 #import "../../../Shared/PhoneControl/MacHost/PhoneBarMenu.h"
 #import <objc/runtime.h>
@@ -655,14 +656,7 @@ static id RegisterKey(id center, SEL selector, unsigned short code, NSUInteger f
 }
 static id BlockHotKey(id self, SEL selector, id key) { return nil; }
 static void IgnoreKeyCommands(id self, SEL selector, id sender) {}
-static NSImage *BrandMenuIcon(void) {
-    NSImage *image=[[NSImage alloc] initWithSize:NSMakeSize(27,18)];
-    [image lockFocus];
-    NSDictionary *attributes=@{NSFontAttributeName:[NSFont systemFontOfSize:16 weight:NSFontWeightBold], NSForegroundColorAttributeName:NSColor.blackColor};
-    NSString *text=@"3£"; NSSize size=[text sizeWithAttributes:attributes];
-    [text drawAtPoint:NSMakePoint((27-size.width)/2,(18-size.height)/2) withAttributes:attributes];
-    [image unlockFocus]; image.template=YES; image.name=@"3£"; return image;
-}
+static NSImage *BrandMenuIcon(void) { return ThreeEBrandMenuImage(); }
 static NSString *combinedGestureState=@"permission";
 static BOOL appsMenuVisible;
 static BOOL downloadsEnabled;

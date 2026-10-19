@@ -199,19 +199,11 @@ sealed class AccentContext : ApplicationContext {
   tray.Icon=Logo();tray.Text="Clicks: hold a letter or number, then pick 1–9";tray.ContextMenuStrip=menu;tray.Visible=true;
  }
  [DllImport("user32.dll")] static extern bool DestroyIcon(IntPtr handle);
- // The 3£ logo (white 3£ on a dark rounded square), drawn so no image file is needed.
+ // The 3£ butterfly logo (Shared/Brand/make-icons.py writes this 32px PNG).
+ const string LogoPng=/*brand:logo*/"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";
  static Icon Logo() {
-  using(var bitmap=new Bitmap(32,32,System.Drawing.Imaging.PixelFormat.Format32bppArgb))
-  using(var g=Graphics.FromImage(bitmap)) {
-   g.Clear(Color.Transparent);g.SmoothingMode=System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
-   g.TextRenderingHint=System.Drawing.Text.TextRenderingHint.AntiAliasGridFit;
-   using(var plate=new System.Drawing.Drawing2D.GraphicsPath()) {
-    plate.AddArc(1,1,12,12,180,90);plate.AddArc(19,1,12,12,270,90);plate.AddArc(19,19,12,12,0,90);plate.AddArc(1,19,12,12,90,90);plate.CloseFigure();
-    using(var dark=new SolidBrush(Color.FromArgb(20,20,20)))g.FillPath(dark,plate);
-   }
-   using(var font=new Font("Segoe UI",12,FontStyle.Bold,GraphicsUnit.Pixel))
-   using(var format=new StringFormat{Alignment=StringAlignment.Center,LineAlignment=StringAlignment.Center})
-    g.DrawString("3£",font,Brushes.White,new RectangleF(0,0,32,32),format);
+  using(var stream=new System.IO.MemoryStream(Convert.FromBase64String(LogoPng)))
+  using(var bitmap=new Bitmap(stream)) {
    var handle=bitmap.GetHicon();
    try {using(var borrowed=Icon.FromHandle(handle))return (Icon)borrowed.Clone();} finally {DestroyIcon(handle);}
   }

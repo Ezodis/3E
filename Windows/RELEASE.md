@@ -1,3 +1,9 @@
+3£Windows 1.0.40 has the new 3£ butterfly logo.
+
+- **New logo everywhere:** a 3 and a £ back to back, spread like a butterfly's wings, in black and white. It replaces the old icon on the app (taskbar, Alt+Tab, Task Manager, Start), the settings window, the tray icon and the Clicks accent picker's tray icon. The Mac app uses the same logo.
+
+Includes everything from 1.0.39:
+
 3£Windows 1.0.39 makes Restart check for updates.
 
 - **Restart checks for updates first:** if a newer 3£Windows is available it is downloaded, verified and installed, and the whole suite comes back on the new version. Otherwise (or offline) everything restarts as before. All your toggles and settings are kept.

@@ -8,6 +8,7 @@
 #import <unistd.h>
 #import <QuartzCore/QuartzCore.h>
 #import "../../../Shared/PhoneControl/MacHost/PhoneControlMac.h"
+#import "../../../Shared/Brand/ThreeEBrand.h"
 #import "ReleaseUpdates.h"
 #import "BaseMenu.h"
 #import "DownloadsAddon.h"
@@ -417,7 +418,7 @@ static OSStatus SendSpotifyCommand(pid_t pid, int command) {
     self.playbackBook = [PlaybackBook new];
     if(!touchBarAvailable) {
         self.baseStatusItem=[NSStatusBar.systemStatusBar statusItemWithLength:NSVariableStatusItemLength];
-        self.baseStatusItem.button.title=@"3£";
+        self.baseStatusItem.button.image=ThreeEBrandMenuImage(); self.baseStatusItem.button.title=@""; self.baseStatusItem.button.toolTip=@"3£";
 #ifdef STRIP_COMBINED_TOUCHTAB
         self.baseStatusItem.menu=StripBaseMenu(self,YES);
 #else
