@@ -62,6 +62,8 @@ node (Join-Path $PSScriptRoot 'PhoneTrackpadTests\dock.test.cjs')
 if ($LASTEXITCODE) { throw 'Phone dock tests failed.' }
 node (Join-Path $PSScriptRoot 'PhoneTrackpadTests\watch.test.cjs')
 if ($LASTEXITCODE -ne 0) { throw 'Watch transport and handoff tests failed.' }
+node (Join-Path $PSScriptRoot 'PhoneTrackpadTests\update.test.cjs')
+if ($LASTEXITCODE -ne 0) { throw 'Phone page update reload tests failed.' }
 
 # Kiro and the other code editors now rotate with SSMS inside the app ("Rotate themes").
 # Remove the old standalone Kiro task so the two never compete.

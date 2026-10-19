@@ -51,6 +51,40 @@ public sealed class PhoneTrackpad : IDisposable {
     // network returns. Explicit Stop() always ends it. Combined with a
     // persisted TokenProvider and an mDNS AliasHost, the NamedUrl never changes.
     public bool FollowNetwork { get; init; }
+    // Identifies the phone page this receiver serves. A phone page that
+    // reconnects to a receiver reporting a different build reloads itself
+    // once, so an update to the computer reaches the phone without a manual
+    // reload. Tests may override it; hosts use the default.
+    public string Build { get => build ?? PageBuild; init => build = value; }
+    private readonly string build;
+    private static readonly Lazy<string> pageBuild = new(() => ComputeBuild(EmbeddedPage(),
+        // The module id changes whenever the receiver code that writes host.js
+        // or brands the page changes, even if no Web/* file did.
+        typeof(PhoneTrackpad).Assembly.ManifestModule.ModuleVersionId.ToString("N")));
+    public static string PageBuild => pageBuild.Value;
+
+    // A short, stable hash of the page resources (name and contents, in name order).
+    public static string ComputeBuild(IEnumerable<KeyValuePair<string, byte[]>> resources, string salt = null) {
+        using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
+        foreach (var (name, data) in resources.OrderBy(r => r.Key, StringComparer.Ordinal)) {
+            var key = Encoding.UTF8.GetBytes(name);
+            hash.AppendData(BitConverter.GetBytes(key.Length)); hash.AppendData(key);
+            hash.AppendData(BitConverter.GetBytes((long)data.Length)); hash.AppendData(data);
+        }
+        if (salt != null) hash.AppendData(Encoding.UTF8.GetBytes(salt));
+        return Convert.ToHexString(hash.GetHashAndReset(), 0, 8).ToLowerInvariant();
+    }
+
+    private static IEnumerable<KeyValuePair<string, byte[]>> EmbeddedPage() {
+        const string prefix = "ThreeE.PhoneControl.Web.";
+        var assembly = typeof(PhoneTrackpad).Assembly;
+        foreach (var name in assembly.GetManifestResourceNames().Where(n => n.StartsWith(prefix, StringComparison.Ordinal))) {
+            using var stream = assembly.GetManifestResourceStream(name);
+            using var copy = new MemoryStream();
+            stream.CopyTo(copy);
+            yield return new(name[prefix.Length..], copy.ToArray());
+        }
+    }
     // Raised (outside the lock) after the receiver rebinds or resumes on a new
     // address, so hosts can re-advertise their mDNS name for that address.
     public event Action AddressChanged;
@@ -282,7 +316,7 @@ public sealed class PhoneTrackpad : IDisposable {
             using var stream = pairing
                 ? new MemoryStream(Encoding.UTF8.GetBytes(PairingPage(owner.Origin + "/#" + owner.Token)))
                 : resource == "PhoneTrackpad.html" ? new MemoryStream(Encoding.UTF8.GetBytes(BrandedPage(input.Platform)))
-                : resource == "host.js" ? new MemoryStream(Encoding.UTF8.GetBytes("window.ThreeEHost="+JsonSerializer.Serialize(new { platform=input.Platform, http=false, keyboard=input.SupportsTyping, clipboard=input.Clipboard != null, alias=owner.AliasOrigin == null ? null : new Uri(owner.AliasOrigin).Authority })+";"))
+                : resource == "host.js" ? new MemoryStream(Encoding.UTF8.GetBytes("window.ThreeEHost="+JsonSerializer.Serialize(new { platform=input.Platform, build=Build, http=false, keyboard=input.SupportsTyping, clipboard=input.Clipboard != null, alias=owner.AliasOrigin == null ? null : new Uri(owner.AliasOrigin).Authority })+";"))
                 : typeof(PhoneTrackpad).Assembly.GetManifestResourceStream("ThreeE.PhoneControl.Web." + resource);
             response.ContentLength64 = stream.Length;
             await stream.CopyToAsync(response.OutputStream, owner.Cancel.Token);
@@ -370,7 +404,7 @@ public sealed class PhoneTrackpad : IDisposable {
         response.StatusCode = code;
         response.ContentType = "application/json";
         byte[] result;
-        lock(gate) result = Encoding.UTF8.GetBytes(code == 200 ? (describe || handshake ? JsonSerializer.Serialize(new { ready=true, host=describe ? input.GetInfo() : input.GetConnectionInfo() }) : "{\"ready\":true}") : "{\"ready\":false}");
+        lock(gate) result = Encoding.UTF8.GetBytes(code == 200 ? (describe || handshake ? JsonSerializer.Serialize(new { ready=true, build=Build, host=describe ? input.GetInfo() : input.GetConnectionInfo() }) : "{\"ready\":true}") : "{\"ready\":false}");
         response.ContentLength64 = result.Length;
         await response.OutputStream.WriteAsync(result, owner.Cancel.Token);
         response.Close();
@@ -545,7 +579,7 @@ input{width:100%;padding:13px;border:1px solid #415260;border-radius:10px;backgr
             // Connecting the trackpad must not wait on native MIDI driver discovery.
             // The MIDI surface requests the full description when it opens.
             string lastHost = JsonSerializer.Serialize(input.GetConnectionInfo());
-            await ws.SendAsync(Encoding.UTF8.GetBytes("{\"ready\":true,\"host\":" + lastHost + "}"), WebSocketMessageType.Text, true, owner.Cancel.Token);
+            await ws.SendAsync(Encoding.UTF8.GetBytes("{\"ready\":true,\"build\":" + JsonSerializer.Serialize(Build) + ",\"host\":" + lastHost + "}"), WebSocketMessageType.Text, true, owner.Cancel.Token);
             var rateStart = Environment.TickCount64;
             var count = 0;
             while (ws.State == WebSocketState.Open) {

@@ -26,6 +26,18 @@ jobs:
           node Windows/PhoneTrackpadTests/trackpad.test.cjs
           node Windows/PhoneTrackpadTests/dock.test.cjs
           node Windows/PhoneTrackpadTests/watch.test.cjs
+          node Windows/PhoneTrackpadTests/update.test.cjs
+      - name: Browser tests (WebKit and Chromium against the preview receiver)
+        run: |
+          npm install --no-save --prefix "$RUNNER_TEMP/pw" playwright-core@1.56.1
+          "$RUNNER_TEMP/pw/node_modules/.bin/playwright-core" install webkit chromium
+          dotnet build Windows/PhoneTrackpadTests -v q
+          url="$RUNNER_TEMP/preview-url"
+          dotnet run --no-build --project Windows/PhoneTrackpadTests -- --preview "$url" > "$RUNNER_TEMP/preview.log" 2>&1 &
+          preview=$!
+          for i in $(seq 1 120); do [[ -s "$url" ]] && break; sleep 0.5; done
+          PLAYWRIGHT_MODULE="$RUNNER_TEMP/pw/node_modules/playwright-core" node Windows/PhoneTrackpadTests/browser.test.cjs "$url" "$RUNNER_TEMP/screens" || { cat "$RUNNER_TEMP/preview.log"; kill $preview; exit 1; }
+          kill $preview
       - name: Build standalone universal Mac app
         run: zsh Shared/PhoneControl/MacHost/build-app.sh
       - name: Run receiver, CoreMIDI and pasteboard smoke tests

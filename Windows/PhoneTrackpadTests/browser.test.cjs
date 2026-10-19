@@ -1,11 +1,80 @@
 // Run against Program.cs --preview: real shared server, simulated native input.
 const {webkit,chromium}=require(process.env.PLAYWRIGHT_MODULE||'playwright-core');
 const fs=require('node:fs'),assert=require('node:assert/strict'),path=require('node:path');
-const url=fs.readFileSync(process.argv[2],'utf8').trim(),out=process.argv[3]||'.';
-fs.mkdirSync(out,{recursive:true});
+const url=require.main===module?fs.readFileSync(process.argv[2],'utf8').trim():null,out=process.argv[3]||'.';
+if(require.main===module)fs.mkdirSync(out,{recursive:true});
 async function drag(page,locator,dx,dy=0,hold=0){const r=await locator.boundingBox();await page.mouse.move(r.x+r.width/2,r.y+r.height/2);await page.mouse.down();if(hold)await page.waitForTimeout(hold);await page.mouse.move(r.x+r.width/2+dx,r.y+r.height/2+dy,{steps:5});await page.mouse.up();await page.waitForTimeout(150);}
 async function wake(page){await page.evaluate(()=>{Object.defineProperty(document,'hidden',{configurable:true,value:true});document.dispatchEvent(new Event('visibilitychange'));});assert.equal(await page.locator('#apps').isDisabled(),true);await page.evaluate(()=>{Object.defineProperty(document,'hidden',{configurable:true,value:false});document.dispatchEvent(new Event('visibilitychange'));window.dispatchEvent(new Event('pageshow'));});await page.waitForFunction(()=>document.getElementById('status').textContent==='Connected');await page.evaluate(()=>delete document.hidden);}
-(async()=>{
+// The computer installs an update and restarts (preview: <url-file>.restart):
+// the page reloads itself once, never while a drag, the keyboard or the
+// clipboard sheet is in use, and never twice within 30 s or for one build.
+async function updateFlow(browser,name,url,urlFile,errors){
+ const restart=async build=>{fs.writeFileSync(urlFile+'.restart',build);for(let i=0;i<100&&fs.readFileSync(urlFile+'.restart','utf8').trim();i++)await new Promise(r=>setTimeout(r,100));assert.equal(fs.readFileSync(urlFile+'.restart','utf8').trim(),'','preview receiver restarted');};
+ async function open(viewport){
+  const ctx=await browser.newContext({viewport,hasTouch:true,isMobile:true}),page=await ctx.newPage(),sent=[];
+  page.on('pageerror',e=>errors.push(e.message));
+  page.on('websocket',s=>s.on('framesent',f=>{try{const c=JSON.parse(f.payload);if(c.type)sent.push(c);}catch{}}));
+  page.on('request',r=>{if(r.url().endsWith('/control')){try{const c=JSON.parse(r.postData());for(const x of c.commands||[])sent.push(x);}catch{}}});
+  await page.addInitScript(()=>{try{sessionStorage.setItem('test-loads',String(+(sessionStorage.getItem('test-loads')||0)+1));}catch{}
+   window.testSockets=[];const W=WebSocket;window.WebSocket=class extends W{constructor(...a){super(...a);window.testSockets.push(this);}};});
+  const loads=async()=>{try{return await page.evaluate(()=>+sessionStorage.getItem('test-loads'));}catch{return -1;}};
+  const live=()=>page.waitForFunction(()=>document.getElementById('status').textContent==='Connected');
+  const reloaded=async count=>{for(let i=0;i<100&&await loads()<count;i++)await page.waitForTimeout(100);assert.equal(await loads(),count,'the page reloaded');await live();};
+  await page.goto(url);await live();
+  return {ctx,page,sent,loads,live,reloaded};
+ }
+ // Each reload in this tab starts the 30-second guard; move its clock instead of waiting.
+ const backdate=page=>page.evaluate(()=>{const v=JSON.parse(sessionStorage.getItem('3e-update')||'{}');v.at=Date.now()-60000;sessionStorage.setItem('3e-update',JSON.stringify(v));});
+ const {ctx,page:u,sent,loads,live,reloaded}=await open({width:390,height:844});
+ const build=()=>u.evaluate(()=>window.ThreeEHost.build);
+ assert.match(await build(),/^[0-9a-f]{16}$/,'the page knows the build it loaded with');
+ // Update while the page stays put (something in use): it reconnects to the new receiver without reloading.
+ // (Stops early if the page reloaded instead, so the caller's assertion explains why.)
+ const reconnected=async()=>{const n=await loads();for(let i=0;i<150&&await loads()===n;i++){if(await u.evaluate(()=>window.testSockets?.length>=2&&window.testSockets.at(-1).readyState===1&&document.getElementById('status').textContent==='Connected').catch(()=>false))break;await u.waitForTimeout(100);}await u.waitForTimeout(1500);};
+ const resetSockets=()=>u.evaluate(()=>{window.testSockets=window.testSockets.slice(-1);});
+ const touches=(type,n,dx=0)=>u.evaluate(([type,n,dx])=>{const e=new Event(type,{bubbles:true,cancelable:true});Object.defineProperty(e,'touches',{value:Array.from({length:n},(_,i)=>({clientX:120+i*40+dx,clientY:400}))});document.getElementById('pad').dispatchEvent(e);},[type,n,dx]);
+ {// A three-finger drag is held through the update.
+  const first=await build();await touches('touchstart',3);await u.waitForTimeout(150);await touches('touchmove',3,12);await touches('touchmove',3,24);
+  assert.ok(sent.some(c=>c.type==='down'),'three fingers hold the button down');
+  await resetSockets();await restart('1111111111111111');await reconnected();
+  assert.equal(await loads(),1,'no reload while a drag is held');assert.equal(await build(),first);
+  const before=sent.length;await touches('touchend',0);await reloaded(2);
+  assert.ok(sent.slice(before).some(c=>c.type==='releaseAll'),'releaseAll is sent before reloading');
+  assert.equal(await build(),'1111111111111111','the reloaded page is the new build');
+  assert.match(u.url(),/#[0-9A-F]{48}$/,'the reload keeps the pairing link');
+  await u.waitForTimeout(1500);assert.equal(await loads(),2,'it reloads exactly once');}
+ {// The phone keyboard is open.
+  await backdate(u);await u.locator('#commands').tap();await u.locator('#commandsPane button[data-tool="keyboard"]').tap();
+  assert.equal(await u.evaluate(()=>document.activeElement.id),'typeSink');
+  await resetSockets();await restart('2222222222222222');await reconnected();
+  assert.equal(await loads(),2,'no reload while the keyboard is open');
+  await u.locator('#keyBar .done').dispatchEvent('pointerdown');await reloaded(3);}
+ {// The clipboard sheet is open.
+  await backdate(u);await u.locator('#commands').tap();await u.locator('#commandsPane button[data-tool="sendClip"]').tap();
+  assert.equal(await u.locator('#clipSheet').isVisible(),true);
+  await resetSockets();await restart('3333333333333333');await reconnected();
+  assert.equal(await loads(),3,'no reload while the clipboard sheet is open');
+  await u.locator('#clipClose').click();await reloaded(4);}
+ {// Never twice within 30 s: the next update waits, then reloads.
+  await resetSockets();await restart('4444444444444444');await reconnected();
+  assert.equal(await loads(),4,'a second reload within 30 s waits');
+  await backdate(u);await reloaded(5);assert.equal(await build(),'4444444444444444');}
+ {// A build this tab already reloaded for is never retried (no reload loop).
+  await u.evaluate(()=>sessionStorage.setItem('3e-update',JSON.stringify({build:'5555555555555555',at:0})));
+  await resetSockets();await restart('5555555555555555');await reconnected();
+  assert.equal(await loads(),5,'an already-attempted build never reloads again');}
+ await ctx.close();
+ {// Apple Watch (HTTP /control) updates the same way.
+  const w=await open({width:162,height:197});
+  assert.equal(await w.page.evaluate(()=>document.documentElement.classList.contains('watch')),true);
+  await restart('6666666666666666');await w.reloaded(2);
+  assert.ok(w.sent.some(c=>c.type==='releaseAll'),'the watch releases input before reloading');
+  assert.equal(await w.page.evaluate(()=>window.ThreeEHost.build),'6666666666666666');
+  await w.page.waitForTimeout(1500);assert.equal(await w.loads(),2,'the watch reloads exactly once');
+  await w.ctx.close();}
+ console.log('PASS '+name+': update reloads once after the computer updates; waits for drags, keyboard and clipboard; 30 s and per-build loop guards; watch too.');
+}
+if(require.main===module)(async()=>{
  for(const [name,engine] of [['webkit',webkit],['chromium',chromium]]){
   const browser=await engine.launch({headless:true});
   try{
@@ -168,8 +237,11 @@ async function wake(page){await page.evaluate(()=>{Object.defineProperty(documen
    await w.locator('#midiOutput').selectOption('0');await w.waitForFunction(()=>document.getElementById('midiStatus').textContent.startsWith('Sending to'));
    await w.screenshot({path:path.join(out,'studio-watch-'+name+'.png')});
    assert.ok(posts.filter(p=>p.type==='commands').flatMap(p=>p.commands).some(c=>c.type==='navigateEnd'));
-   await w.goto('about:blank');assert.deepEqual(errors,[]);
+   await w.goto('about:blank');
+   await updateFlow(browser,name,url,process.argv[2],errors);
+   assert.deepEqual(errors,[]);
    console.log('PASS '+name+': keyboard typing and key bar, clipboard send/receive, Apps hold/swipe/release, Media tap/swipe/hold, linear/circular knobs, MIDI notes/CC/jogs, eight-channel mixer, wake/reconnect and watch HTTP layout.');
   }finally{await browser.close();}
  }
 })().catch(e=>{console.error(e);process.exitCode=1;});
+module.exports={updateFlow};
