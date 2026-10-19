@@ -45,6 +45,16 @@ public sealed class PhoneTrackpad : IDisposable {
     // page, WebSocket and control requests. Name resolution is the host's job.
     public string AliasHost { get; init; }
     public string DesktopUrl { get { lock (gate) return session == null ? null : session.Origin + "/pair"; } }
+    // Optional: keep the same link alive while the local IP changes. A new
+    // address rebinds the listener with the same pairing secret; losing the
+    // network pauses the receiver and resumes it automatically when a local
+    // network returns. Explicit Stop() always ends it. Combined with a
+    // persisted TokenProvider and an mDNS AliasHost, the NamedUrl never changes.
+    public bool FollowNetwork { get; init; }
+    // Raised (outside the lock) after the receiver rebinds or resumes on a new
+    // address, so hosts can re-advertise their mDNS name for that address.
+    public event Action AddressChanged;
+    private bool wanted;
 
     private sealed class Session {
         public readonly CancellationTokenSource Cancel = new();
@@ -88,39 +98,48 @@ public sealed class PhoneTrackpad : IDisposable {
     }
 
     public bool Start() {
+        bool started, resume;
         lock (gate) {
             if (disposed) return false;
             if (session != null) return true;
-            Session candidate = null;
-            try {
-                var address = addressProvider();
-                if (address == null) { status = "No local network — connect to Wi-Fi, then try again."; return false; }
-                var token = SessionToken();
+            started = StartLocked();
+            resume = !started && FollowNetwork && !wanted;
+            if (started || FollowNetwork) wanted = FollowNetwork;
+        }
+        if (resume) _ = Task.Run(ResumeAsync);
+        return started;
+    }
+
+    private bool StartLocked() {
+        Session candidate = null;
+        try {
+            var address = addressProvider();
+            if (address == null) { status = FollowNetwork ? "No local network — starts automatically when Wi-Fi connects." : "No local network — connect to Wi-Fi, then try again."; return false; }
+            var token = SessionToken();
+            candidate = new Session(address, port, token, AliasHost);
+            candidate.Listener.Prefixes.Add(candidate.Origin + "/");
+            if (candidate.AliasOrigin != null) candidate.Listener.Prefixes.Add(candidate.AliasOrigin + "/");
+            try { candidate.Listener.Start(); }
+            catch (HttpListenerException) when (candidate.AliasOrigin != null) {
+                // Some macOS HttpListener builds reject a second named prefix.
+                // Listen on the wildcard socket but retain and validate both
+                // approved Host/Origin values so the stable alias URL works.
+                candidate.Listener.Close();
                 candidate = new Session(address, port, token, AliasHost);
-                candidate.Listener.Prefixes.Add(candidate.Origin + "/");
-                if (candidate.AliasOrigin != null) candidate.Listener.Prefixes.Add(candidate.AliasOrigin + "/");
-                try { candidate.Listener.Start(); }
-                catch (HttpListenerException) when (candidate.AliasOrigin != null) {
-                    // Some macOS HttpListener builds reject a second named prefix.
-                    // Listen on the wildcard socket but retain and validate both
-                    // approved Host/Origin values so the stable alias URL works.
-                    candidate.Listener.Close();
-                    candidate = new Session(address, port, token, AliasHost);
-                    candidate.Listener.Prefixes.Add($"http://*:{port}/");
-                    candidate.Listener.Start();
-                }
-                firewall.Open(address, port);
-                session = candidate;
-                status = "Ready — scan the QR code on your iPhone.";
-                _ = Task.Run(() => ListenAsync(candidate));
-                _ = Task.Run(() => MonitorAsync(candidate));
-                return true;
-            } catch (Exception ex) {
-                candidate?.Listener.Close();
-                try { firewall.Close(); } catch { }
-                status = "Trackpad unavailable: " + ex.Message + " Other 3£ features are unaffected.";
-                return false;
+                candidate.Listener.Prefixes.Add($"http://*:{port}/");
+                candidate.Listener.Start();
             }
+            firewall.Open(address, port);
+            session = candidate;
+            status = "Ready — scan the QR code on your iPhone.";
+            _ = Task.Run(() => ListenAsync(candidate));
+            _ = Task.Run(() => MonitorAsync(candidate));
+            return true;
+        } catch (Exception ex) {
+            candidate?.Listener.Close();
+            try { firewall.Close(); } catch { }
+            status = "Trackpad unavailable: " + ex.Message + " Other 3£ features are unaffected.";
+            return false;
         }
     }
 
@@ -132,7 +151,25 @@ public sealed class PhoneTrackpad : IDisposable {
         return Convert.ToHexString(RandomNumberGenerator.GetBytes(24));
     }
 
-    public void Stop() { lock (gate) StopLocked("Off"); }
+    public void Stop() { lock (gate) { wanted = false; StopLocked("Off"); } }
+
+    // Waits for a local network after a loss, then restarts with the same link.
+    private async Task ResumeAsync() {
+        while (true) {
+            try { await Task.Delay(1500); } catch { return; }
+            IPAddress address;
+            try { address = addressProvider(); } catch { address = null; }
+            bool resumed;
+            lock (gate) {
+                if (disposed || !wanted || session != null) return;
+                if (address == null) continue;
+                resumed = StartLocked();
+            }
+            if (resumed) { RaiseAddressChanged(); return; }
+        }
+    }
+
+    private void RaiseAddressChanged() { try { AddressChanged?.Invoke(); } catch { } }
     private void StopLocked(string reason) {
         var previous = session;
         session = null;
@@ -152,6 +189,7 @@ public sealed class PhoneTrackpad : IDisposable {
                 // Adapter enumeration can block on a driver. It must never hold
                 // the lock used for incoming pointer/keyboard/MIDI commands.
                 var address = addressProvider();
+                bool rebound = false, resume = false;
                 lock (gate) {
                     if (session != owner) return;
                     if (owner.HttpController != null && Environment.TickCount64 - owner.HttpLastSeen > 6000) {
@@ -159,13 +197,29 @@ public sealed class PhoneTrackpad : IDisposable {
                         status = "Watch asleep — reconnects when its page returns.";
                     }
                     if (!owner.Address.Equals(address)) {
-                        StopLocked("Network changed or disconnected — reconnect to Wi-Fi, then start again.");
-                        return;
+                        if (!FollowNetwork || !wanted) {
+                            StopLocked("Network changed or disconnected — reconnect to Wi-Fi, then start again.");
+                            return;
+                        }
+                        // Same link, new address: rebind now, or pause until a network returns.
+                        StopLocked("Network changed — reconnecting automatically…");
+                        rebound = address != null && StartLocked();
+                        resume = !rebound;
                     }
                 }
+                if (rebound) RaiseAddressChanged();
+                if (rebound || resume) { if (resume) _ = Task.Run(ResumeAsync); return; }
             }
         } catch (OperationCanceledException) { }
-        catch { lock (gate) { if (session == owner) StopLocked("No local network — reconnect to Wi-Fi, then start again."); } }
+        catch {
+            bool resume;
+            lock (gate) {
+                if (session != owner) return;
+                StopLocked(FollowNetwork && wanted ? "No local network — reconnecting automatically when Wi-Fi returns." : "No local network — reconnect to Wi-Fi, then start again.");
+                resume = FollowNetwork && wanted;
+            }
+            if (resume) _ = Task.Run(ResumeAsync);
+        }
     }
 
     private async Task ListenAsync(Session owner) {

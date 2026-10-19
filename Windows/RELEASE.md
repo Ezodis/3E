@@ -1,3 +1,11 @@
+3£Windows 1.0.37 keeps the Phone Bar link the same on every network.
+
+- **One permanent link:** the QR now always shows `http://3e-win.local:17833/#…` instead of the PC's IP address. The saved secret and the `3e-win.local` name stay the same, so the link on your iPhone, Home Screen or Apple Watch keeps working when the IP changes.
+- **Follows IP changes by itself:** when DHCP, a different Wi-Fi or a hotspot gives the PC a new address, Phone Bar rebinds to it and re-announces `3e-win.local` with the new IP. If Wi-Fi drops, it pauses and comes back on its own when a network returns. No need to turn it off and on or rescan.
+- The Mac receiver (`3e-mac.local`) gets the same automatic rebinding.
+
+Includes everything from 1.0.36:
+
 3£Windows 1.0.36 adds a full restart.
 
 - **Restart** (was "Restart input engines") quits and relaunches the whole suite: the tray app, three-finger drag, the Clicks keyboard engine, PowerToys, the wallpaper app and Phone Bar all start fresh. No administrator prompt; the Phone Bar link is kept.

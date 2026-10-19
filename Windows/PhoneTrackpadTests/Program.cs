@@ -126,6 +126,32 @@ Check(fake.Commands.Contains("history:-1") && fake.Commands.Contains("zoom:1"),"
     Check(badToken.Start() && badToken.PairingUrl.Split('#')[1].Length == 48, "An invalid saved secret falls back to a fresh one");
 }
 {
+    // FollowNetwork keeps one link across IP loss/changes without user action.
+    var saved = "FEDCBA9876543210FEDCBA9876543210FEDCBA9876543210";
+    IPAddress current = IPAddress.Loopback; int changes = 0;
+    var followFirewall = new FakeFirewall();
+    using var follow = new PhoneTrackpad(() => current, new FakeInput(), followFirewall, FreePort()) { TokenProvider = () => saved, AliasHost = "localhost", FollowNetwork = true };
+    follow.AddressChanged += () => Interlocked.Increment(ref changes);
+    Check(follow.Start(), "A following receiver starts");
+    var stableLink = follow.NamedUrl;
+    current = null;
+    await Until(() => !follow.Running);
+    Check(!followFirewall.IsOpen && follow.Status.Contains("automatically"), "Network loss pauses the receiver and says it will reconnect");
+    current = IPAddress.Loopback;
+    await Until(() => follow.Running);
+    Check(follow.Running && follow.NamedUrl == stableLink && changes >= 1 && followFirewall.IsOpen, "The receiver resumes by itself with the identical link and notifies the host");
+    using var web = new HttpClient();
+    Check((await web.GetStringAsync(new Uri(stableLink).GetLeftPart(UriPartial.Authority) + "/")).Contains("Trackpad"), "The same saved link serves the page after the network returns");
+    follow.Stop(); current = null; await Task.Delay(200); current = IPAddress.Loopback; await Task.Delay(3500);
+    Check(!follow.Running, "An explicit Stop is never undone by network recovery");
+    using var offline = new PhoneTrackpad(() => current, new FakeInput(), new FakeFirewall(), FreePort()) { FollowNetwork = true };
+    current = null;
+    Check(!offline.Start() && offline.Status.Contains("No local network"), "Starting offline reports no network");
+    current = IPAddress.Loopback;
+    await Until(() => offline.Running);
+    Check(offline.Running, "A receiver started offline comes up when Wi-Fi connects");
+}
+{
     static byte[] Query(string name, ushort type, ushort klass, ushort id = 0) {
         var q = new List<byte> { (byte)(id >> 8), (byte)id, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0 };
         foreach (var label in name.Split('.')) { q.Add((byte)label.Length); q.AddRange(System.Text.Encoding.ASCII.GetBytes(label)); }

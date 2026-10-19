@@ -20,9 +20,14 @@ if(args.Contains("--midi-self-test")) {
 }
 bool test=args.Contains("--self-test");
 ITrackpadInput input=test?new NullInput():new MacInput(action=>Report(new {media=action}),(action,direction)=>Report(new {systemAction=action,direction}));
-using var receiver=new PhoneTrackpad(()=>test ? IPAddress.Loopback : PhoneTrackpad.GetLocalAddress(),input,new NoFirewall(),test?17834:17833) { AliasHost=test ? null : PhoneNameResponder.Name, TokenProvider=test ? null : StoredPairingToken };
+using var receiver=new PhoneTrackpad(()=>test ? IPAddress.Loopback : PhoneTrackpad.GetLocalAddress(),input,new NoFirewall(),test?17834:17833) { AliasHost=test ? null : PhoneNameResponder.Name, TokenProvider=test ? null : StoredPairingToken, FollowNetwork=!test };
 PhoneNameResponder nameResponder=null;
-void RefreshName() {
+object nameGate=new();
+// The link stays http://3e-mac.local:17833/#secret: when the Mac's IP changes
+// the receiver rebinds with the same secret and the mDNS name follows it.
+receiver.AddressChanged+=()=>{RefreshName();Announce();};
+void RefreshName() { lock(nameGate) RefreshNameLocked(); }
+void RefreshNameLocked() {
     if(!receiver.Running || receiver.Address==null) { nameResponder?.Dispose(); nameResponder=null; return; }
     if(nameResponder?.Address.Equals(receiver.Address)==true)return;
     nameResponder?.Dispose();

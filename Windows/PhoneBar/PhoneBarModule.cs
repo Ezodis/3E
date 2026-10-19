@@ -10,6 +10,7 @@ public sealed class PhoneBarModule : IDisposable {
     private PhoneTrackpadPopup popup;
     private PhoneNameResponder name;
     private bool disposed;
+    private readonly object nameGate = new();
     private PhoneMediaState media;
     private OutputVolume volume;
     public bool Running => receiver?.Running ?? false;
@@ -38,7 +39,11 @@ public sealed class PhoneBarModule : IDisposable {
         volume ??= new(WindowsOutputVolume.Read,WindowsOutputVolume.Write);
         receiver ??= new(PhoneTrackpad.GetLocalAddress,
             new NativeTrackpadInput(()=>new {media=media?.State},action=>media?.Send(action),()=>volume?.State,level=>volume?.Set(level),()=>volume?.CancelPending(),()=>volume?.Refresh()),
-            new TrackpadFirewall(), PhoneTrackpad.Port) { TokenProvider = StoredToken, AliasHost = PhoneNameResponder.Name };
+            new TrackpadFirewall(), PhoneTrackpad.Port) { TokenProvider = StoredToken, AliasHost = PhoneNameResponder.Name, FollowNetwork = true };
+        // The link stays http://3e-win.local:17833/#secret; when DHCP or a new
+        // Wi-Fi changes the IP, the receiver rebinds and the name follows it.
+        receiver.AddressChanged -= OnAddressChanged;
+        receiver.AddressChanged += OnAddressChanged;
     }
 
     // Starts (or restarts after a network change) without showing the popup.
@@ -52,12 +57,21 @@ public sealed class PhoneBarModule : IDisposable {
         return running;
     }
 
+    private void OnAddressChanged() {
+        var current = receiver;
+        if (current == null || disposed) return;
+        if (current.Running) PhonePowerTuning.Begin();
+        UpdateName(current.Running ? current.Address : null);
+    }
+
     private void UpdateName(System.Net.IPAddress address) {
-        if (address != null && name?.Address?.Equals(address) == true) return;
-        name?.Dispose(); name = null;
-        if (address == null) return;
-        try { new TrackpadFirewall().OpenName(); } catch { }
-        try { name = new PhoneNameResponder(address); } catch { /* The IP link keeps working without the name. */ }
+        lock (nameGate) {
+            if (address != null && name?.Address?.Equals(address) == true) return;
+            name?.Dispose(); name = null;
+            if (address == null) return;
+            try { new TrackpadFirewall().OpenName(); } catch { }
+            try { name = new PhoneNameResponder(address); } catch { /* The IP link keeps working without the name. */ }
+        }
     }
 
     public void Show() {
@@ -76,7 +90,7 @@ public sealed class PhoneBarModule : IDisposable {
 
     public void Stop() {
         popup?.Dispose(); popup = null;
-        name?.Dispose(); name = null;
+        lock (nameGate) { name?.Dispose(); name = null; }
         receiver?.Stop();
         PhonePowerTuning.End();
         media?.Dispose(); media=null;

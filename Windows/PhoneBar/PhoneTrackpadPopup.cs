@@ -54,8 +54,12 @@ public sealed class PhoneTrackpadPopup : IDisposable {
         DwmSetWindowAttribute(window, 33, ref corners, sizeof(int));
     }
 
+    // Prefer the stable name link (same QR on every network/IP); fall back to
+    // the direct IP link only when no name is served.
+    private string Link => receiver.NamedUrl ?? receiver.PairingUrl;
+
     private void Refresh() {
-        displayedLink = receiver.PairingUrl;
+        displayedLink = Link;
         displayedStatus = receiver.Status;
         var next = RenderCard(displayedLink, displayedStatus, scale);
         card?.Dispose(); card = next;
@@ -105,7 +109,7 @@ public sealed class PhoneTrackpadPopup : IDisposable {
                 case 0x0010: Hide(); return IntPtr.Zero;
                 case 0x0100: if (wParam.ToInt32() == 27) { Hide(); return IntPtr.Zero; } break;
                 case 0x0113:
-                    if (displayedLink != receiver.PairingUrl || displayedLink == null && displayedStatus != receiver.Status) Refresh();
+                    if (displayedLink != Link || displayedLink == null && displayedStatus != receiver.Status) Refresh();
                     return IntPtr.Zero;
                 case 0x02E0:
                     scale = Math.Max(1, (wParam.ToInt64() & 0xffff) / 96f);
