@@ -36,6 +36,11 @@ class ReleasesTest(unittest.TestCase):
             self.assertLess(values[1], values[2])
         self.assertEqual(base["combined"], base["touchbar"])
 
+    def test_windows_matches_mac_base_app(self):
+        for offset in (0, 1, 66, 500):
+            values = versions(offset)
+            self.assertEqual(values["windows"], values["combined"])
+
     def test_portable_architecture_query(self):
         with patch("release.run", return_value="x86_64 arm64") as command:
             verify_architectures("/path/3E.app/Contents/MacOS/MusicStrip")

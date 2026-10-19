@@ -1,5 +1,10 @@
 #!/usr/bin/env python3
-"""Stamp, package and publish the three independent macOS release editions."""
+"""Stamp, package and publish the macOS editions and give 3£Windows the same version.
+
+3£Windows and the Mac base app (3E Combined) share one version number: both are
+computed from release-versions.json's "touchbar" base plus the release workflow's
+run number, and both are built by the same workflow run.
+"""
 import argparse
 import hashlib
 import json
@@ -27,7 +32,14 @@ def versions(offset):
         base = bases["touchtab" if edition == "touchtab" else "touchbar"]
         major, minor, patch = map(int, base.split("."))
         result[edition] = f"{major}.{minor}.{patch + offset}"
+    # 3£Windows always ships the same version as the Mac base app.
+    result["windows"] = result["combined"]
     return result
+
+def stamp_windows(values):
+    path = ROOT / "Windows/version.json"
+    with path.open("w", encoding="utf-8", newline="\n") as handle:
+        handle.write(json.dumps({"version": values["windows"]}, separators=(",", ":")))
 
 def stamp(values):
     path = ROOT / "TouchBar/musicstrip/Source/Info.plist"
@@ -142,13 +154,16 @@ def publish(values):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("action", choices=("stamp", "package", "publish", "versions"))
+    parser.add_argument("action", choices=("stamp", "stamp-windows", "package", "publish", "versions"))
     parser.add_argument("--offset", type=int, default=0)
     parser.add_argument("--edition", choices=EDITIONS)
     args = parser.parse_args()
     assert args.offset >= 0
     values = versions(args.offset)
-    if args.action == "stamp": stamp(values)
+    if args.action == "stamp":
+        stamp(values)
+        stamp_windows(values)
+    elif args.action == "stamp-windows": stamp_windows(values)
     elif args.action == "package":
         assert args.edition
         package(args.edition, values)
