@@ -258,7 +258,10 @@
   $('media').addEventListener('wheel',e=>{
     if(!C.connected()||!e.deltaY)return;e.preventDefault();showVolume();changeVolume(+volumeSlider.value+(e.deltaY<0?2:-2));finishVolume();
   },{passive:false});
-  window.ThreeEDock={cancel,commands:showCommands,overviewEnded(){overviewUntil=0;},describe(info){
+  // A held Apps/Media contact (app switcher, swipe or volume) or a volume
+  // slider being dragged: the page must not reload under the finger.
+  const busy=()=>!!active||volumeEditing||trackPointer!==null;
+  window.ThreeEDock={cancel,busy,commands:showCommands,overviewEnded(){overviewUntil=0;},describe(info){
     // Windows and macOS hosts map the shortcut palette; unknown hosts hide it.
     if(info?.platform){commandsButton.hidden=!['windows','macos'].includes(info.platform);if(commandsButton.hidden)showCommands(false);}
     // Repaint artwork only when the host state actually changed. Rebuilding

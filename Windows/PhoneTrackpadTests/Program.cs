@@ -28,9 +28,30 @@ if (args.Length == 2 && args[0] == "--preview") {
     var previewFile = Path.Combine(Directory.CreateTempSubdirectory().FullName, "Quarterly report.pdf");
     File.WriteAllText(previewFile, "%PDF-1.4 preview");
     previewInput.Clip.Snapshot = new ClipSnapshot { Text = "Hello from the computer", Html = "<b>Hello</b> from the <span style=\"color:red\">computer</span><script>window.bad=1</script><style>body{display:none}</style>", Png = ThreeE.PhoneBar.Windows.WindowsPhoneClipboard.EncodePng(Enumerable.Repeat((byte)200, 40 * 30 * 4).ToArray(), 40, 30), Files = { previewFile } };
-    using var preview = new PhoneTrackpad(() => IPAddress.Loopback, previewInput, new FakeFirewall(), 17834);
+    var preview = new PhoneTrackpad(() => IPAddress.Loopback, previewInput, new FakeFirewall(), 17834);
     if (!preview.Start()) throw new Exception(preview.Status);
     File.WriteAllText(args[1], preview.PairingUrl);
+    // Simulates the computer installing an update: writing a build id to
+    // <url-file>.restart restarts the receiver (same port and link) serving that
+    // build, then <url-file>.restart is emptied once it is listening again.
+    var previewToken = new Uri(preview.PairingUrl).Fragment[1..];
+    File.WriteAllText(args[1] + ".restart", "");
+    _ = Task.Run(async () => {
+        while (true) {
+            await Task.Delay(100);
+            string next; try { next = File.ReadAllText(args[1] + ".restart").Trim(); } catch { continue; }
+            if (next.Length == 0) continue;
+            preview.Dispose();
+            for (int attempt = 0; ; attempt++) {
+                var restarted = new PhoneTrackpad(() => IPAddress.Loopback, previewInput, new FakeFirewall(), 17834) { TokenProvider = () => previewToken, Build = next };
+                if (restarted.Start()) { preview = restarted; break; }
+                restarted.Dispose();
+                if (attempt > 50) throw new Exception("Preview receiver could not restart: " + restarted.Status);
+                await Task.Delay(100);
+            }
+            File.WriteAllText(args[1] + ".restart", "");
+        }
+    });
     // Report what the page sends so browser.test.cjs can check uploads.
     File.WriteAllText(args[1] + ".clip", "");
     _ = Task.Run(async () => { List<ClipPart> seen = null; while (true) { await Task.Delay(100); var written = previewInput.Clip.Written; if (written != null && written != seen) { seen = written; File.WriteAllText(args[1] + ".clip", JsonSerializer.Serialize(written.Select(c => new { kind = c.Kind, name = c.Name, size = c.Data.Length, head = c.Kind is "text" or "html" ? Encoding.UTF8.GetString(c.Data) : Convert.ToHexString(c.Data.Take(8).ToArray()) }))); } } });
@@ -384,6 +405,45 @@ Check(!PhoneTrackpad.IsPrivateAddress(IPAddress.Parse("8.8.8.8")) && !PhoneTrack
     Check((await (await Clip("/clipboard/item", new StringContent("{\"index\":0}"))).Content.ReadAsStringAsync()) == "from the computer", "A copied file downloads to the phone");
     Check((await (await Clip("/clipboard/item", new StringContent("{\"index\":-1}"))).Content.ReadAsByteArrayAsync()).AsSpan(1, 3).SequenceEqual("PNG"u8), "The copied picture downloads as PNG");
     Check((await Clip("/clipboard/item", new StringContent("{\"index\":1}"))).StatusCode == HttpStatusCode.NotFound, "Only files from the snapshot the phone read can be downloaded");
+}
+{
+    // Phone page auto-update: the receiver names the build of the page it serves
+    // in host.js, the WebSocket "ready" message and the Watch /control handshake.
+    var assembly = typeof(PhoneTrackpad).Assembly;
+    var resources = assembly.GetManifestResourceNames().Where(n => n.StartsWith("ThreeE.PhoneControl.Web.", StringComparison.Ordinal)).ToDictionary(n => n["ThreeE.PhoneControl.Web.".Length..], n => {
+        using var stream = assembly.GetManifestResourceStream(n); using var copy = new MemoryStream(); stream.CopyTo(copy); return copy.ToArray(); });
+    var mvid = assembly.ManifestModule.ModuleVersionId.ToString("N");
+    var build = PhoneTrackpad.PageBuild;
+    Check(build.Length == 16 && build.All(c => c is >= '0' and <= '9' or >= 'a' and <= 'f') && build == PhoneTrackpad.ComputeBuild(resources, mvid) && resources.ContainsKey("PhoneTrackpad.js") && resources.ContainsKey("dock.js"), "The page build id is a hash of every embedded Web resource");
+    var changed = new Dictionary<string, byte[]>(resources) { ["PhoneTrackpad.js"] = resources["PhoneTrackpad.js"].Append((byte)' ').ToArray() };
+    var renamed = resources.ToDictionary(r => r.Key == "dock.js" ? "dock2.js" : r.Key, r => r.Value);
+    var added = new Dictionary<string, byte[]>(resources) { ["new.js"] = Array.Empty<byte>() };
+    Check(PhoneTrackpad.ComputeBuild(changed, mvid) != build && PhoneTrackpad.ComputeBuild(renamed, mvid) != build && PhoneTrackpad.ComputeBuild(added, mvid) != build && PhoneTrackpad.ComputeBuild(resources, "other receiver code") != build, "The build id changes when a page resource or the receiver changes");
+    Check(PhoneTrackpad.ComputeBuild(resources.Reverse(), mvid) == build, "The build id does not depend on resource order");
+    var buildInput = new FakeInput();
+    using var buildPad = new PhoneTrackpad(() => IPAddress.Loopback, buildInput, new FakeFirewall(), FreePort());
+    Check(buildPad.Start() && buildPad.Build == build, "A receiver reports the build of the page it serves");
+    var origin = new Uri(buildPad.PairingUrl).GetLeftPart(UriPartial.Authority); var token = new Uri(buildPad.PairingUrl).Fragment[1..];
+    using var http = new HttpClient();
+    Check((await http.GetStringAsync(origin + "/host.js")).Contains("\"build\":\"" + build + "\""), "host.js tells the page which build it loaded with");
+    using (var ws = await Connect(buildPad.PairingUrl)) {
+        using var ready = JsonDocument.Parse(await Receive(ws));
+        Check(ready.RootElement.GetProperty("ready").GetBoolean() && ready.RootElement.GetProperty("build").GetString() == build, "The WebSocket ready message includes the build id");
+    }
+    await Until(() => buildPad.Status.Contains("disconnected"));
+    async Task<JsonElement> WatchPost(object payload) {
+        using var request = new HttpRequestMessage(HttpMethod.Post, origin + "/control") { Content = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json") };
+        request.Headers.Add("Origin", origin); request.Headers.Add("X-Trackpad-Token", token);
+        using var response = await http.SendAsync(request);
+        return JsonDocument.Parse(await response.Content.ReadAsStringAsync()).RootElement.Clone();
+    }
+    const string buildWatch = "DDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDD";
+    var handshake = await WatchPost(new { client = buildWatch, type = "connect", sequence = 1 });
+    Check(handshake.GetProperty("ready").GetBoolean() && handshake.GetProperty("build").GetString() == build, "The Watch /control handshake reply includes the build id");
+    var ping = await WatchPost(new { client = buildWatch, type = "commands", sequence = 2, commands = new[] { new { type = "ping" } } });
+    Check(ping.GetProperty("build").GetString() == build, "Watch heartbeats also report the build id");
+    using var updated = new PhoneTrackpad(() => IPAddress.Loopback, buildInput, new FakeFirewall(), FreePort()) { Build = "0123456789abcdef" };
+    Check(updated.Start() && (await http.GetStringAsync(new Uri(updated.PairingUrl).GetLeftPart(UriPartial.Authority) + "/host.js")).Contains("\"build\":\"0123456789abcdef\""), "A receiver running a different build reports it");
 }
 Console.WriteLine($"All {results.Count} checks passed.");
 

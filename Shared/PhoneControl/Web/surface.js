@@ -84,6 +84,7 @@
     if(select.dataset.ports!==signature){select.replaceChildren();const off=document.createElement('option');off.value=-1;off.textContent='MIDI off / choose output';select.append(off);for(const port of info.midi.ports){const item=document.createElement('option');item.value=port.id;item.textContent=port.name;select.append(item);}select.dataset.ports=signature;}
     select.value=output;$('midiStatus').textContent=output>=0?'Sending to '+info.midi.status+' · map controls in Ableton':info.platform==='windows'?'Choose a MIDI output. Ableton uses a loopback port such as loopMIDI.':info.midi.status;
   }
-  window.ThreeESurface={cancel,describe,openStudio,state(ready){if(!ready){cancel();studio.querySelectorAll('.vinyl').forEach(v=>v.classList.remove('is-spinning'));$('midiStatus').textContent='Disconnected — controls paused';}else {if(C.info)describe(C.info);if(!studio.hidden)C.send('info');}}};
+  // The MIDI controls are in use while a note is held or the studio is open.
+  window.ThreeESurface={cancel,describe,openStudio,busy:()=>notes.size>0||!studio.hidden,state(ready){if(!ready){cancel();studio.querySelectorAll('.vinyl').forEach(v=>v.classList.remove('is-spinning'));$('midiStatus').textContent='Disconnected — controls paused';}else {if(C.info)describe(C.info);if(!studio.hidden)C.send('info');}}};
   if(C.info)describe(C.info);
 })();

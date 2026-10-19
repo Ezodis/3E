@@ -43,7 +43,15 @@
   // phone does not count as movement.
   let mode = 0, peak = 0, started = 0, distance = 0, offset = 0, armPoint = null, last = null, cancelled = false;
   let lastTap = null, tapCandidate = false, tapDrag = false, gestureOrigin = null, fourOrigin = null, fourDone = false;
-  let lastTouchAt = -Infinity;
+  let lastTouchAt = -Infinity, touching = 0;
+  // Updates: host.js names the build of the page this receiver serves. When
+  // the receiver we (re)connect to reports a different build (the computer
+  // installed an update and restarted), reload once to pick up the new page —
+  // only while nothing is held, typed or open, never twice for the same build
+  // and never twice within UPDATE_GAP.
+  const loadedBuild = typeof window.ThreeEHost?.build === 'string' ? window.ThreeEHost.build : null;
+  const UPDATE_KEY = '3e-update', UPDATE_GAP = 30000, UPDATE_POLL = 400, UPDATE_DELAY = 600;
+  let receiverBuild = null, pendingBuild = null, updateTimer = null, updating = false;
   let dx = 0, dy = 0, sx = 0, sy = 0;
   const speed = $('speed');
   try { const saved = Number(localStorage.getItem('3e-speed')); if (saved >= .5 && saved <= 20) speed.value = saved; } catch {}
@@ -84,7 +92,7 @@
     mode = peak = 0; last = null; cancelled = false;
     lastTap = null; tapCandidate = tapDrag = fourDone = false; gestureOrigin = fourOrigin = null;
     dx = dy = sx = sy = 0;
-    clearInterval(heartbeat);
+    clearInterval(heartbeat); clearTimeout(updateTimer); updateTimer = null; receiverBuild = null;
     clearTimeout(holdTimer); clearTimeout(pressTimer); clearTimeout(releaseTimer); releaseTimer=null; httpQueue = []; pendingTap = null; dragArmed = false; owedClick = false; clearTimeout(owedTimer);
     buttons.forEach(b => b.disabled = true); window.ThreeEDock?.commands(false);
     pad.classList.remove('live', 'dragging');
@@ -107,6 +115,45 @@
       if (performance.now()-lastReply > 4500) recover('Connection interrupted — reconnecting…');
       else send('ping');
     }, 1000);
+    checkBuild(receiverBuild);
+  }
+  function noteBuild(build) {
+    if (typeof build !== 'string') return;
+    receiverBuild = build;
+    if (ready) checkBuild(build);
+  }
+  function lastUpdate() {
+    try { const value = JSON.parse(sessionStorage.getItem(UPDATE_KEY)); return value && typeof value === 'object' ? value : {}; }
+    catch { return {}; }
+  }
+  function checkBuild(build) {
+    if (updating) return;
+    // A receiver that predates build ids, or one serving this same page.
+    if (!loadedBuild || typeof build !== 'string' || build === loadedBuild) {
+      pendingBuild = null; clearTimeout(updateTimer); updateTimer = null; return;
+    }
+    // Already reloaded once for this build: never loop.
+    if (lastUpdate().build === build) return;
+    pendingBuild = build; tryUpdate();
+  }
+  function busyForUpdate() {
+    const active = document.activeElement;
+    // A finger count with no touch event for a minute is a lost touchend, not a hold.
+    return touching > 0 && performance.now()-lastTouchAt < 60000 || mode > 0 || dragging || dragArmed || tapCandidate || tapDrag || threeDrag || releaseTimer != null || two != null ||
+      window.ThreeEDock?.busy?.() === true || window.ThreeESurface?.busy?.() === true ||
+      active?.id === 'typeSink' || $('clipSheet')?.hidden === false;
+  }
+  function tryUpdate() {
+    clearTimeout(updateTimer); updateTimer = null;
+    if (!pendingBuild || updating || !ready) return;
+    const since = Math.abs(Date.now() - (Number(lastUpdate().at) || 0));
+    if (busyForUpdate() || since < UPDATE_GAP) { updateTimer = setTimeout(tryUpdate, UPDATE_POLL); return; }
+    updating = true;
+    try { sessionStorage.setItem(UPDATE_KEY, JSON.stringify({ build: pendingBuild, at: Date.now() })); } catch {}
+    releaseControls();
+    status.textContent = 'Updating…';
+    // location.reload() keeps the #token hash, so the same link reconnects.
+    setTimeout(() => location.reload(), UPDATE_DELAY);
   }
   async function post(client, type, extra = {}, keepalive = false) {
     const sequence = ++httpSequence;
@@ -123,7 +170,7 @@
         if (response.status === 401) { error.terminal = true; error.message = 'This link expired. Scan the latest QR code.'; }
         throw error;
       }
-      if(response.json) { const result=await response.json(); if(result.host) describe(result.host); }
+      if(response.json) { const result=await response.json(); if(result.host) describe(result.host); noteBuild(result.build); }
     } finally { clearTimeout(timeout); }
   }
   async function pump() {
@@ -160,6 +207,7 @@
       try {
         const message = JSON.parse(event.data);
         if(message.host) describe(message.host);
+        if (message.ready) receiverBuild = typeof message.build === 'string' ? message.build : null;
         if (message.error === 'pairing') recover('This link expired. Scan the latest QR code.',true);
         else if (message.error === 'busy') recover('Another device is connected — waiting…');
         else if (message.ready && !ready) connected();
@@ -186,7 +234,7 @@
              y: Array.from(touches).reduce((n, t) => n + t.clientY, 0) / touches.length };
   }
   pad.addEventListener('touchstart', e => {
-    e.preventDefault(); lastTouchAt = performance.now(); if (!e.touches.length) return;
+    e.preventDefault(); lastTouchAt = performance.now(); touching = e.touches.length; if (!e.touches.length) return;
     // Keep the gesture even while (re)connecting; flush() holds its motion.
     if (!ready) wake();
     // After a pause the radios doze; a tiny packet now wakes the path before
@@ -224,7 +272,7 @@
     }
   }, { passive: false });
   pad.addEventListener('touchmove', e => {
-    e.preventDefault(); lastTouchAt = performance.now(); if (cancelled || !e.touches.length) return;
+    e.preventDefault(); lastTouchAt = performance.now(); touching = e.touches.length; if (cancelled || !e.touches.length) return;
     const point = center(e.touches), count = e.touches.length;
     if (peak >= 4) {
       if (count === 4 && fourOrigin && !fourDone) {
@@ -356,7 +404,7 @@
     }
   }
   pad.addEventListener('touchend', e => {
-    e.preventDefault(); clearTimeout(holdTimer); lastTouchAt = performance.now(); flush(true);
+    e.preventDefault(); clearTimeout(holdTimer); lastTouchAt = performance.now(); touching = e.touches.length; flush(true);
     if (peak >= 4) {
       if (!e.touches.length) { mode = peak = 0; last = lastTap = fourOrigin = null; cancelled = false; }
       return;
@@ -387,7 +435,7 @@
       mode = peak = 0; last = null; cancelled = false; tapCandidate = false;
     } else { mode = e.touches.length; last = center(e.touches); }
   }, { passive: false });
-  pad.addEventListener('touchcancel', e => { e.preventDefault(); releaseControls(); }, { passive: false });
+  pad.addEventListener('touchcancel', e => { e.preventDefault(); touching = 0; releaseControls(); }, { passive: false });
   // Some watch viewers expose taps as clicks but consume continuous touch events.
   pad.addEventListener('click', () => { if (performance.now()-lastTouchAt > 500 && !scrollMode) send('left'); });
   pad.addEventListener('contextmenu', e => e.preventDefault());
