@@ -67,6 +67,16 @@ Default channel is **16** (wire channel 15). Both layouts use the same mapping:
 
 Triggers send a note-on followed by note-off. **Release notes** sends releases only for this controller's held notes. It does not silence other MIDI devices. Port changes, sleep and disconnect also release held notes. No mappings or output-port selections are silently written to Ableton preferences.
 
+## Keyboard and clipboard
+
+The bottom row of the ⌘ palette has three buttons, on both Windows and Mac. Each appears only when the receiving computer reports support for it.
+
+- **Keyboard** opens the phone keyboard and types into the focused app on the computer. Autocorrect, predictions, dictation and the space-bar cursor are replayed as backspaces, text and arrow keys. A key bar above the keyboard adds Esc, Tab, arrows, ⌫, Delete and Enter; hold an arrow or ⌫ to repeat. **Done** closes it. Text is posted as Unicode key events (Windows `KEYEVENTF_UNICODE`, Mac `CGEventKeyboardSetUnicodeString`), so accents and emoji work whatever the keyboard layout. On Mac this uses the existing Accessibility approval.
+- **Paste to PC / Paste to Mac** sends what you copied on the phone: plain text, formatted text (HTML), a picture, or files such as PDFs. **Paste on …** also presses Ctrl+V / ⌘V; **Copy to … clipboard** only fills the clipboard. Pictures are converted to PNG on the phone. Windows places them as PNG + CF_DIB; Mac places them as PNG + TIFF. Files are saved to `%LOCALAPPDATA%\3EWindows\PhoneClipboard` or `~/Library/Caches/3E/PhoneClipboard`, one folder per transfer, removed after a day. They are then placed on the clipboard as files, ready to paste into Explorer/Finder, mail or chat. Maximum 200 MB per transfer.
+- **Copy from PC / Copy from Mac** reads the computer clipboard and shows its text, formatted text (Mac RTF is converted to HTML), picture and copied files. **Copy text** / **Copy formatted** put them on the phone clipboard. For a picture, touch and hold it → Copy or Save to Photos. Copied files (up to 512 MB each) download to the phone. Folders are listed but not transferred.
+
+The phone page is plain HTTP on the LAN. Browsers allow direct clipboard access only on HTTPS, so the phone uses the system Paste menu and page selection instead. Opened over HTTPS or localhost, it uses the Clipboard API directly. Transfers use authenticated same-origin POSTs (`/clipboard/write`, `/clipboard/read`, `/clipboard/item`) carrying the pairing secret. Only the connected controller can use them, and only the picture and files of the snapshot the phone just read can be downloaded. Copied HTML is shown sanitized: no scripts, styles or remote resources. Hosts opt in through `ITrackpadInput.SupportsTyping` and `ITrackpadInput.Clipboard` (`WindowsPhoneClipboard`, `MacClipboard` + `PhoneClipboard.m`).
+
 ## Source and builds
 
 - `Web/`: shared HTML, CSS, trackpad gestures and Phone Bar controls.
@@ -77,7 +87,7 @@ Triggers send a note-on followed by note-off. **Release notes** sends releases o
 
 Windows builds through `Windows/build.ps1` with .NET 10. On a Mac with Xcode command-line tools and .NET 10 SDK, run `zsh Shared/PhoneControl/MacHost/build-app.sh` for a universal standalone app; run the existing TouchBar build script for the integrated editions. Both Mac runtime architectures are bundled, so end users do not need .NET. Outputs are ad-hoc signed, not notarized. The phone workflow tests shared behavior and native Mac compilation without posting input to the CI desktop; its artifact contains the standalone app.
 
-Tests: `dotnet run --project Windows/PhoneTrackpadTests`, then `node Windows/PhoneTrackpadTests/gestures.test.cjs`, `node Windows/PhoneTrackpadTests/trackpad.test.cjs` and `node Windows/PhoneTrackpadTests/watch.test.cjs`. `browser.test.cjs` uses installed Playwright WebKit/Chromium and the test executable's `--preview <url-file>` mode. It accepts the URL-file and screenshot-directory arguments. Preview routes input to a fake adapter and never controls the real desktop. Mac helper smoke tests are `--self-test`, `--native-self-test` and `--midi-self-test`.
+Tests: `dotnet run --project Windows/PhoneTrackpadTests`, then `node Windows/PhoneTrackpadTests/gestures.test.cjs`, `node Windows/PhoneTrackpadTests/trackpad.test.cjs` and `node Windows/PhoneTrackpadTests/watch.test.cjs`. `browser.test.cjs` uses installed Playwright WebKit/Chromium and the test executable's `--preview <url-file>` mode. It accepts the URL-file and screenshot-directory arguments. Preview routes input to a fake adapter and never controls the real desktop. Mac helper smoke tests are `--self-test`, `--native-self-test`, `--midi-self-test` and `--clipboard-self-test` (round-trips the real pasteboard).
 
 Automated checks cannot establish real iPhone/Watch gesture fidelity, Accessibility approval on a user's Mac, physical Intel/ARM hardware performance, Wi-Fi latency or end-to-end Ableton audio behavior. Those require testing on the intended devices and Live session.
 

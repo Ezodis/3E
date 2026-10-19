@@ -15,6 +15,7 @@ public sealed class MacInput : ITrackpadInput, IDisposable {
     [DllImport("ThreeEPhoneNative")] public static extern int ThreeEValidateScrollEvent();
     [DllImport("ThreeEPhoneNative")] public static extern int ThreeEHasMultipleSpaces();
     [DllImport(CG)] private static extern void CGEventSetFlags(IntPtr e,ulong flags);
+    [DllImport(CG)] private static extern void CGEventKeyboardSetUnicodeString(IntPtr e,nuint length,ushort[] text);
     [DllImport(CG)] private static extern void CGEventSetIntegerValueField(IntPtr e,uint field,long value);
     [DllImport(CG)] private static extern void CGEventPost(uint tap,IntPtr e);
     [DllImport(CG)][return:MarshalAs(UnmanagedType.I1)] public static extern bool CGPreflightPostEventAccess();
@@ -85,6 +86,41 @@ public sealed class MacInput : ITrackpadInput, IDisposable {
     }
     public void History(int direction){if(direction==0)return;Release();ushort key=direction<0?(ushort)33:(ushort)30;try{Key(key,true,Cmd);}finally{Key(key,false,Cmd);}} // Cmd+[ / Cmd+]
     public void Zoom(int direction){if(direction==0)return;ushort key=direction>0?(ushort)24:(ushort)27;try{Key(key,true,Cmd);}finally{Key(key,false,Cmd);}} // Cmd+= / Cmd+-
+    // Phone keyboard: each character is posted as a Unicode key event, so the
+    // text is independent of the Mac's keyboard layout (accents and emoji too).
+    private readonly MacClipboard clipboard=new();
+    public IPhoneClipboard Clipboard=>clipboard;
+    public bool SupportsTyping=>true;
+    private static void Unicode(ushort[] units){
+        foreach(bool down in new[]{true,false}){
+            var e=CGEventCreateKeyboardEvent(IntPtr.Zero,0,down);if(e==IntPtr.Zero)throw new InvalidOperationException("macOS keyboard event unavailable");
+            CGEventSetFlags(e,0);CGEventKeyboardSetUnicodeString(e,(nuint)units.Length,units);Post(e);
+        }
+    }
+    public void TypeText(string text){
+        if(string.IsNullOrEmpty(text))return;
+        Release();AppsEnd();
+        for(int i=0;i<text.Length;i++){
+            char c=text[i];
+            if(c=='\r'){if(i+1<text.Length&&text[i+1]=='\n')continue;c='\n';}
+            if(c=='\n'){try{Key(36,true);}finally{Key(36,false);}}
+            else if(c=='\t'){try{Key(48,true);}finally{Key(48,false);}}
+            else if(char.IsHighSurrogate(c)&&i+1<text.Length&&char.IsLowSurrogate(text[i+1])){Unicode(new[]{(ushort)c,(ushort)text[i+1]});i++;}
+            else if(c>=0x20&&c!=0x7F)Unicode(new[]{(ushort)c});
+        }
+    }
+    // Ids match PhoneClipboard.KeyCount / Web/clip.js, with Mac text-editing
+    // equivalents: line start/end are ⌘← / ⌘→ and delete word is ⌥⌫.
+    private const ulong Option=1UL<<19,Arrow=(1UL<<21)|(1UL<<23),Fn=1UL<<23;
+    private static readonly (ushort key,ulong flags)[] phoneKeys={
+        (51,0),(36,0),(48,0),(53,0),
+        (123,Arrow),(126,Arrow),(124,Arrow),(125,Arrow),
+        (117,Fn),(123,Arrow|Cmd),(124,Arrow|Cmd),(51,Option)};
+    public void PressKey(int id,int repeat){
+        if((uint)id>=(uint)phoneKeys.Length)return;
+        Release();AppsEnd();var (key,flags)=phoneKeys[id];
+        for(int i=0;i<Math.Clamp(repeat,1,64);i++){try{Key(key,true,flags);}finally{Key(key,false,flags);}}
+    }
     public void Media(int action)=>media(action);
     public void Volume(int level)=>volume.Set(level);
     public void MidiPort(int id)=>midi.Select(id);

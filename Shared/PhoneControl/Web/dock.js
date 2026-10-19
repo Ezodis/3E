@@ -49,6 +49,32 @@
     button.addEventListener('click',()=>fireShortcut(button,id));
     commandsPane.append(button);
   }
+  // Bottom row: phone keyboard and two-way clipboard (see clip.js). Each button
+  // appears only when the computer reports support for it in host.js.
+  const toolIcons={
+    keyboard:svg('<rect x="3" y="8" width="26" height="17" rx="3" fill="none" stroke="currentColor" stroke-width="2"/><path d="M8 13h2m4 0h2m4 0h2m4 0h0M8 17h2m4 0h2m4 0h2M11 21h10" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/>'),
+    sendClip:svg('<rect x="7" y="6" width="18" height="23" rx="3" fill="none" stroke="currentColor" stroke-width="2"/><path d="M12 6V4h8v2" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M16 24V13m-4.5 4.5L16 13l4.5 4.5" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>'),
+    getClip:svg('<rect x="7" y="6" width="18" height="23" rx="3" fill="none" stroke="currentColor" stroke-width="2"/><path d="M12 6V4h8v2" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M16 12v11m-4.5-4.5L16 23l4.5-4.5" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>')
+  };
+  const toolRule=document.createElement('div');toolRule.className='pane-rule';commandsPane.append(toolRule);
+  const computer=window.ThreeEHost?.platform==='macos'?'Mac':'PC';
+  const toolButtons=[['keyboard','Keyboard','Type on the '+computer+' with the phone keyboard'],['sendClip','Paste to '+computer,'Send the phone clipboard to the '+computer+' and paste it'],['getClip','Copy from '+computer,'Copy the '+computer+' clipboard to this phone']].map(([tool,label,description])=>{
+    const button=document.createElement('button');button.type='button';button.className='tool';button.dataset.tool=tool;
+    button.setAttribute('aria-label',description);
+    const kbd=document.createElement('kbd'),small=document.createElement('small');kbd.innerHTML=toolIcons[tool];small.textContent=label;button.append(kbd,small);
+    button.addEventListener('click',()=>runTool(tool));
+    commandsPane.append(button);return button;
+  });
+  function runTool(tool){
+    if(!C.connected())return;
+    showCommands(false);window.ThreeEClip?.[tool]?.();
+  }
+  function showTools(){
+    const host=window.ThreeEHost||{},ready=!!window.ThreeEClip;
+    toolButtons[0].hidden=!(ready&&host.keyboard);toolButtons[1].hidden=toolButtons[2].hidden=!(ready&&host.clipboard);
+    toolRule.hidden=toolButtons.every(b=>b.hidden);
+  }
+  showTools();
   // Press ⌘ and slide onto a shortcut, then release to send it. A plain tap
   // opens (or closes) the palette for tapping instead.
   commandsButton.addEventListener('pointerdown',e=>{
@@ -67,7 +93,7 @@
     if(!picking||picking.id!==e.pointerId)return;
     const p=picking;picking=null;commandsPointerAt=performance.now();
     const target=shortcutAt(e.clientX,e.clientY)||p.target;target?.classList.remove('picking');
-    if(target&&p.moved)fireShortcut(target,+target.dataset.shortcut);
+    if(target&&p.moved){if(target.dataset.tool)runTool(target.dataset.tool);else fireShortcut(target,+target.dataset.shortcut);}
     else if(p.moved||p.wasOpen)showCommands(false);
   });
   commandsButton.addEventListener('pointercancel',()=>{picking?.target?.classList.remove('picking');picking=null;showCommands(false);});

@@ -43,6 +43,22 @@
 #commandsPane kbd{font:700 16px/1.1 system-ui,-apple-system,"Segoe UI",sans-serif;letter-spacing:.02em}#commandsPane small{font-size:11px;font-weight:500;color:#9fb6c2}
 #commandsPane::before{content:'Slide to a shortcut · release to send';grid-column:1/-1;text-align:center;font-size:11px;color:#8da69f;padding:2px 0 4px}
 #commandsPane button.sent,#commandsPane button.picking{background:#a8e5cd;color:#0e2420}#commandsPane button.sent small,#commandsPane button.picking small{color:#0e2420}
+#commandsPane .pane-rule{grid-column:1/-1;height:1px;background:#405462;margin:2px 6px}
+#commandsPane button.tool{background:#1d3936;border-color:#4f7d72}#commandsPane button.tool kbd{display:flex;align-items:center;justify-content:center;height:22px}#commandsPane button.tool svg{width:24px;height:24px}
+#typeSink{position:fixed;top:0;left:0;width:1px;height:1px;padding:0;border:0;margin:0;opacity:.01;color:transparent;background:transparent;caret-color:transparent;resize:none;font-size:16px;pointer-events:none;z-index:0}
+#keyBar{position:fixed;left:0;right:0;top:0;z-index:4;display:flex;gap:4px;padding:6px max(8px,env(safe-area-inset-right)) 6px max(8px,env(safe-area-inset-left));background:#17222cf7;border-top:1px solid #405462;overflow-x:auto;scrollbar-width:none;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
+#keyBar::-webkit-scrollbar{display:none}#keyBar button{flex:1 1 0;min-width:0;min-height:42px;padding:4px 1px;font-size:14px;border-radius:10px;touch-action:none;white-space:nowrap}#keyBar button.done{flex:1.7 1 0}#keyBar button.held{background:#a8e5cd;color:#0e2420}#keyBar .done{background:#a8e5cd;color:#0e2420}
+#clipSheet h2{font-size:15px;margin:18px 0 6px;color:#eef5fa}#clipSheet .row button{flex:1}#clipSheet button.primary{background:#a8e5cd;color:#0e2420;border-color:#a8e5cd}
+#clipSheet .clip-zone{margin-top:12px;min-height:110px;max-height:30vh;overflow:auto;padding:14px;border:1.5px dashed #56736e;border-radius:14px;background:#111820;color:#eef5fa;font-size:16px;-webkit-user-select:text;user-select:text;outline:none}
+#clipSheet .clip-zone:focus{border-color:#a8e5cd}#clipSheet .clip-zone:empty::before{content:attr(data-placeholder);color:#8da69f}
+#clipSheet .clip-list{list-style:none;padding:0;margin:12px 0 0}#clipSheet .clip-list li{padding:10px 0;border-top:1px solid #2c3e4a;font-size:14px;color:#c0d0da;overflow-wrap:anywhere}#clipSheet .clip-list li button{display:block;width:100%}
+#clipSheet .clip-snippet{display:block;margin-top:4px;color:#8da69f;white-space:pre-wrap;max-height:4.5em;overflow:hidden}
+#clipSheet .clip-thumb{display:block;margin-top:8px;max-width:100%;max-height:160px;border-radius:10px}
+#clipSheet .clip-rich{max-height:34vh;overflow:auto;padding:12px;border-radius:12px;background:#fff;color:#111;font-size:15px;-webkit-user-select:text;user-select:text;overflow-wrap:anywhere}#clipSheet .clip-rich img{max-width:100%}
+#clipSheet .clip-text{width:100%;min-height:90px;max-height:30vh;padding:10px;border-radius:12px;border:1px solid #405462;background:#111820;color:#eef5fa;font:15px/1.4 system-ui,-apple-system,"Segoe UI",sans-serif}
+#clipSheet .clip-image img{display:block;max-width:100%;max-height:45vh;margin:0 auto;border-radius:10px;-webkit-touch-callout:default;-webkit-user-select:auto;user-select:auto}#clipSheet .clip-image small{display:block;margin-top:6px;color:#8da69f}
+#clipNote{min-height:1.5em;margin:14px 0 0;color:#a8e5cd}#clipNote.error,#clipSheet .error{color:#ffb4a8}
 .watch #commands,.watch #commandsPane{display:none!important}
+.watch #keyBar,.watch #clipSheet,.watch #typeSink{display:none!important}
 /* Watch keeps its original compact row: Apps, scroll toggle, Media. */
 .watch .dock{display:flex}.watch .dock-side{display:contents}
