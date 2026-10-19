@@ -1,3 +1,9 @@
+3£Windows 1.0.36 adds a full restart.
+
+- **Restart** (was "Restart input engines") quits and relaunches the whole suite: the tray app, three-finger drag, the Clicks keyboard engine, PowerToys, the wallpaper app and Phone Bar all start fresh. No administrator prompt; the Phone Bar link is kept.
+
+Includes everything from 1.0.35:
+
 3£Windows 1.0.35 shortens the Clicks keyboard row.
 
 - **Clicks keyboard:** the "— running" / "— stopped" text is gone; the check mark now shows it is running. Click an unchecked row to start it, a checked row to stop it.
