@@ -18,7 +18,8 @@ async function updateFlow(browser,name,url,urlFile,errors){
   await page.addInitScript(()=>{try{sessionStorage.setItem('test-loads',String(+(sessionStorage.getItem('test-loads')||0)+1));}catch{}
    window.testSockets=[];const W=WebSocket;window.WebSocket=class extends W{constructor(...a){super(...a);window.testSockets.push(this);}};});
   const loads=async()=>{try{return await page.evaluate(()=>+sessionStorage.getItem('test-loads'));}catch{return -1;}};
-  const live=()=>page.waitForFunction(()=>document.getElementById('status').textContent==='Connected');
+  // Null-safe: right after a reload the new document may not have its DOM yet.
+  const live=()=>page.waitForFunction(()=>document.getElementById('status')?.textContent==='Connected');
   const reloaded=async count=>{for(let i=0;i<100&&await loads()<count;i++)await page.waitForTimeout(100);assert.equal(await loads(),count,'the page reloaded');await live();};
   await page.goto(url);await live();
   return {ctx,page,sent,loads,live,reloaded};
@@ -30,7 +31,7 @@ async function updateFlow(browser,name,url,urlFile,errors){
  assert.match(await build(),/^[0-9a-f]{16}$/,'the page knows the build it loaded with');
  // Update while the page stays put (something in use): it reconnects to the new receiver without reloading.
  // (Stops early if the page reloaded instead, so the caller's assertion explains why.)
- const reconnected=async()=>{const n=await loads();for(let i=0;i<150&&await loads()===n;i++){if(await u.evaluate(()=>window.testSockets?.length>=2&&window.testSockets.at(-1).readyState===1&&document.getElementById('status').textContent==='Connected').catch(()=>false))break;await u.waitForTimeout(100);}await u.waitForTimeout(1500);};
+ const reconnected=async()=>{const n=await loads();for(let i=0;i<150&&await loads()===n;i++){if(await u.evaluate(()=>window.testSockets?.length>=2&&window.testSockets.at(-1).readyState===1&&document.getElementById('status')?.textContent==='Connected').catch(()=>false))break;await u.waitForTimeout(100);}await u.waitForTimeout(1500);};
  const resetSockets=()=>u.evaluate(()=>{window.testSockets=window.testSockets.slice(-1);});
  const touches=(type,n,dx=0)=>u.evaluate(([type,n,dx])=>{const e=new Event(type,{bubbles:true,cancelable:true});Object.defineProperty(e,'touches',{value:Array.from({length:n},(_,i)=>({clientX:120+i*40+dx,clientY:400}))});document.getElementById('pad').dispatchEvent(e);},[type,n,dx]);
  {// A three-finger drag is held through the update.
