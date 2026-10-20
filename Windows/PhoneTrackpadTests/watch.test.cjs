@@ -13,12 +13,15 @@ function element(id) {
 }
 const doc={hidden:false,handlers:{},documentElement:element('html'),getElementById:element,addEventListener(type,fn){this.handlers[type]=fn;}};
 const win={handlers:{},matchMedia(){return {matches:true};},addEventListener(type,fn){this.handlers[type]=fn;}};
+var prefsRequests=0;
 vm.runInNewContext(source,{document:doc,window:win,URLSearchParams,Uint8Array,crypto:require('node:crypto').webcrypto,AbortController,
   location:{protocol:'http:',host:'127.0.0.1:17834',search:'',hash:'#'+'A'.repeat(48)},
   localStorage:{getItem(key){return key==='3e-acceleration'?'false':null;},setItem(){}},performance:{now:()=>time},requestAnimationFrame(fn){frame=fn;},
   setInterval(fn,ms){const id=++timerId;timers.set(id,{fn,ms});return id;},clearInterval(id){timers.delete(id);},
   setTimeout(fn,ms){const id=++timerId;timers.set(id,{fn,ms,once:true});return id;},clearTimeout(id){timers.delete(id);},
   async fetch(url,options){
+    // Settings sync is separate from the control channel under test.
+    if(url==='/prefs'){prefsRequests++;return {ok:true,status:200,json:async()=>({prefs:{acceleration:false}})};}
     const payload=JSON.parse(options.body);requests.push({url,options,payload});
     if(failNext){failNext=false;return {ok:false,status:409};}
     if(replaceNext&&payload.type!=='disconnect'){replaceNext=false;return {ok:false,status:403,json:async()=>({ready:false,error:'replaced'})};}
@@ -34,6 +37,7 @@ function commands(){return requests.filter(r=>r.payload.type==='commands').flatM
   await idle();
   assert.equal(requests[0].payload.type,'connect');
   assert.equal(requests[0].payload.takeover,true,'opening the watch page takes control');
+  assert.ok(prefsRequests>=1,'the page loads its saved settings from the computer once connected');
   assert.match(requests[0].payload.client,/^[a-f0-9]{32}$/);
   assert.equal(requests[0].options.headers['X-Trackpad-Token'],'A'.repeat(48));
   assert.equal(requests[0].options.referrerPolicy,'same-origin');

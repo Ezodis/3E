@@ -21,8 +21,9 @@
     const listeners = [];
     const local = () => { try { localStorage.setItem(KEY, JSON.stringify(values)); } catch {} };
     async function exchange(body) {
-      const abort = new AbortController(), timer = setTimeout(() => abort.abort(), 3000);
+      let timer = null;
       try {
+        const abort = new AbortController(); timer = setTimeout(() => abort.abort(), 3000);
         const response = await fetch('/prefs', { method:'POST', mode:'same-origin', referrerPolicy:'same-origin', cache:'no-store',
           headers:{'Content-Type':'application/json','X-Trackpad-Token':token}, signal:abort.signal, body:JSON.stringify(body) });
         if (!response.ok) return null;
