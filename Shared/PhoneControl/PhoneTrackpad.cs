@@ -114,12 +114,51 @@ public sealed class PhoneTrackpad : IDisposable {
         // Last computer clipboard snapshot the phone read; only its picture and
         // files can be downloaded, never an arbitrary path.
         public ClipSnapshot Clip;
+        public readonly int Port;
         public Session(IPAddress address, int port, string token, string alias) {
-            Address = address; Origin = $"http://{address}:{port}"; Token = token;
+            Address = address; Port = port; Origin = $"http://{address}:{port}"; Token = token;
             AliasOrigin = string.IsNullOrEmpty(alias) ? null : $"http://{alias}:{port}";
         }
-        public bool IsOrigin(string origin) => origin != null && (origin == Origin || origin == AliasOrigin);
-        public bool IsHost(string host) => host != null && (host == new Uri(Origin).Authority || AliasOrigin != null && host.Equals(new Uri(AliasOrigin).Authority, StringComparison.OrdinalIgnoreCase));
+        public bool IsOrigin(string origin) => origin != null && (origin == Origin || origin == AliasOrigin ||
+            origin.StartsWith("http://", StringComparison.Ordinal) && IsLocalLiteral(origin.Substring(7)));
+        public bool IsHost(string host) => host != null && (host == new Uri(Origin).Authority || AliasOrigin != null && host.Equals(new Uri(AliasOrigin).Authority, StringComparison.OrdinalIgnoreCase) ||
+            IsLocalLiteral(host));
+        // A computer can have more than one LAN address (Wi-Fi and Ethernet,
+        // or an address that just changed). Literal private IPs that belong to
+        // this computer, on this port, are as safe as the chosen one: DNS
+        // rebinding needs a hostname, and these are numbers.
+        private bool IsLocalLiteral(string authority) {
+            var colon = authority.LastIndexOf(':');
+            return colon > 0 && int.TryParse(authority.AsSpan(colon + 1), out var hostPort) && hostPort == Port &&
+                IPAddress.TryParse(authority.AsSpan(0, colon), out var ip) && (ip.Equals(Address) || IsPrivateAddress(ip) && IsThisComputer(ip));
+        }
+    }
+    private static IPAddress[] localAddresses = Array.Empty<IPAddress>();
+    private static long localAddressesAt = long.MinValue;
+    public static bool IsThisComputer(IPAddress ip) {
+        if (Environment.TickCount64 - localAddressesAt > 5000) {
+            try {
+                localAddresses = NetworkInterface.GetAllNetworkInterfaces().Where(n => n.OperationalStatus == OperationalStatus.Up)
+                    .SelectMany(n => n.GetIPProperties().UnicastAddresses).Select(a => a.Address).ToArray();
+            } catch { }
+            localAddressesAt = Environment.TickCount64;
+        }
+        return localAddresses.Contains(ip);
+    }
+    // Never answer with an empty error: iPhone Safari shows an empty error
+    // response as a blank white page, which hides what went wrong.
+    public static void Refuse(HttpListenerResponse response, int code, string message) {
+        try {
+            var page = Encoding.UTF8.GetBytes("<!doctype html><meta charset=utf-8><meta name=viewport content=\"width=device-width,initial-scale=1\"><title>Phone Bar</title>" +
+                "<body style=\"margin:0;min-height:100vh;display:grid;place-items:center;background:#141b21;color:#d6dee5;font:17px -apple-system,system-ui,sans-serif;text-align:center;padding:24px;box-sizing:border-box\">" +
+                "<div><p style=\"font-size:20px;font-weight:600\">Phone Bar</p><p>" + WebUtility.HtmlEncode(message) + "</p><p style=\"opacity:.6;font-size:14px\">Code " + code + "</p></div>");
+            response.StatusCode = code;
+            response.ContentType = "text/html; charset=utf-8";
+            response.Headers["Cache-Control"] = "no-store";
+            response.ContentLength64 = page.Length;
+            response.OutputStream.Write(page, 0, page.Length);
+        } catch { }
+        try { response.Close(); } catch { }
     }
 
     // Injectable boundaries let tests exercise network loss without disabling Wi-Fi or moving the user's mouse.
@@ -277,7 +316,7 @@ public sealed class PhoneTrackpad : IDisposable {
         try {
             while (!owner.Cancel.IsCancellationRequested) {
                 var context = await owner.Listener.GetContextAsync();
-                if (!owner.Slots.Wait(0)) { context.Response.StatusCode = 503; context.Response.Close(); continue; }
+                if (!owner.Slots.Wait(0)) { Refuse(context.Response, 503, "The computer is busy. Reload this page in a moment."); continue; }
                 _ = HandleAsync(owner, context);
             }
         } catch {
@@ -297,7 +336,7 @@ public sealed class PhoneTrackpad : IDisposable {
             var request = context.Request;
             // Literal bound host and same-origin WebSockets prevent DNS rebinding / cross-site control.
             if (!owner.IsHost(request.Headers["Host"])) {
-                context.Response.StatusCode = 403; context.Response.Close(); return;
+                Refuse(context.Response, 403, "This link points to an address this computer no longer uses. Open Phone Bar on the computer and scan its QR code again."); return;
             }
             if (request.Url.AbsolutePath == "/control" && request.HttpMethod == "POST") {
                 await HttpControlAsync(owner, context); return;
@@ -305,12 +344,12 @@ public sealed class PhoneTrackpad : IDisposable {
             if (request.HttpMethod == "POST" && request.Url.AbsolutePath.StartsWith("/clipboard/", StringComparison.Ordinal)) {
                 await ClipboardAsync(owner, context); return;
             }
-            if (request.HttpMethod != "GET") { context.Response.StatusCode = 403; context.Response.Close(); return; }
+            if (request.HttpMethod != "GET") { Refuse(context.Response, 403, "That request is not allowed."); return; }
             if (request.Url.AbsolutePath == "/ws" && request.IsWebSocketRequest) {
                 if (!owner.IsOrigin(request.Headers["Origin"]) || request.Url.Query.Length != 0) {
                     context.Response.StatusCode = 403; context.Response.Close(); return;
                 }
-                if (!owner.Sockets.Wait(0)) { context.Response.StatusCode = 503; context.Response.Close(); return; }
+                if (!owner.Sockets.Wait(0)) { Refuse(context.Response, 503, "Too many open Phone Bar pages. Close the extra ones."); return; }
                 slotReleased = true; owner.Slots.Release();
                 try {
                     using var ws = (await context.AcceptWebSocketAsync(null)).WebSocket;
@@ -331,13 +370,13 @@ public sealed class PhoneTrackpad : IDisposable {
                 context.Response.StatusCode = 403; context.Response.Close(); return;
             }
             var resource = request.Url.AbsolutePath switch { "/" => "PhoneTrackpad.html", "/pad.js" => "PhoneTrackpad.js", "/surface.js" => "surface.js", "/dock.js" => "dock.js", "/clip.js" => "clip.js", "/surface.css" => "surface.css", "/host.js" => "host.js", "/pair" => "pair", "/icon.png" => "icon.png", _ => null };
-            if (resource == null) { context.Response.StatusCode = 404; context.Response.Close(); return; }
+            if (resource == null) { Refuse(context.Response, 404, "Nothing here. Open the Phone Bar link from the computer's QR code."); return; }
             var response = context.Response;
             response.ContentType = resource.EndsWith(".png") ? "image/png" : resource.EndsWith(".js") ? "text/javascript; charset=utf-8" : resource.EndsWith(".css") ? "text/css; charset=utf-8" : "text/html; charset=utf-8";
             response.Headers["Cache-Control"] = "no-store";
             response.Headers["Referrer-Policy"] = "no-referrer";
             response.Headers["X-Content-Type-Options"] = "nosniff";
-            response.Headers["Content-Security-Policy"] = "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src " + string.Join(" ", new[] { owner.Origin, owner.AliasOrigin }.Where(o => o != null).SelectMany(o => new[] { o, o.Replace("http:", "ws:") })) + "; frame-ancestors 'none'; base-uri 'none'; form-action 'none'";
+            response.Headers["Content-Security-Policy"] = "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self' " + string.Join(" ", new[] { owner.Origin, owner.AliasOrigin }.Where(o => o != null).SelectMany(o => new[] { o, o.Replace("http:", "ws:") })) + "; frame-ancestors 'none'; base-uri 'none'; form-action 'none'";
             using var stream = pairing
                 ? new MemoryStream(Encoding.UTF8.GetBytes(PairingPage(owner.Origin + "/#" + owner.Token)))
                 : resource == "PhoneTrackpad.html" ? new MemoryStream(Encoding.UTF8.GetBytes(BrandedPage(input.Platform)))

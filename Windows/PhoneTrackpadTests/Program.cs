@@ -8,7 +8,8 @@ using System.Text.Json;
 using ThreeE.PhoneBar.Windows;
 
 var results = new List<string>();
-void Check(bool value, string name) { if (!value) throw new Exception("FAIL: " + name); results.Add(name); Console.WriteLine("PASS: " + name); }
+// The ::error:: line becomes a CI annotation, so a failure is visible without the raw log.
+void Check(bool value, string name) { if (!value) { Console.WriteLine("::error::FAIL: " + name); throw new Exception("FAIL: " + name); } results.Add(name); Console.WriteLine("PASS: " + name); }
 // Simulate delayed/intermediate Quartz observations without moving a real cursor.
 var pointerMotion=new ThreeE.PhoneHost.MacPointerMotion();
 Check(pointerMotion.Move(100,100,3,2,0)==(103d,102d),"Mac first movement has no warm-up delay");
@@ -207,6 +208,16 @@ Check(fake.Commands.Contains("history:-1") && fake.Commands.Contains("zoom:1"),"
     foreign.Headers.Add("Origin", "http://evil.example");
     using var refused = await web.SendAsync(foreign);
     Check(!refused.Headers.Contains("Access-Control-Allow-Origin"), "Other sites cannot probe the receiver");
+    using var rebound = new HttpRequestMessage(HttpMethod.Get, ipOrigin + "/");
+    rebound.Headers.Host = "evil.example";
+    using var hostRefused = await web.SendAsync(rebound);
+    var refusalPage = await hostRefused.Content.ReadAsStringAsync();
+    // A named binding is refused by the HTTP stack itself (400 on Windows,
+    // 404 on macOS); a wildcard binding reaches the receiver, which must
+    // explain its 403.
+    Check(((int)hostRefused.StatusCode is 400 or 404 || (int)hostRefused.StatusCode == 403 && refusalPage.Contains("scan its QR code again")) && !refusalPage.Contains("Trackpad"), "A foreign hostname never gets the trackpad, and the receiver's refusal explains itself (got " + (int)hostRefused.StatusCode + ": " + refusalPage[..Math.Min(120, refusalPage.Length)] + ")");
+    using var missing = await web.GetAsync(ipOrigin + "/nope");
+    Check((int)missing.StatusCode == 404 && (await missing.Content.ReadAsStringAsync()).Contains("Phone Bar"), "Unknown paths explain themselves too");
     using var badToken = new PhoneTrackpad(() => IPAddress.Loopback, new FakeInput(), new FakeFirewall(), FreePort()) { TokenProvider = () => "short" };
     Check(badToken.Start() && badToken.PairingUrl.Split('#')[1].Length == 48, "An invalid saved secret falls back to a fresh one");
 }
