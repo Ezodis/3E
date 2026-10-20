@@ -160,7 +160,6 @@ public sealed class PhoneTrackpad : IDisposable {
         } catch { }
         try { response.Close(); } catch { }
     }
-    }
 
     // Injectable boundaries let tests exercise network loss without disabling Wi-Fi or moving the user's mouse.
     public PhoneTrackpad(Func<IPAddress> addressProvider, ITrackpadInput input, ITrackpadFirewall firewall, int port) {
