@@ -25,6 +25,13 @@ public partial class App {
         DispatcherQueue = DispatcherQueue.GetForCurrentThread();
         SettingsData = SettingsData.load();
 
+        // Without administrator rights, hand over to the installed elevated
+        // task (no prompt). Only if that is unavailable does the opt-in
+        // RunElevated setting below fall back to asking.
+        if(!Utils.IsAppRunningAsAdministrator() && WindowsHub.StartElevatedWithoutPrompt(WindowsHub.ElevationMarker)){
+            Environment.Exit(0);
+            return;
+        }
         if(SettingsData.RunElevated && !Utils.IsAppRunningAsAdministrator()){
             if(RestartElevated()) return;
         }

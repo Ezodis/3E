@@ -51,6 +51,8 @@ public class Program {
                 WindowsHub.MenuGlyph("Rotate themes\t\u2003\u2003\u200B") == "\uE8EE",
                 WindowsHub.MenuGlyph("Dynamic wallpaper\t\u2003\u2003") == "\uE9E9",
                 WindowsHub.MenuGlyph("Use dark theme") == null,
+                ElevationHandoffCases(),
+                WindowsHub.UpdateAttemptsAllowed(false) == 1 && WindowsHub.UpdateAttemptsAllowed(true) >= 1,
                 WindowsHub.RestartScript(42, @"C:\Program Files\3EWindows\3£Windows.exe").Contains("Wait-Process -Id 42 ") &&
                     WindowsHub.RestartScript(1, @"C:\it's\app.exe").Contains("'C:\\it''s\\app.exe'") &&
                     !WindowsHub.RestartScript(42, @"C:\app.exe").Contains("Start-Sleep") &&
@@ -126,6 +128,19 @@ public class Program {
             if (phone) (Application.Current as App)?.Hub.OpenPhoneTrackpad();
             else (Application.Current as App)?.OpenSettingsWindow();
         });
+    }
+
+    // Elevation hand-off runs the installed task (no prompt) and never loops.
+    private static bool ElevationHandoffCases(){
+        var marker = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "3e-elevation-" + Guid.NewGuid().ToString("N"), "marker");
+        try{
+            string seen = null;
+            bool first = WindowsHub.StartElevatedWithoutPrompt(marker, (file, arguments) => { seen = file + " " + arguments; return 0; });
+            bool again = WindowsHub.StartElevatedWithoutPrompt(marker, (file, arguments) => 0);
+            System.IO.File.SetLastWriteTimeUtc(marker, DateTime.UtcNow.AddMinutes(-5));
+            bool missingTask = WindowsHub.StartElevatedWithoutPrompt(marker, (file, arguments) => 1);
+            return first && !again && !missingTask && seen != null && seen.EndsWith("schtasks.exe /Run /TN \"3£Windows\"", StringComparison.OrdinalIgnoreCase) && !seen.Contains("runas", StringComparison.OrdinalIgnoreCase);
+        } finally { try { System.IO.Directory.Delete(System.IO.Path.GetDirectoryName(marker), true); } catch { } }
     }
 
     private static bool TerminateOldInstance(uint processId){
