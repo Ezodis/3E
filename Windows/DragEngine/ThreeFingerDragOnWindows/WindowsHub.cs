@@ -571,16 +571,37 @@ public sealed class WindowsHub : IDisposable {
         var info = new LastInput { Size = (uint)Marshal.SizeOf<LastInput>() };
         return GetLastInputInfo(ref info) ? unchecked((uint)Environment.TickCount - info.Time) / 1000.0 : 0;
     }
+    // Permission policy: Windows asks once, when 3£Windows is installed. That
+    // install registers the "3£Windows" logon task with highest privileges, so
+    // starting the suite through it gives administrator rights with no prompt.
+    // A copy that somehow started without them (an update, a manual launch)
+    // hands over to that task instead of asking again. The time guard keeps a
+    // misconfigured task from relaunching in a loop.
+    public static bool StartElevatedWithoutPrompt(string marker, Func<string, string, int> run = null) {
+        try {
+            if (File.Exists(marker) && DateTime.UtcNow - File.GetLastWriteTimeUtc(marker) < TimeSpan.FromMinutes(2)) return false;
+            Directory.CreateDirectory(Path.GetDirectoryName(marker));
+            File.WriteAllText(marker, DateTime.UtcNow.ToString("O"));
+            run ??= (file, arguments) => {
+                using var process = Process.Start(new ProcessStartInfo(file, arguments) { UseShellExecute = false, CreateNoWindow = true });
+                return process != null && process.WaitForExit(10000) ? process.ExitCode : -1;
+            };
+            return run(Path.Combine(Environment.SystemDirectory, "schtasks.exe"), "/Run /TN \"3£Windows\"") == 0;
+        } catch { return false; }
+    }
+    public static string ElevationMarker => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "3EWindows", "elevation-handoff");
+    // Updates without administrator rights ask at most once per release.
+    public static int UpdateAttemptsAllowed(bool elevated) => elevated ? UpdateMaxAttempts : 1;
     private static bool Elevated() {
         using var identity = System.Security.Principal.WindowsIdentity.GetCurrent();
         return new System.Security.Principal.WindowsPrincipal(identity).IsInRole(System.Security.Principal.WindowsBuiltInRole.Administrator);
     }
     private async Task InstallPendingUpdateAsync() {
         // New releases install as soon as they are found, even while the PC is in use.
-        if (installingUpdate || pendingUpdate == null || !settings.AutoUpdate || !Elevated()) return;
+        if (installingUpdate || pendingUpdate == null || !settings.AutoUpdate) return;
         var release = pendingUpdate.Value;
         var tag = release.GetProperty("tag_name").GetString();
-        if (settings.AutoUpdateTag == tag && settings.AutoUpdateAttempts >= UpdateMaxAttempts) return;
+        if (settings.AutoUpdateTag == tag && settings.AutoUpdateAttempts >= UpdateAttemptsAllowed(Elevated())) return;
         installingUpdate = true;
         try {
             settings.AutoUpdateAttempts = settings.AutoUpdateTag == tag ? settings.AutoUpdateAttempts + 1 : 1;
@@ -597,11 +618,13 @@ public sealed class WindowsHub : IDisposable {
         Directory.CreateDirectory(folder);
         var installer = Path.Combine(folder, name);
         await File.WriteAllBytesAsync(installer, contents);
-        if (silent && Elevated()) {
+        if (Elevated()) {
             // Inherits this process's administrator token: no prompt, no window.
             Process.Start(new ProcessStartInfo("powershell.exe", "-NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File \"" + installer + "\" -AppOnly") { UseShellExecute = false, CreateNoWindow = true })?.Dispose();
             return;
         }
+        // Only reached without administrator rights: installing into Program
+        // Files requires them, so this is the one case that asks.
         Process.Start(new ProcessStartInfo("powershell.exe", "-NoProfile -ExecutionPolicy Bypass -File \"" + installer + "\" -AppOnly") { UseShellExecute = true, Verb = "runas" })?.Dispose();
     }
 
