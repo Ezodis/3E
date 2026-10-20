@@ -61,6 +61,10 @@ cp "$strip_app/Contents/MacOS/ThreeE" "$strip_apps_helper/Contents/MacOS/ThreeEA
 strip_midi="$strip_app/Contents/Helpers/MIDI Touchbar.app"
 plutil -replace CFBundleName -string '3E' "$strip_midi/Contents/Info.plist"
 plutil -replace CFBundleDisplayName -string '3E' "$strip_midi/Contents/Info.plist"
+# Replace every application icon inherited from the bundled helper apps.
+for strip_icon in "$strip_app"/**/*.icns(N); do
+  cp "$strip_repo/../Shared/Brand/3E.icns" "$strip_icon"
+done
 strip_framework="$strip_midi/Contents/Frameworks/SnoizeMIDI.framework"
 [[ -e "$strip_framework/Versions/Current" ]] || ln -s A "$strip_framework/Versions/Current"
 [[ -e "$strip_framework/SnoizeMIDI" ]] || ln -s Versions/Current/SnoizeMIDI "$strip_framework/SnoizeMIDI"

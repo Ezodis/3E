@@ -396,37 +396,26 @@ public sealed class WindowsHub : IDisposable {
         try { phoneBar.EnsureRunning(); } catch (Exception ex) { Log(ex); }
     }
 
-    // Restarts everything fresh: this app, both input engines, PowerToys, the
-    // wallpaper app and Phone Bar. Quitting stops them all; a hidden helper
-    // (already elevated, so no UAC prompt) waits for this process to exit and
-    // runs the installed launcher, which starts the whole suite again.
-    public static string RestartScript(int processId, string launcher, string app) {
+    // Restart uses the installed executable immediately. Update discovery and
+    // installation stay in the existing update flow, never on the restart path.
+    public static string RestartScript(int processId, string app) {
         static string Quote(string value) => "'" + value.Replace("'", "''") + "'";
         return "Wait-Process -Id " + processId + " -Timeout 30 -ErrorAction SilentlyContinue\n" +
-            "Start-Sleep -Milliseconds 500\n" +
-            "if (Test-Path -LiteralPath " + Quote(launcher) + ") { & " + Quote(launcher) + " }\n" +
-            "else { Start-Process -FilePath " + Quote(app) + " -WorkingDirectory " + Quote(Path.GetDirectoryName(app)) + " -Verb RunAs }\n";
+            "if (Get-Process -Id " + processId + " -ErrorAction SilentlyContinue) { exit 1 }\n" +
+            "Start-Process -FilePath " + Quote(app) + " -WorkingDirectory " + Quote(Path.GetDirectoryName(app)) + "\n";
     }
 
-    // Restart checks for an update first. A newer release is installed silently;
-    // its installer stops and relaunches the whole suite. Otherwise (up to date
-    // or offline) the suite restarts as is. Settings are saved files, so every
-    // toggle comes back as it was.
-    private async Task RestartAsync() {
-        try {
-            var newest = await CheckUpdatesAsync(false);
-            if (newest != null) {
-                installingUpdate = true;
-                await InstallUpdateAsync(newest.Value, silent: true);
-                return;
-            }
-        } catch (Exception ex) { Log(ex); installingUpdate = false; }
-        try { RestartSuite(); } catch (Exception ex) { Log(ex); MessageBox(IntPtr.Zero, ex.Message, "3£Windows", 0x10 | ForegroundDialog); }
+    private bool restarting;
+    private void Restart() {
+        if (restarting || installingUpdate) return;
+        restarting = true;
+        try { RestartSuite(); }
+        catch (Exception ex) { restarting = false; Log(ex); MessageBox(IntPtr.Zero, ex.Message, "3£Windows", 0x10 | ForegroundDialog); }
     }
 
     private void RestartSuite() {
         Save();
-        string script = RestartScript(Environment.ProcessId, Path.Combine(root, "Launch-3EWindows.ps1"), Environment.ProcessPath);
+        string script = RestartScript(Environment.ProcessId, Environment.ProcessPath);
         string encoded = Convert.ToBase64String(System.Text.Encoding.Unicode.GetBytes(script));
         Process.Start(new ProcessStartInfo(Path.Combine(Environment.SystemDirectory, "WindowsPowerShell", "v1.0", "powershell.exe"),
             "-NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -EncodedCommand " + encoded) {
@@ -481,7 +470,7 @@ public sealed class WindowsHub : IDisposable {
         Item("Use light theme", () => { settings.AutoDark = false; Save(); SetTheme(1); });
         Item("Use dark theme", () => { settings.AutoDark = false; Save(); SetTheme(0); });
         menu.Items.Add(new MenuFlyoutSeparator());
-        Item("Restart", () => _ = RestartAsync());
+        Item("Restart", Restart);
         // Automatic updates make a manual check redundant; it returns only when they are off.
         if (!settings.AutoUpdate) Item(updateTag == null ? "Check for updates…" : "Update available: " + updateTag + "…", () => _ = CheckUpdatesAsync(true));
         Toggle("Install updates automatically", settings.AutoUpdate, enabled => { settings.AutoUpdate = enabled; if (!enabled) pendingUpdate = null; else settings.LastUpdateCheckUtc = default; });

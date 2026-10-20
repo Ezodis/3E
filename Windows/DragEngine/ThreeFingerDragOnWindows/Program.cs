@@ -51,8 +51,11 @@ public class Program {
                 WindowsHub.MenuGlyph("Rotate themes\t\u2003\u2003\u200B") == "\uE8EE",
                 WindowsHub.MenuGlyph("Dynamic wallpaper\t\u2003\u2003") == "\uE9E9",
                 WindowsHub.MenuGlyph("Use dark theme") == null,
-                WindowsHub.RestartScript(42, @"C:\Program Files\3EWindows\Launch-3EWindows.ps1", @"C:\Program Files\3EWindows\3£Windows.exe").Contains("Wait-Process -Id 42 ") &&
-                    WindowsHub.RestartScript(1, @"C:\it's\l.ps1", @"C:\a\b.exe").Contains("'C:\\it''s\\l.ps1'"),
+                WindowsHub.RestartScript(42, @"C:\Program Files\3EWindows\3£Windows.exe").Contains("Wait-Process -Id 42 ") &&
+                    WindowsHub.RestartScript(1, @"C:\it's\app.exe").Contains("'C:\\it''s\\app.exe'") &&
+                    !WindowsHub.RestartScript(42, @"C:\app.exe").Contains("Start-Sleep") &&
+                    !WindowsHub.RestartScript(42, @"C:\app.exe").Contains("RunAs") &&
+                    WindowsHub.RestartScript(42, @"C:\app.exe").Contains("{ exit 1 }"),
                 SsmsTheme.SetProperty("{// keep\n\"workbench.colorTheme\": \"Abyss\"}", "workbench.colorTheme", "Monokai") == "{// keep\n\"workbench.colorTheme\": \"Monokai\"}",
                 SsmsTheme.ExtensionThemes("{\"contributes\":{\"themes\":[{\"id\":\"Abyss\",\"label\":\"%l%\",\"uiTheme\":\"vs-dark\"},{\"label\":\"Quiet Light\",\"uiTheme\":\"vs\"},{\"label\":\"HC\",\"uiTheme\":\"hc-black\"},{\"label\":\"%x%\",\"uiTheme\":\"vs\"}]}}").Select(t => t.Id + (t.Light ? "+" : "-")).SequenceEqual(new[] { "Abyss-", "Quiet Light+" }),
             };

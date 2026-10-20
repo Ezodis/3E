@@ -1,6 +1,7 @@
 #define STRIP3_RECORD_TESTING 1
 #import "../Source/MidiBridge.m"
 #import "../Source/BaseMenu.h"
+#import "status_brand.m"
 @interface TestStatus : NSObject
 @property NSMenu *menu;
 @end
@@ -16,6 +17,7 @@
 @end
 int main(void) { @autoreleasepool {
     [NSApplication sharedApplication]; NSApp.activationPolicy=NSApplicationActivationPolicyProhibited;
+    TestStatusBrand();
     TestDelegate *delegate=[TestDelegate new]; delegate.theItem=[TestStatus new]; delegate.theItem.menu=[NSMenu new]; NSApp.delegate=delegate;
     NSCAssert(StripCombinedRelease(),@"Build with -DSTRIP_TEST_EDITION_COMBINED=1");
     CleanMenu(delegate.theItem.menu);

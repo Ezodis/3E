@@ -1,5 +1,5 @@
 #import <AppKit/AppKit.h>
-#import "../../../Shared/Brand/ThreeEBrand.h"
+#import "../../../Shared/Brand/ThreeEStatusBrand.h"
 #import <ApplicationServices/ApplicationServices.h>
 #import "../../../Shared/PhoneControl/MacHost/PhoneBarMenu.h"
 #import <objc/runtime.h>
@@ -656,7 +656,6 @@ static id RegisterKey(id center, SEL selector, unsigned short code, NSUInteger f
 }
 static id BlockHotKey(id self, SEL selector, id key) { return nil; }
 static void IgnoreKeyCommands(id self, SEL selector, id sender) {}
-static NSImage *BrandMenuIcon(void) { return ThreeEBrandMenuImage(); }
 static NSString *combinedGestureState=@"permission";
 static BOOL appsMenuVisible;
 static BOOL downloadsEnabled;
@@ -769,7 +768,7 @@ static void CleanMenu(NSMenu *menu) {
 }
 static void ApplyBranding(void) {
     NSStatusItem *item=[(id)NSApp.delegate valueForKey:@"theItem"];
-    item.length=27; item.button.image=BrandMenuIcon(); item.button.title=@""; item.button.toolTip=@"3E";
+    item.length=27; ThreeEBrandStatusButton(item.button);
     CleanMenu(item.menu); CleanMenu(NSApp.mainMenu);
 }
 static NSArray *MenuTitles(NSMenu *menu) {
@@ -2256,8 +2255,7 @@ static void Command(NSString *command) {
                 BrandMIDIPorts();
                 [NSTimer scheduledTimerWithTimeInterval:0.5 repeats:YES block:^(NSTimer *timer) {
                     BrandMIDIPorts();
-                    NSStatusItem *item=[(id)NSApp.delegate valueForKey:@"theItem"];
-                    CleanMenu(item.menu); CleanMenu(NSApp.mainMenu);
+                    ApplyBranding();
                 }];
                 Report("READY\n");
                 dispatch_async(dispatch_get_global_queue(QOS_CLASS_UTILITY, 0), ^{
