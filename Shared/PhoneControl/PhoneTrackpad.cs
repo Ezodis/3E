@@ -166,16 +166,21 @@ public sealed class PhoneTrackpad : IDisposable {
             candidate.Listener.Prefixes.Add(candidate.Origin + "/");
             if (candidate.AliasOrigin != null) candidate.Listener.Prefixes.Add(candidate.AliasOrigin + "/");
             try { candidate.Listener.Start(); }
-            catch (HttpListenerException) when (candidate.AliasOrigin != null) {
-                // Some macOS HttpListener builds reject a second named prefix.
-                // Listen on the wildcard socket but retain and validate both
-                // approved Host/Origin values so the stable alias URL works.
+            catch (HttpListenerException) {
+                // Named prefixes can fail: Windows refuses them to a process
+                // that is not running as administrator ("Access is denied"),
+                // and some macOS builds reject a second named prefix. Listen on
+                // the wildcard instead (on Windows the installer reserves
+                // http://+:17833/ for normal users) while still validating
+                // every request's Host/Origin against the approved addresses.
                 candidate.Listener.Close();
                 candidate = new Session(address, port, token, AliasHost);
-                candidate.Listener.Prefixes.Add($"http://*:{port}/");
+                candidate.Listener.Prefixes.Add(OperatingSystem.IsWindows() ? $"http://+:{port}/" : $"http://*:{port}/");
                 candidate.Listener.Start();
             }
-            firewall.Open(address, port);
+            // The installer also adds a permanent local-network rule, so a
+            // per-session rule that needs administrator rights is optional.
+            try { firewall.Open(address, port); } catch { }
             session = candidate;
             status = "Ready — scan the QR code on your iPhone.";
             _ = Task.Run(() => ListenAsync(candidate));
