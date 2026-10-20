@@ -8,7 +8,8 @@ using System.Text.Json;
 using ThreeE.PhoneBar.Windows;
 
 var results = new List<string>();
-void Check(bool value, string name) { if (!value) throw new Exception("FAIL: " + name); results.Add(name); Console.WriteLine("PASS: " + name); }
+// The ::error:: line becomes a CI annotation, so a failure is visible without the raw log.
+void Check(bool value, string name) { if (!value) { Console.WriteLine("::error::FAIL: " + name); throw new Exception("FAIL: " + name); } results.Add(name); Console.WriteLine("PASS: " + name); }
 // Simulate delayed/intermediate Quartz observations without moving a real cursor.
 var pointerMotion=new ThreeE.PhoneHost.MacPointerMotion();
 Check(pointerMotion.Move(100,100,3,2,0)==(103d,102d),"Mac first movement has no warm-up delay");
