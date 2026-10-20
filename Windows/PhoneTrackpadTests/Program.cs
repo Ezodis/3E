@@ -222,6 +222,31 @@ Check(fake.Commands.Contains("history:-1") && fake.Commands.Contains("zoom:1"),"
     Check(badToken.Start() && badToken.PairingUrl.Split('#')[1].Length == 48, "An invalid saved secret falls back to a fresh one");
 }
 {
+    // Phone settings are stored on the computer, survive a restart, and need the pairing secret.
+    var folder = Path.Combine(Path.GetTempPath(), "3e-prefs-" + Guid.NewGuid().ToString("N"));
+    var file = Path.Combine(folder, "phone-settings.json");
+    var secret = "00112233445566778899AABBCCDDEEFF0011223344556677";
+    async Task<(int code, string body)> Prefs(PhoneTrackpad receiver, string json, string token) {
+        using var client = new HttpClient();
+        var origin = new Uri(receiver.PairingUrl).GetLeftPart(UriPartial.Authority);
+        using var request = new HttpRequestMessage(HttpMethod.Post, origin + "/prefs") { Content = new StringContent(json, Encoding.UTF8, "application/json") };
+        request.Headers.Add("Origin", origin); request.Headers.Add("X-Trackpad-Token", token);
+        using var reply = await client.SendAsync(request);
+        return ((int)reply.StatusCode, await reply.Content.ReadAsStringAsync());
+    }
+    try {
+        using (var first = new PhoneTrackpad(() => IPAddress.Loopback, new FakeInput(), new FakeFirewall(), FreePort()) { TokenProvider = () => secret, PreferencesPath = file }) {
+            Check(first.Start(), "Receiver with saved settings starts");
+            Check((await Prefs(first, "{}", secret)).body == "{\"prefs\":{}}", "No settings saved yet");
+            Check((await Prefs(first, "{\"prefs\":{\"speed\":7.5,\"acceleration\":false,\"midiOutput\":\"3E Phone Bar\"}}", secret)).code == 200, "The phone saves its settings on the computer");
+            Check((await Prefs(first, "{\"prefs\":{\"speed\":20}}", new string('0', 48))).code == 401, "Settings cannot be changed without the pairing secret");
+            Check((await Prefs(first, "{\"prefs\":[1]}", secret)).code == 400, "Settings must be an object");
+        }
+        using var second = new PhoneTrackpad(() => IPAddress.Loopback, new FakeInput(), new FakeFirewall(), FreePort()) { TokenProvider = () => secret, PreferencesPath = file };
+        Check(second.Start() && (await Prefs(second, "{}", secret)).body.Contains("\"speed\":7.5") , "Saved settings come back after the computer restarts");
+    } finally { try { Directory.Delete(folder, true); } catch { } }
+}
+{
     // FollowNetwork keeps one link across IP loss/changes without user action.
     var saved = "FEDCBA9876543210FEDCBA9876543210FEDCBA9876543210";
     IPAddress current = IPAddress.Loopback; int changes = 0;

@@ -5,6 +5,50 @@
   const pad = $('pad'), status = $('status'), connectButton = $('connect');
   const buttons = ['commands','apps','media','scrollMode','stepUp','stepDown','stepLeft','stepRight'].map($);
   const token = location.hash.slice(1);
+  // Settings (pointer speed, acceleration, MIDI choices) live on the computer
+  // as well as on the phone: the phone's own storage is separate for the IP
+  // and 3e-win.local links and for the Home Screen app, and iOS can clear it.
+  // The local copy applies instantly; the computer's copy wins once loaded.
+  const Prefs = (() => {
+    const KEY = '3e-prefs';
+    let values = {}, saveTimer = null, loaded = false;
+    try { values = JSON.parse(localStorage.getItem(KEY)) || {}; } catch {}
+    try { // settings saved by older versions of this page
+      const speed = localStorage.getItem('3e-speed'), accel = localStorage.getItem('3e-acceleration');
+      if (values.speed === undefined && speed !== null) values.speed = Number(speed);
+      if (values.acceleration === undefined && accel !== null) values.acceleration = accel !== 'false';
+    } catch {}
+    const listeners = [];
+    const local = () => { try { localStorage.setItem(KEY, JSON.stringify(values)); } catch {} };
+    async function exchange(body) {
+      const abort = new AbortController(), timer = setTimeout(() => abort.abort(), 3000);
+      try {
+        const response = await fetch('/prefs', { method:'POST', mode:'same-origin', referrerPolicy:'same-origin', cache:'no-store',
+          headers:{'Content-Type':'application/json','X-Trackpad-Token':token}, signal:abort.signal, body:JSON.stringify(body) });
+        if (!response.ok) return null;
+        const reply = await response.json();
+        return reply && typeof reply.prefs === 'object' && reply.prefs ? reply.prefs : null;
+      } catch { return null; } finally { clearTimeout(timer); }
+    }
+    function push() { clearTimeout(saveTimer); saveTimer = setTimeout(() => { saveTimer = null; exchange({ prefs: values }); }, 400); }
+    return {
+      get: (name, fallback) => values[name] === undefined ? fallback : values[name],
+      set(name, value) { if (values[name] === value) return; values[name] = value; local(); if (loaded) push(); },
+      onLoad(listener) { listeners.push(listener); },
+      // Called on every (re)connect: merge in the computer's copy once, then
+      // keep it in step. A phone with settings the computer lacks uploads them.
+      async sync() {
+        const remote = await exchange({});
+        if (!remote) return;
+        const empty = Object.keys(remote).length === 0;
+        if (!loaded && !empty) values = { ...values, ...remote };
+        loaded = true; local();
+        if (empty && Object.keys(values).length) push();
+        for (const listener of listeners) try { listener(); } catch {}
+      }
+    };
+  })();
+  window.ThreeEPrefs = Prefs;
   // Old ?watch=1 links still work, but normal links adapt without an extra route.
   const watchMode = new URLSearchParams(location.search).get('watch') === '1' || window.matchMedia('(max-width: 300px)').matches;
   document.documentElement.classList.toggle('watch', watchMode);
@@ -29,7 +73,7 @@
   const AXIS_PICK = 10, SWIPE_DISTANCE = 80, SWIPE_TIME = 320, LIFT_SWIPE_DISTANCE = 60, LIFT_SWIPE_TIME = 450;
   const PINCH_START = 28, PINCH_STEP = 24, MOMENTUM_MIN = 0.35, MOMENTUM_DECAY = 0.95;
   let two = null, momentum = null, motionHistory = [], accelerate = true;
-  try { accelerate = localStorage.getItem('3e-acceleration') !== 'false'; } catch {}
+  accelerate = Prefs.get('acceleration', true) !== false;
   function hint() { $('padHint').textContent = scrollMode ? 'Swipe to scroll' : 'Swipe to move · tap to click'; }
   hint();
   let socket, ready = false, heartbeat, dragging = false, threeDrag = false;
@@ -59,10 +103,10 @@
   let receiverBuild = null, pendingBuild = null, updateTimer = null, updating = false;
   let dx = 0, dy = 0, sx = 0, sy = 0, motionTimer = null;
   const speed = $('speed');
-  try { const saved = Number(localStorage.getItem('3e-speed')); if (saved >= .5 && saved <= 20) speed.value = saved; } catch {}
   const showSpeed = () => { $('speedValue').textContent = Number(speed.value).toFixed(1) + '×'; };
-  speed.addEventListener('input', () => { showSpeed(); try { localStorage.setItem('3e-speed', speed.value); } catch {} });
-  showSpeed();
+  const applySpeed = () => { const saved = Number(Prefs.get('speed')); if (saved >= .5 && saved <= 20) speed.value = saved; showSpeed(); };
+  speed.addEventListener('input', () => { showSpeed(); Prefs.set('speed', Number(speed.value)); });
+  applySpeed(); Prefs.onLoad(applySpeed);
   const OVERVIEW_ENDING = new Set(['left','right','down','dragStart','appsBegin','navigate','desktop','shortcut']);
   function send(type, data = {}) {
     if (OVERVIEW_ENDING.has(type)) window.ThreeEDock?.overviewEnded?.();
@@ -109,6 +153,7 @@
     ready = true; buttons.forEach(b => b.disabled = false); pad.classList.add('live');
     status.textContent = window.ThreeEControl?.info?.inputPermission===false ? 'Allow Accessibility on your Mac for pointer control.' : 'Connected'; connectButton.textContent = 'Pause connection';
     window.ThreeESurface?.state(true);
+    Prefs.sync();
     // Motion and a tap made while the link was waking are delivered now
     // instead of being lost, so the first touch after a pause still counts.
     flush(true);
@@ -567,7 +612,8 @@
   }
   function accelerationLabel() { $('acceleration').setAttribute('aria-pressed', String(accelerate)); $('acceleration').textContent = 'Pointer acceleration: ' + (accelerate ? 'on' : 'off'); }
   accelerationLabel();
-  $('acceleration').addEventListener('click', () => { accelerate = !accelerate; try { localStorage.setItem('3e-acceleration', String(accelerate)); } catch {} accelerationLabel(); });
+  $('acceleration').addEventListener('click', () => { accelerate = !accelerate; Prefs.set('acceleration', accelerate); accelerationLabel(); });
+  Prefs.onLoad(() => { accelerate = Prefs.get('acceleration', true) !== false; accelerationLabel(); });
   $('settings').addEventListener('click', () => settings(true));
   $('closeSettings').addEventListener('click', () => settings(false));
   $('fullscreen').addEventListener('click', async () => {
