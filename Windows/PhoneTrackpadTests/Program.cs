@@ -465,7 +465,8 @@ using var failing = new PhoneTrackpad(() => throw new NetworkInformationExceptio
 Check(!failing.Start(), "Network enumeration failure is contained");
 var failingFirewall = new FakeFirewall { FailOpen = true };
 using var blocked = new PhoneTrackpad(() => IPAddress.Loopback, fake, failingFirewall, FreePort());
-Check(!blocked.Start() && !blocked.Running && !failingFirewall.IsOpen, "Firewall policy failure rolls back listener startup");
+Check(blocked.Start() && blocked.Running && !failingFirewall.IsOpen, "Without administrator rights the per-session firewall rule is skipped; the installer's permanent rule keeps Phone Bar reachable");
+blocked.Stop();
 Check(!PhoneTrackpad.IsPrivateAddress(IPAddress.Parse("8.8.8.8")) && !PhoneTrackpad.IsPrivateAddress(IPAddress.Parse("169.254.1.2")) && PhoneTrackpad.IsPrivateAddress(IPAddress.Parse("172.20.10.2")), "Public and self-assigned IPs are excluded; hotspot LAN is accepted");
 {
     // Clipboard transfer over the authenticated same-origin endpoints.
