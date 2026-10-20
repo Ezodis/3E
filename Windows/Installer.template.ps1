@@ -163,6 +163,10 @@ function Install-ReleaseApp([string]$Repository, [string]$AssetPattern, [string]
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 if ($Down) {
     Stop-Suite -RemoveTasks
+    & netsh.exe http delete urlacl url="http://+:17833/" 2>&1 | Out-Null
+    $phoneRules = $null
+    try { $phoneRules = New-Object -ComObject HNetCfg.FwPolicy2; foreach ($n in @('3EWindows Phone Bar (installed)','3EWindows Phone Bar name (installed)')) { try { $phoneRules.Rules.Remove($n) } catch { } } } catch { }
+    finally { if ($null -ne $phoneRules) { [Runtime.InteropServices.Marshal]::FinalReleaseComObject($phoneRules) | Out-Null } }
     Remove-ClicksDeviceMapping
     Unregister-ScheduledTask -TaskName '3£Windows Kiro Theme' -Confirm:$false -ErrorAction SilentlyContinue
     Unregister-ScheduledTask -TaskName 'Edy Kiro Theme' -Confirm:$false -ErrorAction SilentlyContinue
@@ -317,6 +321,26 @@ if ((Test-Path -LiteralPath $oldPrefs) -and -not (Test-Path -LiteralPath $newPre
     New-Item -ItemType Directory -Path (Split-Path -Parent $newPrefs) -Force | Out-Null
     Copy-Item -LiteralPath $oldPrefs -Destination $newPrefs
 }
+
+# Phone Bar must work even when 3£Windows is not running as administrator
+# (for example after some updates or restarts). Reserve its port for normal
+# users and allow it through the firewall once, here, where we are elevated.
+$phonePort = 17833
+& netsh.exe http delete urlacl url="http://+:$phonePort/" 2>&1 | Out-Null
+& netsh.exe http add urlacl url="http://+:$phonePort/" sddl="D:(A;;GX;;;WD)" 2>&1 | Out-Null
+$phoneRules = $null
+try {
+    $phoneRules = New-Object -ComObject HNetCfg.FwPolicy2
+    foreach ($spec in @(@('3EWindows Phone Bar (installed)', 6, "$phonePort"), @('3EWindows Phone Bar name (installed)', 17, '5353'))) {
+        try { $phoneRules.Rules.Remove($spec[0]) } catch { }
+        $rule = New-Object -ComObject HNetCfg.FWRule
+        $rule.Name = $spec[0]; $rule.Description = 'Lets your iPhone reach 3£ Phone Bar on this local network.'
+        $rule.Protocol = $spec[1]; $rule.LocalPorts = $spec[2]; $rule.RemoteAddresses = 'LocalSubnet'
+        $rule.Direction = 1; $rule.Action = 1; $rule.Profiles = 0x7FFFFFFF; $rule.EdgeTraversal = $false; $rule.Enabled = $true
+        $phoneRules.Rules.Add($rule)
+    }
+} catch { Write-Warning ('Phone Bar firewall rule: ' + $_.Exception.Message) }
+finally { if ($null -ne $phoneRules) { [Runtime.InteropServices.Marshal]::FinalReleaseComObject($phoneRules) | Out-Null } }
 
 $user = [Security.Principal.WindowsIdentity]::GetCurrent().Name
 foreach ($name in @('Edy PowerToys Startup','Edy Power Keyboard','Edy Three Finger Drag','Edy Input Resume Recovery')) {
