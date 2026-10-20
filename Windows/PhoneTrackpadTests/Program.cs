@@ -207,6 +207,13 @@ Check(fake.Commands.Contains("history:-1") && fake.Commands.Contains("zoom:1"),"
     foreign.Headers.Add("Origin", "http://evil.example");
     using var refused = await web.SendAsync(foreign);
     Check(!refused.Headers.Contains("Access-Control-Allow-Origin"), "Other sites cannot probe the receiver");
+    using var rebound = new HttpRequestMessage(HttpMethod.Get, ipOrigin + "/");
+    rebound.Headers.Host = "evil.example";
+    using var hostRefused = await web.SendAsync(rebound);
+    var refusalPage = await hostRefused.Content.ReadAsStringAsync();
+    Check((int)hostRefused.StatusCode == 403 && refusalPage.Contains("scan its QR code again") && !refusalPage.Contains("Trackpad"), "A refused page explains itself instead of showing a blank screen, and never serves the trackpad to a foreign hostname");
+    using var missing = await web.GetAsync(ipOrigin + "/nope");
+    Check((int)missing.StatusCode == 404 && (await missing.Content.ReadAsStringAsync()).Contains("Phone Bar"), "Unknown paths explain themselves too");
     using var badToken = new PhoneTrackpad(() => IPAddress.Loopback, new FakeInput(), new FakeFirewall(), FreePort()) { TokenProvider = () => "short" };
     Check(badToken.Start() && badToken.PairingUrl.Split('#')[1].Length == 48, "An invalid saved secret falls back to a fresh one");
 }
