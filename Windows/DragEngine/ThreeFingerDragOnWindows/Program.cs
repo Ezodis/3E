@@ -52,6 +52,7 @@ public class Program {
                 WindowsHub.MenuGlyph("Dynamic wallpaper\t\u2003\u2003") == "\uE9E9",
                 WindowsHub.MenuGlyph("Use dark theme") == null,
                 ElevationHandoffCases(),
+                WindowsHub.RestartUpdateCheckLimit > TimeSpan.Zero && WindowsHub.RestartUpdateCheckLimit <= TimeSpan.FromSeconds(10),
                 WindowsHub.UpdateAttemptsAllowed(false) == 1 && WindowsHub.UpdateAttemptsAllowed(true) >= 1,
                 WindowsHub.RestartScript(42, @"C:\Program Files\3EWindows\3£Windows.exe").Contains("Wait-Process -Id 42 ") &&
                     WindowsHub.RestartScript(1, @"C:\it's\app.exe").Contains("'C:\\it''s\\app.exe'") &&

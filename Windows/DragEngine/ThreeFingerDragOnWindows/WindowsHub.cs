@@ -396,8 +396,8 @@ public sealed class WindowsHub : IDisposable {
         try { phoneBar.EnsureRunning(); } catch (Exception ex) { Log(ex); }
     }
 
-    // Restart uses the installed executable immediately. Update discovery and
-    // installation stay in the existing update flow, never on the restart path.
+    // Relaunches the installed executable once this process exits. Restart()
+    // checks for an update before getting here.
     public static string RestartScript(int processId, string app) {
         static string Quote(string value) => "'" + value.Replace("'", "''") + "'";
         return "Wait-Process -Id " + processId + " -Timeout 30 -ErrorAction SilentlyContinue\n" +
@@ -405,10 +405,24 @@ public sealed class WindowsHub : IDisposable {
             "Start-Process -FilePath " + Quote(app) + " -WorkingDirectory " + Quote(Path.GetDirectoryName(app)) + "\n";
     }
 
+    // Restart always checks for an update first (bounded, so a slow or
+    // offline network delays it by at most a few seconds). A newer release is
+    // installed and its installer restarts the whole suite; otherwise, or if
+    // the check/install fails, the suite restarts as is.
+    public static readonly TimeSpan RestartUpdateCheckLimit = TimeSpan.FromSeconds(8);
     private bool restarting;
-    private void Restart() {
+    private async void Restart() {
         if (restarting || installingUpdate) return;
         restarting = true;
+        try {
+            var check = CheckUpdatesAsync(false);
+            var newest = await Task.WhenAny(check, Task.Delay(RestartUpdateCheckLimit)) == check ? await check : null;
+            if (newest != null) {
+                installingUpdate = true;
+                try { await InstallUpdateAsync(newest.Value); return; }
+                catch (Exception ex) { Log(ex); installingUpdate = false; }
+            }
+        } catch (Exception ex) { Log(ex); }
         try { RestartSuite(); }
         catch (Exception ex) { restarting = false; Log(ex); MessageBox(IntPtr.Zero, ex.Message, "3£Windows", 0x10 | ForegroundDialog); }
     }
