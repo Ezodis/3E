@@ -202,19 +202,26 @@ public sealed class PhoneTrackpad : IDisposable {
             if (address == null) { status = FollowNetwork ? "No local network — starts automatically when Wi-Fi connects." : "No local network — connect to Wi-Fi, then try again."; return false; }
             var token = SessionToken();
             candidate = new Session(address, port, token, AliasHost);
-            candidate.Listener.Prefixes.Add(candidate.Origin + "/");
-            if (candidate.AliasOrigin != null) candidate.Listener.Prefixes.Add(candidate.AliasOrigin + "/");
+            if (OperatingSystem.IsWindows()) {
+                // Windows: register exactly the URL the installer reserves
+                // (http://+:17833/). Mixing named prefixes with that
+                // reservation made Windows itself answer "HTTP Error 503
+                // Service Unavailable" for the 3e-win.local link. One
+                // wildcard works with or without administrator rights; every
+                // request's Host/Origin is still validated by the receiver.
+                candidate.Listener.Prefixes.Add($"http://+:{port}/");
+            } else {
+                candidate.Listener.Prefixes.Add(candidate.Origin + "/");
+                if (candidate.AliasOrigin != null) candidate.Listener.Prefixes.Add(candidate.AliasOrigin + "/");
+            }
             try { candidate.Listener.Start(); }
-            catch (HttpListenerException) {
-                // Named prefixes can fail: Windows refuses them to a process
-                // that is not running as administrator ("Access is denied"),
-                // and some macOS builds reject a second named prefix. Listen on
-                // the wildcard instead (on Windows the installer reserves
-                // http://+:17833/ for normal users) while still validating
-                // every request's Host/Origin against the approved addresses.
+            catch (HttpListenerException) when (!OperatingSystem.IsWindows()) {
+                // Some macOS HttpListener builds reject a second named prefix.
+                // Listen on the wildcard but keep validating every request's
+                // Host/Origin against the approved addresses.
                 candidate.Listener.Close();
                 candidate = new Session(address, port, token, AliasHost);
-                candidate.Listener.Prefixes.Add(OperatingSystem.IsWindows() ? $"http://+:{port}/" : $"http://*:{port}/");
+                candidate.Listener.Prefixes.Add($"http://*:{port}/");
                 candidate.Listener.Start();
             }
             // The installer also adds a permanent local-network rule, so a
