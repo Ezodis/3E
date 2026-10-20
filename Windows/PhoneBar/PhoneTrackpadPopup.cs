@@ -97,10 +97,13 @@ public sealed class PhoneTrackpadPopup : IDisposable {
             using var font = new Font("Segoe UI", 11 * scale, FontStyle.Regular, GraphicsUnit.Pixel);
             using var ink = new SolidBrush(Color.FromArgb(74, 84, 92));
             using var format = new StringFormat { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Center };
-            // Label with the 3£ butterfly mark in front of it.
+            // Label with the 3£ butterfly mark in front of it. The mark already
+            // says 3£, so the text is just "Phone Bar" (the name is spelled out
+            // only if the mark cannot be loaded).
             var labelTop = qr == null ? Px(10) : qr.Height + Px(10);
-            var textWidth = graphics.MeasureString("3£ Phone Bar", font).Width;
             using (var mark = LoadMark()) {
+                var label = mark == null ? "3£ Phone Bar" : "Phone Bar";
+                var textWidth = graphics.MeasureString(label, font).Width;
                 int markHeight = Px(12), markWidth = mark == null ? 0 : markHeight * mark.Width / mark.Height, spacing = mark == null ? 0 : Px(5);
                 float left = (width - (markWidth + spacing + textWidth)) / 2f;
                 if (mark != null) {
@@ -108,7 +111,7 @@ public sealed class PhoneTrackpadPopup : IDisposable {
                     graphics.DrawImage(mark, new RectangleF(left, labelTop + (Px(26) - markHeight) / 2f, markWidth, markHeight));
                 }
                 using var leftAligned = new StringFormat { Alignment = StringAlignment.Near, LineAlignment = StringAlignment.Center };
-                graphics.DrawString("3£ Phone Bar", font, ink, new RectangleF(left + markWidth + spacing, labelTop, textWidth + Px(4), Px(26)), leftAligned);
+                graphics.DrawString(label, font, ink, new RectangleF(left + markWidth + spacing, labelTop, textWidth + Px(4), Px(26)), leftAligned);
             }
             if (qr == null) graphics.DrawString(unavailable, font, ink, new RectangleF(Px(14), Px(40), width - Px(28), height - Px(48)), format);
             return bitmap;
