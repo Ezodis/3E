@@ -2,9 +2,10 @@
 // Shared Windows/macOS controller. MIDI channel numbers are zero-based on the wire.
 (() => {
   'use strict';
-  const $=id=>document.getElementById(id), C=window.ThreeEControl;
+  const $=id=>document.getElementById(id), C=window.ThreeEControl, P=window.ThreeEPrefs||{get:(n,f)=>f,set(){},onLoad(){}};
   const values=new Map(), dirty=new Map(), notes=new Set();
-  let channel=15, pianoChannel=0, activeView="decks", output=-1, dirtyTimer, epoch=0;
+  let autoPicked=null;
+  let channel=15, pianoChannel=Math.max(0,Math.min(14,Math.trunc(+P.get('pianoChannel',0))||0)), activeView="decks", output=-1, dirtyTimer, epoch=0;
   const studio=$('studio');
   studio.innerHTML=`<header><h1><span>3£</span> Phone Bar</h1></header>
   <div class="routing"><label>Output <select id="midiOutput" aria-label="MIDI output"><option value="-1">Choose MIDI output</option></select></label><label>Ch <select id="midiChannel" aria-label="MIDI channel"></select></label></div><p id="midiStatus" role="status">Choose a MIDI output and select 3E Phone Bar in Ableton’s Control Surface settings.</p>
@@ -70,7 +71,7 @@
     const triggers=document.createElement('div');triggers.className='strip-buttons';const mute=trigger('M',48+i,b=>b.setAttribute('aria-pressed',String(b.getAttribute('aria-pressed')!=='true'))),solo=trigger('S',56+i,b=>b.setAttribute('aria-pressed',String(b.getAttribute('aria-pressed')!=='true')));mute.className='mute';solo.className='solo';mute.setAttribute('aria-label','Track '+(i+1)+' mute');solo.setAttribute('aria-label','Track '+(i+1)+' solo');triggers.append(mute,solo);strip.append(triggers);$('mixerView').append(strip);
   }
   $('crossfader').dataset.cc=1;$('crossfader').addEventListener('input',()=>cc(1,+$('crossfader').value));$('crossfader').addEventListener('change',flush);
-  let octave=4;
+  let octave=Math.max(-1,Math.min(7,Math.trunc(+P.get('octave',4))));if(Number.isNaN(octave))octave=4;
   const contacts=new Map(), heldKeys=new Map(), activePointers=new Set(), piano=$('piano');
   const noteNames=['C','C♯','D','D♯','E','F','F♯','G','G♯','A','A♯','B'];
   function noteOff(number){if(!notes.has(number))return;C.send('midiNote',{channel,number,value:0});notes.delete(number);piano.querySelector('[data-note="'+number+'"]')?.classList.remove('held');}
@@ -103,9 +104,9 @@
   piano.addEventListener('pointermove',e=>{if(activePointers.has(e.pointerId)&&piano.hasPointerCapture(e.pointerId)){e.preventDefault();pressContact(e.pointerId,noteAt(e));}});
   for(const type of ['pointerup','pointercancel','lostpointercapture'])piano.addEventListener(type,e=>{activePointers.delete(e.pointerId);releaseContact(e.pointerId);});
   piano.addEventListener('contextmenu',e=>e.preventDefault());
-  for(const [id,direction] of [['octaveDown',-1],['octaveUp',1]])$(id).addEventListener('click',()=>{cancel();octave=Math.max(-1,Math.min(7,octave+direction));drawPiano();});
+  for(const [id,direction] of [['octaveDown',-1],['octaveUp',1]])$(id).addEventListener('click',()=>{cancel();octave=Math.max(-1,Math.min(7,octave+direction));P.set('octave',octave);drawPiano();});
   drawPiano();
-  function tab(name){cancel();activeView=name;channel=name==='midi'?pianoChannel:15;$('midiChannel').value=String(channel);$('midiChannel').disabled=name!=='midi';$('midiChannel').options[15].disabled=name==='midi';for(const view of ['decks','mixer','midi']){$(view+'View').hidden=view!==name;$(view+'Tab').setAttribute('aria-pressed',String(view===name));}$('crossfaderPanel').hidden=name==='midi';$('studioHint').textContent=name==='midi'?'Hold keys to play · lift to release':'Up turns right · turn the rim to rotate';}
+  function tab(name){cancel();activeView=name;P.set('view',name);channel=name==='midi'?pianoChannel:15;$('midiChannel').value=String(channel);$('midiChannel').disabled=name!=='midi';$('midiChannel').options[15].disabled=name==='midi';for(const view of ['decks','mixer','midi']){$(view+'View').hidden=view!==name;$(view+'Tab').setAttribute('aria-pressed',String(view===name));}$('crossfaderPanel').hidden=name==='midi';$('studioHint').textContent=name==='midi'?'Hold keys to play · lift to release':'Up turns right · turn the rim to rotate';}
   for(const name of ['decks','mixer','midi'])$(name+'Tab').addEventListener('click',()=>tab(name));
   // Read the real Media target so the return target stays identical on phones,
   // landscape layouts, safe-area insets and the compact watch layout.
@@ -128,8 +129,8 @@
   $('closeStudio').addEventListener('pointercancel',()=>{returnPressed=false;});
   $('closeStudio').addEventListener('click',e=>{if(e.detail&&!returnPressed)return;returnPressed=false;cancel();C.release();studio.hidden=true;$('media').focus({preventScroll:true});});
   $('refreshMidi').addEventListener('click',()=>C.send('info'));
-  $('midiOutput').addEventListener('change',()=>{cancel();output=-1;C.send('midiPort',{id:+$('midiOutput').value});});
-  $('midiChannel').addEventListener('change',()=>{cancel();C.send('midiPanic');channel=activeView==='midi'?Math.min(14,+$('midiChannel').value):15;if(activeView==='midi')pianoChannel=channel;});
+  $('midiOutput').addEventListener('change',()=>{cancel();output=-1;const select=$('midiOutput');P.set('midiOutput',+select.value>=0?select.selectedOptions[0]?.textContent||null:null);C.send('midiPort',{id:+select.value});});
+  $('midiChannel').addEventListener('change',()=>{cancel();C.send('midiPanic');channel=activeView==='midi'?Math.min(14,+$('midiChannel').value):15;if(activeView==='midi'){pianoChannel=channel;P.set('pianoChannel',channel);}});
   $('panic').addEventListener('click',()=>{cancel();C.send('midiPanic');});
   function cancel(){epoch++;window.ThreeEDock?.cancel();clearTimeout(dirtyTimer);dirtyTimer=null;dirty.clear();for(const number of notes)C.send('midiNote',{channel,number,value:0});notes.clear();contacts.clear();heldKeys.clear();for(const id of activePointers)if(piano.hasPointerCapture(id))piano.releasePointerCapture(id);activePointers.clear();piano.querySelectorAll('.held').forEach(key=>key.classList.remove('held'));}
   function describe(info){
@@ -137,9 +138,18 @@
     if(!info?.midi)return;output=info.midi.selected;
     const select=$('midiOutput'),signature=JSON.stringify(info.midi.ports);
     if(select.dataset.ports!==signature){select.replaceChildren();const off=document.createElement('option');off.value=-1;off.textContent='MIDI off / choose output';select.append(off);for(const port of info.midi.ports){const item=document.createElement('option');item.value=port.id;item.textContent=port.name;select.append(item);}select.dataset.ports=signature;}
+    // Reselect the output chosen last time (by name: port numbers can change).
+    const wanted=P.get('midiOutput',null);if(output<0&&wanted){const match=info.midi.ports.find(port=>port.name===wanted);if(match&&autoPicked!==signature){autoPicked=signature;C.send('midiPort',{id:match.id});}}
     select.value=output;$('midiStatus').textContent=output>=0?'Sending to '+info.midi.status+' · Ableton: 3E Phone Bar':info.platform==='windows'?'Choose a MIDI output. Ableton uses a loopback port such as loopMIDI.':info.midi.status;
   }
   // The MIDI controls are in use while a note is held or the studio is open.
   window.ThreeESurface={cancel,describe,openStudio,busy:()=>notes.size>0||!studio.hidden,state(ready){if(!ready){cancel();studio.querySelectorAll('.vinyl').forEach(v=>v.classList.remove('is-spinning'));$('midiStatus').textContent='Disconnected — controls paused';}else {if(C.info)describe(C.info);if(!studio.hidden)C.send('info');}}};
+  // Restore the rest of the studio as it was left: velocity, then view.
+  function restore(){const velocity=+P.get('velocity',100);if(velocity>=1&&velocity<=127)$('noteVelocity').value=velocity;
+    const p=Math.trunc(+P.get('pianoChannel',pianoChannel));if(p>=0&&p<=14)pianoChannel=p;
+    const o=Math.trunc(+P.get('octave',octave));if(o>=-1&&o<=7&&o!==octave){octave=o;drawPiano();}
+    const view=P.get('view','decks');if(['decks','mixer','midi'].includes(view)&&view!==activeView)tab(view);}
+  $('noteVelocity').addEventListener('change',()=>P.set('velocity',+$('noteVelocity').value));
+  restore();P.onLoad(()=>{restore();if(C.info)describe(C.info);});
   if(C.info)describe(C.info);
 })();

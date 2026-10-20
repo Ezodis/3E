@@ -41,6 +41,14 @@ public sealed class PhoneTrackpad : IDisposable {
     // restarts and updates. It must return 48 hex characters; anything else
     // falls back to a fresh random secret for this session.
     public Func<string> TokenProvider { get; init; }
+    // Phone page settings (pointer speed, acceleration, MIDI choices) are kept
+    // on the computer, so they survive the phone switching between the IP and
+    // 3e-win.local links, the Home Screen app vs Safari, and iOS clearing
+    // website storage. Null keeps them in memory only (tests, previews).
+    public string PreferencesPath { get; init; }
+    private readonly object preferencesGate = new();
+    private string preferences;
+    public const int PreferencesLimit = 8192;
     // Optional host name (for example "3e-win.local") also accepted for the
     // page, WebSocket and control requests. Name resolution is the host's job.
     public string AliasHost { get; init; }
@@ -348,6 +356,9 @@ public sealed class PhoneTrackpad : IDisposable {
             if (request.Url.AbsolutePath == "/control" && request.HttpMethod == "POST") {
                 await HttpControlAsync(owner, context); return;
             }
+            if (request.Url.AbsolutePath == "/prefs" && request.HttpMethod == "POST") {
+                await PreferencesAsync(owner, context); return;
+            }
             if (request.HttpMethod == "POST" && request.Url.AbsolutePath.StartsWith("/clipboard/", StringComparison.Ordinal)) {
                 await ClipboardAsync(owner, context); return;
             }
@@ -424,6 +435,66 @@ public sealed class PhoneTrackpad : IDisposable {
 
     // watchOS WebKit disables WebSockets by default. Short authenticated POSTs
     // share the same single-controller lock and disconnect watchdog as the phone.
+    // POST /prefs {"prefs":{...}} saves; POST /prefs {} only reads. Same
+    // origin and pairing-token checks as /control; small JSON objects only.
+    private async Task PreferencesAsync(Session owner, HttpListenerContext context) {
+        var request = context.Request;
+        var response = context.Response;
+        response.Headers["Cache-Control"] = "no-store";
+        response.Headers["X-Content-Type-Options"] = "nosniff";
+        try {
+            var supplied = Encoding.UTF8.GetBytes(request.Headers["X-Trackpad-Token"] ?? "");
+            if (!owner.IsOrigin(request.Headers["Origin"]) || request.Url.Query.Length != 0 ||
+                request.ContentType?.Split(';')[0] != "application/json") { response.StatusCode = 403; response.Close(); return; }
+            if (!CryptographicOperations.FixedTimeEquals(supplied, Encoding.UTF8.GetBytes(owner.Token))) { response.StatusCode = 401; response.Close(); return; }
+            using var timeout = CancellationTokenSource.CreateLinkedTokenSource(owner.Cancel.Token);
+            timeout.CancelAfter(3000);
+            var bytes = new byte[PreferencesLimit + 64];
+            int count = 0, read;
+            while ((read = await request.InputStream.ReadAsync(bytes.AsMemory(count), timeout.Token)) > 0) {
+                count += read;
+                if (count > PreferencesLimit + 32) { response.StatusCode = 413; response.Close(); return; }
+            }
+            using var json = JsonDocument.Parse(bytes.AsMemory(0, count), new JsonDocumentOptions { MaxDepth = 6 });
+            if (json.RootElement.ValueKind != JsonValueKind.Object) throw new InvalidDataException();
+            if (json.RootElement.TryGetProperty("prefs", out var incoming)) {
+                if (incoming.ValueKind != JsonValueKind.Object) throw new InvalidDataException();
+                SavePreferences(incoming.GetRawText());
+            }
+            var reply = Encoding.UTF8.GetBytes("{\"prefs\":" + LoadPreferences() + "}");
+            response.ContentType = "application/json";
+            response.ContentLength64 = reply.Length;
+            await response.OutputStream.WriteAsync(reply, owner.Cancel.Token);
+            response.Close();
+        } catch { try { response.StatusCode = 400; response.Close(); } catch { try { response.Abort(); } catch { } } }
+    }
+    public string LoadPreferences() {
+        lock (preferencesGate) {
+            if (preferences != null) return preferences;
+            try {
+                if (PreferencesPath != null && File.Exists(PreferencesPath)) {
+                    var text = File.ReadAllText(PreferencesPath);
+                    using var check = JsonDocument.Parse(text);
+                    if (check.RootElement.ValueKind == JsonValueKind.Object && text.Length <= PreferencesLimit) return preferences = text;
+                }
+            } catch { }
+            return preferences = "{}";
+        }
+    }
+    public void SavePreferences(string json) {
+        if (json.Length > PreferencesLimit) throw new InvalidDataException();
+        lock (preferencesGate) {
+            preferences = json;
+            if (PreferencesPath == null) return;
+            try {
+                Directory.CreateDirectory(Path.GetDirectoryName(PreferencesPath));
+                var temporary = PreferencesPath + "." + Guid.NewGuid().ToString("N") + ".tmp";
+                File.WriteAllText(temporary, json);
+                File.Move(temporary, PreferencesPath, true);
+            } catch { /* still kept for this session */ }
+        }
+    }
+
     private async Task HttpControlAsync(Session owner, HttpListenerContext context) {
         var request = context.Request;
         var response = context.Response;

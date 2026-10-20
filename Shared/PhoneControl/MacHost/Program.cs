@@ -49,7 +49,8 @@ bool test=args.Contains("--self-test")||recoveryTest;
 if(!test)AbletonIntegration.Install();
 string pairingToken=test?new string('A',48):StoredPairingToken();
 ITrackpadInput input=test?new NullInput():new MacInput(action=>Report(new {media=action}),(action,direction)=>Report(new {systemAction=action,direction}));
-using var receiver=new PhoneTrackpad(()=>test ? IPAddress.Loopback : PhoneTrackpad.GetLocalAddress(),input,new NoFirewall(),test?17834:17833) { AliasHost=test ? null : PhoneNameResponder.Name, TokenProvider=()=>pairingToken, FollowNetwork=!test||recoveryTest };
+using var receiver=new PhoneTrackpad(()=>test ? IPAddress.Loopback : PhoneTrackpad.GetLocalAddress(),input,new NoFirewall(),test?17834:17833) { AliasHost=test ? null : PhoneNameResponder.Name, TokenProvider=()=>pairingToken, FollowNetwork=!test||recoveryTest,
+    PreferencesPath=test ? null : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),"3E","phone-settings.json") };
 PhoneNameResponder nameResponder=null;
 object nameGate=new();
 // The link stays http://3e-mac.local:17833/#secret: when the Mac's IP changes

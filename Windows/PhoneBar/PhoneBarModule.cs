@@ -40,7 +40,8 @@ public sealed class PhoneBarModule : IDisposable {
         volume ??= new(WindowsOutputVolume.Read,WindowsOutputVolume.Write);
         receiver ??= new(PhoneTrackpad.GetLocalAddress,
             new NativeTrackpadInput(()=>new {media=media?.State},action=>media?.Send(action),()=>volume?.State,level=>volume?.Set(level),()=>volume?.CancelPending(),()=>volume?.Refresh()),
-            new TrackpadFirewall(), PhoneTrackpad.Port) { TokenProvider = StoredToken, AliasHost = PhoneNameResponder.Name, FollowNetwork = true };
+            new TrackpadFirewall(), PhoneTrackpad.Port) { TokenProvider = StoredToken, AliasHost = PhoneNameResponder.Name, FollowNetwork = true,
+              PreferencesPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "3EWindows", "phone-settings.json") };
         // The link stays http://3e-win.local:17833/#secret; when DHCP or a new
         // Wi-Fi changes the IP, the receiver rebinds and the name follows it.
         receiver.AddressChanged -= OnAddressChanged;
