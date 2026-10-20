@@ -212,9 +212,10 @@ Check(fake.Commands.Contains("history:-1") && fake.Commands.Contains("zoom:1"),"
     rebound.Headers.Host = "evil.example";
     using var hostRefused = await web.SendAsync(rebound);
     var refusalPage = await hostRefused.Content.ReadAsStringAsync();
-    // A named binding is refused by the HTTP stack itself (400); a wildcard
-    // binding reaches the receiver, which must explain its 403.
-    Check(((int)hostRefused.StatusCode == 400 || (int)hostRefused.StatusCode == 403 && refusalPage.Contains("scan its QR code again")) && !refusalPage.Contains("Trackpad"), "A foreign hostname never gets the trackpad, and the receiver's refusal explains itself (got " + (int)hostRefused.StatusCode + ": " + refusalPage[..Math.Min(120, refusalPage.Length)] + ")");
+    // A named binding is refused by the HTTP stack itself (400 on Windows,
+    // 404 on macOS); a wildcard binding reaches the receiver, which must
+    // explain its 403.
+    Check(((int)hostRefused.StatusCode is 400 or 404 || (int)hostRefused.StatusCode == 403 && refusalPage.Contains("scan its QR code again")) && !refusalPage.Contains("Trackpad"), "A foreign hostname never gets the trackpad, and the receiver's refusal explains itself (got " + (int)hostRefused.StatusCode + ": " + refusalPage[..Math.Min(120, refusalPage.Length)] + ")");
     using var missing = await web.GetAsync(ipOrigin + "/nope");
     Check((int)missing.StatusCode == 404 && (await missing.Content.ReadAsStringAsync()).Contains("Phone Bar"), "Unknown paths explain themselves too");
     using var badToken = new PhoneTrackpad(() => IPAddress.Loopback, new FakeInput(), new FakeFirewall(), FreePort()) { TokenProvider = () => "short" };
