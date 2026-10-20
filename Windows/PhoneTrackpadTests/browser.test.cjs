@@ -110,6 +110,9 @@ async function directClipFlow(browser,name,url){
 if(require.main===module)(async()=>{
  for(const [name,engine] of [['webkit',webkit],['chromium',chromium]]){
   const browser=await engine.launch({headless:true});
+  // The receiver remembers phone settings (view, octave, speed…); start each engine from defaults.
+  {const origin=new URL(url).origin;const reset=await fetch(origin+'/prefs',{method:'POST',headers:{'Content-Type':'application/json','Origin':origin,'X-Trackpad-Token':new URL(url).hash.slice(1)},body:JSON.stringify({prefs:{}})});
+   assert.equal(reset.status,200,'saved phone settings can be reset');}
   try{
    const errors=[],commands=[];
    const ctx=await browser.newContext({viewport:{width:390,height:844},hasTouch:true,isMobile:true});
