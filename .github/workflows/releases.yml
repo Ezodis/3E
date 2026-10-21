@@ -54,15 +54,17 @@ jobs:
             combined) zsh TouchBar/threee/Source/build.sh --combined ;;
             touchbar) zsh TouchBar/threee/Source/build.sh --touchbar-only ;;
             touchtab) zsh TouchTab/build.sh ;;
+            phone) zsh TouchBar/threee/Source/build.sh --phone-only ;;
           esac
       - name: Test maintained functionality without live app control
         run: |
           python3 -m unittest discover -s TouchBar/threee/Tests -p test_record.py
           python3 -m unittest discover -s scripts -p test_release.py
+          if [[ "${{ matrix.edition }}" == combined ]]; then python3 TouchBar/threee/Tests/module_bundles.py; fi
           python3 Shared/PhoneControl/Ableton/test_mapping.py
           xcrun clang -fobjc-arc -framework AppKit -framework CoreImage -framework ApplicationServices TouchBar/threee/Tests/phone_recovery.m -o /tmp/phone-recovery-test
           /tmp/phone-recovery-test
-          if [[ "${{ matrix.edition }}" != touchtab ]]; then python3 Shared/PhoneControl/MacHost/test_recovery.py TouchBar/build/threee/3E.app; fi
+          if [[ "${{ matrix.edition }}" == combined || "${{ matrix.edition }}" == phone ]]; then python3 Shared/PhoneControl/MacHost/test_recovery.py TouchBar/build/threee/3E.app; fi
           xcrun clang -fobjc-arc -DSTRIP_TEST_EDITION_TOUCHBAR=1 -framework AppKit -framework ApplicationServices TouchBar/threee/Tests/release_updates.m -o /tmp/release-updates-touchbar
           /tmp/release-updates-touchbar
           xcrun clang -fobjc-arc -DSTRIP_TEST_EDITION_COMBINED=1 -framework AppKit -framework ApplicationServices TouchBar/threee/Tests/release_updates.m -o /tmp/release-updates-combined

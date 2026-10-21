@@ -1,7 +1,9 @@
 // Check this app's public releases, never the vendor engine's old XML feed.
 #import <sys/stat.h>
+#import <sys/file.h>
+#import <fcntl.h>
 #import <unistd.h>
-static NSString *const StripReleaseVersion=@"3.0.102";
+static NSString *const StripReleaseVersion=@"3.0.114";
 static NSString *StripInstalledVersion(void) {
     NSString *path=NSBundle.mainBundle.bundlePath;
     while(path.length>1) {
@@ -16,6 +18,16 @@ static NSString *const StripReleasesAPI=@"https://api.github.com/repos/Ezodis/3E
 static NSString *const StripReleasesPage=@"https://github.com/Ezodis/3E/releases";
 static BOOL stripUpdateChecking;
 static BOOL stripUpdateInstalling;
+static int stripInstallLock=-1;
+static BOOL StripAcquireInstallLock(void) {
+    if(stripInstallLock>=0) return YES;
+    NSString *directory=[NSSearchPathForDirectoriesInDomains(NSApplicationSupportDirectory,NSUserDomainMask,YES).firstObject stringByAppendingPathComponent:@"3E"];
+    [NSFileManager.defaultManager createDirectoryAtPath:directory withIntermediateDirectories:YES attributes:nil error:nil];
+    int descriptor=open([[directory stringByAppendingPathComponent:@"module-operation.lock"] fileSystemRepresentation],O_CREAT|O_RDWR|O_CLOEXEC,0600);
+    if(descriptor<0) return NO;
+    if(flock(descriptor,LOCK_EX|LOCK_NB)!=0) { close(descriptor); return NO; }
+    stripInstallLock=descriptor; return YES;
+}
 static NSTimer *stripUpdateTimer;
 static NSString *const StripAutomaticUpdatesKey=@"StripAutomaticUpdatesEnabled";
 static BOOL StripAutomaticUpdatesEnabled(void) {
@@ -51,6 +63,25 @@ static NSString *StripAppBundlePathFrom(NSString *path) {
     return nil;
 }
 static NSString *StripAppBundlePath(void) { return StripAppBundlePathFrom(NSBundle.mainBundle.bundlePath); }
+static NSArray<NSString *> *StripModulesAtPath(NSString *path) {
+    NSDictionary *info=[NSDictionary dictionaryWithContentsOfFile:[path stringByAppendingPathComponent:@"Contents/Info.plist"]];
+    if([info[@"ThreeEModules"] isKindOfClass:NSArray.class]) return info[@"ThreeEModules"];
+    return [info[@"ThreeEIncludesTouchTab"] boolValue] ? @[@"touchbar",@"touchtab",@"phone"] : @[@"touchbar",@"phone"];
+}
+static NSArray<NSString *> *StripInstalledModules(void) {
+#if defined(STRIP_TEST_EDITION_COMBINED)
+    return @[@"touchbar",@"touchtab",@"phone"];
+#elif defined(STRIP_TEST_EDITION_TOUCHBAR)
+    return @[@"touchbar",@"phone"];
+#endif
+    return StripModulesAtPath(StripAppBundlePath());
+}
+static BOOL StripHasModule(NSString *module) { return [StripInstalledModules() containsObject:module]; }
+static BOOL StripUnifiedModules(void) {
+    return [[[NSDictionary dictionaryWithContentsOfFile:[StripAppBundlePath() stringByAppendingPathComponent:@"Contents/Info.plist"]] objectForKey:@"ThreeEModuleSchema"] integerValue]==1;
+}
+static NSArray<NSString *> *stripRequestedModules;
+static BOOL StripModuleOperation;
 static BOOL StripBundleIncludesTouchTab(NSString *appPath) {
     if(!appPath) return NO;
     NSDictionary *info=[NSDictionary dictionaryWithContentsOfFile:[appPath stringByAppendingPathComponent:@"Contents/Info.plist"]];
@@ -88,7 +119,7 @@ static BOOL StripResolveCombined(BOOL bundleIncludesTouchTab,BOOL previouslyComb
 static BOOL StripCombinedRelease(void) {
     static BOOL combined; static dispatch_once_t once;
     dispatch_once(&once,^{ combined=StripResolveCombined(StripInstalledIncludesTouchTab(),StripPreviouslyCombined()); });
-    return combined;
+    return StripUnifiedModules() || StripModuleOperation || combined;
 }
 // Install when the release is newer, or when it is the same version but the
 // installed bundle is the wrong edition (recovery from the old swap).
@@ -135,27 +166,12 @@ static BOOL StripRunTool(NSString *path,NSArray<NSString *> *arguments) {
     @catch(NSException *exception) { NSLog(@"3E update tool failed: %@",exception.reason); return NO; }
 }
 static void StripFinishUpdateFailure(NSString *message,BOOL foreground) {
-    stripUpdateInstalling=NO;
+    if(stripInstallLock>=0) { close(stripInstallLock); stripInstallLock=-1; }
+    stripUpdateInstalling=NO; StripModuleOperation=NO; stripRequestedModules=nil;
     NSLog(@"3E update failed: %@",message);
     if(foreground) StripNotify(@"3E update failed",message);
 }
-static void StripDownloadAndInstall(NSDictionary *release,BOOL foreground) {
-    if(stripUpdateInstalling) return;
-    stripUpdateInstalling=YES;
-    NSURL *url=[NSURL URLWithString:release[@"url"]];
-    NSURLSessionConfiguration *configuration=NSURLSessionConfiguration.defaultSessionConfiguration;
-    configuration.timeoutIntervalForRequest=600; configuration.timeoutIntervalForResource=3600;
-    NSURLSession *session=[NSURLSession sessionWithConfiguration:configuration];
-    NSURLSessionDownloadTask *task=[session downloadTaskWithURL:url completionHandler:^(NSURL *location,NSURLResponse *response,NSError *error) {
-        NSString *downloadedArchive=[NSTemporaryDirectory() stringByAppendingPathComponent:[NSString stringWithFormat:@"3E-release-%@.zip",NSUUID.UUID.UUIDString]];
-        NSError *downloadCopyError=nil;
-        if(!error && location && [(NSHTTPURLResponse *)response statusCode]==200 &&
-           ![[NSFileManager defaultManager] copyItemAtURL:location toURL:[NSURL fileURLWithPath:downloadedArchive] error:&downloadCopyError]) error=downloadCopyError;
-        dispatch_async(dispatch_get_global_queue(QOS_CLASS_UTILITY,0),^{
-            if(error || !location || [(NSHTTPURLResponse *)response statusCode]!=200) {
-                [[NSFileManager defaultManager] removeItemAtPath:downloadedArchive error:nil];
-                dispatch_async(dispatch_get_main_queue(),^{ StripFinishUpdateFailure(error.localizedDescription ?: @"The release download did not complete.",foreground); }); return;
-            }
+static void StripInstallArchive(NSString *downloadedArchive,NSDictionary *release,BOOL foreground) {
             NSString *bundlePath=NSBundle.mainBundle.bundlePath;
             while(bundlePath.length>1 && ![[NSBundle bundleWithPath:bundlePath].bundleIdentifier isEqual:@"local.musicstrip.app"]) bundlePath=bundlePath.stringByDeletingLastPathComponent;
             NSString *parent=bundlePath.stringByDeletingLastPathComponent;
@@ -175,15 +191,16 @@ static void StripDownloadAndInstall(NSDictionary *release,BOOL foreground) {
             NSString *infoPath=[candidate stringByAppendingPathComponent:@"Contents/Info.plist"];
             NSDictionary *info=[NSDictionary dictionaryWithContentsOfFile:infoPath];
             NSString *expectedID=StripCombinedRelease() ? @"combined-v" : @"touchbar-v";
-            BOOL valid=prepared && [info[@"CFBundleIdentifier"] isEqual:@"local.musicstrip.app"] &&
+            BOOL valid=prepared && (!(StripUnifiedModules() || StripModuleOperation) || [info[@"ThreeEModuleSchema"] integerValue]==1) && [info[@"CFBundleIdentifier"] isEqual:@"local.musicstrip.app"] &&
                 [info[@"CFBundleShortVersionString"] isEqual:release[@"version"]] &&
-                [release[@"tag"] hasPrefix:expectedID] && [info[@"ThreeEIncludesTouchTab"] boolValue]==StripCombinedRelease() &&
+                ([release[@"local"] boolValue] || ([release[@"tag"] hasPrefix:expectedID] && [info[@"ThreeEIncludesTouchTab"] boolValue]==StripCombinedRelease())) &&
                 StripRunTool(@"/usr/bin/codesign",@[@"--verify",@"--deep",@"--strict",candidate]);
-            if(valid) {
-                // Re-sign with the same Developer ID used by this install so
-                // macOS permissions keep matching the app's designated requirement.
-                valid=StripRunTool(@"/usr/bin/codesign",@[@"--force",@"--deep",@"--sign",@"EDA0E1C9F0DD46BE3437CD2733933E31D3A8623D",@"--timestamp=none",candidate]) &&
-                    StripRunTool(@"/usr/bin/codesign",@[@"--verify",@"--deep",@"--strict",candidate]);
+            if(valid && (StripUnifiedModules() || StripModuleOperation)) {
+                // Use our installed configurator, never execute downloaded scripts
+                // until the candidate has passed identity/version/signature checks.
+                NSString *configure=[bundlePath stringByAppendingPathComponent:@"Contents/Resources/ConfigureModules.sh"];
+                NSArray *modules=stripRequestedModules ?: StripInstalledModules();
+                valid=StripRunTool(@"/bin/zsh",@[configure,candidate,[modules componentsJoinedByString:@","]]);
             }
             if(!valid) {
                 [[NSFileManager defaultManager] removeItemAtPath:work error:nil];
@@ -197,7 +214,7 @@ static void StripDownloadAndInstall(NSDictionary *release,BOOL foreground) {
             }
             chmod(installerCopy.fileSystemRepresentation,0700);
             pid_t helperPID=getpid(),mainPID=0;
-            for(NSRunningApplication *app in [NSRunningApplication runningApplicationsWithBundleIdentifier:@"local.musicstrip.app"]) if(!app.terminated) { mainPID=app.processIdentifier; break; }
+            for(NSRunningApplication *app in [NSRunningApplication runningApplicationsWithBundleIdentifier:@"local.musicstrip.app"]) if(!app.terminated && [app.bundleURL.path isEqual:bundlePath]) { mainPID=app.processIdentifier; break; }
             if(!mainPID) {
                 [[NSFileManager defaultManager] removeItemAtPath:work error:nil]; [[NSFileManager defaultManager] removeItemAtPath:installerCopy error:nil];
                 dispatch_async(dispatch_get_main_queue(),^{ StripFinishUpdateFailure(@"The main 3E app could not be found.",foreground); }); return;
@@ -212,11 +229,96 @@ static void StripDownloadAndInstall(NSDictionary *release,BOOL foreground) {
             }
             dispatch_async(dispatch_get_main_queue(),^{
                 StripNotify(@"Installing 3E update",[NSString stringWithFormat:@"Version %@ will install now. 3E will restart when installation finishes.",release[@"version"]]);
+                for(NSRunningApplication *app in [NSRunningApplication runningApplicationsWithBundleIdentifier:StripAppBundleID]) if(app.processIdentifier==mainPID && mainPID!=getpid()) [app terminate];
                 [NSApp terminate:nil];
             });
+}
+static void StripDownloadAndInstall(NSDictionary *release,BOOL foreground) {
+    if(stripUpdateInstalling) return;
+    if(!StripAcquireInstallLock()) { StripFinishUpdateFailure(@"Another 3E module change or update is in progress. Try again when it finishes.",foreground); return; }
+    stripUpdateInstalling=YES;
+    NSURL *url=[NSURL URLWithString:release[@"url"]];
+    NSURLSessionConfiguration *configuration=NSURLSessionConfiguration.defaultSessionConfiguration;
+    configuration.timeoutIntervalForRequest=600; configuration.timeoutIntervalForResource=3600;
+    NSURLSession *session=[NSURLSession sessionWithConfiguration:configuration];
+    NSURLSessionDownloadTask *task=[session downloadTaskWithURL:url completionHandler:^(NSURL *location,NSURLResponse *response,NSError *error) {
+        NSString *downloadedArchive=[NSTemporaryDirectory() stringByAppendingPathComponent:[NSString stringWithFormat:@"3E-release-%@.zip",NSUUID.UUID.UUIDString]];
+        NSError *downloadCopyError=nil;
+        if(!error && location && [(NSHTTPURLResponse *)response statusCode]==200 &&
+           ![[NSFileManager defaultManager] copyItemAtURL:location toURL:[NSURL fileURLWithPath:downloadedArchive] error:&downloadCopyError]) error=downloadCopyError;
+        dispatch_async(dispatch_get_global_queue(QOS_CLASS_UTILITY,0),^{
+            if(error || !location || [(NSHTTPURLResponse *)response statusCode]!=200) {
+                [[NSFileManager defaultManager] removeItemAtPath:downloadedArchive error:nil];
+                dispatch_async(dispatch_get_main_queue(),^{ StripFinishUpdateFailure(error.localizedDescription ?: @"The release download did not complete.",foreground); }); return;
+            }
+            StripInstallArchive(downloadedArchive,release,foreground);
         });
     }];
     [task resume];
+}
+static void StripChangeModules(NSArray<NSString *> *modules,BOOL downloading) {
+    if(stripUpdateInstalling || stripUpdateChecking) { StripNotify(@"3E is busy",@"Wait for the current update or module change to finish, then try again."); return; }
+    if(!StripAcquireInstallLock()) { StripNotify(@"3E is busy",@"An update or module change is already in progress."); return; }
+    stripRequestedModules=[modules copy]; StripModuleOperation=YES;
+    if(!downloading) {
+        stripUpdateInstalling=YES;
+        dispatch_async(dispatch_get_global_queue(QOS_CLASS_UTILITY,0),^{
+            NSString *archive=[NSTemporaryDirectory() stringByAppendingPathComponent:[NSString stringWithFormat:@"3E-modules-%@.zip",NSUUID.UUID.UUIDString]];
+            if(!StripRunTool(@"/usr/bin/ditto",@[@"-c",@"-k",@"--keepParent",StripAppBundlePath(),archive])) {
+                dispatch_async(dispatch_get_main_queue(),^{ StripFinishUpdateFailure(@"Could not stage the module change.",YES); }); return;
+            }
+            StripInstallArchive(archive,@{@"local":@YES,@"version":StripInstalledVersion()},YES);
+        });
+        return;
+    }
+    stripUpdateChecking=YES;
+    StripNotify(@"Installing 3E module",@"Downloading modules. 3E will restart when installation finishes.");
+    NSMutableURLRequest *request=[NSMutableURLRequest requestWithURL:[NSURL URLWithString:StripReleasesAPI]];
+    request.timeoutInterval=30;
+    [request setValue:@"3E" forHTTPHeaderField:@"User-Agent"];
+    [[[NSURLSession sharedSession] dataTaskWithRequest:request completionHandler:^(NSData *data,NSURLResponse *response,NSError *error) {
+        NSDictionary *release=nil;
+        if(!error && [(NSHTTPURLResponse *)response statusCode]==200 && data) release=StripNewestRelease([NSJSONSerialization JSONObjectWithData:data options:0 error:nil]);
+        dispatch_async(dispatch_get_main_queue(),^{
+            stripUpdateChecking=NO;
+            if(!release || [release[@"version"] compare:StripInstalledVersion() options:NSNumericSearch]==NSOrderedAscending) {
+                StripFinishUpdateFailure(@"No compatible module download is available yet. Try again after the current release is published.",YES); return;
+            }
+            StripDownloadAndInstall(release,YES);
+        });
+    }] resume];
+}
+static BOOL StripInstallMissingModule(NSString *module) {
+    if(StripHasModule(module)) return NO;
+    NSMutableArray *modules=[StripInstalledModules() mutableCopy]; [modules addObject:module];
+    StripChangeModules(modules,YES); return YES;
+}
+@interface ThreeEModuleActions : NSObject
++ (void)changeModule:(NSMenuItem *)sender;
+@end
+@implementation ThreeEModuleActions
++ (void)changeModule:(NSMenuItem *)sender {
+    NSString *module=sender.representedObject;
+    if(![NSBundle.mainBundle.bundleIdentifier isEqual:StripAppBundleID] && NSClassFromString(@"ThreeEMidiBridge")) {
+        fprintf(stdout,"MODULE_CHANGE %s\n",module.UTF8String); fflush(stdout); return;
+    }
+    if(StripInstallMissingModule(module)) return;
+    NSMutableArray *modules=[StripInstalledModules() mutableCopy]; [modules removeObject:module];
+    StripChangeModules(modules,NO);
+}
+@end
+static NSMenuItem *StripModuleSettingsMenu(void) {
+    NSMenuItem *settings=[[NSMenuItem alloc] initWithTitle:@"" action:nil keyEquivalent:@""];
+    settings.identifier=@"local.musicstrip.modules";
+    settings.image=[NSImage imageWithSystemSymbolName:@"gearshape" accessibilityDescription:@"Manage modules"];
+    settings.toolTip=@"Install or uninstall 3E modules";
+    NSMenu *menu=[NSMenu new];
+    for(NSArray *entry in @[@[@"phone",@"Phone Bar"],@[@"touchtab",@"Touch Tab"],@[@"touchbar",@"Touch Bar"]]) {
+        BOOL installed=StripHasModule(entry[0]);
+        NSMenuItem *item=[[NSMenuItem alloc] initWithTitle:[NSString stringWithFormat:@"%@ %@…",installed?@"Uninstall":@"Install",entry[1]] action:@selector(changeModule:) keyEquivalent:@""];
+        item.representedObject=entry[0]; item.target=ThreeEModuleActions.class; [menu addItem:item];
+    }
+    settings.submenu=menu; return settings;
 }
 static void StripCheckRelease(BOOL foreground) {
     if(stripUpdateChecking || stripUpdateInstalling) return;
@@ -232,7 +334,7 @@ static void StripCheckRelease(BOOL foreground) {
         dispatch_async(dispatch_get_main_queue(),^{
             stripUpdateChecking=NO;
             NSString *installed=StripInstalledVersion();
-            BOOL newer=release && StripShouldInstall(release[@"version"],installed,StripInstalledIncludesTouchTab(),StripCombinedRelease());
+            BOOL newer=release && StripShouldInstall(release[@"version"],installed,StripUnifiedModules() ? YES : StripInstalledIncludesTouchTab(),StripCombinedRelease());
             // New releases install as soon as they are found, even while the Mac is in use.
             if(newer && StripAutomaticUpdatesEnabled()) {
                 if(!foreground) StripNotify(@"Updating 3£",[NSString stringWithFormat:@"Installing version %@; 3£ will reopen in a few seconds.",release[@"version"]]);
@@ -291,7 +393,7 @@ static void StripRelaunch(void) {
 // Restart checks for an update first: a newer release is installed (its
 // installer reopens 3£); otherwise, or when offline, 3£ simply relaunches.
 static void StripRestart(void) {
-    if(stripUpdateInstalling) return;
+    if(stripUpdateInstalling || stripUpdateChecking) return;
     NSMutableURLRequest *request=[NSMutableURLRequest requestWithURL:[NSURL URLWithString:StripReleasesAPI]];
     request.timeoutInterval=15;
     [request setValue:@"application/vnd.github+json" forHTTPHeaderField:@"Accept"];
@@ -301,7 +403,7 @@ static void StripRestart(void) {
         if(!error && data && [(NSHTTPURLResponse *)response statusCode]==200)
             release=StripNewestRelease([NSJSONSerialization JSONObjectWithData:data options:0 error:nil]);
         dispatch_async(dispatch_get_main_queue(),^{
-            if(release && StripShouldInstall(release[@"version"],StripInstalledVersion(),StripInstalledIncludesTouchTab(),StripCombinedRelease())) {
+            if(release && StripShouldInstall(release[@"version"],StripInstalledVersion(),StripUnifiedModules() ? YES : StripInstalledIncludesTouchTab(),StripCombinedRelease())) {
                 StripNotify(@"Updating 3£",[NSString stringWithFormat:@"Installing version %@; 3£ will reopen when it is ready.",release[@"version"]]);
                 StripDownloadAndInstall(release,YES);
                 return;

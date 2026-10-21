@@ -14,6 +14,10 @@ static void TestEditionSourceOfTruth(void) {
     NSCAssert(StripBundleIncludesTouchTab(StripAppBundlePathFrom(helper)),@"Helper built without the combined flag still sees the combined edition");
     [@{@"CFBundleIdentifier":@"local.musicstrip.app"} writeToFile:[app stringByAppendingPathComponent:@"Contents/Info.plist"] atomically:YES];
     NSCAssert(!StripBundleIncludesTouchTab(StripAppBundlePathFrom(helper)),@"Touch Bar-only bundle reports no Touch Tab");
+    for(NSArray *selection in @[@[],@[@"touchbar"],@[@"touchtab"],@[@"phone"],@[@"touchbar",@"phone",@"touchtab"]]) {
+        [@{@"CFBundleIdentifier":@"local.musicstrip.app",@"ThreeEModuleSchema":@1,@"ThreeEModules":selection} writeToFile:[app stringByAppendingPathComponent:@"Contents/Info.plist"] atomically:YES];
+        NSCAssert([StripModulesAtPath(StripAppBundlePathFrom(helper)) isEqual:selection],@"Helpers and host retain the exact module selection, including empty");
+    }
     NSCAssert(!StripAppBundlePathFrom(root),@"No enclosing app outside a bundle");
     [NSFileManager.defaultManager removeItemAtPath:root error:nil];
     NSCAssert(StripResolveCombined(YES,NO) && StripResolveCombined(NO,YES) && !StripResolveCombined(NO,NO),@"Combined bundle or prior combined use selects combined updates");

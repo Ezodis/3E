@@ -51,7 +51,7 @@ jobs:
         run: |
           arch=$(uname -m)
           if [[ "$arch" == x86_64 ]]; then arch=x64; fi
-          host="build/phone/3E Phone.app/Contents/Resources/PhoneControl/$arch/ThreeE.PhoneHost"
+          host="TouchBar/build/threee/3E.app/Contents/Resources/PhoneControl/$arch/ThreeE.PhoneHost"
           "$host" --self-test
           "$host" --native-self-test
           "$host" --midi-self-test

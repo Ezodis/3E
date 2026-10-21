@@ -21,7 +21,7 @@ int main(void) { @autoreleasepool {
     TestDelegate *delegate=[TestDelegate new]; delegate.theItem=[TestStatus new]; delegate.theItem.menu=[NSMenu new]; NSApp.delegate=delegate;
     NSCAssert(StripCombinedRelease(),@"Build with -DSTRIP_TEST_EDITION_COMBINED=1");
     CleanMenu(delegate.theItem.menu);
-    NSCAssert(delegate.theItem.menu.numberOfItems==10,@"Add gesture, App, Phone Bar, downloads, automatic-update and Restart controls to the existing menu");
+    NSCAssert(delegate.theItem.menu.numberOfItems==11,@"Add gesture, App, Phone Bar, downloads, automatic-update and Restart controls to the existing menu");
     NSMenuItem *restart=delegate.theItem.menu.itemArray.lastObject;
     NSCAssert([restart.identifier isEqual:@"local.musicstrip.restart"] && [restart.title isEqual:@"Restart"] && restart.target==ThreeEMidiBridge.class && restart.action==@selector(restartAll:),@"Restart (update check + relaunch) is in the full menu, like Windows");
     NSMenuItem *phone=nil;
@@ -37,7 +37,7 @@ int main(void) { @autoreleasepool {
     combinedGestureState=@"on"; CleanMenu(delegate.theItem.menu);
     NSCAssert(toggle.state==NSControlStateValueOn && [toggle.title isEqual:@"Touch Tab"],@"Reflect actual enabled runtime state without changing the label");
     combinedGestureState=@"off"; CleanMenu(delegate.theItem.menu);
-    NSCAssert(toggle.state==NSControlStateValueOff && delegate.theItem.menu.numberOfItems==10,@"Disabling never duplicates the menu items");
+    NSCAssert(toggle.state==NSControlStateValueOff && delegate.theItem.menu.numberOfItems==11,@"Disabling never duplicates the menu items");
     combinedGestureState=@"permission"; CleanMenu(delegate.theItem.menu);
     NSCAssert([toggle.title isEqual:@"Touch Tab"] && toggle.toolTip.length>0,@"Permission explanation belongs in tooltip, not the toggle label");
     NSMenuItem *hide=[[NSMenuItem alloc] initWithTitle:@"Hide 3£" action:nil keyEquivalent:@""];

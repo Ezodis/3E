@@ -11,6 +11,7 @@ static void StripStopGestures(void) {
     if(StripGestureClass) ((void(*)(id,SEL))objc_msgSend)(StripGestureClass,NSSelectorFromString(@"stop"));
 }
 static NSString *StripRefreshGestures(void) {
+    if(!StripHasModule(@"touchtab")) { StripStopGestures(); return @"not installed"; }
     if(!StripGesturesEnabled()) { StripStopGestures(); return @"off"; }
     if(!StripGestureClass) {
         NSString *path=[NSBundle.mainBundle.bundlePath stringByAppendingPathComponent:@"Contents/Frameworks/ThreeEGestureEngine.dylib"];

@@ -22,11 +22,11 @@ class ReleasesTest(unittest.TestCase):
 
     def test_smaller_editions_are_explicit(self):
         self.assertTrue(set(required_module_files("touchbar")) < set(required_module_files("combined")))
-        self.assertEqual(required_module_files("touchtab"), [])
+        self.assertEqual(required_module_files("touchtab"), ["Contents/Frameworks/ThreeEGestureEngine.dylib"])
 
     def test_three_independent_update_feeds(self):
-        self.assertEqual(set(EDITIONS), {"combined", "touchbar", "touchtab"})
-        self.assertEqual(len({item[1] for item in EDITIONS.values()}), 3)
+        self.assertEqual(set(EDITIONS), {"combined", "touchbar", "touchtab", "phone"})
+        self.assertEqual(len({item[1] for item in EDITIONS.values()}), 4)
 
     def test_monotonic_versions(self):
         base, first, later = versions(0), versions(1), versions(100)
@@ -50,7 +50,7 @@ class ReleasesTest(unittest.TestCase):
         tags = [f"{prefix}-v3.0.80" for prefix, _ in MODULES.values()]
         touchtab_only = lambda tag, paths: "TouchTab/" in paths
         # TouchTab is embedded in the Combined base app, so both move together.
-        self.assertEqual(plan(tags, touchtab_only), ["combined", "touchtab"])
+        self.assertEqual(plan(tags, touchtab_only), ["combined", "touchbar", "touchtab", "phone"])
         windows_only = lambda tag, paths: "Windows/" in paths
         self.assertEqual(plan(tags, windows_only), ["windows"])
         self.assertEqual(plan(tags, lambda tag, paths: False), [])

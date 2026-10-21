@@ -2,15 +2,14 @@
 
 ## 3E distribution
 
-Prefer one app? Choose the `combined-v…` release in 3E: `3E-Combined.zip` installs only 3£, with these gestures running in its main process. Enable/disable them in the existing 3£ menu. `CombinedModule.swift` exposes the shared engine to Objective-C; it is not included in the standalone Xcode app. Standalone TouchTab remains independently buildable and downloadable. Do not run both engines at the same time. Direct Touch Bar touches are excluded so polyphonic piano playing cannot trigger trackpad gestures.
+Touch Tab is an optional module inside **3E.app**. Download `TouchTab.zip` for a small initial install, or `3E-Combined.zip` for all modules. Both use `/Applications/3E.app`. Click missing modules in its menu to install them; use the gear menu to uninstall modules. Quit the legacy standalone Touch-Tab app before migrating. Direct Touch Bar touches are excluded so piano playing cannot trigger trackpad gestures.
 
-This independent app now lives in `TouchTab/` in [Ezodis/3E](https://github.com/Ezodis/3E). Download `TouchTab.zip` from a `touchtab-v…` [release](https://github.com/Ezodis/3E/releases), or get both apps in the bundle archive. Install this app as `/Applications/Touch-Tab.app`. Its update menu checks only TouchTab releases in 3E.
 
 Source imported from Ezodis/Touch-Tab commit `747110641062ebf9933cc12e1c6ce1a06feecb29`. The original upstream README follows for attribution and gesture instructions; its upstream download links are not this fork's update feed.
 
 ### Build this version
 
-From the repository root, run `zsh TouchTab/build.sh`. Xcode 27 builds require macOS 12 or newer; the output is a universal Intel/Apple Silicon app in `build/TouchTab/Build/Products/Release/Touch-Tab.app`. By default it is ad-hoc signed; provide `TOUCHTAB_SIGNING_IDENTITY` to use your own persistent signing identity. App Sandbox remains enabled. Local development signing is not Developer ID notarization: other Macs may require manual approval.
+From the repository root, run `zsh TouchTab/build.sh`. The output is the universal `TouchBar/build/threee/3E.app` containing only Touch Tab, with the shared 3E host and module manager. Use `STRIP_SIGNING_IDENTITY=-` for an ad-hoc build. Requires macOS 12+ and Xcode command-line tools. The original Xcode project remains for provenance; public releases use the shared host.
 
 Give this app Accessibility access in System Settings before testing gestures. Four-finger left/right switches apps; a force-click switches windows in the current app. macOS trackpad shortcuts can compete with these gestures; change them only if you encounter a conflict. Quit releases the gesture tap and any in-progress app-switching modifier.
 

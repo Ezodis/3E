@@ -6,11 +6,11 @@ strip_identity="${STRIP_SIGNING_IDENTITY:-EDA0E1C9F0DD46BE3437CD2733933E31D3A862
 mkdir -p "$strip_repo/build/threee"
 strip_edition="${1:---combined}"
 case "$strip_edition" in
-  --combined|--combined-main-only|--touchbar-only|--bridge-only) ;;
+  --combined|--combined-main-only|--touchbar-only|--touchtab-only|--phone-only|--bridge-only) ;;
   *) printf 'Usage: build.sh [--combined | --touchbar-only | --combined-main-only | --bridge-only]\n' >&2; exit 2 ;;
 esac
 strip_combined=NO
-if [[ "$strip_edition" == --combined || "$strip_edition" == --combined-main-only ]]; then
+if [[ "$strip_edition" == --combined || "$strip_edition" == --combined-main-only || "$strip_edition" == --touchtab-only ]]; then
   strip_combined=YES
   for strip_arch in arm64 x86_64; do
   xcrun swiftc -emit-library -O -target "$strip_arch-apple-macosx12.0" -module-name ThreeEGestureEngine \
@@ -22,8 +22,8 @@ if [[ "$strip_edition" == --combined || "$strip_edition" == --combined-main-only
   xcrun lipo -create "$strip_repo/build/threee/ThreeEGestureEngine-arm64.dylib" "$strip_repo/build/threee/ThreeEGestureEngine-x86_64.dylib" -output "$strip_repo/build/threee/ThreeEGestureEngine.dylib"
   codesign --force --sign - "$strip_repo/build/threee/ThreeEGestureEngine.dylib"
 fi
-strip_main_flags=()
-strip_minimum=11.0
+strip_main_flags=(-DSTRIP_COMBINED_TOUCHTAB=1)
+strip_minimum=12.0
 if [[ "$strip_combined" == YES ]]; then strip_main_flags=(-DSTRIP_COMBINED_TOUCHTAB=1); strip_minimum=12.0; fi
 if [[ "$strip_edition" == --combined-main-only ]]; then
   xcrun clang -arch arm64 -arch x86_64 -fobjc-arc -Wall -Wextra -Wno-unused-parameter -O2 \
@@ -72,12 +72,18 @@ strip_framework="$strip_midi/Contents/Frameworks/SnoizeMIDI.framework"
 xcrun clang -arch arm64 -arch x86_64 -dynamiclib -fobjc-arc -Wall -Wextra -Wno-unused-parameter -O2 \
   -mmacosx-version-min=11.0 -framework AppKit -framework ApplicationServices -framework CoreMIDI MidiBridge.m \
   -o "$strip_midi/Contents/Frameworks/ThreeEMidiBridge.dylib"
+strip_modules=touchbar,touchtab,phone
+case "$strip_edition" in
+  --touchbar-only) strip_modules=touchbar ;;
+  --touchtab-only) strip_modules=touchtab ;;
+  --phone-only) strip_modules=phone ;;
+esac
 xattr -cr "$strip_app"
 codesign --force --sign - "$strip_framework"
 codesign --force --sign - "$strip_midi/Contents/Frameworks/ThreeEMidiBridge.dylib"
 codesign --force --sign - "$strip_midi"
 codesign --force --sign - "$strip_apps_helper"
-codesign --force --sign "$strip_identity" --timestamp=none "$strip_app"
+STRIP_SIGNING_IDENTITY="$strip_identity" zsh Resources/ConfigureModules.sh "$strip_app" "$strip_modules"
 codesign --verify --deep --strict "$strip_app"
 strip_output="$strip_repo/build/threee/3E.app"
 if [[ -e "$strip_output" ]]; then

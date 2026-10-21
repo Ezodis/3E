@@ -22,7 +22,8 @@ REPO = "Ezodis/3E"
 EDITIONS = {
     "combined": ("combined", "3E-Combined.zip", "3E Combined"),
     "touchbar": ("touchbar", "TouchBar.zip", "TouchBar only"),
-    "touchtab": ("touchtab", "TouchTab.zip", "TouchTab only"),
+    "touchtab": ("touchtab", "TouchTab.zip", "3E with Touch Tab"),
+    "phone": ("phone", "3E-Phone-Mac.zip", "3E with Phone Bar"),
 }
 
 def run(*args, **kwargs):
@@ -30,9 +31,10 @@ def run(*args, **kwargs):
 
 # Release tag prefix and the source paths whose changes trigger a new release.
 MODULES = {
-    "combined": ("combined", ("TouchBar/", "TouchTab/", "Shared/")),
-    "touchbar": ("touchbar", ("TouchBar/", "Shared/")),
-    "touchtab": ("touchtab", ("TouchTab/",)),
+    "combined": ("combined", ("TouchBar/", "TouchTab/", "Shared/", "scripts/", ".github/")),
+    "touchbar": ("touchbar", ("TouchBar/", "TouchTab/", "Shared/", "scripts/", ".github/")),
+    "touchtab": ("touchtab", ("TouchBar/", "TouchTab/", "Shared/", "scripts/", ".github/")),
+    "phone": ("phone", ("TouchBar/", "TouchTab/", "Shared/", "scripts/", ".github/")),
     "windows": ("windows", ("Windows/", "Shared/")),
 }
 SYNC_FILE = "release-versions.json"
@@ -98,10 +100,12 @@ def verify_architectures(executable):
 
 def required_module_files(edition):
     files = []
-    if edition == "combined":
+    if edition in ("combined", "touchtab"):
         files.append("Contents/Frameworks/ThreeEGestureEngine.dylib")
     if edition in ("combined", "touchbar"):
         files.append("Contents/Helpers/MIDI Touchbar.app/Contents/MacOS/MIDI Touchbar")
+        files.append("Contents/Helpers/ThreeE Apps.app/Contents/MacOS/ThreeEApps")
+    if edition in ("combined", "phone"):
         for arch in ("arm64", "x64"):
             for name in ("ThreeE.PhoneHost", "ThreeE.PhoneHost.dll", "ThreeE.PhoneControl.dll", "libThreeEPhoneNative.dylib"):
                 files.append(f"Contents/Resources/PhoneControl/{arch}/{name}")
@@ -114,11 +118,13 @@ def verify_modules(app, edition):
 def package(edition, values):
     destination = ROOT / "build/releases"
     destination.mkdir(parents=True, exist_ok=True)
-    app = ROOT / ("build/TouchTab/Build/Products/Release/Touch-Tab.app"
-                  if edition == "touchtab" else "TouchBar/build/threee/3E.app")
+    app = ROOT / "TouchBar/build/threee/3E.app"
     info = plistlib.loads((app / "Contents/Info.plist").read_bytes())
     assert info["CFBundleShortVersionString"] == values[edition], "Stale app version"
-    assert bool(info.get("ThreeEIncludesTouchTab")) == (edition == "combined"), "Wrong edition"
+    assert bool(info.get("ThreeEIncludesTouchTab")) == (edition in ("combined", "touchtab")), "Wrong edition"
+    expected = {"touchbar", "touchtab", "phone"} if edition == "combined" else {edition}
+    assert set(info.get("ThreeEModules", [])) == expected, "Wrong module selection"
+    assert info["CFBundleIdentifier"] == "local.musicstrip.app", "Wrong app identity"
     verify_modules(app, edition)
     executable = app / "Contents/MacOS" / info["CFBundleExecutable"]
     verify_architectures(executable)
@@ -166,7 +172,8 @@ def publish(values, editions):
                 raise RuntimeError(f"Refusing to overwrite an existing release: {tag}")
         else:
             notes = (f"Built from commit `{commit}`. Universal Intel/Apple Silicon.\n\n"
-                     "Choose this edition alone; do not run both gesture engines. "
+                     "Every download contains the same 3E.app with different initial modules. "
+                     "Click a missing feature in the menu to install it, or use the gear to uninstall modules. "
                      "Development-signed or ad-hoc signed, not notarized. Approve this app "
                      "on your Mac when required. If an enabled permission still denies access, "
                      "remove only its stale entry and re-add the installed app in System Settings.\n\n"

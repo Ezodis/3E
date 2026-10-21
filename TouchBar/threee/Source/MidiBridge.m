@@ -664,7 +664,7 @@ static void CleanMenu(NSMenu *menu) {
     NSStatusItem *statusItem=[(id)NSApp.delegate valueForKey:@"theItem"];
     // Touch Tab is shown whenever the installed bundle is the combined edition
     // (Info.plist), never based on environment variables or build flags.
-    if(StripInstalledIncludesTouchTab() && menu==statusItem.menu) {
+    if(menu==statusItem.menu) {
         NSMenuItem *toggle=nil;
         for(NSMenuItem *item in menu.itemArray) if([item.identifier isEqual:@"local.musicstrip.touchTabToggle"]) toggle=item;
         if(!toggle) {
@@ -681,7 +681,7 @@ static void CleanMenu(NSMenu *menu) {
         }
         [menu insertItem:toggle atIndex:position];
         toggle.state=[combinedGestureState isEqual:@"on"] ? NSControlStateValueOn : NSControlStateValueOff;
-        toggle.title=@"Touch Tab";
+        toggle.title=StripHasModule(@"touchtab")?@"Touch Tab":@"Touch Tab — Install…";
         toggle.toolTip=[combinedGestureState isEqual:@"permission"] ? @"Accessibility approval is required for the main 3E app" : [combinedGestureState isEqual:@"unavailable"] ? @"Trackpad gesture listener unavailable" : @"Toggle trackpad gestures";
     }
     for(NSMenuItem *item in menu.itemArray.copy) {
@@ -723,6 +723,7 @@ static void CleanMenu(NSMenu *menu) {
             else if(item.action==NSSelectorFromString(@"toggleSurfaceMode:"))surface=item;
             else if([item.identifier isEqual:@"local.musicstrip.downloads"])downloads=item;
             else if([item.identifier isEqual:@"local.musicstrip.automaticUpdates"])automatic=item;
+            else if([item.identifier isEqual:@"local.musicstrip.modules"]) continue;
             else if([title containsString:@"check for update"] || item.isSeparatorItem || [item.identifier hasPrefix:@"local.musicstrip.section."]) continue;
             else if([item.identifier isEqual:@"local.musicstrip.restart"])restart=item;
             else if([title isEqual:@"reset touch bar"])reset=item;
@@ -730,6 +731,7 @@ static void CleanMenu(NSMenu *menu) {
             else [remaining addObject:item];
         }
         if(!phone)phone=ThreeEPhoneBarMenu(NSClassFromString(@"ThreeEMidiBridge"));
+        if(!StripHasModule(@"phone")) { phone.title=@"Phone Bar — Install…"; phone.state=NSControlStateValueOff; }
         if(!apps) {
             apps=[[NSMenuItem alloc] initWithTitle:@"Touch Bar App" action:NSSelectorFromString(@"toggleApps:") keyEquivalent:@""];
             apps.identifier=@"local.musicstrip.appsToggle";apps.target=NSClassFromString(@"ThreeEMidiBridge");
@@ -763,6 +765,7 @@ static void CleanMenu(NSMenu *menu) {
         [menu addItem:MenuSeparator()];
         [menu addItem:downloads];[menu addItem:automatic];
         [menu addItem:MenuSeparator()];
+        [menu addItem:StripModuleSettingsMenu()];
         if(reset)[menu addItem:reset];[menu addItem:restart];if(quit)[menu addItem:quit];
     }
 }

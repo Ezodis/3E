@@ -3,6 +3,8 @@
 #import <objc/message.h>
 #import <dlfcn.h>
 static BOOL trusted,posting,canStart,running;
+static BOOL moduleInstalled=YES;
+static BOOL StripHasModule(NSString *module) { return moduleInstalled; }
 static BOOL AccessibilityTrusted(BOOL prompt) { return trusted; }
 static BOOL TestPosting(void) { return posting; }
 #define CGPreflightPostEventAccess TestPosting
@@ -31,5 +33,7 @@ int main(void) { @autoreleasepool {
     NSCAssert([StripRefreshGestures() isEqual:@"on"],@"Approval recovery starts the actual listener");
     [NSUserDefaults.standardUserDefaults setBool:NO forKey:@"TouchTabGesturesEnabled"];
     NSCAssert([StripRefreshGestures() isEqual:@"off"] && !running,@"Disable shuts the listener down");
+    moduleInstalled=NO; running=YES;
+    NSCAssert([StripRefreshGestures() isEqual:@"not installed"] && !running,@"Removed modules cannot restart");
     puts("Passed gesture capability checks, permission recovery and disabled cleanup. No real event taps or keyboard events.");
 } return 0; }

@@ -5,6 +5,8 @@
 #import <Carbon/Carbon.h>
 #import <objc/message.h>
 #import <signal.h>
+#import <sys/file.h>
+#import <fcntl.h>
 #import <unistd.h>
 #import <QuartzCore/QuartzCore.h>
 #import "../../../Shared/PhoneControl/MacHost/PhoneControlMac.h"
@@ -419,8 +421,8 @@ static OSStatus SendSpotifyCommand(pid_t pid, int command) {
     };
     // Phone Bar comes back in the state it was left in (on by default).
     id phoneBarSaved=[NSUserDefaults.standardUserDefaults objectForKey:ThreeEPhoneBarEnabledKey];
-    if(!phoneBarSaved || [phoneBarSaved boolValue]) [self.phoneController startReceiver];
-    BOOL touchBarAvailable=LoadInterfaces();
+    if(StripHasModule(@"phone") && (!phoneBarSaved || [phoneBarSaved boolValue])) [self.phoneController startReceiver];
+    BOOL touchBarAvailable=LoadInterfaces() && StripHasModule(@"touchbar");
     // Never summon the system permission dialog automatically. macOS can
     // re-display it on every launch when the TCC decision is still settling;
     // use a silent check and let the swipe path report the actual state.
@@ -428,7 +430,7 @@ static OSStatus SendSpotifyCommand(pid_t pid, int command) {
 #ifdef STRIP_COMBINED_TOUCHTAB
     // Remember that this Mac runs the combined edition, so a wrongly swapped
     // Touch Bar-only install can find its way back (see ReleaseUpdates.h).
-    [NSUserDefaults.standardUserDefaults setObject:@"combined" forKey:@"ThreeEEdition"];
+    if(StripHasModule(@"touchtab")) [NSUserDefaults.standardUserDefaults setObject:@"combined" forKey:@"ThreeEEdition"];
     [self refreshTouchTab];
     __weak AppDelegate *gestureSelf=self;
     self.gestureTimer=[NSTimer scheduledTimerWithTimeInterval:1 repeats:YES block:^(NSTimer *timer) { [gestureSelf refreshTouchTab]; }];
@@ -506,9 +508,9 @@ static OSStatus SendSpotifyCommand(pid_t pid, int command) {
     self.siteIcons = [NSMutableDictionary dictionary];
     self.recoveryTimer = [NSTimer scheduledTimerWithTimeInterval:1 repeats:YES block:^(NSTimer *timer) { [weakSelf refresh]; }];
 }
-- (void)openPhone:(id)sender { [self.phoneController show]; }
-- (void)togglePhoneBar:(id)sender { [self.phoneController toggleReceiver]; }
-- (void)hoverPhoneBar:(id)sender { [self.phoneController showQRForHover]; }
+- (void)openPhone:(id)sender { if(!StripInstallMissingModule(@"phone")) [self.phoneController show]; }
+- (void)togglePhoneBar:(id)sender { if(!StripInstallMissingModule(@"phone")) [self.phoneController toggleReceiver]; }
+- (void)hoverPhoneBar:(id)sender { if(StripHasModule(@"phone")) [self.phoneController showQRForHover]; }
 - (void)hidePhoneBarQR:(id)sender { [self.phoneController hideQRForHover]; }
 - (void)copyPhone:(id)sender { [self.phoneController copyLink:sender]; }
 - (void)stopPhone:(id)sender { [self.phoneController stop]; }
@@ -518,6 +520,7 @@ static OSStatus SendSpotifyCommand(pid_t pid, int command) {
     BOOL enabled=!StripAutomaticUpdatesEnabled(); StripSetAutomaticUpdates(enabled);
     if(enabled) StripCheckRelease(NO);
 }
+- (void)installBaseTouchBar:(id)sender { StripInstallMissingModule(@"touchbar"); }
 - (void)toggleBaseTouchTab:(id)sender {
 #ifdef STRIP_COMBINED_TOUCHTAB
     [self toggleTouchTab];
@@ -578,6 +581,7 @@ static OSStatus SendSpotifyCommand(pid_t pid, int command) {
     else if([command isEqualToString:@"ROOT"]) [self.dockPanel.folderBrowser willClose:nil];
 }
 - (void)startApps {
+    if(!StripHasModule(@"touchbar")) return;
     self.appsReady=YES; [self.dockPanel prepareSwipeApps];
     __weak AppDelegate *weakSelf=self;
     self.dockPanel.selectSpace=^(uint64_t sid){ SelectDesktop(sid); };
@@ -630,6 +634,7 @@ static OSStatus SendSpotifyCommand(pid_t pid, int command) {
     if(self.midiReady) [self sendMidi:[@"TOUCHTAB_STATE " stringByAppendingString:state]];
 }
 - (void)toggleTouchTab {
+    if(StripInstallMissingModule(@"touchtab")) return;
     // An unchecked permission-blocked toggle means "enable", not "disable".
     // Request trust only after this explicit user action, never in the timer.
     BOOL enable=!StripGesturesRunning();
@@ -642,6 +647,7 @@ static OSStatus SendSpotifyCommand(pid_t pid, int command) {
 }
 #endif
 - (void)startMidi {
+    if(!StripHasModule(@"touchbar")) return;
     if (self.midiTask.running || self.midiStarting) return;
     NSString *helper = [NSBundle.mainBundle.bundlePath stringByAppendingPathComponent:@"Contents/Helpers/MIDI Touchbar.app"];
     NSString *executable = [helper stringByAppendingPathComponent:@"Contents/MacOS/MIDI Touchbar"];
@@ -677,6 +683,13 @@ static OSStatus SendSpotifyCommand(pid_t pid, int command) {
                 NSString *line = [self.midiBuffer substringToIndex:newline.location];
                 [self.midiBuffer deleteCharactersInRange:NSMakeRange(0, newline.location + 1)];
                 NSLog(@"MIDI engine: %@", line);
+                if([line hasPrefix:@"MODULE_CHANGE "]) {
+                    NSString *module=[line substringFromIndex:14];
+                    if([@[@"touchbar",@"touchtab",@"phone"] containsObject:module]) {
+                        NSMenuItem *request=[NSMenuItem new]; request.representedObject=module;
+                        [ThreeEModuleActions changeModule:request];
+                    }
+                }
                 if ([line hasPrefix:@"{"]) {
                     NSDictionary *status = [NSJSONSerialization JSONObjectWithData:[line dataUsingEncoding:NSUTF8StringEncoding] options:0 error:nil];
                     self.midiResolvedItems = [status[@"modalLayout"] count];
@@ -696,11 +709,11 @@ static OSStatus SendSpotifyCommand(pid_t pid, int command) {
                 } else if ([line isEqualToString:@"APPS_TOGGLE"]) {
                     [self appsLauncherCommand:2];
                 } else if ([line isEqualToString:@"PHONE_OPEN"]) {
-                    [self.phoneController show];
+                    [self openPhone:nil];
                 } else if ([line isEqualToString:@"PHONE_TOGGLE"]) {
-                    [self.phoneController toggleReceiver];
+                    [self togglePhoneBar:nil];
                 } else if ([line isEqualToString:@"PHONE_HOVER"]) {
-                    [self.phoneController showQRForHover];
+                    [self hoverPhoneBar:nil];
                 } else if ([line isEqualToString:@"PHONE_HIDE_QR"]) {
                     [self.phoneController hideQRForHover];
                 } else if ([line isEqualToString:@"PHONE_COPY"]) {
@@ -963,7 +976,7 @@ static OSStatus SendSpotifyCommand(pid_t pid, int command) {
     [self pollPlayback];
 }
 - (BOOL)applicationShouldHandleReopen:(NSApplication *)sender hasVisibleWindows:(BOOL)visible {
-    if(self.baseStatusItem){[self.phoneController show];return NO;}
+    if(self.baseStatusItem){[self openPhone:nil];return NO;}
     [NSApp terminate:nil];
     return NO;
 }
@@ -995,6 +1008,17 @@ int main(int argc, const char *argv[]) {
     if(argc>1 && strcmp(argv[1],"--accessibility-status")==0) { printf("Accessibility: %s\n",AXIsProcessTrusted() ? "approved" : "not approved for this build"); return 0; }
     @autoreleasepool {
         signal(SIGPIPE, SIG_IGN);
+        if(argc==1) {
+            // Launching a development copy must not start a second set of modules.
+            NSString *support=[NSSearchPathForDirectoriesInDomains(NSApplicationSupportDirectory,NSUserDomainMask,YES).firstObject stringByAppendingPathComponent:@"3E"];
+            [NSFileManager.defaultManager createDirectoryAtPath:support withIntermediateDirectories:YES attributes:nil error:nil];
+            static int instanceLock=-1;
+            instanceLock=open([[support stringByAppendingPathComponent:@"instance.lock"] fileSystemRepresentation],O_CREAT|O_RDWR|O_CLOEXEC,0600);
+            if(instanceLock<0 || flock(instanceLock,LOCK_EX|LOCK_NB)!=0) return 0;
+            // Covers migration from an older build that did not take the lock.
+            for(NSRunningApplication *app in [NSRunningApplication runningApplicationsWithBundleIdentifier:@"local.musicstrip.app"])
+                if(app.processIdentifier!=getpid() && !app.terminated) return 0;
+        }
         if(argc>1 && strcmp(argv[1],"--desktop-swipe-test")==0) {
             [StripApplication sharedApplication];LoadInterfaces();
             NSArray *spaces=DesktopSpaces();NSInteger start=-1;
