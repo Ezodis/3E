@@ -21,15 +21,17 @@ public sealed class MotionPacer : IDisposable {
     // Pure scheduling (no threads, injectable times) so it can be tested.
     public sealed class Schedule {
         private double offset = double.NaN, jitter, lastArrival = double.NegativeInfinity;
-        public double Playout => Math.Clamp(jitter * 2, 0, MaxPlayout);
+        public double Playout => Math.Clamp(jitter, 0, MaxPlayout);
         // Host time at which a move stamped phoneTime should be applied.
         public double Due(double phoneTime, double hostNow) {
             double sample = hostNow - phoneTime; // one-way delay + clock offset
             if (double.IsNaN(offset) || hostNow - lastArrival > ResetGap) { offset = sample; jitter = 0; }
             else if (sample < offset) offset = sample;            // fastest delivery seen
-            else offset += (sample - offset) * 0.02;              // follow slow clock drift
+            else offset += (sample - offset) * 0.005;             // follow slow clock drift
             lastArrival = hostNow;
-            jitter += (Math.Max(0, sample - offset) - jitter) * 0.1;
+            // Peak lateness, fading about 1% per packet (~1-2 s): covers a whole
+            // clump with one steady delay, then shrinks again on a calm link.
+            jitter = Math.Max(Math.Max(0, sample - offset), jitter * 0.99);
             return phoneTime + offset + Playout;
         }
     }
