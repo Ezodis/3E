@@ -24,6 +24,9 @@ public sealed class PhoneTrackpad : IDisposable {
     // to a native key combination. The protocol never carries arbitrary keys.
     public const int ShortcutCount = 18;
     private readonly object gate = new();
+    // Replays pointer motion at the phone's pace (see MotionPacer).
+    private MotionPacer pacer;
+    private MotionPacer Pacer => pacer ??= new MotionPacer(gate, (x, y) => input.Move(x, y));
     private readonly Func<IPAddress> addressProvider;
     private readonly ITrackpadInput input;
     private readonly ITrackpadFirewall firewall;
@@ -283,6 +286,7 @@ public sealed class PhoneTrackpad : IDisposable {
         previous.Cancel.Cancel();
         previous.Listener.Close();
         previous.Controller?.Abort();
+        pacer?.Clear();
         try { input.ReleaseAll(); } catch { }
         try { firewall.Close(); } catch { status += " — Windows could not remove the trackpad firewall rule."; }
     }
@@ -760,7 +764,15 @@ input{width:100%;padding:13px;border:1px solid #415260;border-radius:10px;backgr
                 if (++count > 600) throw new InvalidDataException("Too many commands.");
                 lock (gate) {
                     if (session != owner || owner.Controller != ws) return;
-                    Apply(message.RootElement, input);
+                    var root = message.RootElement;
+                    string kind = root.GetProperty("type").GetString();
+                    if (kind == "move" && root.TryGetProperty("t", out var stamp) && stamp.TryGetDouble(out var phoneTime) &&
+                        root.TryGetProperty("x", out var mx) && mx.TryGetInt32(out var px) && root.TryGetProperty("y", out var my) && my.TryGetInt32(out var py))
+                        Pacer.Move(Math.Clamp(px, -8000, 8000), Math.Clamp(py, -8000, 8000), phoneTime);
+                    else {
+                        if (kind != "ping") pacer?.Flush(); // keep input in order: motion first, then the click
+                        Apply(root, input);
+                    }
                 }
                 if (message.RootElement.GetProperty("type").GetString() == "ping") {
                     // Heartbeats stay a few bytes; host state is resent only when it changed.
@@ -779,6 +791,7 @@ input{width:100%;padding:13px;border:1px solid #415260;border-radius:10px;backgr
                     try { input.ReleaseAll(); } catch { }
                     owner.Controller = null;
                     owner.ControllerClient = null;
+                    pacer?.Clear();
                     status = "Phone disconnected — reconnects when its page returns.";
                 }
             }
@@ -840,7 +853,7 @@ input{width:100%;padding:13px;border:1px solid #415260;border-radius:10px;backgr
         }
     }
 
-    public void Dispose() { lock (gate) { if(disposed)return; disposed = true; StopLocked("Off"); if(input is IDisposable resource) resource.Dispose(); } }
+    public void Dispose() { lock (gate) { if(disposed)return; disposed = true; StopLocked("Off"); if(input is IDisposable resource) resource.Dispose(); } pacer?.Dispose(); }
 }
 
 public interface ITrackpadInput {

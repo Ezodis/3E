@@ -222,6 +222,27 @@ Check(fake.Commands.Contains("history:-1") && fake.Commands.Contains("zoom:1"),"
     Check(badToken.Start() && badToken.PairingUrl.Split('#')[1].Length == 48, "An invalid saved secret falls back to a fresh one");
 }
 {
+    // Pointer pacing: steady Wi-Fi applies motion on arrival; clumped packets
+    // are replayed at the phone's own 8 ms spacing instead of jumping.
+    var steady = new MotionPacer.Schedule();
+    Check(steady.Due(1000, 5000) == 5000, "The first move of a gesture applies immediately (no first-touch lag)");
+    bool onTime = true; for (int i = 1; i <= 50; i++) onTime &= Math.Abs(steady.Due(1000 + i * 8, 5000 + i * 8) - (5000 + i * 8)) < 0.5;
+    Check(onTime && steady.Playout < 0.5, "On a steady link every move applies as it arrives");
+    var bursty = new MotionPacer.Schedule();
+    double Arrival(int i) => Math.Ceiling(i / 4.0) * 32; // Wi-Fi hands over 4 packets at once
+    bursty.Due(0, 0);
+    for (int i = 1; i <= 200; i++) bursty.Due(i * 8, Arrival(i));
+    var clump = Enumerable.Range(201, 4).Select(i => bursty.Due(i * 8, Arrival(i))).ToArray();
+    var gaps = clump.Zip(clump.Skip(1), (a, b) => b - a).ToArray();
+    Check(bursty.Playout > 0 && bursty.Playout <= MotionPacer.MaxPlayout && gaps.All(g => Math.Abs(g - 8) < 1), "Clumped Wi-Fi packets are spread back out to the finger's 8 ms pace (playout " + bursty.Playout.ToString("0.0") + " ms)");
+    Check(bursty.Due(5000, 10000) == 10000, "After a pause a new gesture starts immediately again");
+    var order = new List<string>(); var lockObject = new object();
+    using (var pacer = new MotionPacer(lockObject, (x, y) => { lock (order) order.Add("move " + x); })) {
+        lock (lockObject) { pacer.Move(1, 0, 0); pacer.Move(2, 0, 100); pacer.Move(3, 0, 200); pacer.Flush(); order.Add("click"); }
+    }
+    Check(string.Join(",", order) == "move 1,move 2,move 3,click", "A click waits for the motion before it, so it lands where the pointer went (" + string.Join(",", order) + ")");
+}
+{
     // Phone settings are stored on the computer, survive a restart, and need the pairing secret.
     var folder = Path.Combine(Path.GetTempPath(), "3e-prefs-" + Guid.NewGuid().ToString("N"));
     var file = Path.Combine(folder, "phone-settings.json");

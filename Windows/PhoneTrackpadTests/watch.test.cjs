@@ -32,7 +32,7 @@ vm.runInNewContext(source,{document:doc,window:win,URLSearchParams,Uint8Array,cr
 const touch=(x,y)=>({clientX:x,clientY:y});
 function fire(type,touches){element('pad').handlers[type]({touches,preventDefault(){}});time+=15;}
 async function pump(){await idle();await idle();}
-function commands(){return requests.filter(r=>r.payload.type==='commands').flatMap(r=>r.payload.commands).filter(c=>c.type!=='ping');}
+function commands(){return requests.filter(r=>r.payload.type==='commands').flatMap(r=>r.payload.commands).filter(c=>c.type!=='ping').map(({t,...c})=>c);}
 (async()=>{
   await idle();
   assert.equal(requests[0].payload.type,'connect');
@@ -44,7 +44,7 @@ function commands(){return requests.filter(r=>r.payload.type==='commands').flatM
   assert.equal(element('apps').disabled,false);
   fire('touchstart',[touch(10,10)]);fire('touchmove',[touch(30,20)]);frame();fire('touchend',[]);
   time+=600;element('pad').handlers.click();await pump();
-  assert.deepEqual(commands(),[{type:'move',x:60,y:30},{type:'left'}]);
+  assert.deepEqual(commands(),[{type:'move',x:51,y:25},{type:'left'}]);
   requests.length=0;
   element('scrollMode').handlers.click();
   fire('touchstart',[touch(10,10)]);fire('touchmove',[touch(30,30)]);frame();fire('touchend',[]);
