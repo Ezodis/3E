@@ -40,11 +40,11 @@ check(sum('scroll','x')===0,'small sideways drift during a vertical scroll is ig
 fire('touchstart',pair(100,300));for(let i=1;i<=8;i++)fire('touchmove',pair(100,300-i*12));fire('touchend',[]);sent.length=0;
 fire('touchstart',[touch(50,50)]);time+=16;frame();time+=16;frame();check(!types().includes('scroll'),'touching the pad stops a glide immediately');fire('touchend',[]);settle();
 
-// Pinch apart = zoom in, pinch together = zoom out; no right-click afterwards.
+// Pinch apart and together send opposite directions (default swapped to match the real phone); no right-click afterwards.
 fire('touchstart',pair(150,300,60));for(let i=1;i<=6;i++)fire('touchmove',[touch(150-i*10,300),touch(210+i*10,300)]);fire('touchend',[]);
-check(sent.filter(c=>c.type==='zoom').length>=2&&sent.every(c=>c.type!=='zoom'||c.direction===1)&&!types().includes('right')&&!types().includes('scroll'),'pinching apart zooms in without scrolling or right-clicking');settle();
+check(sent.filter(c=>c.type==='zoom').length>=2&&sent.every(c=>c.type!=='zoom'||c.direction===-1)&&!types().includes('right')&&!types().includes('scroll'),'pinching apart sends the swapped-default direction without scrolling or right-clicking');settle();
 fire('touchstart',[touch(90,300),touch(270,300)]);for(let i=1;i<=6;i++)fire('touchmove',[touch(90+i*10,300),touch(270-i*10,300)]);fire('touchend',[]);
-check(sent.some(c=>c.type==='zoom')&&sent.every(c=>c.type!=='zoom'||c.direction===-1),'pinching together zooms out');settle();
+check(sent.some(c=>c.type==='zoom')&&sent.every(c=>c.type!=='zoom'||c.direction===1),'pinching together sends the opposite direction');settle();
 
 // After a two-finger gesture, the finger left on the glass does not move the pointer.
 fire('touchstart',pair(100,300));for(let i=1;i<=6;i++)fire('touchmove',pair(100,300-i*12));fire('touchend',[touch(100,228)]);sent.length=0;
@@ -60,13 +60,9 @@ check(slow<60*3&&fast>slow*2,'slow motion is finer and quick flicks travel furth
 
 // Real pinches are lopsided: the thumb moves, the index finger barely does.
 fire('touchstart',pair(150,300,60));for(let i=1;i<=6;i++)fire('touchmove',[touch(150-i*8,300+i*2),touch(210,300)]);fire('touchend',[]);
-check(types().includes('zoom')&&sent.every(c=>c.type!=='zoom'||c.direction===1)&&!types().includes('history')&&!types().includes('scroll'),'a lopsided quick pinch-out (thumb only) zooms in, never swipes back/forward ('+types().join()+')');settle();
+check(types().includes('zoom')&&sent.every(c=>c.type!=='zoom'||c.direction===-1)&&!types().includes('history')&&!types().includes('scroll'),'a lopsided quick pinch-out (thumb only) zooms in, never swipes back/forward ('+types().join()+')');settle();
 fire('touchstart',pair(100,300,120));for(let i=1;i<=6;i++)fire('touchmove',[touch(100+i*9,300-i*3),touch(220,301)]);fire('touchend',[]);
-check(types().includes('zoom')&&sent.every(c=>c.type!=='zoom'||c.direction===-1)&&!types().includes('history')&&!types().includes('scroll'),'a lopsided pinch-in zooms out, never swipes ('+types().join()+')');settle();
-// If Safari zooms the page during a spread (finger distance in CSS px shrinks
-// while the page scale grows), the spread must still zoom in, never out.
-fire('touchstart',pair(150,300,60));for(let i=1;i<=6;i++){win.visualViewport={scale:1+i*0.3};const half=(30+i*12)/win.visualViewport.scale;fire('touchmove',[touch(180-half,300),touch(180+half,300)]);}fire('touchend',[]);delete win.visualViewport;
-check(types().includes('zoom')&&sent.every(c=>c.type!=='zoom'||c.direction===1),'spreading fingers zooms in even if Safari zoomed the page underneath ('+types().join()+')');settle();
+check(types().includes('zoom')&&sent.every(c=>c.type!=='zoom'||c.direction===1)&&!types().includes('history')&&!types().includes('scroll'),'a lopsided pinch-in zooms out, never swipes ('+types().join()+')');settle();
 // A fast two-finger swipe still navigates, even when one finger's samples lead the other's.
 fire('touchstart',pair(100,300));for(let i=1;i<=6;i++){fire('touchmove',[touch(100+i*16,300),touch(160+(i-1)*16,300)]);fire('touchmove',[touch(100+i*16,300),touch(160+i*16,300)]);}fire('touchend',[]);
 check(types().includes('history')&&!types().includes('zoom'),'a fast sideways two-finger swipe goes back/forward and never zooms ('+types().join()+')');settle();

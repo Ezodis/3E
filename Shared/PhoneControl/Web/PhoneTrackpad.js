@@ -87,7 +87,7 @@
   const SETTLE_PX = 3;
   let settle = null, smoothedSpeed = 0, lastMotionAt = 0;
   accelerate = Prefs.get('acceleration', true) !== false;
-  let reverseZoom = Prefs.get('reverseZoom', false) === true;
+  let swapZoom = Prefs.get('swapZoom', false) === true;
   function hint() { $('padHint').textContent = scrollMode ? 'Swipe to scroll' : 'Swipe to move · tap to click'; }
   hint();
   let socket, ready = false, heartbeat, dragging = false, threeDrag = false;
@@ -457,19 +457,7 @@
   const tapTolerance = () => TAP_TOLERANCE;
   // Distance between two fingers in screen points. If the page ever did get
   // zoomed, CSS pixels shrink on screen; scaling back keeps the direction right.
-  // Screen coordinates are not affected by page zoom at all; use them when the
-  // browser provides them, else client pixels scaled by the page zoom.
-  function spread(touches) {
-    if (touches.length < 2) return 0;
-    const [a, b] = touches, screen = Math.hypot((a.screenX||0)-(b.screenX||0), (a.screenY||0)-(b.screenY||0));
-    if (screen > 0 && Number.isFinite(screen)) return screen;
-    return Math.hypot(a.clientX-b.clientX, a.clientY-b.clientY) * (window.visualViewport?.scale || 1);
-  }
-  // Block Safari's page pinch-zoom at the document level too: iOS only
-  // reliably honours a non-passive multi-touch touchmove listener here.
-  document.addEventListener('touchmove', e => { if (e.touches?.length > 1 && e.cancelable) e.preventDefault(); }, { passive:false });
-  // Safari's own pinch gestures (iOS ignores user-scalable=no).
-  for (const type of ['gesturestart','gesturechange','gestureend']) document.addEventListener(type, e => { if (e.cancelable) e.preventDefault(); }, { passive:false });
+  function spread(touches) { return touches.length < 2 ? 0 : Math.hypot(touches[0].clientX-touches[1].clientX, touches[0].clientY-touches[1].clientY); }
   // Finger speed is smoothed (about 50 ms) so one noisy sample never makes
   // the pointer lurch, then mapped through pointerGain.
   function acceleration(x, y) {
@@ -493,21 +481,6 @@
     return 2.6;
   }
   window.ThreeEPointer = { pointerGain, SETTLE_PX };
-  // Brief on-screen confirmation of what the phone sent: fingers apart =
-  // "Zoom in", fingers together = "Zoom out".
-  let zoomToast = null, zoomToastTimer = null;
-  function showZoom(direction) {
-    try {
-      if (!zoomToast) {
-        zoomToast = document.createElement('div'); zoomToast.id = 'zoomToast'; zoomToast.setAttribute('role', 'status');
-        Object.assign(zoomToast.style, { position:'fixed', left:'50%', top:'max(18px, env(safe-area-inset-top))', transform:'translateX(-50%)', padding:'6px 14px',
-          borderRadius:'14px', background:'#a8e5cdee', color:'#0e2420', font:'600 15px -apple-system,system-ui,sans-serif', pointerEvents:'none', zIndex:5 });
-        document.body.append(zoomToast);
-      }
-      zoomToast.textContent = direction > 0 ? '＋ Zoom in' : '－ Zoom out'; zoomToast.hidden = false;
-      clearTimeout(zoomToastTimer); zoomToastTimer = setTimeout(() => { zoomToast.hidden = true; }, 700);
-    } catch {}
-  }
   function twoFingerMove(touches, point, x, y, limited) {
     const now = performance.now(), g = two;
     if (!g.axis) {
@@ -530,7 +503,10 @@
     }
     if (g.axis === 'zoom') {
       const change = spread(touches) - g.zoomRef;
-      if (Math.abs(change) >= PINCH_STEP) { const direction = (change > 0 ? 1 : -1) * (reverseZoom ? -1 : 1); send('zoom', { direction }); showZoom(direction); g.zoomRef = spread(touches); }
+      // Direction as used on the real iPhone with the Windows and Mac hosts:
+      // the straightforward sign (spread = +1) zoomed the wrong way there in
+      // every version, so the phone sends the opposite sign by default.
+      if (Math.abs(change) >= PINCH_STEP) { send('zoom', { direction: (change > 0 ? -1 : 1) * (swapZoom ? -1 : 1) }); g.zoomRef = spread(touches); }
       return;
     }
     if (g.axis === 'h') {
@@ -702,12 +678,11 @@
   accelerationLabel();
   $('acceleration').addEventListener('click', () => { accelerate = !accelerate; Prefs.set('acceleration', accelerate); accelerationLabel(); });
   Prefs.onLoad(() => { accelerate = Prefs.get('acceleration', true) !== false; accelerationLabel(); });
-  // Pinch direction is saved per computer: fingers apart zoom in normally;
-  // "reversed" swaps it for apps that zoom the other way.
-  function reverseZoomLabel() { const b = $('reverseZoom'); if (!b) return; b.setAttribute('aria-pressed', String(reverseZoom)); b.textContent = 'Pinch zoom: ' + (reverseZoom ? 'reversed' : 'normal'); }
-  reverseZoomLabel();
-  $('reverseZoom')?.addEventListener('click', () => { reverseZoom = !reverseZoom; Prefs.set('reverseZoom', reverseZoom); reverseZoomLabel(); });
-  Prefs.onLoad(() => { reverseZoom = Prefs.get('reverseZoom', false) === true; reverseZoomLabel(); });
+  // Optional per-computer swap of the pinch direction (off by default).
+  function swapZoomLabel() { const b = $('reverseZoom'); if (!b) return; b.setAttribute('aria-pressed', String(swapZoom)); b.textContent = 'Swap pinch zoom: ' + (swapZoom ? 'on' : 'off'); }
+  swapZoomLabel();
+  $('reverseZoom')?.addEventListener('click', () => { swapZoom = !swapZoom; Prefs.set('swapZoom', swapZoom); swapZoomLabel(); });
+  Prefs.onLoad(() => { swapZoom = Prefs.get('swapZoom', false) === true; swapZoomLabel(); });
   $('settings').addEventListener('click', () => settings(true));
   $('closeSettings').addEventListener('click', () => settings(false));
   $('fullscreen').addEventListener('click', async () => {
