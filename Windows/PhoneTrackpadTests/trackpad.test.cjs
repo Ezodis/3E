@@ -63,6 +63,10 @@ fire('touchstart',pair(150,300,60));for(let i=1;i<=6;i++)fire('touchmove',[touch
 check(types().includes('zoom')&&sent.every(c=>c.type!=='zoom'||c.direction===1)&&!types().includes('history')&&!types().includes('scroll'),'a lopsided quick pinch-out (thumb only) zooms in, never swipes back/forward ('+types().join()+')');settle();
 fire('touchstart',pair(100,300,120));for(let i=1;i<=6;i++)fire('touchmove',[touch(100+i*9,300-i*3),touch(220,301)]);fire('touchend',[]);
 check(types().includes('zoom')&&sent.every(c=>c.type!=='zoom'||c.direction===-1)&&!types().includes('history')&&!types().includes('scroll'),'a lopsided pinch-in zooms out, never swipes ('+types().join()+')');settle();
+// If Safari zooms the page during a spread (finger distance in CSS px shrinks
+// while the page scale grows), the spread must still zoom in, never out.
+fire('touchstart',pair(150,300,60));for(let i=1;i<=6;i++){win.visualViewport={scale:1+i*0.3};const half=(30+i*12)/win.visualViewport.scale;fire('touchmove',[touch(180-half,300),touch(180+half,300)]);}fire('touchend',[]);delete win.visualViewport;
+check(types().includes('zoom')&&sent.every(c=>c.type!=='zoom'||c.direction===1),'spreading fingers zooms in even if Safari zoomed the page underneath ('+types().join()+')');settle();
 // A fast two-finger swipe still navigates, even when one finger's samples lead the other's.
 fire('touchstart',pair(100,300));for(let i=1;i<=6;i++){fire('touchmove',[touch(100+i*16,300),touch(160+(i-1)*16,300)]);fire('touchmove',[touch(100+i*16,300),touch(160+i*16,300)]);}fire('touchend',[]);
 check(types().includes('history')&&!types().includes('zoom'),'a fast sideways two-finger swipe goes back/forward and never zooms ('+types().join()+')');settle();
@@ -80,4 +84,8 @@ check(steady/120>(careful/40)*2,'steady motion moves over twice as far per phone
 // 4. The first moment of a slow move eases in instead of jumping.
 fire('touchstart',[touch(10,700)]);time+=60;fire('touchmove',[touch(11,700)]);time+=10;fire('touchmove',[touch(14,700)]);fire('touchend',[]);const start=sum('move','x');settle();
 check(start<3*3,'the first moment of a slow move eases in ('+start+' px for 3 phone px at 3x)');
+// Last: switches this page to pointer events for the rest of its life.
+let cancelled=0;element('pad').handlers.pointerdown?.({pointerType:'touch',pointerId:41,clientX:10,clientY:10,preventDefault(){}});element('pad').handlers.touchmove({touches:[touch(10,10)],cancelable:true,preventDefault(){cancelled++;}});
+element('pad').handlers.pointerup?.({pointerType:'touch',pointerId:41,clientX:10,clientY:10,preventDefault(){}});
+check(cancelled===1,'touch events are cancelled even when pointer events drive input, so Safari cannot pinch-zoom the page');settle();
 console.log('PASS: '+checks+' trackpad gesture checks.');
