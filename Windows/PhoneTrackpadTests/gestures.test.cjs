@@ -91,7 +91,7 @@ assert.deepEqual(sent,[{type:'move',x:3,y:0},{type:'move',x:3,y:0}],'compatibili
 pointer('pointercancel',1,11,10);assert.equal(sent.at(-1).type,'releaseAll','pointer cancellation releases held controls');
 sent.length=0;time+=700;
 pointer('pointerdown',1,10,10);pointer('pointerdown',2,30,10);time+=15;
-pointer('pointermove',1,10,50);pointer('pointermove',2,30,50);pointer('pointerup',1,10,50);pointer('pointerup',2,30,50);
+for(let y=20;y<=50;y+=10){pointer('pointermove',1,10,y);pointer('pointermove',2,30,y);}pointer('pointerup',1,10,50);pointer('pointerup',2,30,50);
 assert.equal(sent.filter(c=>c.type==='scroll').reduce((n,c)=>n+c.y,0),-120,'pointer two-finger scroll keeps the Windows direction and total distance');
 assert.ok(!sent.some(c=>c.type==='move'||c.type==='left'||c.type==='right'),'two-finger scroll never leaks pointer motion or clicks');
 checks+=4;sent.length=0;

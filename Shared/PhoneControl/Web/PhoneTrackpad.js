@@ -72,7 +72,7 @@
   // axis (or a pinch). A quick sideways swipe goes back/forward; a slower
   // sideways slide scrolls horizontally. Scrolls glide on after lifting.
   const AXIS_PICK = 10, SWIPE_DISTANCE = 80, SWIPE_TIME = 320, LIFT_SWIPE_DISTANCE = 60, LIFT_SWIPE_TIME = 450;
-  const PINCH_START = 28, PINCH_STEP = 24, MOMENTUM_MIN = 0.35, MOMENTUM_DECAY = 0.95;
+  const PINCH_START = 18, PINCH_STEP = 24, PAN_LIMIT = 40, MOMENTUM_MIN = 0.35, MOMENTUM_DECAY = 0.95;
   let two = null, momentum = null, motionHistory = [], accelerate = true;
   // Precision pointer, with no added waiting:
   // 1. Wobble gate: a fingertip's contact point shifts by a pixel or two as it
@@ -372,7 +372,7 @@
     if(releaseTimer) { clearTimeout(releaseTimer); releaseTimer=null; }
     const point = center(e.touches), count = e.touches.length;
     momentum = null; // any touch stops a gliding scroll
-    if (count === 2 && !two) two = { start: performance.now(), origin: point, spread0: spread(e.touches), zoomRef: 0, axis: null, decided: false, nav: false, bufX: 0, samples: [] };
+    if (count === 2 && !two) two = { start: performance.now(), origin: point, spread0: spread(e.touches), fingers0: Array.from(e.touches, t => ({ x: t.clientX, y: t.clientY })), zoomRef: 0, axis: null, decided: false, nav: false, bufX: 0, samples: [] };
     if (!mode) {
       started = performance.now(); distance = 0; offset = 0; peak = 0; cancelled = false; motionHistory = []; lastMotionSent = -Infinity;
       settle = { x: 0, y: 0, done: false }; smoothedSpeed = 0; lastMotionAt = started;
@@ -478,9 +478,19 @@
   function twoFingerMove(touches, point, x, y, limited) {
     const now = performance.now(), g = two;
     if (!g.axis) {
+      // Pinch or pan? Look at each finger, not only their midpoint: real
+      // pinches are lopsided (the thumb does most of the moving), so the
+      // midpoint travels too. Fingers moving in opposite directions, or a
+      // gap that changes as much as the midpoint moves, is a pinch.
       const moved = Math.hypot(point.x-g.origin.x, point.y-g.origin.y), pinch = Math.abs(spread(touches)-g.spread0);
-      if (pinch >= PINCH_START && pinch > moved*1.2) { g.axis = 'zoom'; g.zoomRef = spread(touches); return; }
-      if (moved < AXIS_PICK) return;
+      const [a, b] = g.fingers0, d1 = { x: touches[0].clientX-a.x, y: touches[0].clientY-a.y }, d2 = { x: touches[1].clientX-b.x, y: touches[1].clientY-b.y };
+      const opposing = d1.x*d2.x + d1.y*d2.y < 0 && Math.min(Math.hypot(d1.x, d1.y), Math.hypot(d2.x, d2.y)) >= 3;
+      if (pinch >= PINCH_START && (opposing || pinch >= moved*0.8)) { g.axis = 'zoom'; g.zoomRef = spread(touches); return; }
+      // Pan only once the move is clearly a slide: both fingers together and
+      // the gap barely changing (or the midpoint has travelled a long way).
+      // PINCH_START stays above the few pixels one finger can lead the other
+      // by between touch samples during a fast two-finger swipe.
+      if (moved < AXIS_PICK || (pinch >= moved*0.5 && moved < PAN_LIMIT)) return;
       const tx = point.x-g.origin.x, ty = point.y-g.origin.y;
       g.axis = Math.abs(tx) > Math.abs(ty)*1.6 ? 'h' : 'v';
       x = tx; y = ty; // nothing from the first few pixels is lost
