@@ -74,6 +74,16 @@
   const AXIS_PICK = 10, SWIPE_DISTANCE = 80, SWIPE_TIME = 320, LIFT_SWIPE_DISTANCE = 60, LIFT_SWIPE_TIME = 450;
   const PINCH_START = 28, PINCH_STEP = 24, MOMENTUM_MIN = 0.35, MOMENTUM_DECAY = 0.95;
   let two = null, momentum = null, motionHistory = [], accelerate = true;
+  // Precision pointer (feels like a laptop trackpad / Shadow's touch mouse):
+  // 1. Settle: for the first SETTLE_MS after a finger lands, its contact point
+  //    wobbles as the fingertip flattens. That motion is held back, so the
+  //    pointer does not jump; a deliberate quick flick still goes through.
+  // 2. Ease in: the next RAMP_MS start at RAMP_START of full speed.
+  // 3. Speed curve: slow, careful finger motion is scaled down for
+  //    pixel-precise aiming; normal motion is 1:1 with the speed slider; fast
+  //    motion accelerates (see pointerGain).
+  const SETTLE_MS = 70, SETTLE_PASS = 10, RAMP_MS = 150, RAMP_START = 0.35;
+  let settle = null, smoothedSpeed = 0, lastMotionAt = 0;
   accelerate = Prefs.get('acceleration', true) !== false;
   function hint() { $('padHint').textContent = scrollMode ? 'Swipe to scroll' : 'Swipe to move · tap to click'; }
   hint();
@@ -354,6 +364,7 @@
     if (count === 2 && !two) two = { start: performance.now(), origin: point, spread0: spread(e.touches), zoomRef: 0, axis: null, decided: false, nav: false, bufX: 0, samples: [] };
     if (!mode) {
       started = performance.now(); distance = 0; offset = 0; peak = 0; cancelled = false; motionHistory = []; lastMotionSent = -Infinity;
+      settle = { x: 0, y: 0, done: false, flick: false }; smoothedSpeed = 0; lastMotionAt = started;
       if (Math.abs(dx) < 1) dx = 0; if (Math.abs(dy) < 1) dy = 0; if (Math.abs(sx) < 1) sx = 0; if (Math.abs(sy) < 1) sy = 0; // drop sub-unit leftovers from the last gesture
       gestureOrigin = point; fourOrigin = null; fourDone = false;
       tapCandidate = count === 1 && !dragging && !scrollMode && lastTap && started - lastTap.time < SECOND_TAP && Math.hypot(point.x-lastTap.x,point.y-lastTap.y) < SECOND_TAP_DISTANCE;
@@ -406,31 +417,57 @@
         // A real move after a tap starts at 6 px (no long dead zone, no jump).
         if (dragArmed ? Math.hypot(point.x-armPoint.x, point.y-armPoint.y) < 6 : offset < 6) { last = point; return; }
         x = point.x-gestureOrigin.x; y = point.y-gestureOrigin.y;
+        if (settle) settle.done = settle.flick = true; // the 6 px gate above already absorbed the wobble
         if (dragArmed) startTapDrag(x,y);
         else { clearTimeout(pressTimer); tapCandidate = false; payClick(); } // just moving: click (as tapped), never press
       }
       const limited = n => Math.max(-8000,Math.min(8000,n));
       if (mode === 2 && two && !dragging) { twoFingerMove(e.touches, point, x, y, limited); last = point; mode = count; flush(); return; }
       if (scrollMode && !dragging) { sx = limited(sx+x*3); sy = limited(sy-y*3); }
-      else { const gain = Number(speed.value)*acceleration(x, y); dx = limited(dx+x*gain); dy = limited(dy+y*gain); }
+      else {
+        const now = performance.now(), held = now - started;
+        if (mode === 1 && !dragging && settle && !settle.done) {
+          if (held < SETTLE_MS) {
+            settle.x += x; settle.y += y;
+            // Moved well past a wobble: a deliberate quick move goes through
+            // at once, with no hold and no ease-in.
+            if (Math.hypot(settle.x, settle.y) >= SETTLE_PASS) { settle.done = settle.flick = true; x = settle.x; y = settle.y; }
+            else { last = point; mode = e.touches.length; return; }
+          } else settle.done = true; // the settling wobble is dropped; this sample counts
+        }
+        const ramp = settle?.flick || dragging || mode !== 1 ? 1 : Math.min(1, RAMP_START + (1 - RAMP_START) * Math.max(0, held - SETTLE_MS) / RAMP_MS);
+        const gain = Number(speed.value) * acceleration(x, y) * ramp;
+        dx = limited(dx+x*gain); dy = limited(dy+y*gain);
+      }
     }
     last = point; mode = e.touches.length;
     flush(); // First movement goes immediately; subsequent samples are capped at 125 Hz.
   }, { passive: false });
   const tapTolerance = () => TAP_TOLERANCE;
   function spread(touches) { return touches.length < 2 ? 0 : Math.hypot(touches[0].clientX-touches[1].clientX, touches[0].clientY-touches[1].clientY); }
-  // Speed-based pointer acceleration (finger speed over the last 150 ms):
-  // slow, careful motion stays precise; quick flicks cross the screen.
+  // Finger speed is smoothed (about 50 ms) so one noisy sample never makes
+  // the pointer lurch, then mapped through pointerGain.
   function acceleration(x, y) {
-    const now = performance.now();
+    const now = performance.now(), dt = Math.max(1, Math.min(100, now - lastMotionAt));
+    lastMotionAt = now;
+    const instant = Math.hypot(x, y) / dt; // phone px per ms
+    smoothedSpeed += (instant - smoothedSpeed) * Math.min(1, dt / 50);
     motionHistory.push({ t: now, d: Math.hypot(x, y) });
     while (motionHistory.length && now-motionHistory[0].t > 150) motionHistory.shift();
-    if (!accelerate) return 1;
-    const span = now - motionHistory[0].t;
-    if (span < 8) return 1;
-    const speed = motionHistory.slice(1).reduce((n, m) => n + m.d, 0) * 1000 / span; // px/s
-    return Math.max(0.8, Math.min(2.2, 0.75 + speed/800));
+    return accelerate ? pointerGain(smoothedSpeed) : 1;
   }
+  // Gain relative to the speed slider, by finger speed (phone px/ms):
+  //   below 0.08 (careful aiming)  0.35  — pixel-precise
+  //   0.08 → 0.6 (normal)          0.35 → 1
+  //   0.6 → 2.5 (quick)            1 → 2.6
+  //   above 2.5 (flick)            2.6
+  function pointerGain(v) {
+    if (v <= 0.08) return 0.35;
+    if (v <= 0.6) return 0.35 + 0.65 * (v - 0.08) / 0.52;
+    if (v <= 2.5) return 1 + 1.6 * (v - 0.6) / 1.9;
+    return 2.6;
+  }
+  window.ThreeEPointer = { pointerGain, SETTLE_MS, RAMP_MS, RAMP_START };
   function twoFingerMove(touches, point, x, y, limited) {
     const now = performance.now(), g = two;
     if (!g.axis) {
