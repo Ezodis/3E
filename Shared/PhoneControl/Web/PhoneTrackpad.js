@@ -333,7 +333,10 @@
   let pointerInput = false;
   function onContact(type, handler) {
     contactHandlers[type] = handler;
-    pad.addEventListener(type, e => { if (!pointerInput) handler(e); }, { passive:false });
+    // Always cancel the touch event, even when pointer events drive input:
+    // otherwise Safari pinch-zooms the page itself, which shrinks the
+    // measured finger distance and turns a spread into "zoom out".
+    pad.addEventListener(type, e => { if (!pointerInput) handler(e); else if (e.cancelable) e.preventDefault(); }, { passive:false });
   }
   function pointerContact(type, e) {
     if (e.pointerType !== 'touch' && e.pointerType !== 'pen') return;
@@ -451,7 +454,11 @@
     flush(); // First movement goes immediately; subsequent samples are capped at 125 Hz.
   }, { passive: false });
   const tapTolerance = () => TAP_TOLERANCE;
-  function spread(touches) { return touches.length < 2 ? 0 : Math.hypot(touches[0].clientX-touches[1].clientX, touches[0].clientY-touches[1].clientY); }
+  // Distance between two fingers in screen points. If the page ever did get
+  // zoomed, CSS pixels shrink on screen; scaling back keeps the direction right.
+  function spread(touches) { return touches.length < 2 ? 0 : Math.hypot(touches[0].clientX-touches[1].clientX, touches[0].clientY-touches[1].clientY) * (window.visualViewport?.scale || 1); }
+  // Safari's own pinch gestures (iOS ignores user-scalable=no).
+  for (const type of ['gesturestart','gesturechange','gestureend']) document.addEventListener(type, e => { if (e.cancelable) e.preventDefault(); }, { passive:false });
   // Finger speed is smoothed (about 50 ms) so one noisy sample never makes
   // the pointer lurch, then mapped through pointerGain.
   function acceleration(x, y) {
