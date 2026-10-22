@@ -126,9 +126,9 @@ if(require.main===module)(async()=>{
    console.log(name+' local page load + connection: '+(Date.now()-connectStart)+' ms (simulated input, loopback network)');
    // Real browser PointerEvent dispatch, independent of legacy touchmove.
    const moveStart=commands.length;
-   // The first 70 ms after touching down are the settle window (wobble is held back), so move after it.
+   // The first 3 px from the touch-down point are the wobble gate, so move past it.
    await p.evaluate(async()=>{const pad=document.getElementById('pad'),fire=(type,x)=>pad.dispatchEvent(new PointerEvent(type,{pointerType:'touch',pointerId:71,clientX:x,clientY:300,bubbles:true,cancelable:true}));
-     fire('pointerdown',100);await new Promise(r=>setTimeout(r,250));fire('pointermove',103);fire('pointercancel',103);});
+     fire('pointerdown',100);await new Promise(r=>setTimeout(r,250));fire('pointermove',106);fire('pointercancel',106);});
    await p.waitForTimeout(100);
    assert.ok(commands.slice(moveStart).some(c=>c.type==='move'&&c.x>0&&c.y===0),'a small pointer sample after settling reaches receiver without touchmove');
    assert.equal(await p.locator('#drag,#left,#right').count(),0);
