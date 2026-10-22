@@ -132,6 +132,20 @@ if(require.main===module)(async()=>{
    await p.waitForTimeout(100);
    assert.ok(commands.slice(moveStart).some(c=>c.type==='move'&&c.x>0&&c.y===0),'a small pointer sample after settling reaches receiver without touchmove');
    assert.equal(await p.locator('#drag,#left,#right').count(),0);
+   if(name==='chromium'){
+    // Real multi-touch through the browser's input pipeline: fingers apart
+    // must zoom in (+1), fingers together must zoom out (-1).
+    const cdp=await p.context().newCDPSession(p);
+    async function pinch(from,to){
+     const start=commands.length,pts=t=>[{x:195-t/2,y:420,id:1},{x:195+t/2,y:420,id:2}];
+     await cdp.send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:pts(from)});
+     for(let i=1;i<=12;i++){await cdp.send('Input.dispatchTouchEvent',{type:'touchMove',touchPoints:pts(from+(to-from)*i/12)});await p.waitForTimeout(16);}
+     await cdp.send('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});await p.waitForTimeout(300);
+     const zooms=commands.slice(start).filter(c=>c.type==='zoom').map(c=>c.direction);await p.waitForTimeout(700);return zooms;}
+    const spreadOut=await pinch(30,250),pinchIn=await pinch(250,30);
+    assert.ok(spreadOut.length>0&&spreadOut.every(d=>d===1),'fingers moving apart zoom in: '+JSON.stringify(spreadOut));
+    assert.ok(pinchIn.length>0&&pinchIn.every(d=>d===-1),'fingers moving together zoom out: '+JSON.stringify(pinchIn));
+   }
    assert.deepEqual(await p.locator('#pad').boundingBox(),{x:0,y:0,width:390,height:844});
    assert.equal(await p.locator('#pad').evaluate(el=>getComputedStyle(el).boxShadow),'none','full-screen pad has no square frame');
    const dockBox=async id=>p.locator(id).boundingBox();

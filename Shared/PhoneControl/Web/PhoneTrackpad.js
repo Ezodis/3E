@@ -456,7 +456,17 @@
   const tapTolerance = () => TAP_TOLERANCE;
   // Distance between two fingers in screen points. If the page ever did get
   // zoomed, CSS pixels shrink on screen; scaling back keeps the direction right.
-  function spread(touches) { return touches.length < 2 ? 0 : Math.hypot(touches[0].clientX-touches[1].clientX, touches[0].clientY-touches[1].clientY) * (window.visualViewport?.scale || 1); }
+  // Screen coordinates are not affected by page zoom at all; use them when the
+  // browser provides them, else client pixels scaled by the page zoom.
+  function spread(touches) {
+    if (touches.length < 2) return 0;
+    const [a, b] = touches, screen = Math.hypot((a.screenX||0)-(b.screenX||0), (a.screenY||0)-(b.screenY||0));
+    if (screen > 0 && Number.isFinite(screen)) return screen;
+    return Math.hypot(a.clientX-b.clientX, a.clientY-b.clientY) * (window.visualViewport?.scale || 1);
+  }
+  // Block Safari's page pinch-zoom at the document level too: iOS only
+  // reliably honours a non-passive multi-touch touchmove listener here.
+  document.addEventListener('touchmove', e => { if (e.touches?.length > 1 && e.cancelable) e.preventDefault(); }, { passive:false });
   // Safari's own pinch gestures (iOS ignores user-scalable=no).
   for (const type of ['gesturestart','gesturechange','gestureend']) document.addEventListener(type, e => { if (e.cancelable) e.preventDefault(); }, { passive:false });
   // Finger speed is smoothed (about 50 ms) so one noisy sample never makes
@@ -482,6 +492,21 @@
     return 2.6;
   }
   window.ThreeEPointer = { pointerGain, SETTLE_PX };
+  // Brief on-screen confirmation of what the phone sent: fingers apart =
+  // "Zoom in", fingers together = "Zoom out".
+  let zoomToast = null, zoomToastTimer = null;
+  function showZoom(direction) {
+    try {
+      if (!zoomToast) {
+        zoomToast = document.createElement('div'); zoomToast.id = 'zoomToast'; zoomToast.setAttribute('role', 'status');
+        Object.assign(zoomToast.style, { position:'fixed', left:'50%', top:'max(18px, env(safe-area-inset-top))', transform:'translateX(-50%)', padding:'6px 14px',
+          borderRadius:'14px', background:'#a8e5cdee', color:'#0e2420', font:'600 15px -apple-system,system-ui,sans-serif', pointerEvents:'none', zIndex:5 });
+        document.body.append(zoomToast);
+      }
+      zoomToast.textContent = direction > 0 ? '＋ Zoom in' : '－ Zoom out'; zoomToast.hidden = false;
+      clearTimeout(zoomToastTimer); zoomToastTimer = setTimeout(() => { zoomToast.hidden = true; }, 700);
+    } catch {}
+  }
   function twoFingerMove(touches, point, x, y, limited) {
     const now = performance.now(), g = two;
     if (!g.axis) {
@@ -504,7 +529,7 @@
     }
     if (g.axis === 'zoom') {
       const change = spread(touches) - g.zoomRef;
-      if (Math.abs(change) >= PINCH_STEP) { send('zoom', { direction: change > 0 ? 1 : -1 }); g.zoomRef = spread(touches); }
+      if (Math.abs(change) >= PINCH_STEP) { const direction = change > 0 ? 1 : -1; send('zoom', { direction }); showZoom(direction); g.zoomRef = spread(touches); }
       return;
     }
     if (g.axis === 'h') {
