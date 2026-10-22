@@ -58,6 +58,15 @@ fire('touchstart',[touch(10,400)]);for(let i=1;i<=20;i++){time+=35;fire('touchmo
 fire('touchstart',[touch(10,400)]);for(let i=1;i<=3;i++){fire('touchmove',[touch(10+i*20,400)]);}fire('touchend',[]);const fast=sum('move','x');settle();
 check(slow<60*3&&fast>slow*2,'slow motion is finer and quick flicks travel further for the same finger distance ('+slow+' vs '+fast+')');
 
+// Real pinches are lopsided: the thumb moves, the index finger barely does.
+fire('touchstart',pair(150,300,60));for(let i=1;i<=6;i++)fire('touchmove',[touch(150-i*8,300+i*2),touch(210,300)]);fire('touchend',[]);
+check(types().includes('zoom')&&sent.every(c=>c.type!=='zoom'||c.direction===1)&&!types().includes('history')&&!types().includes('scroll'),'a lopsided quick pinch-out (thumb only) zooms in, never swipes back/forward ('+types().join()+')');settle();
+fire('touchstart',pair(100,300,120));for(let i=1;i<=6;i++)fire('touchmove',[touch(100+i*9,300-i*3),touch(220,301)]);fire('touchend',[]);
+check(types().includes('zoom')&&sent.every(c=>c.type!=='zoom'||c.direction===-1)&&!types().includes('history')&&!types().includes('scroll'),'a lopsided pinch-in zooms out, never swipes ('+types().join()+')');settle();
+// A fast two-finger swipe still navigates, even when one finger's samples lead the other's.
+fire('touchstart',pair(100,300));for(let i=1;i<=6;i++){fire('touchmove',[touch(100+i*16,300),touch(160+(i-1)*16,300)]);fire('touchmove',[touch(100+i*16,300),touch(160+i*16,300)]);}fire('touchend',[]);
+check(types().includes('history')&&!types().includes('zoom'),'a fast sideways two-finger swipe goes back/forward and never zooms ('+types().join()+')');settle();
+
 // Precision start (Shadow / laptop-trackpad feel).
 // 1. A small wobble while the finger settles never moves the pointer.
 fire('touchstart',[touch(200,500)]);fire('touchmove',[touch(202,501)]);fire('touchmove',[touch(201,502)]);fire('touchend',[]);
