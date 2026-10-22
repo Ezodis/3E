@@ -559,7 +559,7 @@ public sealed class PhoneTrackpad : IDisposable {
                         if (now - owner.HttpRateStart >= 1000) { owner.HttpRateStart = now; owner.HttpCount = 0; }
                         owner.HttpCount += commands.GetArrayLength();
                         if (owner.HttpCount > 600) throw new InvalidDataException();
-                        foreach (var command in commands.EnumerateArray()) { Apply(command, input); if(command.GetProperty("type").GetString() is "info" or "midiPort") describe=true; if(command.GetProperty("type").GetString()=="ping")handshake=true; }
+                        foreach (var command in commands.EnumerateArray()) { ApplySafely(command); if(command.GetProperty("type").GetString() is "info" or "midiPort") describe=true; if(command.GetProperty("type").GetString()=="ping")handshake=true; }
                         owner.HttpLastSeen = now;
                     } else throw new InvalidDataException();
                 }
@@ -771,7 +771,7 @@ input{width:100%;padding:13px;border:1px solid #415260;border-radius:10px;backgr
                         Pacer.Move(Math.Clamp(px, -8000, 8000), Math.Clamp(py, -8000, 8000), phoneTime);
                     else {
                         if (kind != "ping") pacer?.Flush(); // keep input in order: motion first, then the click
-                        Apply(root, input);
+                        ApplySafely(root);
                     }
                 }
                 if (message.RootElement.GetProperty("type").GetString() == "ping") {
@@ -799,6 +799,19 @@ input{width:100%;padding:13px;border:1px solid #415260;border-radius:10px;backgr
         }
     }
 
+    // The OS refuses injected input while it shows a protected prompt (a
+    // Windows administrator/UAC prompt on its secure desktop, the Mac password
+    // dialog). That command is dropped, but the phone stays connected and
+    // works again the moment the prompt closes. Call while holding gate.
+    private bool inputRefused;
+    private void ApplySafely(JsonElement command) {
+        try {
+            Apply(command, input);
+            if (inputRefused) { inputRefused = false; status = "Connected to your phone"; }
+        } catch (InvalidOperationException) {
+            if (!inputRefused) { inputRefused = true; status = "Paused while the computer shows a protected prompt — continues when it closes."; }
+        }
+    }
     public static void Apply(JsonElement command, ITrackpadInput sink) {
         if (command.ValueKind != JsonValueKind.Object || !command.TryGetProperty("type", out var type) || type.ValueKind != JsonValueKind.String)
             throw new InvalidDataException("Invalid command.");
