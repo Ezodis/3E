@@ -74,15 +74,17 @@
   const AXIS_PICK = 10, SWIPE_DISTANCE = 80, SWIPE_TIME = 320, LIFT_SWIPE_DISTANCE = 60, LIFT_SWIPE_TIME = 450;
   const PINCH_START = 28, PINCH_STEP = 24, MOMENTUM_MIN = 0.35, MOMENTUM_DECAY = 0.95;
   let two = null, momentum = null, motionHistory = [], accelerate = true;
-  // Precision pointer (feels like a laptop trackpad / Shadow's touch mouse):
-  // 1. Settle: for the first SETTLE_MS after a finger lands, its contact point
-  //    wobbles as the fingertip flattens. That motion is held back, so the
-  //    pointer does not jump; a deliberate quick flick still goes through.
-  // 2. Ease in: the next RAMP_MS start at RAMP_START of full speed.
-  // 3. Speed curve: slow, careful finger motion is scaled down for
+  // Precision pointer, with no added waiting:
+  // 1. Wobble gate: a fingertip's contact point shifts by a pixel or two as it
+  //    lands. Motion starts only once the finger is SETTLE_PX away from where
+  //    it touched down, and only the part beyond that is used (no jump).
+  //    This is distance, not time: a real move starts immediately.
+  // 2. Speed curve: slow, careful finger motion is scaled down for
   //    pixel-precise aiming; normal motion is 1:1 with the speed slider; fast
   //    motion accelerates (see pointerGain).
-  const SETTLE_MS = 70, SETTLE_PASS = 10, RAMP_MS = 150, RAMP_START = 0.35;
+  // 3. Every move carries the phone's timestamp, so the computer can replay
+  //    motion at the finger's own pace when Wi-Fi delivers packets in clumps.
+  const SETTLE_PX = 3;
   let settle = null, smoothedSpeed = 0, lastMotionAt = 0;
   accelerate = Prefs.get('acceleration', true) !== false;
   function hint() { $('padHint').textContent = scrollMode ? 'Swipe to scroll' : 'Swipe to move · tap to click'; }
@@ -342,7 +344,16 @@
       try { pad.setPointerCapture(e.pointerId); } catch {}
     } else {
       if (!contacts.has(e.pointerId)) return;
-      if (type === 'touchmove') contacts.set(e.pointerId, e);
+      if (type === 'touchmove') {
+        // Use every sample the phone measured between frames (120 Hz on
+        // ProMotion), not just the last one: a smoother, more exact path.
+        const samples = e.getCoalescedEvents?.() || [];
+        for (const sample of samples.slice(0, -1)) {
+          contacts.set(e.pointerId, sample);
+          contactHandlers.touchmove({touches:Array.from(contacts.values()),preventDefault:()=>{}});
+        }
+        contacts.set(e.pointerId, e);
+      }
       else if (type === 'touchcancel') contacts.clear();
       else contacts.delete(e.pointerId);
     }
@@ -364,7 +375,7 @@
     if (count === 2 && !two) two = { start: performance.now(), origin: point, spread0: spread(e.touches), zoomRef: 0, axis: null, decided: false, nav: false, bufX: 0, samples: [] };
     if (!mode) {
       started = performance.now(); distance = 0; offset = 0; peak = 0; cancelled = false; motionHistory = []; lastMotionSent = -Infinity;
-      settle = { x: 0, y: 0, done: false, flick: false }; smoothedSpeed = 0; lastMotionAt = started;
+      settle = { x: 0, y: 0, done: false }; smoothedSpeed = 0; lastMotionAt = started;
       if (Math.abs(dx) < 1) dx = 0; if (Math.abs(dy) < 1) dy = 0; if (Math.abs(sx) < 1) sx = 0; if (Math.abs(sy) < 1) sy = 0; // drop sub-unit leftovers from the last gesture
       gestureOrigin = point; fourOrigin = null; fourDone = false;
       tapCandidate = count === 1 && !dragging && !scrollMode && lastTap && started - lastTap.time < SECOND_TAP && Math.hypot(point.x-lastTap.x,point.y-lastTap.y) < SECOND_TAP_DISTANCE;
@@ -417,7 +428,7 @@
         // A real move after a tap starts at 6 px (no long dead zone, no jump).
         if (dragArmed ? Math.hypot(point.x-armPoint.x, point.y-armPoint.y) < 6 : offset < 6) { last = point; return; }
         x = point.x-gestureOrigin.x; y = point.y-gestureOrigin.y;
-        if (settle) settle.done = settle.flick = true; // the 6 px gate above already absorbed the wobble
+        if (settle) settle.done = true; // the 6 px gate above already absorbed the wobble
         if (dragArmed) startTapDrag(x,y);
         else { clearTimeout(pressTimer); tapCandidate = false; payClick(); } // just moving: click (as tapped), never press
       }
@@ -425,18 +436,14 @@
       if (mode === 2 && two && !dragging) { twoFingerMove(e.touches, point, x, y, limited); last = point; mode = count; flush(); return; }
       if (scrollMode && !dragging) { sx = limited(sx+x*3); sy = limited(sy-y*3); }
       else {
-        const now = performance.now(), held = now - started;
         if (mode === 1 && !dragging && settle && !settle.done) {
-          if (held < SETTLE_MS) {
-            settle.x += x; settle.y += y;
-            // Moved well past a wobble: a deliberate quick move goes through
-            // at once, with no hold and no ease-in.
-            if (Math.hypot(settle.x, settle.y) >= SETTLE_PASS) { settle.done = settle.flick = true; x = settle.x; y = settle.y; }
-            else { last = point; mode = e.touches.length; return; }
-          } else settle.done = true; // the settling wobble is dropped; this sample counts
+          settle.x += x; settle.y += y;
+          const away = Math.hypot(settle.x, settle.y);
+          if (away < SETTLE_PX) { last = point; mode = e.touches.length; return; }
+          // Use only the motion beyond the gate, in the direction moved.
+          settle.done = true; const keep = (away - SETTLE_PX) / away; x = settle.x * keep; y = settle.y * keep;
         }
-        const ramp = settle?.flick || dragging || mode !== 1 ? 1 : Math.min(1, RAMP_START + (1 - RAMP_START) * Math.max(0, held - SETTLE_MS) / RAMP_MS);
-        const gain = Number(speed.value) * acceleration(x, y) * ramp;
+        const gain = Number(speed.value) * acceleration(x, y);
         dx = limited(dx+x*gain); dy = limited(dy+y*gain);
       }
     }
@@ -467,7 +474,7 @@
     if (v <= 2.5) return 1 + 1.6 * (v - 0.6) / 1.9;
     return 2.6;
   }
-  window.ThreeEPointer = { pointerGain, SETTLE_MS, RAMP_MS, RAMP_START };
+  window.ThreeEPointer = { pointerGain, SETTLE_PX };
   function twoFingerMove(touches, point, x, y, limited) {
     const now = performance.now(), g = two;
     if (!g.axis) {
@@ -547,7 +554,7 @@
     const bounded = n => Math.max(-1000, Math.min(1000, Math.trunc(n)));
     const x = Math.trunc(dx), y = Math.trunc(dy);
     dx -= x; dy -= y;
-    if (x || y) { lastMotionSent = now; send('move', {x,y}); }
+    if (x || y) { lastMotionSent = now; send('move', {x,y,t:Math.round(now)}); }
     for (let i=0; i<(all ? 8 : 1); i++) {
       const a = bounded(sx), b = bounded(sy);
       sx -= a; sy -= b;
