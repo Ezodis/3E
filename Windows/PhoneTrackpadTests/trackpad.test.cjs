@@ -58,4 +58,17 @@ fire('touchstart',[touch(10,400)]);for(let i=1;i<=20;i++){time+=35;fire('touchmo
 fire('touchstart',[touch(10,400)]);for(let i=1;i<=3;i++){fire('touchmove',[touch(10+i*20,400)]);}fire('touchend',[]);const fast=sum('move','x');settle();
 check(slow<60*3&&fast>60*3,'slow motion is finer and quick flicks travel further for the same finger distance ('+slow+' vs '+fast+')');
 
+// Precision start (Shadow / laptop-trackpad feel).
+// 1. A small wobble while the finger settles never moves the pointer.
+fire('touchstart',[touch(200,500)]);fire('touchmove',[touch(203,502)]);fire('touchmove',[touch(201,503)]);fire('touchend',[]);
+check(!types().includes('move'),'a settling wobble right after touching down does not move the pointer');settle();
+// 2. Careful aiming is finer than the speed slider: 40 phone px, slowly (0.05 px/ms).
+fire('touchstart',[touch(10,600)]);time+=300;for(let i=1;i<=40;i++){time+=5;fire('touchmove',[touch(10+i,600)]);}fire('touchend',[]);const careful=sum('move','x');settle();
+check(careful>0&&careful<=40*3*0.5,'slow, careful aiming moves at most half the slider speed ('+careful+' px for 40 phone px at 3x)');
+// 3. Normal steady motion (about 0.6 px/ms, 120 phone px) travels near the slider speed.
+fire('touchstart',[touch(10,650)]);time+=300;for(let i=1;i<=30;i++){time+=-8;fire('touchmove',[touch(10+i*4,650)]);}fire('touchend',[]);const steady=sum('move','x');settle();
+check(steady/120>(careful/40)*2,'steady motion moves over twice as far per phone px as careful aiming ('+(steady/120).toFixed(2)+' vs '+(careful/40).toFixed(2)+' px per phone px)');
+// 4. The first moment of a slow move eases in instead of jumping.
+fire('touchstart',[touch(10,700)]);time+=60;fire('touchmove',[touch(11,700)]);time+=10;fire('touchmove',[touch(14,700)]);fire('touchend',[]);const start=sum('move','x');settle();
+check(start<3*3,'the first moment of a slow move eases in ('+start+' px for 3 phone px at 3x)');
 console.log('PASS: '+checks+' trackpad gesture checks.');
