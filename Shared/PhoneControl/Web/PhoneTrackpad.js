@@ -87,6 +87,7 @@
   const SETTLE_PX = 3;
   let settle = null, smoothedSpeed = 0, lastMotionAt = 0;
   accelerate = Prefs.get('acceleration', true) !== false;
+  let reverseZoom = Prefs.get('reverseZoom', false) === true;
   function hint() { $('padHint').textContent = scrollMode ? 'Swipe to scroll' : 'Swipe to move · tap to click'; }
   hint();
   let socket, ready = false, heartbeat, dragging = false, threeDrag = false;
@@ -529,7 +530,7 @@
     }
     if (g.axis === 'zoom') {
       const change = spread(touches) - g.zoomRef;
-      if (Math.abs(change) >= PINCH_STEP) { const direction = change > 0 ? 1 : -1; send('zoom', { direction }); showZoom(direction); g.zoomRef = spread(touches); }
+      if (Math.abs(change) >= PINCH_STEP) { const direction = (change > 0 ? 1 : -1) * (reverseZoom ? -1 : 1); send('zoom', { direction }); showZoom(direction); g.zoomRef = spread(touches); }
       return;
     }
     if (g.axis === 'h') {
@@ -701,6 +702,12 @@
   accelerationLabel();
   $('acceleration').addEventListener('click', () => { accelerate = !accelerate; Prefs.set('acceleration', accelerate); accelerationLabel(); });
   Prefs.onLoad(() => { accelerate = Prefs.get('acceleration', true) !== false; accelerationLabel(); });
+  // Pinch direction is saved per computer: fingers apart zoom in normally;
+  // "reversed" swaps it for apps that zoom the other way.
+  function reverseZoomLabel() { const b = $('reverseZoom'); if (!b) return; b.setAttribute('aria-pressed', String(reverseZoom)); b.textContent = 'Pinch zoom: ' + (reverseZoom ? 'reversed' : 'normal'); }
+  reverseZoomLabel();
+  $('reverseZoom')?.addEventListener('click', () => { reverseZoom = !reverseZoom; Prefs.set('reverseZoom', reverseZoom); reverseZoomLabel(); });
+  Prefs.onLoad(() => { reverseZoom = Prefs.get('reverseZoom', false) === true; reverseZoomLabel(); });
   $('settings').addEventListener('click', () => settings(true));
   $('closeSettings').addEventListener('click', () => settings(false));
   $('fullscreen').addEventListener('click', async () => {

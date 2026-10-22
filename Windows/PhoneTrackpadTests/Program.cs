@@ -222,6 +222,21 @@ Check(fake.Commands.Contains("history:-1") && fake.Commands.Contains("zoom:1"),"
     Check(badToken.Start() && badToken.PairingUrl.Split('#')[1].Length == 48, "An invalid saved secret falls back to a fresh one");
 }
 {
+    // An admin/UAC prompt makes Windows refuse injected input. The phone must
+    // stay connected and work again as soon as the prompt closes.
+    var guarded = new FakeInput();
+    using var protectedPrompt = new PhoneTrackpad(() => IPAddress.Loopback, guarded, new FakeFirewall(), FreePort());
+    Check(protectedPrompt.Start(), "Receiver for the admin-prompt test starts");
+    using var phone = await Connect(protectedPrompt.PairingUrl, controller: "0123456789abcdef0123456789abcdef");
+    Check((await Receive(phone)).Contains("\"ready\":true"), "Phone connects");
+    guarded.RefuseInput = true;
+    await Send(phone, "{\"type\":\"left\"}"); await Task.Delay(200);
+    Check(phone.State == WebSocketState.Open && protectedPrompt.Status.Contains("protected prompt"), "While an admin prompt blocks input the phone stays connected (" + protectedPrompt.Status + ")");
+    guarded.RefuseInput = false;
+    await Send(phone, "{\"type\":\"left\"}"); await Task.Delay(200);
+    Check(phone.State == WebSocketState.Open && guarded.Commands.Contains("left") && !protectedPrompt.Status.Contains("protected prompt"), "After the prompt closes the same connection works again");
+}
+{
     // Pointer pacing: steady Wi-Fi applies motion on arrival; clumped packets
     // are replayed at the phone's own 8 ms spacing instead of jumping.
     var steady = new MotionPacer.Schedule();
@@ -639,7 +654,8 @@ sealed class FakeInput : ITrackpadInput {
     public void MidiPanic(){MidiNotes=0;}
     public void Move(int x,int y) => Commands.Enqueue($"move:{x},{y}");
     public void Scroll(int x,int y) => Commands.Enqueue($"scroll:{x},{y}");
-    public void Click(bool right) => Commands.Enqueue(right ? "right" : "left");
+    public volatile bool RefuseInput; // like Windows while a UAC prompt is on the secure desktop
+    public void Click(bool right) { if (RefuseInput) throw new InvalidOperationException("Windows could not accept trackpad input."); Commands.Enqueue(right ? "right" : "left"); }
     public void Down() { Commands.Enqueue("down"); Held=true; }
     public void Release() { Commands.Enqueue("up"); Held=false; }
     public void TaskView() => Commands.Enqueue("taskView");
