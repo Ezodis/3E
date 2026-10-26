@@ -34,6 +34,8 @@ foreach ($arch in @('x64','arm64')) {
     # WinUI locates its PRI by the apphost filename.
     Copy-Item -LiteralPath (Join-Path $output 'ThreeEWindows.pri') -Destination (Join-Path $output '3e.pri') -Force
     if (-not (Test-Path -LiteralPath (Join-Path $output '3e.exe'))) { throw "Missing $arch application." }
+    $identity = [Diagnostics.FileVersionInfo]::GetVersionInfo((Join-Path $output '3e.exe'))
+    if ($identity.FileDescription -ne '3e' -or $identity.ProductName -ne '3e') { throw "Wrong $arch public app name." }
     foreach ($symbols in Get-ChildItem -LiteralPath $output -Filter '*.pdb') { Remove-Item -LiteralPath $symbols.FullName }
     Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'DragEngine\LICENSE') -Destination (Join-Path $output 'THIRD-PARTY-LICENSE-ThreeFingerDragOnWindows.txt') -Force
     Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'PhoneTrackpad-QRCoder-LICENSE.txt') -Destination (Join-Path $output 'THIRD-PARTY-LICENSE-QRCoder.txt') -Force
