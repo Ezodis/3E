@@ -30,12 +30,17 @@ foreach ($arch in @('x64','arm64')) {
         if ($LASTEXITCODE -ne 0) { throw "Keyboard recovery $arch build failed." }
     }
     $appHost = Join-Path $output 'ThreeEWindows.exe'
-    if (Test-Path -LiteralPath $appHost) { Move-Item -LiteralPath $appHost -Destination (Join-Path $output '3e.exe') -Force }
+    if (Test-Path -LiteralPath $appHost) { Move-Item -LiteralPath $appHost -Destination (Join-Path $output '3£.exe') -Force }
     # WinUI locates its PRI by the apphost filename.
-    Copy-Item -LiteralPath (Join-Path $output 'ThreeEWindows.pri') -Destination (Join-Path $output '3e.pri') -Force
-    if (-not (Test-Path -LiteralPath (Join-Path $output '3e.exe'))) { throw "Missing $arch application." }
-    $identity = [Diagnostics.FileVersionInfo]::GetVersionInfo((Join-Path $output '3e.exe'))
-    if ($identity.FileDescription -ne '3e' -or $identity.ProductName -ne '3e') { throw "Wrong $arch public app name." }
+    Copy-Item -LiteralPath (Join-Path $output 'ThreeEWindows.pri') -Destination (Join-Path $output '3£.pri') -Force
+    # Incremental builds must not ship stale apphosts from older public names.
+    foreach ($legacyName in @('3e.exe','3e.pri','3£Windows.exe','3£Windows.pri')) {
+        $legacyFile = Join-Path $output $legacyName
+        if (Test-Path -LiteralPath $legacyFile) { Remove-Item -LiteralPath $legacyFile }
+    }
+    if (-not (Test-Path -LiteralPath (Join-Path $output '3£.exe'))) { throw "Missing $arch application." }
+    $identity = [Diagnostics.FileVersionInfo]::GetVersionInfo((Join-Path $output '3£.exe'))
+    if ($identity.FileDescription -ne '3£' -or $identity.ProductName -ne '3£') { throw "Wrong $arch public app name." }
     foreach ($symbols in Get-ChildItem -LiteralPath $output -Filter '*.pdb') { Remove-Item -LiteralPath $symbols.FullName }
     Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'DragEngine\LICENSE') -Destination (Join-Path $output 'THIRD-PARTY-LICENSE-ThreeFingerDragOnWindows.txt') -Force
     Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'PhoneTrackpad-QRCoder-LICENSE.txt') -Destination (Join-Path $output 'THIRD-PARTY-LICENSE-QRCoder.txt') -Force
@@ -61,7 +66,7 @@ if ($LASTEXITCODE -ne 0) { throw 'Mac keyboard layout restoration tests failed.'
 dotnet build (Join-Path $PSScriptRoot 'KeyboardNativeTests') -c Release
 if ($LASTEXITCODE -ne 0) { throw 'Native keyboard test harness failed to compile.' }
 $report = Join-Path $build 'self-test.json'
-$testProcess = Start-Process -FilePath (Join-Path $build 'framework-x64\3e.exe') -ArgumentList ('--self-test "' + $report + '"') -Wait -PassThru -WindowStyle Hidden
+$testProcess = Start-Process -FilePath (Join-Path $build 'framework-x64\3£.exe') -ArgumentList ('--self-test "' + $report + '"') -Wait -PassThru -WindowStyle Hidden
 if ($testProcess.ExitCode -ne 0 -or -not (Test-Path -LiteralPath $report) -or -not (Get-Content -LiteralPath $report -Raw | ConvertFrom-Json).passed) { throw 'Release self-test failed.' }
 dotnet run --project (Join-Path $PSScriptRoot 'PhoneTrackpadTests')
 if ($LASTEXITCODE -ne 0) { throw 'Phone trackpad network/disconnect tests failed.' }
@@ -113,4 +118,4 @@ $checksum = (Get-FileHash -LiteralPath $installerPath -Algorithm SHA256).Hash.To
 $archiveChecksum = (Get-FileHash -LiteralPath $releaseArchive -Algorithm SHA256).Hash.ToLowerInvariant()
 [IO.File]::WriteAllText((Join-Path $release 'SHA256SUMS.txt'),"$archiveChecksum  3EWindows.zip`n$checksum  3£Windows.ps1`n",[Text.UTF8Encoding]::new($false))
 [IO.File]::WriteAllText((Join-Path $release 'release.json'),(@{version=$version;edition='windows';repository='Ezodis/3E';architectures=@('x64','arm64');asset='3EWindows.zip';installerSha256=$checksum;archiveSha256=$archiveChecksum} | ConvertTo-Json),[Text.UTF8Encoding]::new($false))
-Write-Host "Built 3£Windows $version : $installerPath"
+Write-Host "Built 3£ $version : $installerPath"

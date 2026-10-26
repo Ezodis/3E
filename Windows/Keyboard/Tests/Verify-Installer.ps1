@@ -30,8 +30,11 @@ foreach($name in @('EmbeddedAppX64','EmbeddedAppArm64')) {
     $memory=[IO.MemoryStream]::new($bytes,$false)
     $zip=[IO.Compression.ZipArchive]::new($memory,[IO.Compression.ZipArchiveMode]::Read)
     try {
-        foreach($module in @('3e.exe','MacKeyboard.json','ThreeE.KeyboardRecovery.exe','ThreeE.KeyboardRecovery.dll','ThreeE.KeyboardRecovery.runtimeconfig.json','ThreeEWindows.dll','ThreeE.PhoneBar.Windows.dll','ThreeE.PhoneControl.dll','QRCoder.dll')) {
+        foreach($module in @('3£.exe','3£.pri','MacKeyboard.json','ThreeE.KeyboardRecovery.exe','ThreeE.KeyboardRecovery.dll','ThreeE.KeyboardRecovery.runtimeconfig.json','ThreeEWindows.dll','ThreeE.PhoneBar.Windows.dll','ThreeE.PhoneControl.dll','QRCoder.dll')) {
             if(-not $zip.GetEntry($module)) {throw "Base application archive $name is missing $module"}
+        }
+        foreach($legacy in @('3e.exe','3e.pri','3£Windows.exe','3£Windows.pri')) {
+            if($zip.GetEntry($legacy)) {throw "Base application archive $name contains obsolete app name $legacy"}
         }
     } finally {$zip.Dispose();$memory.Dispose()}
 }

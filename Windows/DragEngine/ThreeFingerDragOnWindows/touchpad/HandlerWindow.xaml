@@ -34,7 +34,7 @@
 
         <tb:TaskbarIcon
             x:Name="TaskbarIcon"
-            ToolTipText="3e — left: iPhone QR · right: all controls"
+            ToolTipText="3£ — left: iPhone QR · right: all controls"
             MenuActivation="None"
             NoLeftClickDelay="True"
             LeftClickCommand="{StaticResource LauncherCommand}"

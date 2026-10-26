@@ -1,10 +1,10 @@
-# 3E
+# 3£
 
-The **3E base app includes all modules available for its platform**: install **3E Combined** on macOS or **3£Windows** on Windows. Modules can be enabled or used independently from the same menu. Smaller downloads contain the same `3E.app` with only the selected modules installed. Click a missing feature in the menu to install it; the small gear menu can uninstall individual modules without deleting settings.
+The **3£ base app includes all modules available for its platform**: install **3E Combined** on macOS or **3£** on Windows. Modules can be enabled or used independently from the same menu. Smaller downloads contain the same `3E.app` with only the selected modules installed. Click a missing feature in the menu to install it; the small gear menu can uninstall individual modules without deleting settings.
 
 | App | Source | Purpose |
 | --- | --- | --- |
-| 3e (Windows) | [Windows](Windows/) · [portable installer](3%C2%A3Windows.ps1) | One Windows tray menu for drag, Clicks keyboard, PowerToys, optional iPhone trackpad, auto dark and wallpaper |
+| 3£ (Windows) | [Windows](Windows/) · [portable installer](3%C2%A3Windows.ps1) | One Windows tray menu for drag, Clicks keyboard, PowerToys, optional iPhone trackpad, auto dark and wallpaper |
 | 3E Combined (Mac base app) | [TouchBar](TouchBar/) + [TouchTab](TouchTab/CombinedModule.swift) + [Phone Bar](Shared/PhoneControl/) | All three modules in one installed app and one menu-bar icon |
 | TouchBar (3E) | [TouchBar](TouchBar/) | Custom Touch Bar MIDI keyboards, Ableton live-performance controls, app/window and media control |
 | TouchTab | [TouchTab](TouchTab/) | Four-finger trackpad app switching, pinch copy/paste and force-click window switching |

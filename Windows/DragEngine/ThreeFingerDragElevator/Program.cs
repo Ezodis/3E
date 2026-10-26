@@ -4,7 +4,7 @@ using System.Diagnostics;
 ProcessStartInfo processInfo = new ProcessStartInfo
 {
     UseShellExecute = true,
-    FileName = "3£Windows.exe",
+    FileName = "3£.exe",
     Arguments = "FromElevator"
 };
 try{

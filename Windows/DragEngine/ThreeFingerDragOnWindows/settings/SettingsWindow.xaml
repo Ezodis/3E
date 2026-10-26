@@ -5,7 +5,7 @@
     xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
     mc:Ignorable="d"
-    Title="3e"
+    Title="3£"
     Closed="Window_Closed">
 
 
@@ -26,7 +26,7 @@
 
             <Border Height="44" Margin="12,0,0,0">
                 <TextBlock
-                    Text="3e — Drag settings"
+                    Text="3£ — Drag settings"
                     FontSize="14"
                     FontWeight="Medium"
                     TextWrapping="NoWrap"

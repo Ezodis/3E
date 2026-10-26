@@ -54,7 +54,7 @@ public class Program {
                 ElevationHandoffCases(),
                 WindowsHub.RestartUpdateCheckLimit > TimeSpan.Zero && WindowsHub.RestartUpdateCheckLimit <= TimeSpan.FromSeconds(10),
                 WindowsHub.UpdateAttemptsAllowed(false) == 1 && WindowsHub.UpdateAttemptsAllowed(true) >= 1,
-                WindowsHub.RestartScript(42, @"C:\Program Files\3EWindows\3£Windows.exe").Contains("Wait-Process -Id 42 ") &&
+                WindowsHub.RestartScript(42, @"C:\Program Files\3EWindows\3£.exe").Contains("Wait-Process -Id 42 ") &&
                     WindowsHub.RestartScript(1, @"C:\it's\app.exe").Contains("'C:\\it''s\\app.exe'") &&
                     !WindowsHub.RestartScript(42, @"C:\app.exe").Contains("Start-Sleep") &&
                     !WindowsHub.RestartScript(42, @"C:\app.exe").Contains("RunAs") &&

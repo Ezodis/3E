@@ -1,4 +1,10 @@
-3e for Windows improves Command shortcut matching and keyboard recovery.
+The Windows app is named **3£** throughout: tray menu and version label, settings, notifications, executable, Start menu shortcut, and release title. Updates remove the old `3e` and `3£Windows` app shortcuts and executable names.
+
+Includes the Command shortcut and session recovery improvements below. Existing keyboard preferences and the original restoration snapshot are preserved during the rename.
+
+Previous release:
+
+3£ for Windows improves Command shortcut matching and keyboard recovery.
 
 - Command shortcuts match logical Ctrl after the PC or Clicks mapping. PC left Alt remains Command, and Clicks keeps its own labeled Command mapping.
 - Screenshot, selection and redo shortcuts accept either Shift key.
@@ -7,10 +13,10 @@
 
 Previous release:
 
-3e for Windows adds a reversible Mac keyboard layout and corrects phone zoom.
+3£ for Windows adds a reversible Mac keyboard layout and corrects phone zoom.
 
 - **Mac keyboard layout** in the tray turns Command shortcuts on/off immediately, without writing a system Alt/Ctrl swap. It starts off on a new PC, preserves personal PowerToys profiles, restores the previous keyboard configuration on off/quit/uninstall, and includes recovery after forced updates or crashes. Command+Tab, Command+Q, Command+Space and the existing editing shortcuts are included.
-- **3e** is now the Windows app, executable, settings and Start menu name. Old update asset names and settings locations are retained for upgrade compatibility.
+- **3£** is now the Windows app, executable, settings and Start menu name. Old update asset names and settings locations are retained for upgrade compatibility.
 - **Phone pinch zoom:** spreading fingers zooms in; pinching together zooms out. The optional direction-reversal preference remains available.
 
 Validation includes isolated keyboard snapshot/restore/failure/recovery tests, Clicks routing and modifier tests, phone gesture/native-boundary tests, x64/ARM64 builds and installer verification. These tests do not enable the layout or modify the development PC. Physical keyboard/iPhone testing on the destination PC remains necessary.

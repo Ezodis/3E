@@ -2,8 +2,8 @@
 param([switch]$Wait)
 $ErrorActionPreference = 'Stop'
 $root = Join-Path $env:ProgramFiles '3EWindows'
-$app = Join-Path $root '3e.exe'
-if (-not (Test-Path -LiteralPath $app)) { throw 'Install 3e before launching it.' }
+$app = Join-Path $root '3£.exe'
+if (-not (Test-Path -LiteralPath $app)) { throw 'Install 3£ before launching it.' }
 Add-Type -TypeDefinition @"
 using System;
 using System.Runtime.InteropServices;
@@ -20,17 +20,17 @@ $gate = [Threading.Mutex]::new($false, ('Local\3EWindows-Launch-' + $sid))
 $locked = $false
 try {
     try { $locked = $gate.WaitOne(30000) } catch [Threading.AbandonedMutexException] { $locked = $true }
-    if (-not $locked) { throw 'Another 3e launch is still awaiting approval.' }
-    $running = @(Get-Process -Name '3e','3£Windows' -ErrorAction SilentlyContinue | Where-Object { $_.SessionId -eq (Get-Process -Id $PID).SessionId })
+    if (-not $locked) { throw 'Another 3£ launch is still awaiting approval.' }
+    $running = @(Get-Process -Name '3£','3e','3£Windows' -ErrorAction SilentlyContinue | Where-Object { $_.SessionId -eq (Get-Process -Id $PID).SessionId })
     $process = $running | Where-Object { [ThreeEPermission]::Elevated($_.Id) } | Select-Object -First 1
     if (-not $process) {
         # One elevation starts the tray app and all input engines together.
-        foreach ($name in @('3e','3£Windows','3EWindows.Keyboard')) {
+        foreach ($name in @('3£','3e','3£Windows','3EWindows.Keyboard')) {
             Get-Process -Name $name -ErrorAction SilentlyContinue | Where-Object { $_.SessionId -eq (Get-Process -Id $PID).SessionId } | Stop-Process -Force
         }
         $process = Start-Process -FilePath $app -WorkingDirectory $root -Verb RunAs -WindowStyle Hidden -PassThru
         Start-Sleep -Seconds 2
-        if ((-not (Get-Process -Id $process.Id -ErrorAction SilentlyContinue)) -or -not [ThreeEPermission]::Elevated($process.Id)) { throw 'Windows did not grant administrator permission to 3e.' }
+        if ((-not (Get-Process -Id $process.Id -ErrorAction SilentlyContinue)) -or -not [ThreeEPermission]::Elevated($process.Id)) { throw 'Windows did not grant administrator permission to 3£.' }
     }
 } finally {
     if ($locked) { $gate.ReleaseMutex() }

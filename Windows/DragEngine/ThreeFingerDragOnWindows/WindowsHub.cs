@@ -309,7 +309,7 @@ public sealed class WindowsHub : IDisposable {
 
     private MenuFlyoutItem ActionMenuItem(string label, Action click) => new() {
         Text = label,
-        Command = new MenuCommand(() => { try { click(); } catch (Exception ex) { Log(ex); MessageBox(IntPtr.Zero, ex.Message, "3e", 0x10); } })
+        Command = new MenuCommand(() => { try { click(); } catch (Exception ex) { Log(ex); MessageBox(IntPtr.Zero, ex.Message, "3£", 0x10); } })
     };
 
     private ToggleMenuFlyoutItem ToggleMenuItem(string label, bool value, Action<bool> change, Action openSettings = null, string slot = IconSlot) {
@@ -317,7 +317,7 @@ public sealed class WindowsHub : IDisposable {
         var item = new ToggleMenuFlyoutItem { Text = openSettings == null ? label : label + slot, IsChecked = value };
         item.Command = new MenuCommand(() => {
             if (openSettings != null && ClickedGear()) {
-                try { openSettings(); } catch (Exception ex) { Log(ex); MessageBox(IntPtr.Zero, ex.Message, "3e", 0x10); }
+                try { openSettings(); } catch (Exception ex) { Log(ex); MessageBox(IntPtr.Zero, ex.Message, "3£", 0x10); }
                 return;
             }
             try { value = !value; item.IsChecked = value; change(value); Save(); } catch (Exception ex) { Log(ex); }
@@ -407,7 +407,7 @@ public sealed class WindowsHub : IDisposable {
     private void Toggle(string label, bool value, Action<bool> change, Action openSettings = null, string slot = IconSlot) => menu.Items.Add(ToggleMenuItem(label, value, change, openSettings, slot));
 
     private void OpenPowerToysSettings() {
-        if (PowerToysPath == null) throw new FileNotFoundException("Run the 3e installer to install PowerToys.");
+        if (PowerToysPath == null) throw new FileNotFoundException("Run the 3£ installer to install PowerToys.");
         Start(Path.Combine(Path.GetDirectoryName(PowerToysPath), "WinUI3Apps", "PowerToys.Settings.exe"), "", true);
     }
 
@@ -425,7 +425,7 @@ public sealed class WindowsHub : IDisposable {
             try {
                 if (enable) await macKeyboard.EnableAsync(); else await macKeyboard.DisableAsync();
                 settings.MacKeyboard = enable;
-            } catch (Exception ex) { Log(ex); MessageBox(IntPtr.Zero, ex.Message, "3e keyboard", 0x10); }
+            } catch (Exception ex) { Log(ex); MessageBox(IntPtr.Zero, ex.Message, "3£ keyboard", 0x10); }
             finally { keyboardChanging = false; Save(); RefreshMenu(); WriteDiagnostics(); }
         });
         return item;
@@ -467,7 +467,7 @@ public sealed class WindowsHub : IDisposable {
             }
         } catch (Exception ex) { Log(ex); }
         try { RestartSuite(); }
-        catch (Exception ex) { restarting = false; Log(ex); MessageBox(IntPtr.Zero, ex.Message, "3e", 0x10 | ForegroundDialog); }
+        catch (Exception ex) { restarting = false; Log(ex); MessageBox(IntPtr.Zero, ex.Message, "3£", 0x10 | ForegroundDialog); }
     }
 
     private void RestartSuite() {
@@ -497,7 +497,7 @@ public sealed class WindowsHub : IDisposable {
 
     private void RefreshMenu() {
         menu.Items.Clear();
-        menu.Items.Add(new MenuFlyoutItem { Text = "3e " + Version, IsEnabled = false });
+        menu.Items.Add(new MenuFlyoutItem { Text = "3£ " + Version, IsEnabled = false });
         // One Phone Bar row: click to turn it on or off; its icon makes a new link.
         // Left-clicking the tray icon shows the QR.
         Toggle("Phone Bar", phoneBar.Running, enabled => {
@@ -533,12 +533,12 @@ public sealed class WindowsHub : IDisposable {
         if (!settings.AutoUpdate) Item(updateTag == null ? "Check for updates…" : "Update available: " + updateTag + "…", () => _ = CheckUpdatesAsync(true));
         Toggle("Install updates automatically", settings.AutoUpdate, enabled => { settings.AutoUpdate = enabled; if (!enabled) pendingUpdate = null; else settings.LastUpdateCheckUtc = default; });
         Item("Open portable installer", () => Process.Start(new ProcessStartInfo("explorer.exe", "/select,\"" + Path.Combine(root, "3£Windows.ps1") + "\"") { UseShellExecute = true }));
-        Item("Quit 3e", () => App.Instance.Quit());
+        Item("Quit 3£", () => App.Instance.Quit());
     }
 
     public MenuFlyout CreateLauncher(Action showAllControls) {
         var launcher = new MenuFlyout();
-        launcher.Items.Add(new MenuFlyoutItem { Text = "3e — choose controls", IsEnabled = false });
+        launcher.Items.Add(new MenuFlyoutItem { Text = "3£ — choose controls", IsEnabled = false });
         MenuFlyoutItem ActionItem(string text, Action action) => ActionMenuItem(text, action);
         ToggleMenuFlyoutItem Switch(string text, bool value, Action<bool> change) => ToggleMenuItem(text, value, change);
         void OpenPowerToys() => OpenPowerToysSettings();
@@ -592,8 +592,8 @@ public sealed class WindowsHub : IDisposable {
             updateTag = newest?.GetProperty("tag_name").GetString();
             pendingUpdate = settings.AutoUpdate && newest != null ? newest.Value.Clone() : null;
             if (!interactive) { RefreshMenu(); return newest; }
-            if (newest == null) { MessageBox(IntPtr.Zero, "3e " + Version + " is up to date.", "3e", 0x40 | ForegroundDialog); return null; }
-            if (MessageBox(IntPtr.Zero, "Install 3e " + newestVersion + "?\n\nThe portable installer will be downloaded, its SHA-256 checksum verified, and Windows will request administrator approval.", "3e update", 0x24 | ForegroundDialog) != 6) return newest;
+            if (newest == null) { MessageBox(IntPtr.Zero, "3£ " + Version + " is up to date.", "3£", 0x40 | ForegroundDialog); return null; }
+            if (MessageBox(IntPtr.Zero, "Install 3£ " + newestVersion + "?\n\nThe portable installer will be downloaded, its SHA-256 checksum verified, and Windows will request administrator approval.", "3£ update", 0x24 | ForegroundDialog) != 6) return newest;
             await InstallUpdateAsync(newest.Value);
             return newest;
         } catch (Exception ex) {
@@ -601,7 +601,7 @@ public sealed class WindowsHub : IDisposable {
             // Throttle failures too, so an offline device never polls every 20 seconds.
             settings.LastUpdateCheckUtc = DateTime.UtcNow;
             Save();
-            if (interactive) MessageBox(IntPtr.Zero, "Could not check or install the update.\n\n" + ex.Message, "3e", 0x10 | ForegroundDialog);
+            if (interactive) MessageBox(IntPtr.Zero, "Could not check or install the update.\n\n" + ex.Message, "3£", 0x10 | ForegroundDialog);
             return null;
         }
     }

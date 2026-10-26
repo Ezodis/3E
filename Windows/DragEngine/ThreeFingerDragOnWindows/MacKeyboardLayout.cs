@@ -187,7 +187,7 @@ public sealed class MacKeyboardLayout {
         }
         private string PathName => PowerToysPath == null ? null : Path.Combine(Path.GetDirectoryName(PowerToysPath), "KeyboardManagerEngine", Name + ".exe");
         public bool Running { get { var ps = Processes(); foreach (var p in ps) p.Dispose(); return ps.Length > 0; } }
-        public void Validate() { if (!File.Exists(PathName)) throw new FileNotFoundException("PowerToys Keyboard Manager is missing. Run the 3e installer to repair it."); }
+        public void Validate() { if (!File.Exists(PathName)) throw new FileNotFoundException("PowerToys Keyboard Manager is missing. Run the 3£ installer to repair it."); }
         public async Task StopAsync() {
             if (!Running) return;
             // Let a held Command/Alt/Shift finish before taking its hook away.

@@ -22,6 +22,9 @@ sealed class ShortcutProbe : Form {
     [DllImport("user32.dll")] static extern bool SetForegroundWindow(IntPtr window);
     [DllImport("user32.dll")] static extern bool ShowWindow(IntPtr window, int command);
     [DllImport("user32.dll")] static extern short GetAsyncKeyState(int key);
+    [DllImport("user32.dll")] static extern uint GetWindowThreadProcessId(IntPtr window, out uint process);
+    [DllImport("kernel32.dll")] static extern uint GetCurrentThreadId();
+    [DllImport("user32.dll")] static extern bool AttachThreadInput(uint from, uint to, bool attach);
 
     readonly List<object> checks = new();
     readonly List<(uint Key, uint Modifiers)> output = new();
@@ -29,12 +32,12 @@ sealed class ShortcutProbe : Form {
     readonly string report;
     readonly Hook callback;
     IntPtr hook;
-    bool testing;
+    bool testing, interrupted;
     public int Result = 1;
 
     ShortcutProbe(string report) {
         this.report = report;
-        Text = "3e shortcut verification"; Width = 440; Height = 140;
+        Text = "3£ shortcut verification"; Width = 440; Height = 140;
         StartPosition = FormStartPosition.CenterScreen;
         Controls.Add(new Label { Dock = DockStyle.Fill,
             Text = "Checking Command shortcuts. Please leave keys released.\nGenerated system actions are intercepted.",
@@ -47,6 +50,11 @@ sealed class ShortcutProbe : Form {
         if (code >= 0 && testing) {
             var key = Marshal.PtrToStructure<KeyboardEvent>(data);
             ulong tag = key.Extra.ToUInt64();
+            // A person typing during the probe invalidates a chord; PowerToys
+            // intentionally ignores shortcuts with unrelated held keys. Report
+            // interruption rather than misdiagnosing a broken remap. Never log
+            // those keys or suppress them.
+            if (tag != SourceTag && tag != ShortcutTag && tag != SuppressTag && tag != 0x11) interrupted = true;
             bool down = message == (IntPtr)0x100 || message == (IntPtr)0x104;
             if (tag == ShortcutTag || tag == SuppressTag) {
                 if (tag == ShortcutTag) {
@@ -92,7 +100,7 @@ sealed class ShortcutProbe : Form {
     async Task Check(string name, ushort[] keys, uint expectedKey, uint expectedModifiers) {
         foreach (int key in new[] { 0x10, 0x11, 0x12, 0x5B, 0x5C })
             if ((GetAsyncKeyState(key) & 0x8000) != 0) throw new InvalidOperationException("Release modifiers before testing.");
-        output.Clear(); injectedModifiers.Clear(); testing = true;
+        output.Clear(); injectedModifiers.Clear(); interrupted = false; testing = true;
         int pressed = 0;
         try {
             foreach (ushort key in keys) {
@@ -107,6 +115,7 @@ sealed class ShortcutProbe : Form {
             for (int i = pressed - 1; i >= 0; i--) Send(keys[i], true, ShortcutTag);
             testing = false;
         }
+        if (interrupted) throw new InvalidOperationException("Other keyboard input interrupted the live check. Leave keys released and rerun.");
         bool passed = output.Any(k => k.Key == expectedKey && k.Modifiers == expectedModifiers);
         checks.Add(new { name, passed, expectedKey, expectedModifiers, actual = output.Select(k => new { k.Key, k.Modifiers }).ToArray() });
         if (!passed) throw new InvalidOperationException(name + " did not produce the expected shortcut.");
@@ -119,14 +128,18 @@ sealed class ShortcutProbe : Form {
             using var settings = JsonDocument.Parse(File.ReadAllText(Path.Combine(keyboard, "settings.json")));
             string active = settings.RootElement.GetProperty("properties").GetProperty("activeConfiguration").GetProperty("value").GetString();
             if (active == null || !active.StartsWith("3e-mac-", StringComparison.Ordinal) ||
-                !Guid.TryParseExact(active.Substring(7), "N", out _)) throw new InvalidOperationException("Enable 3e Mac keyboard layout before running the live check.");
+                !Guid.TryParseExact(active.Substring(7), "N", out _)) throw new InvalidOperationException("Enable 3£ Mac keyboard layout before running the live check.");
             using var profile = JsonDocument.Parse(File.ReadAllText(Path.Combine(keyboard, active + ".json")));
             bool swapsAlt = profile.RootElement.GetProperty("remapKeys").GetProperty("inProcess").EnumerateArray()
                 .Any(k => k.GetProperty("originalKeys").GetString() == "164" && k.GetProperty("newRemapKeys").GetString() == "162");
             // On old installations the OS already converts PC Alt to left Ctrl.
             // On fresh installations exercise PowerToys' Alt -> Ctrl remap too.
             ushort pcCommand = swapsAlt ? (ushort)0xA4 : (ushort)0xA2;
-            TopMost = true; ShowWindow(Handle, 5); ShowWindow(Handle, 9); Activate(); SetForegroundWindow(Handle);
+            TopMost = true; ShowWindow(Handle, 5); ShowWindow(Handle, 9);
+            uint foregroundThread = GetWindowThreadProcessId(GetForegroundWindow(), out _), currentThread = GetCurrentThreadId();
+            bool attached = foregroundThread != 0 && foregroundThread != currentThread && AttachThreadInput(currentThread, foregroundThread, true);
+            try { Activate(); SetForegroundWindow(Handle); }
+            finally { if (attached) AttachThreadInput(currentThread, foregroundThread, false); }
             await Task.Delay(300);
             if (GetForegroundWindow() != Handle) throw new InvalidOperationException("Unlock Windows and focus the test window before running this check.");
             hook = SetWindowsHookEx(13, callback, GetModuleHandle(null), 0);

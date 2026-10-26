@@ -1,12 +1,12 @@
-# 3e for Windows
+# 3£ for Windows
 
-One Windows tray app for three-finger dragging, Clicks keyboard mapping, PowerToys shortcuts/Workspaces, auto dark mode and dynamic wallpaper. The drag engine runs inside the app. Kanata and WinDynamicDesktop are managed background dependencies. PowerToys supplies Keyboard Manager; its existing preferences and tray visibility are preserved. Auto dark mode runs directly inside 3e, using light mode from noon until 8 PM and dark mode otherwise.
+One Windows tray app for three-finger dragging, Clicks keyboard mapping, PowerToys shortcuts/Workspaces, auto dark mode and dynamic wallpaper. The drag engine runs inside the app. Kanata and WinDynamicDesktop are managed background dependencies. PowerToys supplies Keyboard Manager; its existing preferences and tray visibility are preserved. Auto dark mode runs directly inside 3£, using light mode from noon until 8 PM and dark mode otherwise.
 
 ## Mac keyboard layout
 
-Right-click the **3e** tray icon and turn on **Mac keyboard layout**. On a PC keyboard, left Alt becomes Command and left Ctrl becomes Option. Clicks uses its labeled Command key. Command+Tab switches apps, Command+Q closes the active app, Command+Space opens Windows search, and copy/paste, navigation, undo/redo and screenshot shortcuts use the bundled Mac-style mappings. Right Alt/AltGr is preserved.
+Right-click the **3£** tray icon and turn on **Mac keyboard layout**. On a PC keyboard, left Alt becomes Command and left Ctrl becomes Option. Clicks uses its labeled Command key. Command+Tab switches apps, Command+Q closes the active app, Command+Space opens Windows search, and copy/paste, navigation, undo/redo and screenshot shortcuts use the bundled Mac-style mappings. Right Alt/AltGr is preserved.
 
-The setting is remembered per Windows user. Keyboard Manager runs with 3e's elevated token and is checked periodically and after sleep. Its input hook is reinstalled when this Windows session unlocks or reconnects. A failed start shows an error and rolls back; a pending recovery is shown in the tray. Release modifiers before changing the toggle.
+The setting is remembered per Windows user. Keyboard Manager runs with 3£'s elevated token and is checked periodically and after sleep. Its input hook is reinstalled when this Windows session unlocks or reconnects. A failed start shows an error and rolls back; a pending recovery is shown in the tray. Release modifiers before changing the toggle.
 
 Shortcut matching uses logical Ctrl after the PC or Clicks modifier translation. Screenshot, selection and redo shortcuts accept either Shift key. The PC's physical left Alt and Clicks' labeled Command remain separate at the device-mapping stage; an existing system Alt/Ctrl swap is not applied twice.
 
@@ -14,7 +14,7 @@ On a borrowed PC, turning the toggle off restores the exact Keyboard Manager set
 
 Setup no longer writes `Scancode Map` or replaces PowerToys' `default.json`. An older, already installed Alt/Ctrl registry swap is detected and retained so it is not applied twice. Turning off the toggle restores that computer's prior state, including any pre-existing system remaps; it does not erase them. The separate Clicks keyboard toggle still controls the device-specific Clicks mapping.
 
-The public Windows name, executable, settings window and Start menu shortcut are **3e**. Existing internal data/task names and the release assets `3EWindows.zip` / `3£Windows.ps1` remain compatible with older updaters.
+The public Windows name, executable, settings window and Start menu shortcut are **3£**. Existing internal data/task names and the release assets `3EWindows.zip` / `3£Windows.ps1` remain compatible with older updaters.
 
 Phone trackpad pinches now use the standard direction: spread to zoom in, pinch together to zoom out. The optional **Swap pinch zoom** setting still reverses both directions.
 
@@ -52,7 +52,7 @@ The receiver is off at every app startup and starts only when requested. No loca
 
 The source for this feature is MIT-licensed alongside the app; QR codes are generated locally with the MIT-licensed QRCoder library. Run `dotnet run --project Windows/PhoneTrackpadTests`, `node Windows/PhoneTrackpadTests/gestures.test.cjs` and `node Windows/PhoneTrackpadTests/watch.test.cjs` for network-loss/authentication, touch gestures and watch handoff tests using simulated input. No actual iPhone, Apple Watch or ARM64 hardware is emulated by these checks.
 
-Left-click **3e** to show the iPhone QR popup. Right-click for **3£ Phone Bar — show QR**, drag settings, PowerToys settings, keyboard controls, theme controls, wallpaper, component toggles, update checks and the portable installer. All controls previously available from left-click remain available on right-click. Disabling a component persists across restarts. **Quit** restores the keyboard configuration from before the Mac layout was enabled and stops the app and its managed engines; a pre-existing PowerToys engine is restored. **Show wallpaper controls** deliberately reveals WinDynamicDesktop's own controls; this can temporarily reveal its icon. Normal operation has one suite icon.
+Left-click **3£** to show the iPhone QR popup. Right-click for **3£ Phone Bar — show QR**, drag settings, PowerToys settings, keyboard controls, theme controls, wallpaper, component toggles, update checks and the portable installer. All controls previously available from left-click remain available on right-click. Disabling a component persists across restarts. **Quit** restores the keyboard configuration from before the Mac layout was enabled and stops the app and its managed engines; a pre-existing PowerToys engine is restored. **Show wallpaper controls** deliberately reveals WinDynamicDesktop's own controls; this can temporarily reveal its icon. Normal operation has one suite icon.
 
 **Rotate SSMS themes** chooses a different installed SSMS 22 theme at app startup, noon and 8 PM. Light palettes are used during the day and dark palettes at night, matching the Windows schedule and manual mode overrides. Themes are discovered from SSMS's own registrations, including Bubblegum, Cool Breeze, Icy Mint, Mango Paradise, Silky Pink, Sunny Day, Cool Slate, Juicy Plum, Moonlight Glow, Mystical Forest and Spicy Red when installed. The previous theme is excluded from each new choice. **Rotate SSMS theme now** picks another matching palette immediately. Existing profiles are discovered automatically, including profiles first created after setup. Other settings and JSON comments are preserved; the original file is backed up before the first change. Disable the toggle to manage SSMS's theme yourself. Older SSMS versions are left unchanged.
 
