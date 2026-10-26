@@ -1,3 +1,13 @@
+3e for Windows adds a reversible Mac keyboard layout and corrects phone zoom.
+
+- **Mac keyboard layout** in the tray turns Command shortcuts on/off immediately, without writing a system Alt/Ctrl swap. It starts off on a new PC, preserves personal PowerToys profiles, restores the previous keyboard configuration on off/quit/uninstall, and includes recovery after forced updates or crashes. Command+Tab, Command+Q, Command+Space and the existing editing shortcuts are included.
+- **3e** is now the Windows app, executable, settings and Start menu name. Old update asset names and settings locations are retained for upgrade compatibility.
+- **Phone pinch zoom:** spreading fingers zooms in; pinching together zooms out. The optional direction-reversal preference remains available.
+
+Validation includes isolated keyboard snapshot/restore/failure/recovery tests, Clicks routing and modifier tests, phone gesture/native-boundary tests, x64/ARM64 builds and installer verification. These tests do not enable the layout or modify the development PC. Physical keyboard/iPhone testing on the destination PC remains necessary.
+
+Previous releases:
+
 3£Windows now updates the Phone Bar page on your phone by itself.
 
 - **No manual reload after an update:** when the PC or Mac installs an update and restarts, the open Phone Bar page (Safari tab or Home Screen web app, iPhone or Apple Watch) reloads itself once as soon as it reconnects, so new features appear right away. It waits until you lift your finger, finish a drag or the app switcher, and close the keyboard or clipboard sheet, and shows "Updating…" for a moment. If the page on your phone is from before this update, reload it once by hand; every update after that is automatic.

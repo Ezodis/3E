@@ -1,4 +1,4 @@
-function Initialize-ClicksDeviceApi {
+﻿function Initialize-ClicksDeviceApi {
     if ('ThreeEClicksDevice' -as [type]) { return }
     Add-Type -TypeDefinition @'
 using System;
@@ -128,7 +128,7 @@ function Restore-ClicksKeyboard {
     foreach ($file in @($settingsPath,$manifestPath,(Join-Path $keyboardFolder '3EWindows.kbd'),(Join-Path $keyboardFolder '3EWindows.Keyboard.exe'),(Join-Path $keyboardFolder 'interception.dll'),(Join-Path $keyboardFolder 'interception_upstream.dll'))) {
         if (Test-Path -LiteralPath $file) { Copy-Item -LiteralPath $file -Destination $backupFolder }
     }
-    $suiteWasRunning = $null -ne (Get-Process -Name '3£Windows' -ErrorAction SilentlyContinue)
+    $suiteWasRunning = $null -ne (Get-Process -Name '3e','3£Windows' -ErrorAction SilentlyContinue)
     $suiteStopped = $false
     $createdServices = @()
     $changedDevices = @()
@@ -142,7 +142,7 @@ function Restore-ClicksKeyboard {
             if ($digest -ne $asset.Value.SHA256) { throw "Embedded Clicks asset checksum mismatch: $($asset.Key)" }
             if ((Test-Path -LiteralPath $assetPath) -and (Get-FileHash -LiteralPath $assetPath -Algorithm SHA256).Hash -eq $digest) { continue }
             if ($asset.Key -in @('3EWindows.Keyboard.exe','interception.dll','interception_upstream.dll','ClicksReconnectGuard.exe','ClicksAccents.exe')) {
-                $stopping = @(Get-Process -Name '3£Windows','3EWindows.Keyboard' -ErrorAction SilentlyContinue)
+                $stopping = @(Get-Process -Name '3e','3£Windows','3EWindows.Keyboard' -ErrorAction SilentlyContinue)
                 $stopping | Stop-Process -Force
                 foreach ($process in $stopping) { if (-not $process.WaitForExit(5000)) { throw 'Keyboard process did not exit for update.' } }
                 $suiteStopped = $true
@@ -184,7 +184,7 @@ function Restore-ClicksKeyboard {
         # Right Alt avoids the existing left-Alt shortcut remaps (Alt+Tab -> Ctrl+Tab).
         # It is unaffected by the system's left Alt/Ctrl scan-code swap.
         $ctrlOutput = 'ralt'
-        $commandOutput = if ($swapAlt) { 'lalt' } else { 'lctl' }
+        $commandOutput = 'rctl'
         $profile = $profile.Replace('{{CTRL_AS_ALT}}',$ctrlOutput).Replace('{{COMMAND_AS_CTRL}}',$commandOutput)
         $profilePath = Join-Path $keyboardFolder '3EWindows.kbd'
         $profileMatches = (Test-Path -LiteralPath $profilePath) -and [IO.File]::ReadAllText($profilePath) -ceq $profile
@@ -201,7 +201,7 @@ function Restore-ClicksKeyboard {
             Write-Host 'Clicks-only mapping is already configured. Command/Ctrl and voice shortcuts are preserved.'
             return
         }
-        Get-Process -Name '3£Windows','3EWindows.Keyboard' -ErrorAction SilentlyContinue | Stop-Process -Force
+        Get-Process -Name '3e','3£Windows','3EWindows.Keyboard' -ErrorAction SilentlyContinue | Stop-Process -Force
         $suiteStopped = $true
         [IO.File]::WriteAllText($profilePath,$profile,[Text.UTF8Encoding]::new($false))
         $check = Start-Process -FilePath (Join-Path $keyboardFolder '3EWindows.Keyboard.exe') -ArgumentList ('--check --cfg "' + $profilePath + '"') -WindowStyle Hidden -Wait -PassThru

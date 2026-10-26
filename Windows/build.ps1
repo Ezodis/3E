@@ -26,15 +26,18 @@ foreach ($arch in @('x64','arm64')) {
     if (-not $SkipBuild) {
         dotnet publish $project -c Release -r "win-$arch" "-p:Platform=$arch" '-p:WindowsPackageType=None' '-p:WindowsAppSDKSelfContained=false' '-p:WindowsAppSdkBootstrapInitialize=true' "-p:Version=$version" "-p:AssemblyVersion=$version.0" "-p:RestoreConfigFile=$(Join-Path $PSScriptRoot 'NuGet.Config')" --self-contained false -o $output
         if ($LASTEXITCODE -ne 0) { throw "Windows $arch build failed." }
+        dotnet publish (Join-Path $PSScriptRoot 'KeyboardRecovery\KeyboardRecovery.csproj') -c Release -r "win-$arch" --self-contained false -o $output
+        if ($LASTEXITCODE -ne 0) { throw "Keyboard recovery $arch build failed." }
     }
     $appHost = Join-Path $output 'ThreeEWindows.exe'
-    if (Test-Path -LiteralPath $appHost) { Move-Item -LiteralPath $appHost -Destination (Join-Path $output '3£Windows.exe') -Force }
-    # WinUI locates its PRI by the apphost filename, including the pound sign.
-    Copy-Item -LiteralPath (Join-Path $output 'ThreeEWindows.pri') -Destination (Join-Path $output '3£Windows.pri') -Force
-    if (-not (Test-Path -LiteralPath (Join-Path $output '3£Windows.exe'))) { throw "Missing $arch application." }
+    if (Test-Path -LiteralPath $appHost) { Move-Item -LiteralPath $appHost -Destination (Join-Path $output '3e.exe') -Force }
+    # WinUI locates its PRI by the apphost filename.
+    Copy-Item -LiteralPath (Join-Path $output 'ThreeEWindows.pri') -Destination (Join-Path $output '3e.pri') -Force
+    if (-not (Test-Path -LiteralPath (Join-Path $output '3e.exe'))) { throw "Missing $arch application." }
     foreach ($symbols in Get-ChildItem -LiteralPath $output -Filter '*.pdb') { Remove-Item -LiteralPath $symbols.FullName }
     Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'DragEngine\LICENSE') -Destination (Join-Path $output 'THIRD-PARTY-LICENSE-ThreeFingerDragOnWindows.txt') -Force
     Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'PhoneTrackpad-QRCoder-LICENSE.txt') -Destination (Join-Path $output 'THIRD-PARTY-LICENSE-QRCoder.txt') -Force
+    Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'PowerToys.json') -Destination (Join-Path $output 'MacKeyboard.json') -Force
     $phoneSource = Join-Path $output 'PhoneTrackpadSource'
     New-Item -ItemType Directory -Path $phoneSource -Force | Out-Null
     Get-ChildItem -LiteralPath (Join-Path $PSScriptRoot 'PhoneBar') -File | Copy-Item -Destination $phoneSource -Force
@@ -50,8 +53,10 @@ foreach ($arch in @('x64','arm64')) {
 }
 
 # Exercise the compiled release without starting input hooks or changing settings.
+dotnet run --project (Join-Path $PSScriptRoot 'KeyboardLayoutTests')
+if ($LASTEXITCODE -ne 0) { throw 'Mac keyboard layout restoration tests failed.' }
 $report = Join-Path $build 'self-test.json'
-$testProcess = Start-Process -FilePath (Join-Path $build 'framework-x64\3£Windows.exe') -ArgumentList ('--self-test "' + $report + '"') -Wait -PassThru -WindowStyle Hidden
+$testProcess = Start-Process -FilePath (Join-Path $build 'framework-x64\3e.exe') -ArgumentList ('--self-test "' + $report + '"') -Wait -PassThru -WindowStyle Hidden
 if ($testProcess.ExitCode -ne 0 -or -not (Test-Path -LiteralPath $report) -or -not (Get-Content -LiteralPath $report -Raw | ConvertFrom-Json).passed) { throw 'Release self-test failed.' }
 dotnet run --project (Join-Path $PSScriptRoot 'PhoneTrackpadTests')
 if ($LASTEXITCODE -ne 0) { throw 'Phone trackpad network/disconnect tests failed.' }

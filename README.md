@@ -4,7 +4,7 @@ The **3E base app includes all modules available for its platform**: install **3
 
 | App | Source | Purpose |
 | --- | --- | --- |
-| 3£Windows | [Windows](Windows/) · [portable installer](3%C2%A3Windows.ps1) | One Windows tray menu for drag, Clicks keyboard, PowerToys, optional iPhone trackpad, auto dark and wallpaper |
+| 3e (Windows) | [Windows](Windows/) · [portable installer](3%C2%A3Windows.ps1) | One Windows tray menu for drag, Clicks keyboard, PowerToys, optional iPhone trackpad, auto dark and wallpaper |
 | 3E Combined (Mac base app) | [TouchBar](TouchBar/) + [TouchTab](TouchTab/CombinedModule.swift) + [Phone Bar](Shared/PhoneControl/) | All three modules in one installed app and one menu-bar icon |
 | TouchBar (3E) | [TouchBar](TouchBar/) | Custom Touch Bar MIDI keyboards, Ableton live-performance controls, app/window and media control |
 | TouchTab | [TouchTab](TouchTab/) | Four-finger trackpad app switching, pinch copy/paste and force-click window switching |
