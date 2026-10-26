@@ -46,13 +46,12 @@ check(sent.filter(c=>c.type==='zoom').length>=2&&sent.every(c=>c.type!=='zoom'||
 fire('touchstart',[touch(90,300),touch(270,300)]);for(let i=1;i<=6;i++)fire('touchmove',[touch(90+i*10,300),touch(270-i*10,300)]);fire('touchend',[]);
 check(sent.some(c=>c.type==='zoom')&&sent.every(c=>c.type!=='zoom'||c.direction===-1),'pinching together zooms out');settle();
 
-// The optional preference still reverses both directions explicitly.
-element('reverseZoom').handlers.click();
+// Older pages/settings cannot re-enable the retired reversal option.
+win.ThreeEPrefs.set('swapZoom',true);
 fire('touchstart',pair(150,300,60));for(let i=1;i<=6;i++)fire('touchmove',[touch(150-i*10,300),touch(210+i*10,300)]);fire('touchend',[]);
-check(sent.some(c=>c.type==='zoom')&&sent.every(c=>c.type!=='zoom'||c.direction===-1),'swap preference reverses pinch-out');settle();
+check(sent.some(c=>c.type==='zoom')&&sent.every(c=>c.type!=='zoom'||c.direction===1),'legacy swap preference cannot reverse pinch-out');settle();
 fire('touchstart',[touch(90,300),touch(270,300)]);for(let i=1;i<=6;i++)fire('touchmove',[touch(90+i*10,300),touch(270-i*10,300)]);fire('touchend',[]);
-check(sent.some(c=>c.type==='zoom')&&sent.every(c=>c.type!=='zoom'||c.direction===1),'swap preference reverses pinch-in');settle();
-element('reverseZoom').handlers.click();
+check(sent.some(c=>c.type==='zoom')&&sent.every(c=>c.type!=='zoom'||c.direction===-1),'legacy swap preference cannot reverse pinch-in');settle();
 
 // After a two-finger gesture, the finger left on the glass does not move the pointer.
 fire('touchstart',pair(100,300));for(let i=1;i<=6;i++)fire('touchmove',pair(100,300-i*12));fire('touchend',[touch(100,228)]);sent.length=0;

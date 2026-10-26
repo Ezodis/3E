@@ -25,6 +25,7 @@ jobs:
           dotnet run --project Windows/KeyboardLayoutTests
           node Windows/PhoneTrackpadTests/gestures.test.cjs
           node Windows/PhoneTrackpadTests/trackpad.test.cjs
+          node Windows/PhoneTrackpadTests/pinch.test.cjs
           node Windows/PhoneTrackpadTests/dock.test.cjs
           node Windows/PhoneTrackpadTests/watch.test.cjs
           node Windows/PhoneTrackpadTests/update.test.cjs

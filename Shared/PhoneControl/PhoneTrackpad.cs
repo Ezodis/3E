@@ -479,13 +479,23 @@ public sealed class PhoneTrackpad : IDisposable {
                 if (PreferencesPath != null && File.Exists(PreferencesPath)) {
                     var text = File.ReadAllText(PreferencesPath);
                     using var check = JsonDocument.Parse(text);
-                    if (check.RootElement.ValueKind == JsonValueKind.Object && text.Length <= PreferencesLimit) return preferences = text;
+                    if (check.RootElement.ValueKind == JsonValueKind.Object && text.Length <= PreferencesLimit) {
+                        SavePreferences(text);
+                        return preferences;
+                    }
                 }
             } catch { }
-            return preferences = "{}";
+            return preferences = "{\"swapZoom\":false}";
         }
     }
     public void SavePreferences(string json) {
+        if (json.Length > PreferencesLimit) throw new InvalidDataException();
+        // A cached phone page may still have the retired reversal control.
+        // Explicit false also clears a phone-only legacy setting on reconnect.
+        var normalized = System.Text.Json.Nodes.JsonNode.Parse(json) as System.Text.Json.Nodes.JsonObject;
+        if (normalized == null) throw new InvalidDataException();
+        normalized["swapZoom"] = false;
+        json = normalized.ToJsonString();
         if (json.Length > PreferencesLimit) throw new InvalidDataException();
         lock (preferencesGate) {
             preferences = json;

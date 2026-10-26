@@ -274,13 +274,19 @@ Check(fake.Commands.Contains("history:-1") && fake.Commands.Contains("zoom:1"),"
     try {
         using (var first = new PhoneTrackpad(() => IPAddress.Loopback, new FakeInput(), new FakeFirewall(), FreePort()) { TokenProvider = () => secret, PreferencesPath = file }) {
             Check(first.Start(), "Receiver with saved settings starts");
-            Check((await Prefs(first, "{}", secret)).body == "{\"prefs\":{}}", "No settings saved yet");
+            Check((await Prefs(first, "{}", secret)).body == "{\"prefs\":{\"swapZoom\":false}}", "A fresh host explicitly resets reversal on cached phone pages");
             Check((await Prefs(first, "{\"prefs\":{\"speed\":7.5,\"acceleration\":false,\"midiOutput\":\"3E Phone Bar\"}}", secret)).code == 200, "The phone saves its settings on the computer");
             Check((await Prefs(first, "{\"prefs\":{\"speed\":20}}", new string('0', 48))).code == 401, "Settings cannot be changed without the pairing secret");
             Check((await Prefs(first, "{\"prefs\":[1]}", secret)).code == 400, "Settings must be an object");
+            var legacy = await Prefs(first, "{\"prefs\":{\"swapZoom\":true,\"speed\":7.5,\"acceleration\":false}}", secret);
+            Check(legacy.code == 200 && legacy.body.Contains("\"swapZoom\":false"), "An older phone cannot persist reversed zoom on Windows or Mac");
         }
+        File.WriteAllText(file, "{\"swapZoom\":true,\"speed\":7.5,\"acceleration\":false}");
         using var second = new PhoneTrackpad(() => IPAddress.Loopback, new FakeInput(), new FakeFirewall(), FreePort()) { TokenProvider = () => secret, PreferencesPath = file };
         Check(second.Start() && (await Prefs(second, "{}", secret)).body.Contains("\"speed\":7.5") , "Saved settings come back after the computer restarts");
+        var migrated = JsonDocument.Parse((await Prefs(second, "{}", secret)).body).RootElement.GetProperty("prefs");
+        Check(!migrated.GetProperty("swapZoom").GetBoolean() && !migrated.GetProperty("acceleration").GetBoolean() &&
+            File.ReadAllText(file).Contains("\"swapZoom\":false"), "Legacy host reversal migrates on disk while retaining unrelated settings");
     } finally { try { Directory.Delete(folder, true); } catch { } }
 }
 {

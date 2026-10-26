@@ -20,6 +20,9 @@ public sealed class MacInput : ITrackpadInput, IDisposable {
     [DllImport("ThreeEPhoneNative")] public static extern int ThreeEValidateScrollEvent();
     [DllImport("ThreeEPhoneNative")] public static extern int ThreeEHasMultipleSpaces();
     [DllImport(CG)] private static extern void CGEventSetFlags(IntPtr e,ulong flags);
+    [DllImport(CG)] private static extern ulong CGEventGetFlags(IntPtr e);
+    [DllImport(CG)] private static extern long CGEventGetIntegerValueField(IntPtr e,uint field);
+    [DllImport(CG)] private static extern uint CGEventGetType(IntPtr e);
     [DllImport(CG)] private static extern void CGEventKeyboardSetUnicodeString(IntPtr e,nuint length,ushort[] text);
     [DllImport(CG)] private static extern void CGEventSetIntegerValueField(IntPtr e,uint field,long value);
     [DllImport(CG)] private static extern void CGEventPost(uint tap,IntPtr e);
@@ -149,7 +152,21 @@ public sealed class MacInput : ITrackpadInput, IDisposable {
         try{Key(key,true,flags);}finally{Key(key,false,flags);}
     }
     public void History(int direction){if(direction==0)return;Release();ushort key=direction<0?(ushort)33:(ushort)30;try{Key(key,true,Cmd);}finally{Key(key,false,Cmd);}} // Cmd+[ / Cmd+]
-    public void Zoom(int direction){if(direction==0)return;ushort key=direction>0?(ushort)24:(ushort)27;try{Key(key,true,Cmd);}finally{Key(key,false,Cmd);}} // Cmd+= / Cmd+-
+    private static IntPtr ZoomEvent(int direction,bool down) {
+        var e=CGEventCreateKeyboardEvent(IntPtr.Zero,direction>0?(ushort)24:(ushort)27,down); // Cmd+= / Cmd+-
+        if(e==IntPtr.Zero)throw new InvalidOperationException("macOS zoom event unavailable");
+        CGEventSetFlags(e,Cmd);return e;
+    }
+    public void Zoom(int direction){if(direction==0)return;try{Post(ZoomEvent(direction,true));}finally{Post(ZoomEvent(direction,false));}}
+    public static void ValidateZoomEvents() {
+        foreach(int direction in new[]{1,-1})foreach(bool down in new[]{true,false}) {
+            var e=ZoomEvent(direction,down);
+            try {
+                if(CGEventGetIntegerValueField(e,9)!=(direction>0?24:27) || CGEventGetFlags(e)!=Cmd || CGEventGetType(e)!=(down?10u:11u))
+                    throw new Exception("Spread must emit Cmd+= and pinch must emit Cmd+-");
+            } finally { CFRelease(e); }
+        }
+    }
     // Phone keyboard: each character is posted as a Unicode key event, so the
     // text is independent of the Mac's keyboard layout (accents and emoji too).
     private readonly MacClipboard clipboard=new();

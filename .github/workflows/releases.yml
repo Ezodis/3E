@@ -58,6 +58,12 @@ jobs:
           esac
       - name: Test maintained functionality without live app control
         run: |
+          node Windows/PhoneTrackpadTests/pinch.test.cjs
+          node Windows/PhoneTrackpadTests/trackpad.test.cjs
+          arch=$(uname -m); if [[ "$arch" == x86_64 ]]; then arch=x64; fi
+          if [[ "${{ matrix.edition }}" == combined || "${{ matrix.edition }}" == phone ]]; then
+            "TouchBar/build/threee/3E.app/Contents/Resources/PhoneControl/$arch/ThreeE.PhoneHost" --native-self-test
+          fi
           python3 -m unittest discover -s TouchBar/threee/Tests -p test_record.py
           python3 -m unittest discover -s scripts -p test_release.py
           if [[ "${{ matrix.edition }}" == combined ]]; then python3 TouchBar/threee/Tests/module_bundles.py; fi

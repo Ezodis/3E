@@ -1,3 +1,12 @@
+3£ fixes reversed Phone Bar pinch zoom on Windows and Mac.
+
+- Spreading two fingers zooms in; pinching them together zooms out, including diagonal and one-finger-moving pinches.
+- Removes the old reversal toggle and clears its saved value on the phone and computer, including cached pages reconnecting after an update.
+- Measures physical finger spacing independently of page magnification and cancels Safari page-zoom gestures on the pad.
+- Regression checks cover old local/host settings, touch and pointer events, changing viewport scale, WebKit and Chromium, and Windows/Mac native zoom direction.
+
+Previous release:
+
 The Windows app is named **3£** throughout: tray menu and version label, settings, notifications, executable, Start menu shortcut, and release title. Updates remove the old `3e` and `3£Windows` app shortcuts and executable names.
 
 Includes the Command shortcut and session recovery improvements below. Existing keyboard preferences and the original restoration snapshot are preserved during the rename.

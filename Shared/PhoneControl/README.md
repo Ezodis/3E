@@ -2,6 +2,8 @@
 
 The same browser UI, gestures, pairing, reconnect logic and MIDI protocol run on Windows and macOS. The host adapters supply native mouse/keyboard input and MIDI output. No phone app, account or internet connection is required once installed. Both devices must be able to reach each other on a trusted local network; a hotspot can work without an internet connection.
 
+Pinch direction is fixed on both platforms: spread two fingers to zoom in, bring them together to zoom out. The old reversal toggle is removed; saved reversal flags on the phone and computer are migrated to false. Finger spacing uses screen coordinates, with a viewport-normalized fallback, so page magnification cannot turn a spread into a pinch. Safari page-zoom gestures are cancelled on the trackpad. Regression tests cover diagonal/lopsided gestures, touch and pointer streams, changing page scale, legacy preferences, and both native zoom adapters.
+
 ## Open the controller
 
 - **Windows:** left-click the 3£Windows tray icon for its QR popup. The right-click menu also opens or stops the receiver.

@@ -13,6 +13,9 @@
     const KEY = '3e-prefs';
     let values = {}, saveTimer = null, loaded = false;
     try { values = JSON.parse(localStorage.getItem(KEY)) || {}; } catch {}
+    // Retire the old reversal setting, including phone-only saved copies.
+    // Keep false on the wire so cached older pages also use standard zoom.
+    values.swapZoom = false;
     try { // settings saved by older versions of this page
       const speed = localStorage.getItem('3e-speed'), accel = localStorage.getItem('3e-acceleration');
       if (values.speed === undefined && speed !== null) values.speed = Number(speed);
@@ -34,15 +37,16 @@
     function push() { clearTimeout(saveTimer); saveTimer = setTimeout(() => { saveTimer = null; exchange({ prefs: values }); }, 400); }
     return {
       get: (name, fallback) => values[name] === undefined ? fallback : values[name],
-      set(name, value) { if (values[name] === value) return; values[name] = value; local(); if (loaded) push(); },
+      set(name, value) { if (name === 'swapZoom') value = false; if (values[name] === value) return; values[name] = value; local(); if (loaded) push(); },
       onLoad(listener) { listeners.push(listener); },
       // Called on every (re)connect: merge in the computer's copy once, then
       // keep it in step. A phone with settings the computer lacks uploads them.
       async sync() {
         const remote = await exchange({});
         if (!remote) return;
-        const empty = Object.keys(remote).length === 0;
+        const empty = Object.keys(remote).every(name => name === 'swapZoom');
         if (!loaded && !empty) values = { ...values, ...remote };
+        values.swapZoom = false;
         loaded = true; local();
         if (empty && Object.keys(values).length) push();
         for (const listener of listeners) try { listener(); } catch {}
@@ -87,7 +91,6 @@
   const SETTLE_PX = 3;
   let settle = null, smoothedSpeed = 0, lastMotionAt = 0;
   accelerate = Prefs.get('acceleration', true) !== false;
-  let swapZoom = Prefs.get('swapZoom', false) === true;
   function hint() { $('padHint').textContent = scrollMode ? 'Swipe to scroll' : 'Swipe to move · tap to click'; }
   hint();
   let socket, ready = false, heartbeat, dragging = false, threeDrag = false;
@@ -332,6 +335,9 @@
   // scrolling, pinch, navigation and button ordering keep their behavior.
   const contacts = new Map(), contactHandlers = {};
   let pointerInput = false;
+  // Safari exposes page magnification separately from touch/pointer events.
+  for (const type of ['gesturestart','gesturechange','gestureend'])
+    pad.addEventListener(type, e => { if (e.cancelable) e.preventDefault(); }, {passive:false});
   function onContact(type, handler) {
     contactHandlers[type] = handler;
     // Always cancel the touch event, even when pointer events drive input:
@@ -344,7 +350,7 @@
     if (type === 'touchstart') {
       if (!ready) wake(); // reset the connection before retaining this contact
       pointerInput = true;
-      contacts.set(e.pointerId, e);
+      contacts.set(e.pointerId, snapshotContact(e));
       try { pad.setPointerCapture(e.pointerId); } catch {}
     } else {
       if (!contacts.has(e.pointerId)) return;
@@ -353,10 +359,10 @@
         // ProMotion), not just the last one: a smoother, more exact path.
         const samples = e.getCoalescedEvents?.() || [];
         for (const sample of samples.slice(0, -1)) {
-          contacts.set(e.pointerId, sample);
+          contacts.set(e.pointerId, snapshotContact(sample));
           contactHandlers.touchmove({touches:Array.from(contacts.values()),preventDefault:()=>{}});
         }
-        contacts.set(e.pointerId, e);
+        contacts.set(e.pointerId, snapshotContact(e));
       }
       else if (type === 'touchcancel') contacts.clear();
       else contacts.delete(e.pointerId);
@@ -376,7 +382,16 @@
     if(releaseTimer) { clearTimeout(releaseTimer); releaseTimer=null; }
     const point = center(e.touches), count = e.touches.length;
     momentum = null; // any touch stops a gliding scroll
-    if (count === 2 && !two) two = { start: performance.now(), origin: point, spread0: spread(e.touches), fingers0: Array.from(e.touches, t => ({ x: t.clientX, y: t.clientY })), zoomRef: 0, axis: null, decided: false, nav: false, bufX: 0, samples: [] };
+    if (count === 2 && !two) {
+      // Choose one coordinate space for the entire gesture. Synthetic events
+      // and some browsers omit screen coordinates (or report zero for both).
+      const screen = Array.from(e.touches).every(t => Number.isFinite(t.screenX) && Number.isFinite(t.screenY)) &&
+        (e.touches[0].screenX !== e.touches[1].screenX || e.touches[0].screenY !== e.touches[1].screenY);
+      const fingers0 = Array.from(e.touches, t => pinchPoint(t, screen));
+      two = { start: performance.now(), origin: point, screen, fingers0,
+        spread0: Math.hypot(fingers0[0].x-fingers0[1].x, fingers0[0].y-fingers0[1].y),
+        zoomRef: 0, axis: null, decided: false, nav: false, bufX: 0, samples: [] };
+    }
     if (!mode) {
       started = performance.now(); distance = 0; offset = 0; peak = 0; cancelled = false; motionHistory = []; lastMotionSent = -Infinity;
       settle = { x: 0, y: 0, done: false }; smoothedSpeed = 0; lastMotionAt = started;
@@ -455,9 +470,21 @@
     flush(); // First movement goes immediately; subsequent samples are capped at 125 Hz.
   }, { passive: false });
   const tapTolerance = () => TAP_TOLERANCE;
-  // Distance between two fingers in screen points. If the page ever did get
-  // zoomed, CSS pixels shrink on screen; scaling back keeps the direction right.
-  function spread(touches) { return touches.length < 2 ? 0 : Math.hypot(touches[0].clientX-touches[1].clientX, touches[0].clientY-touches[1].clientY); }
+  function viewportPoint(t) {
+    const v = window.visualViewport, scale = v?.scale || 1;
+    return { x: (t.clientX-(v?.offsetLeft || 0))*scale, y: (t.clientY-(v?.offsetTop || 0))*scale };
+  }
+  function snapshotContact(t) {
+    // Pointer contacts arrive separately: retain each sample's normalized
+    // position so a later viewport change cannot rescale the stationary finger.
+    return {clientX:t.clientX, clientY:t.clientY, screenX:t.screenX, screenY:t.screenY, pinchPosition:viewportPoint(t)};
+  }
+  function pinchPoint(t, screen) { return screen ? {x:t.screenX, y:t.screenY} : t.pinchPosition || viewportPoint(t); }
+  function spread(touches) {
+    if (touches.length < 2) return 0;
+    const a = pinchPoint(touches[0], two.screen), b = pinchPoint(touches[1], two.screen);
+    return Math.hypot(a.x-b.x, a.y-b.y);
+  }
   // Finger speed is smoothed (about 50 ms) so one noisy sample never makes
   // the pointer lurch, then mapped through pointerGain.
   function acceleration(x, y) {
@@ -488,8 +515,9 @@
       // pinches are lopsided (the thumb does most of the moving), so the
       // midpoint travels too. Fingers moving in opposite directions, or a
       // gap that changes as much as the midpoint moves, is a pinch.
-      const moved = Math.hypot(point.x-g.origin.x, point.y-g.origin.y), pinch = Math.abs(spread(touches)-g.spread0);
-      const [a, b] = g.fingers0, d1 = { x: touches[0].clientX-a.x, y: touches[0].clientY-a.y }, d2 = { x: touches[1].clientX-b.x, y: touches[1].clientY-b.y };
+      const [a, b] = g.fingers0, p1 = pinchPoint(touches[0], g.screen), p2 = pinchPoint(touches[1], g.screen);
+      const d1 = {x:p1.x-a.x, y:p1.y-a.y}, d2 = {x:p2.x-b.x, y:p2.y-b.y};
+      const moved = Math.hypot((d1.x+d2.x)/2, (d1.y+d2.y)/2), pinch = Math.abs(spread(touches)-g.spread0);
       const opposing = d1.x*d2.x + d1.y*d2.y < 0 && Math.min(Math.hypot(d1.x, d1.y), Math.hypot(d2.x, d2.y)) >= 3;
       if (pinch >= PINCH_START && (opposing || pinch >= moved*0.8)) { g.axis = 'zoom'; g.zoomRef = spread(touches); return; }
       // Pan only once the move is clearly a slide: both fingers together and
@@ -504,7 +532,7 @@
     if (g.axis === 'zoom') {
       const change = spread(touches) - g.zoomRef;
       // The protocol uses +1 for zoom in: spreading enlarges, pinching shrinks.
-      if (Math.abs(change) >= PINCH_STEP) { send('zoom', { direction: (change > 0 ? 1 : -1) * (swapZoom ? -1 : 1) }); g.zoomRef = spread(touches); }
+      if (Math.abs(change) >= PINCH_STEP) { send('zoom', { direction: change > 0 ? 1 : -1 }); g.zoomRef = spread(touches); }
       return;
     }
     if (g.axis === 'h') {
@@ -677,10 +705,6 @@
   $('acceleration').addEventListener('click', () => { accelerate = !accelerate; Prefs.set('acceleration', accelerate); accelerationLabel(); });
   Prefs.onLoad(() => { accelerate = Prefs.get('acceleration', true) !== false; accelerationLabel(); });
   // Optional per-computer swap of the pinch direction (off by default).
-  function swapZoomLabel() { const b = $('reverseZoom'); if (!b) return; b.setAttribute('aria-pressed', String(swapZoom)); b.textContent = 'Swap pinch zoom: ' + (swapZoom ? 'on' : 'off'); }
-  swapZoomLabel();
-  $('reverseZoom')?.addEventListener('click', () => { swapZoom = !swapZoom; Prefs.set('swapZoom', swapZoom); swapZoomLabel(); });
-  Prefs.onLoad(() => { swapZoom = Prefs.get('swapZoom', false) === true; swapZoomLabel(); });
   $('settings').addEventListener('click', () => settings(true));
   $('closeSettings').addEventListener('click', () => settings(false));
   $('fullscreen').addEventListener('click', async () => {

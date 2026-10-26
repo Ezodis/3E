@@ -122,7 +122,29 @@ if(require.main===module)(async()=>{
    // download. A phone reaches the computer at http://<LAN IP> (not secure) and downloads.
    await p.addInitScript(()=>{try{Object.defineProperty(navigator,'canShare',{value:undefined,configurable:true});Object.defineProperty(window,'isSecureContext',{value:false,configurable:true});}catch{}});
    await p.addInitScript(()=>{window.testSockets=[];const W=WebSocket;window.WebSocket=class extends W{constructor(...a){super(...a);window.testSockets.push(this);}};});
+   // Simulate upgrading a phone with reversal still enabled in local storage.
+   await p.addInitScript(()=>localStorage.setItem('3e-prefs',JSON.stringify({swapZoom:true})));
    const connectStart=Date.now();await p.goto(url);await p.waitForFunction(()=>document.getElementById('status').textContent==='Connected');
+   assert.equal(await p.evaluate(()=>window.ThreeEPrefs.get('swapZoom')),false);
+   assert.equal(await p.locator('#reverseZoom').count(),0);
+   // Both WebKit and Chromium: the diagonal gesture shown in the bug report.
+   for(const direction of [1,-1]) {
+    const start=commands.length;
+    await p.evaluate(async direction=>{
+     const pad=document.getElementById('pad'),gaps=direction>0?[60,100,150,200,250,300]:[300,250,200,150,100,60];
+     for(let i=0;i<gaps.length;i++) {
+      for(let id=0;id<2;id++) {
+       const offset=(id?1:-1)*gaps[i]/(2*Math.sqrt(2)),x=195+offset,y=420+offset;
+       pad.dispatchEvent(new PointerEvent(i?'pointermove':'pointerdown',{pointerType:'touch',pointerId:id+91,clientX:x,clientY:y,screenX:x,screenY:y,bubbles:true,cancelable:true}));
+      }
+      await new Promise(r=>setTimeout(r,20));
+     }
+     for(let id=0;id<2;id++)pad.dispatchEvent(new PointerEvent('pointerup',{pointerType:'touch',pointerId:id+91,bubbles:true,cancelable:true}));
+    },direction);
+    await p.waitForTimeout(300);
+    const zooms=commands.slice(start).filter(c=>c.type==='zoom');
+    assert.ok(zooms.length>=2&&zooms.every(c=>c.direction===direction),name+' diagonal pinch direction '+direction+': '+JSON.stringify(zooms));
+   }
    console.log(name+' local page load + connection: '+(Date.now()-connectStart)+' ms (simulated input, loopback network)');
    // Real browser PointerEvent dispatch, independent of legacy touchmove.
    const moveStart=commands.length;

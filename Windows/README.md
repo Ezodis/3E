@@ -16,7 +16,7 @@ Setup no longer writes `Scancode Map` or replaces PowerToys' `default.json`. An 
 
 The public Windows name, executable, settings window and Start menu shortcut are **3£**. Existing internal data/task names and the release assets `3EWindows.zip` / `3£Windows.ps1` remain compatible with older updaters.
 
-Phone trackpad pinches now use the standard direction: spread to zoom in, pinch together to zoom out. The optional **Swap pinch zoom** setting still reverses both directions.
+Phone trackpad pinches always use the standard direction: spread to zoom in, pinch together to zoom out. Legacy reversal settings are cleared on both the phone and host. Finger spacing uses screen coordinates (or viewport-normalized coordinates), so browser page magnification cannot reverse a pinch. Windows and Mac share this gesture implementation.
 
 ## Install and export
 
