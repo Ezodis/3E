@@ -503,10 +503,8 @@
     }
     if (g.axis === 'zoom') {
       const change = spread(touches) - g.zoomRef;
-      // Direction as used on the real iPhone with the Windows and Mac hosts:
-      // the straightforward sign (spread = +1) zoomed the wrong way there in
-      // every version, so the phone sends the opposite sign by default.
-      if (Math.abs(change) >= PINCH_STEP) { send('zoom', { direction: (change > 0 ? -1 : 1) * (swapZoom ? -1 : 1) }); g.zoomRef = spread(touches); }
+      // The protocol uses +1 for zoom in: spreading enlarges, pinching shrinks.
+      if (Math.abs(change) >= PINCH_STEP) { send('zoom', { direction: (change > 0 ? 1 : -1) * (swapZoom ? -1 : 1) }); g.zoomRef = spread(touches); }
       return;
     }
     if (g.axis === 'h') {

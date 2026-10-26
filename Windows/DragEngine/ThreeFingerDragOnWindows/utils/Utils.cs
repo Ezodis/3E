@@ -45,6 +45,6 @@ class Utils {
         // It is necessary to use the path of the parent directory to use the .exe file instead of the .dll file.
         var dir = new FileInfo(Assembly.GetExecutingAssembly().Location).Directory;
         if (dir == null) throw new Exception("Could not get the directory of the current assembly.");
-        return Path.Combine(dir.FullName, "3£Windows.exe");
+        return Path.Combine(dir.FullName, "3e.exe");
     }
 }

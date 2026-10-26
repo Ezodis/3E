@@ -10,6 +10,7 @@ using ThreeE.PhoneBar.Windows;
 var results = new List<string>();
 // The ::error:: line becomes a CI annotation, so a failure is visible without the raw log.
 void Check(bool value, string name) { if (!value) { Console.WriteLine("::error::FAIL: " + name); throw new Exception("FAIL: " + name); } results.Add(name); Console.WriteLine("PASS: " + name); }
+Check(NativeTrackpadInput.ZoomWheelDelta(1) == 120 && NativeTrackpadInput.ZoomWheelDelta(-1) == -120 && NativeTrackpadInput.ZoomWheelDelta(0) == 0, "Spread zooms in, pinch zooms out at the Windows wheel boundary");
 // Simulate delayed/intermediate Quartz observations without moving a real cursor.
 var pointerMotion=new ThreeE.PhoneHost.MacPointerMotion();
 Check(pointerMotion.Move(100,100,3,2,0)==(103d,102d),"Mac first movement has no warm-up delay");

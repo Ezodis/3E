@@ -33,7 +33,8 @@
 ;; Use the keyboard's Android mode for Windows.
 ;; The labeled Ctrl key emits Right Alt; the red Clicks Tab input is unchanged.
 ;; Right Alt avoids the global left-Alt shortcut remaps and scan-code swap.
-;; Command = Ctrl, compensating for the existing system Alt/Ctrl scan-code swap.
+;; Command emits right Ctrl, unaffected by the old system left Alt/Ctrl swap.
+;; Mac keyboard layout translates it to Command shortcuts while enabled.
 ;; Tap Command or Shift for the next key, or hold for normal modifier behavior.
 ;; Sequential Command/Shift taps combine and restart the five-second timeout.
 ;; Double-tap Command releases pending Ctrl/Shift before Windows+H dictation.

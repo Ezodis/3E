@@ -1,6 +1,6 @@
 ﻿<#
 .SYNOPSIS
-3£Windows: one tray menu for three-finger drag, Clicks keyboard, PowerToys,
+3e: one tray menu for three-finger drag, Clicks keyboard, PowerToys,
 automatic light/dark mode and dynamic wallpaper.
 .NOTES
 Phone/watch trackpad is optional and off at startup. Left-click the tray icon
@@ -21,7 +21,7 @@ Reinstall explicitly. Without switches, an existing installation starts the suit
 Remove 3£Windows and its startup tasks; restore backed-up input preferences.
 Third-party PowerToys, WinDynamicDesktop and .NET installations are retained.
 .PARAMETER KeyboardOnly
-Apply only the left Alt/Ctrl swap (or remove it with -Down); restart required.
+Legacy switch: use the Mac keyboard layout tray toggle instead.
 .PARAMETER RepairKeyboard
 Restore the Clicks-only Command/Ctrl mapping and double-tap voice shortcut.
 .PARAMETER AppOnly
@@ -38,13 +38,13 @@ $EmbeddedLauncher = @'
 '@
 # A current installation launches directly. A newer portable file updates the
 # app and existing Clicks components without resetting personal input settings.
-if (-not ($Down -or $KeyboardOnly -or $AppOnly -or $Install -or $RepairKeyboard) -and (Test-Path -LiteralPath (Join-Path $env:ProgramFiles '3EWindows\3£Windows.exe'))) {
+if (-not ($Down -or $KeyboardOnly -or $AppOnly -or $Install -or $RepairKeyboard) -and ((Test-Path -LiteralPath (Join-Path $env:ProgramFiles '3EWindows\3e.exe')) -or (Test-Path -LiteralPath (Join-Path $env:ProgramFiles '3EWindows\3£Windows.exe')))) {
     $assembly = Join-Path $env:ProgramFiles '3EWindows\ThreeEWindows.dll'
     # Keyboard helper fixes can ship without changing the main app version.
     $accentExe = Join-Path $env:ProgramFiles '3EWindows\Keyboard\ClicksAccents.exe'
     $accentCurrent = -not (Test-Path -LiteralPath (Join-Path $env:LOCALAPPDATA '3EWindows\ClicksDeviceMapping.json')) -or
         ((Test-Path -LiteralPath $accentExe) -and (Get-FileHash -LiteralPath $accentExe -Algorithm SHA256).Hash -eq '{{CLICKS_ACCENTS_SHA256}}')
-    if ($accentCurrent -and (Test-Path -LiteralPath $assembly) -and [Diagnostics.FileVersionInfo]::GetVersionInfo($assembly).ProductVersion.Split('+')[0] -eq $Version) {
+    if ((Test-Path -LiteralPath (Join-Path $env:ProgramFiles '3EWindows\3e.exe')) -and $accentCurrent -and (Test-Path -LiteralPath $assembly) -and [Diagnostics.FileVersionInfo]::GetVersionInfo($assembly).ProductVersion.Split('+')[0] -eq $Version) {
         & ([scriptblock]::Create($EmbeddedLauncher))
         exit
     }
@@ -79,7 +79,7 @@ if (-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administra
 }
 $root = Join-Path $env:ProgramFiles '3EWindows'
 $data = Join-Path $env:LOCALAPPDATA '3EWindows'
-$appExe = Join-Path $root '3£Windows.exe'
+$appExe = Join-Path $root '3e.exe'
 $backupPath = Join-Path $data 'input-backup.clixml'
 $scanKey = 'HKLM:\SYSTEM\CurrentControlSet\Control\Keyboard Layout'
 $touchpadKey = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\PrecisionTouchPad'
@@ -91,24 +91,25 @@ function Stop-Suite {
         Stop-ScheduledTask -TaskName $task -ErrorAction SilentlyContinue
         if ($RemoveTasks) { Unregister-ScheduledTask -TaskName $task -Confirm:$false -ErrorAction SilentlyContinue }
     }
-    Get-Process -Name '3£Windows','ThreeEWindows','3EWindows.Keyboard','ClicksAccents','EdyPowerKeyboard','ThreeFingerDragOnWindows','PowerToys','PowerToys.KeyboardManagerEngine','WinDynamicDesktop' -ErrorAction SilentlyContinue |
+    Get-Process -Name '3e','3£Windows','ThreeEWindows','3EWindows.Keyboard','ClicksAccents','EdyPowerKeyboard','ThreeFingerDragOnWindows','WinDynamicDesktop' -ErrorAction SilentlyContinue |
         Stop-Process -Force -ErrorAction SilentlyContinue
     Start-Sleep -Milliseconds 700
+    # Restore the temporary keyboard profile before replacing/removing files.
+    $recovery = Join-Path $root 'ThreeE.KeyboardRecovery.exe'
+    if (Test-Path -LiteralPath $recovery) {
+        $restored = Start-Process -FilePath $recovery -ArgumentList '--restore' -Wait -PassThru -WindowStyle Hidden
+        if ($restored.ExitCode -ne 0) { throw 'Could not restore the previous keyboard configuration; setup stopped.' }
+        # A crash watcher may have performed the restoration first. Let it exit
+        # before replacing its executable and DLLs during an update.
+        foreach ($watcher in @(Get-Process -Name 'ThreeE.KeyboardRecovery' -ErrorAction SilentlyContinue | Where-Object { $_.Path -eq $recovery })) {
+            if (-not $watcher.WaitForExit(5000)) { throw 'Keyboard recovery is still running; retry setup after it finishes.' }
+        }
+    }
     # Forced shutdown/update may bypass the optional receiver's normal cleanup.
     $phoneFirewall = $null
     try { $phoneFirewall = New-Object -ComObject HNetCfg.FwPolicy2; $phoneFirewall.Rules.Remove('3EWindows Phone Trackpad') } catch { }
     finally { if ($null -ne $phoneFirewall) { [Runtime.InteropServices.Marshal]::FinalReleaseComObject($phoneFirewall) | Out-Null } }
 }
-
-function Set-LeftModifierSwap {
-    if ($Down) {
-        Remove-ItemProperty -LiteralPath $scanKey -Name 'Scancode Map' -ErrorAction SilentlyContinue
-    } else {
-        [byte[]]$map = @(0,0,0,0, 0,0,0,0, 3,0,0,0, 0x1D,0,0x38,0, 0x38,0,0x1D,0, 0,0,0,0)
-        Set-ItemProperty -LiteralPath $scanKey -Name 'Scancode Map' -Value $map -Type Binary
-    }
-}
-# Keyboard-only handling preserves the Clicks-specific profile below.
 
 function Edit-Json([string]$Path, [scriptblock]$Change) {
     $json = if (Test-Path -LiteralPath $Path) { Get-Content -LiteralPath $Path -Raw | ConvertFrom-Json } else { [pscustomobject]@{} }
@@ -118,6 +119,23 @@ function Edit-Json([string]$Path, [scriptblock]$Change) {
 }
 function Set-JsonProperty($Object, [string]$Name, $Value) {
     $Object | Add-Member -MemberType NoteProperty -Name $Name -Value $Value -Force
+}
+
+function Remove-OwnedAppShortcuts([switch]$LegacyOnly) {
+    $names = @('3£Windows.lnk','3EWindows.lnk')
+    if (-not $LegacyOnly) { $names += '3e.lnk' }
+    $launcher = Join-Path $root 'Launch-3EWindows.ps1'
+    $shell = New-Object -ComObject WScript.Shell
+    try {
+        foreach ($folder in @([Environment]::GetFolderPath('CommonPrograms'),[Environment]::GetFolderPath('Programs'),[Environment]::GetFolderPath('DesktopDirectory'),[Environment]::GetFolderPath('CommonDesktopDirectory'))) {
+            foreach ($name in $names) {
+                $path = Join-Path $folder $name
+                if (-not (Test-Path -LiteralPath $path)) { continue }
+                $link = $shell.CreateShortcut($path)
+                if ($link.TargetPath.StartsWith($root + '\',[StringComparison]::OrdinalIgnoreCase) -or $link.Arguments.Contains($launcher)) { Remove-Item -LiteralPath $path }
+            }
+        }
+    } finally { [Runtime.InteropServices.Marshal]::FinalReleaseComObject($shell) | Out-Null }
 }
 
 {{CLICKS_FUNCTIONS}}
@@ -132,8 +150,7 @@ if ($RepairKeyboard) {
     exit
 }
 if ($KeyboardOnly) {
-    Set-LeftModifierSwap
-    Write-Host 'Restart Windows to activate the modifier change.'
+    Write-Host 'Use the Mac keyboard layout toggle in the 3e tray menu. No registry swap or restart is needed.'
     exit
 }
 
@@ -163,6 +180,7 @@ function Install-ReleaseApp([string]$Repository, [string]$AssetPattern, [string]
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 if ($Down) {
     Stop-Suite -RemoveTasks
+    Remove-OwnedAppShortcuts
     & netsh.exe http delete urlacl url="http://+:17833/" 2>&1 | Out-Null
     $phoneRules = $null
     try { $phoneRules = New-Object -ComObject HNetCfg.FwPolicy2; foreach ($n in @('3EWindows Phone Bar (installed)','3EWindows Phone Bar name (installed)')) { try { $phoneRules.Rules.Remove($n) } catch { } } } catch { }
@@ -176,7 +194,7 @@ if ($Down) {
             if ($item.Exists) { Set-ItemProperty -LiteralPath $item.Path -Name $item.Name -Value $item.Value }
             else { Remove-ItemProperty -LiteralPath $item.Path -Name $item.Name -ErrorAction SilentlyContinue }
         }
-    } else { Set-LeftModifierSwap }
+    }
     foreach ($driver in @((Join-Path $root 'Keyboard\install-interception.exe'),(Join-Path $env:ProgramFiles 'EdyMacKeyboard\PowerKeyboard\install-interception.exe'))) {
         if (Test-Path -LiteralPath $driver) { & $driver /uninstall | Out-Host; break }
     }
@@ -185,8 +203,6 @@ if ($Down) {
         if ($resolved -notin @([IO.Path]::GetFullPath((Join-Path $env:ProgramFiles '3EWindows')),[IO.Path]::GetFullPath((Join-Path $env:ProgramFiles 'EdyMacKeyboard')))) { throw 'Unsafe uninstall path.' }
         if (Test-Path -LiteralPath $resolved) { Remove-Item -LiteralPath $resolved -Recurse -Force }
     }
-    $ptSettings = Join-Path $env:LOCALAPPDATA 'Microsoft\PowerToys\settings.json'
-    if (Test-Path -LiteralPath $ptSettings) { Edit-Json $ptSettings { param($j) Set-JsonProperty $j 'show_tray_icon' $true } }
     $wallSettings = Join-Path $env:LOCALAPPDATA 'Programs\WinDynamicDesktop\settings.json'
     if (Test-Path -LiteralPath $wallSettings) { Edit-Json $wallSettings { param($j) Set-JsonProperty $j 'hideTrayIcon' $false } }
     Write-Host '3£Windows removed. Restart Windows to restore the original keyboard layout.'
@@ -194,7 +210,7 @@ if ($Down) {
 }
 
 $architecture = [Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString()
-if ($architecture -notin @('X64','Arm64')) { throw '3£Windows supports x64 and ARM64 Windows.' }
+if ($architecture -notin @('X64','Arm64')) { throw '3e supports x64 and ARM64 Windows.' }
 $arch = if ($architecture -eq 'Arm64') { 'arm64' } else { 'x64' }
 
 # Install the Microsoft runtimes only when missing; no SDK or companion files.
@@ -242,7 +258,7 @@ $suiteStopped = $false
 trap {
     $failure = $_
     if ($suiteStopped) {
-        Get-Process -Name '3£Windows','3EWindows.Keyboard' -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+        Get-Process -Name '3e','3£Windows','3EWindows.Keyboard' -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
         if (Test-Path -LiteralPath (Join-Path $rollback 'App')) { Copy-Item -Path (Join-Path $rollback 'App\*') -Destination $root -Recurse -Force -ErrorAction SilentlyContinue }
         foreach ($path in $previousJson.Keys) { [IO.File]::WriteAllText($path,$previousJson[$path],[Text.UTF8Encoding]::new($false)) }
         foreach ($task in $previousTasks) { Register-ScheduledTask -TaskName $task.Name -Xml $task.Xml -Force -ErrorAction SilentlyContinue | Out-Null }
@@ -257,7 +273,7 @@ Stop-Suite
 $suiteStopped = $true
 New-Item -ItemType Directory -Path $root,$data -Force | Out-Null
 if (-not $AppOnly -and -not (Test-Path -LiteralPath $backupPath)) {
-    $backup = foreach ($entry in @(@{Path=$scanKey;Name='Scancode Map'}) + @($gestureNames | ForEach-Object { @{Path=$touchpadKey;Name=$_} })) {
+    $backup = foreach ($entry in @($gestureNames | ForEach-Object { @{Path=$touchpadKey;Name=$_} })) {
         $property = Get-ItemProperty -LiteralPath $entry.Path -Name $entry.Name -ErrorAction SilentlyContinue
         [pscustomobject]@{Path=$entry.Path;Name=$entry.Name;Exists=($null -ne $property);Value=$(if ($property) { $property.($entry.Name) } else { $null })}
     }
@@ -270,7 +286,11 @@ try {
     [IO.File]::WriteAllBytes($archive, [Convert]::FromBase64String($payload))
     Expand-Archive -LiteralPath $archive -DestinationPath $root -Force
 } finally { Remove-Item -LiteralPath $archive -Force -ErrorAction SilentlyContinue }
-if (-not (Test-Path -LiteralPath $appExe)) { throw 'The embedded 3£Windows app was not extracted.' }
+if (-not (Test-Path -LiteralPath $appExe)) { throw 'The embedded 3e app was not extracted.' }
+foreach ($legacyName in @('3£Windows.exe','3£Windows.pri')) {
+    $legacyFile = Join-Path $root $legacyName
+    if (Test-Path -LiteralPath $legacyFile) { Remove-Item -LiteralPath $legacyFile }
+}
 if ([IO.Path]::GetFullPath($PSCommandPath) -ne [IO.Path]::GetFullPath((Join-Path $root '3£Windows.ps1'))) {
     Copy-Item -LiteralPath $PSCommandPath -Destination (Join-Path $root '3£Windows.ps1') -Force
 }
@@ -278,28 +298,11 @@ if ([IO.Path]::GetFullPath($PSCommandPath) -ne [IO.Path]::GetFullPath((Join-Path
 Install-ReleaseApp 'microsoft/PowerToys' "^PowerToysUserSetup-.+-$arch\.exe$" 'PowerToys*' '/install /quiet /norestart'
 Install-ReleaseApp 't1m0thyj/WinDynamicDesktop' "^WinDynamicDesktop_.+_$arch`_Setup\.exe$" 'WinDynamicDesktop*' '/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /SP- /TASKS="registerddw"' $false
 
-$ptSettings = Join-Path $env:LOCALAPPDATA 'Microsoft\PowerToys\settings.json'
-Edit-Json $ptSettings {
-    param($j)
-    Set-JsonProperty $j 'startup' $false
-    Set-JsonProperty $j 'run_elevated' $true
-    Set-JsonProperty $j 'show_tray_icon' $false
-    Set-JsonProperty $j 'enable_quick_access' $false
-    if (-not $j.enabled) { Set-JsonProperty $j 'enabled' ([pscustomobject]@{}) }
-    if (-not $AppOnly) {
-        foreach ($feature in $j.enabled.PSObject.Properties) { $feature.Value = $false }
-        foreach ($feature in @('Keyboard Manager','Workspaces')) { Set-JsonProperty $j.enabled $feature $true }
-    }
-    Set-JsonProperty $j.enabled 'LightSwitch' $false
-}
+# The tray owns a temporary Mac layout profile. Never overwrite the computer's
+# PowerToys profiles, module preferences, or system Scancode Map during setup.
 if (-not $AppOnly) {
-    Set-LeftModifierSwap
     New-Item -Path $touchpadKey -Force | Out-Null
     foreach ($gesture in $gestureNames) { Set-ItemProperty -LiteralPath $touchpadKey -Name $gesture -Value 0 -Type DWord }
-    $keyboardSettings = Join-Path $env:LOCALAPPDATA 'Microsoft\PowerToys\Keyboard Manager'
-    New-Item -ItemType Directory -Path $keyboardSettings -Force | Out-Null
-    [IO.File]::WriteAllText((Join-Path $keyboardSettings 'default.json'), $EmbeddedPowerToysKeyboardConfig, [Text.UTF8Encoding]::new($false))
-    Edit-Json (Join-Path $keyboardSettings 'settings.json') { param($j) Set-JsonProperty $j 'name' 'Keyboard Manager'; Set-JsonProperty $j 'version' '1.0'; Set-JsonProperty $j 'properties' ([pscustomobject]@{activeConfiguration=[pscustomobject]@{value='default'}}) }
     $winlogon = 'HKCU:\Software\Microsoft\Windows NT\CurrentVersion\Winlogon'
     New-Item -Path $winlogon -Force | Out-Null
     Set-ItemProperty -LiteralPath $winlogon -Name RestartApps -Type DWord -Value 1
@@ -311,7 +314,6 @@ if (-not $AppOnly) { Restore-ClicksKeyboard }
 elseif (Test-Path -LiteralPath (Join-Path $data 'ClicksDeviceMapping.json')) { Restore-ClicksKeyboard -PreserveEnableState }
 $wallSettings = Join-Path $env:LOCALAPPDATA 'Programs\WinDynamicDesktop\settings.json'
 Edit-Json $wallSettings { param($j) Set-JsonProperty $j 'hideTrayIcon' $true }
-Get-ScheduledTask -TaskPath '\PowerToys\' -ErrorAction SilentlyContinue | Where-Object TaskName -like 'Autorun*' | Disable-ScheduledTask -ErrorAction SilentlyContinue | Out-Null
 foreach ($name in @('ThreeFingerDrag','WinDynamicDesktop','Edy Mac Keyboard')) { Remove-ItemProperty -LiteralPath 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run' -Name $name -ErrorAction SilentlyContinue }
 
 # Preserve the tested drag preferences across the rename.
@@ -355,6 +357,23 @@ $launcherPath = Join-Path $root 'Launch-3EWindows.ps1'
 $action = New-ScheduledTaskAction -Execute (Join-Path $env:WINDIR 'System32\WindowsPowerShell\v1.0\powershell.exe') -Argument ('-NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File "' + $launcherPath + '" -Wait') -WorkingDirectory $root
 Register-ScheduledTask -TaskName '3£Windows' -Action $action -Trigger $trigger -Principal $taskPrincipal -Settings $taskSettings -Force | Out-Null
 
+# A stable public app name in Start/Search; old shortcuts are removed only if
+# they point into this installation. Internal task/data names remain compatible.
+$programs = [Environment]::GetFolderPath('CommonPrograms')
+Remove-OwnedAppShortcuts -LegacyOnly
+$shell = New-Object -ComObject WScript.Shell
+try {
+    $link = $shell.CreateShortcut((Join-Path $programs '3e.lnk'))
+    $link.TargetPath = Join-Path $env:WINDIR 'System32\WindowsPowerShell\v1.0\powershell.exe'
+    $link.Arguments = '-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File "' + $launcherPath + '"'
+    $link.WorkingDirectory = $root
+    $link.IconLocation = $appExe + ',0'
+    $link.Description = '3e'
+    $link.WindowStyle = 7
+    $link.Save()
+} finally { [Runtime.InteropServices.Marshal]::FinalReleaseComObject($shell) | Out-Null }
+
+
 # Sleep recovery reuses the elevated suite; the hub refreshes device hooks after waking.
 $recovery = @'
 & (Join-Path $env:ProgramFiles '3EWindows\Launch-3EWindows.ps1')
@@ -386,12 +405,12 @@ $deadline = [DateTime]::UtcNow.AddSeconds(15)
 $started = $false
 do {
     Start-Sleep -Seconds 1
-    if ((Get-Process -Name '3£Windows' -ErrorAction SilentlyContinue) -and (Test-Path -LiteralPath $statusPath) -and (Get-Item -LiteralPath $statusPath).LastWriteTimeUtc -ge $launchTime) { $started = $true; break }
+    if ((Get-Process -Name '3e','3£Windows' -ErrorAction SilentlyContinue) -and (Test-Path -LiteralPath $statusPath) -and (Get-Item -LiteralPath $statusPath).LastWriteTimeUtc -ge $launchTime) { $started = $true; break }
 } while ([DateTime]::UtcNow -lt $deadline)
-if (-not $started) { throw '3£Windows did not complete startup; see Windows Application events and the local 3EWindows logs.' }
+if (-not $started) { throw '3e did not complete startup; see Windows Application events and the local 3EWindows logs.' }
 $suiteStopped = $false
 $resolvedRollback = [IO.Path]::GetFullPath($rollback)
 if ($resolvedRollback.StartsWith([IO.Path]::GetFullPath($env:TEMP).TrimEnd('\') + '\3EWindows-rollback-', [StringComparison]::OrdinalIgnoreCase)) { Remove-Item -LiteralPath $resolvedRollback -Recurse -Force -ErrorAction SilentlyContinue }
-Write-Host "3£Windows $Version installed. One tray menu owns keyboard, drag, themes and wallpaper."
+Write-Host "3e $Version installed. One tray menu owns keyboard, drag, themes and wallpaper."
 Write-Host 'Copy 3£Windows.ps1 alone to another PC to install the same setup.'
-if (-not $AppOnly) { Write-Host 'Restart Windows to activate the left Alt/Ctrl swap and any newly installed keyboard driver.' }
+if (-not $AppOnly) { Write-Host 'Turn on Mac keyboard layout from the 3e tray menu. A newly installed Clicks device driver may require a restart.' }

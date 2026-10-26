@@ -18,7 +18,7 @@
                       PhonePublisherId="00000000-0000-0000-0000-000000000000"/>
 
     <Properties>
-        <DisplayName>Three Finger Drag</DisplayName>
+        <DisplayName>3e</DisplayName>
         <PublisherDisplayName>Clément Grennerat</PublisherDisplayName>
         <Logo>Assets\logo-512.png</Logo>
     </Properties>
@@ -37,10 +37,10 @@
                      Executable="$targetnametoken$.exe"
                      EntryPoint="$targetentrypoint$">
             <uap:VisualElements
-                    DisplayName="ThreeFingerDragOnWindows"
+                    DisplayName="3e"
                     Description="Enables macOS-style three-finger dragging functionality on Windows Precision touchpads."
                     BackgroundColor="transparent" Square150x150Logo="Assets\logo-150.png"  Square44x44Logo="Assets\logo-44.png">
-                <uap:DefaultTile Square71x71Logo="Assets\SmallTile.png" Wide310x150Logo="Assets\WideTile.png" Square310x310Logo="Assets\LargeTile.png" ShortName="ThreeFingerDragOnWindows">
+                <uap:DefaultTile Square71x71Logo="Assets\SmallTile.png" Wide310x150Logo="Assets\WideTile.png" Square310x310Logo="Assets\LargeTile.png" ShortName="3e">
                     <uap:ShowNameOnTiles>
                         <uap:ShowOn Tile="square150x150Logo"/>
                         <uap:ShowOn Tile="wide310x150Logo"/>
@@ -62,13 +62,13 @@
                 <uap:Extension Category="windows.protocol">
                     <uap:Protocol Name="threefingerdragonwindows">
                         <uap:Logo>Assets\icon-52.png</uap:Logo>
-                        <uap:DisplayName>ThreeFingerDragOnWindows</uap:DisplayName>
+                        <uap:DisplayName>3e</uap:DisplayName>
                     </uap:Protocol >
                 </uap:Extension>
 
                 <desktop:Extension Category="windows.startupTask" Executable="ThreeFingerDragOnWindows.exe"
                                    EntryPoint="Windows.FullTrustApplication">
-                    <desktop:StartupTask TaskId="ThreeFingerDragOnWindows" Enabled="true" DisplayName="ThreeFingerDragOnWindows" />
+                    <desktop:StartupTask TaskId="ThreeFingerDragOnWindows" Enabled="true" DisplayName="3e" />
                 </desktop:Extension>
 			</Extensions>
 

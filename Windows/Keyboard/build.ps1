@@ -73,7 +73,7 @@ $hwid = New-Object byte[] 1024
 $identity = [Text.Encoding]::Unicode.GetBytes("HID\{00001812-0000-1000-8000-00805f9b34fb}_Dev_VID&0107d7_PID&0000_REV&0110`0`0")
 [Array]::Copy($identity,$hwid,$identity.Length)
 [IO.File]::WriteAllBytes((Join-Path $sticky 'hwid.bin'),$hwid)
-$profile = [IO.File]::ReadAllText((Join-Path (Split-Path -Parent $PSScriptRoot) 'Keyboard.template.kbd')).Replace('{{POWER_KEYBOARD_HWID}}',($hwid -join ', ')).Replace('{{CTRL_AS_ALT}}','ralt').Replace('{{COMMAND_AS_CTRL}}','lalt')
+$profile = [IO.File]::ReadAllText((Join-Path (Split-Path -Parent $PSScriptRoot) 'Keyboard.template.kbd')).Replace('{{POWER_KEYBOARD_HWID}}',($hwid -join ', ')).Replace('{{CTRL_AS_ALT}}','ralt').Replace('{{COMMAND_AS_CTRL}}','rctl')
 [IO.File]::WriteAllText((Join-Path $sticky 'candidate.kbd'),$profile,[Text.UTF8Encoding]::new($false))
 & (Join-Path $tests 'run-tests.ps1') -TestRoot $sticky
 if (-not $?) { throw 'Keyboard mapping tests failed.' }

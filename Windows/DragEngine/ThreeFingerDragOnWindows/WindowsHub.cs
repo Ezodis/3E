@@ -19,13 +19,14 @@ namespace ThreeFingerDragOnWindows;
 
 // The drag engine and the hub share this process and its single notification icon.
 public sealed class WindowsHub : IDisposable {
-    public const string Version = "1.0.19";
+    public const string Version = "3.0.13";
     private const string ReleasesUrl = "https://api.github.com/repos/Ezodis/3E/releases";
     private readonly string root = AppContext.BaseDirectory;
     private readonly string data = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "3EWindows");
     private readonly DispatcherTimer timer = new() { Interval = TimeSpan.FromSeconds(20) };
     private readonly MenuFlyout menu;
     private readonly PhoneBarModule phoneBar = new();
+    private readonly MacKeyboardLayout macKeyboard = MacKeyboardLayout.Create();
     private HubSettings settings;
     private bool busy, disposed;
     private int lastTheme = -1;
@@ -55,6 +56,7 @@ public sealed class WindowsHub : IDisposable {
     public sealed class HubSettings {
         public bool Keyboard { get; set; } = true;
         public bool PowerToys { get; set; } = true;
+        public bool MacKeyboard { get; set; } = false;
         public bool AutoDark { get; set; } = true;
         public bool SsmsTheme { get; set; } = true;
         public bool Wallpaper { get; set; } = true;
@@ -100,7 +102,11 @@ public sealed class WindowsHub : IDisposable {
     }
 
     private async Task StartAsync() {
-        try { ConfigureHiddenIcons(); await EnsureComponentsAsync(); ApplyTheme(); KeepPhoneBar(); WriteDiagnostics(); }
+        try {
+            // Recover a lease left by an interrupted update before honoring OFF.
+            if (!settings.MacKeyboard) await macKeyboard.DisableAsync();
+            ConfigureHiddenIcons(); await EnsureComponentsAsync(); ApplyTheme(); KeepPhoneBar(); WriteDiagnostics();
+        }
         catch (Exception ex) { Log(ex); }
         if ((DateTime.UtcNow - settings.LastUpdateCheckUtc).TotalMinutes >= UpdateCheckMinutes) await CheckUpdatesAsync(false);
     }
@@ -125,7 +131,7 @@ public sealed class WindowsHub : IDisposable {
         })?.Dispose();
     }
 
-    private string PowerToysPath => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "PowerToys", "PowerToys.exe");
+    private string PowerToysPath => MacKeyboardLayout.PowerToysPath;
     private static void StopKeyboard() { Stop("3EWindows.Keyboard"); Stop("ClicksAccents"); }
 
     private string KeyboardPath => Path.Combine(root, "Keyboard", "3EWindows.Keyboard.exe");
@@ -141,13 +147,6 @@ public sealed class WindowsHub : IDisposable {
     }
 
     private void ConfigureHiddenIcons() {
-        var powerToysSettings = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Microsoft", "PowerToys", "settings.json");
-        EditJson(powerToysSettings, json => {
-            json["show_tray_icon"] = false;
-            json["startup"] = false;
-            json["run_elevated"] = false;
-            if (json["enabled"] is JsonObject enabled) enabled["LightSwitch"] = false;
-        });
         EditJson(Path.Combine(Path.GetDirectoryName(WallpaperPath), "settings.json"), json => json["hideTrayIcon"] = true);
     }
 
@@ -156,9 +155,10 @@ public sealed class WindowsHub : IDisposable {
         UpdateSsmsTheme();
         if (settings.PowerToys) {
             if (!IsRunning("PowerToys")) Start(PowerToysPath);
-            await Task.Delay(1500);
-            if (!disposed && settings.PowerToys && !IsRunning("PowerToys.KeyboardManagerEngine"))
-                Start(Path.Combine(Path.GetDirectoryName(PowerToysPath), "KeyboardManagerEngine", "PowerToys.KeyboardManagerEngine.exe"));
+        }
+        if (disposed) return;
+        if (settings.MacKeyboard && !keyboardChanging) {
+            try { await macKeyboard.EnsureAsync(); } catch (Exception ex) { Log(ex); }
         }
         if (disposed) return;
         if (settings.Keyboard && File.Exists(Path.Combine(root, "Keyboard", "3EWindows.kbd")) && !IsRunning("3EWindows.Keyboard"))
@@ -172,7 +172,8 @@ public sealed class WindowsHub : IDisposable {
         try {
             var now = DateTime.Now;
             if ((now - lastTick).TotalSeconds > 90) {
-                StopKeyboard(); Stop("PowerToys.KeyboardManagerEngine");
+                StopKeyboard();
+                if (settings.MacKeyboard) await macKeyboard.EnableAsync();
                 lastTheme = -1;
             }
             lastTick = now;
@@ -199,6 +200,7 @@ public sealed class WindowsHub : IDisposable {
                 ssmsThemes = SsmsTheme.CurrentThemeNames,
                 touchpadDetected = handler.TouchpadExists, inputReceiverInstalled = handler.InputReceiverInstalled,
                 keyboardInstalled = File.Exists(KeyboardPath), keyboardRunning = IsRunning("3EWindows.Keyboard"),
+                macKeyboardEnabled = settings.MacKeyboard, macKeyboardRunning = macKeyboard.Active,
                 powerToysRunning = IsRunning("PowerToys"), shortcutsRunning = IsRunning("PowerToys.KeyboardManagerEngine"),
                 wallpaperRunning = IsRunning("WinDynamicDesktop"), autoDark = settings.AutoDark,
                 phoneTrackpadRunning = phoneBar.Running, phoneTrackpadStatus = phoneBar.Status,
@@ -289,7 +291,7 @@ public sealed class WindowsHub : IDisposable {
 
     private MenuFlyoutItem ActionMenuItem(string label, Action click) => new() {
         Text = label,
-        Command = new MenuCommand(() => { try { click(); } catch (Exception ex) { Log(ex); MessageBox(IntPtr.Zero, ex.Message, "3£Windows", 0x10); } })
+        Command = new MenuCommand(() => { try { click(); } catch (Exception ex) { Log(ex); MessageBox(IntPtr.Zero, ex.Message, "3e", 0x10); } })
     };
 
     private ToggleMenuFlyoutItem ToggleMenuItem(string label, bool value, Action<bool> change, Action openSettings = null, string slot = IconSlot) {
@@ -297,7 +299,7 @@ public sealed class WindowsHub : IDisposable {
         var item = new ToggleMenuFlyoutItem { Text = openSettings == null ? label : label + slot, IsChecked = value };
         item.Command = new MenuCommand(() => {
             if (openSettings != null && ClickedGear()) {
-                try { openSettings(); } catch (Exception ex) { Log(ex); MessageBox(IntPtr.Zero, ex.Message, "3£Windows", 0x10); }
+                try { openSettings(); } catch (Exception ex) { Log(ex); MessageBox(IntPtr.Zero, ex.Message, "3e", 0x10); }
                 return;
             }
             try { value = !value; item.IsChecked = value; change(value); Save(); } catch (Exception ex) { Log(ex); }
@@ -386,7 +388,30 @@ public sealed class WindowsHub : IDisposable {
 
     private void Toggle(string label, bool value, Action<bool> change, Action openSettings = null, string slot = IconSlot) => menu.Items.Add(ToggleMenuItem(label, value, change, openSettings, slot));
 
-    private void OpenPowerToysSettings() => Start(Path.Combine(Path.GetDirectoryName(PowerToysPath), "WinUI3Apps", "PowerToys.Settings.exe"), "", true);
+    private void OpenPowerToysSettings() {
+        if (PowerToysPath == null) throw new FileNotFoundException("Run the 3e installer to install PowerToys.");
+        Start(Path.Combine(Path.GetDirectoryName(PowerToysPath), "WinUI3Apps", "PowerToys.Settings.exe"), "", true);
+    }
+
+    private bool keyboardChanging;
+    private MenuFlyoutItem MacKeyboardToggle() {
+        var item = new ToggleMenuFlyoutItem {
+            Text = macKeyboard.HasLease && !macKeyboard.Active ? "Mac keyboard layout — recovery pending" : "Mac keyboard layout",
+            IsChecked = settings.MacKeyboard || macKeyboard.HasLease, IsEnabled = !keyboardChanging
+        };
+        item.Command = new MenuCommand(async () => {
+            if (keyboardChanging) return;
+            keyboardChanging = true;
+            bool enable = !item.IsChecked;
+            settings.MacKeyboard = false; // Prevent recovery from racing an OFF request.
+            try {
+                if (enable) await macKeyboard.EnableAsync(); else await macKeyboard.DisableAsync();
+                settings.MacKeyboard = enable;
+            } catch (Exception ex) { Log(ex); MessageBox(IntPtr.Zero, ex.Message, "3e keyboard", 0x10); }
+            finally { keyboardChanging = false; Save(); RefreshMenu(); WriteDiagnostics(); }
+        });
+        return item;
+    }
 
     public void RefreshControls() => RefreshMenu();
 
@@ -424,7 +449,7 @@ public sealed class WindowsHub : IDisposable {
             }
         } catch (Exception ex) { Log(ex); }
         try { RestartSuite(); }
-        catch (Exception ex) { restarting = false; Log(ex); MessageBox(IntPtr.Zero, ex.Message, "3£Windows", 0x10 | ForegroundDialog); }
+        catch (Exception ex) { restarting = false; Log(ex); MessageBox(IntPtr.Zero, ex.Message, "3e", 0x10 | ForegroundDialog); }
     }
 
     private void RestartSuite() {
@@ -454,7 +479,7 @@ public sealed class WindowsHub : IDisposable {
 
     private void RefreshMenu() {
         menu.Items.Clear();
-        menu.Items.Add(new MenuFlyoutItem { Text = "3£Windows " + Version, IsEnabled = false });
+        menu.Items.Add(new MenuFlyoutItem { Text = "3e " + Version, IsEnabled = false });
         // One Phone Bar row: click to turn it on or off; its icon makes a new link.
         // Left-clicking the tray icon shows the QR.
         Toggle("Phone Bar", phoneBar.Running, enabled => {
@@ -468,9 +493,10 @@ public sealed class WindowsHub : IDisposable {
             settings.Keyboard = enabled;
             if (enabled) _ = EnsureComponentsAsync(); else StopKeyboard();
         });
-        Toggle("PowerToys shortcuts", settings.PowerToys, enabled => {
+        menu.Items.Add(MacKeyboardToggle());
+        Toggle("PowerToys", settings.PowerToys, enabled => {
             settings.PowerToys = enabled;
-            if (enabled) _ = EnsureComponentsAsync(); else { Stop("PowerToys"); Stop("PowerToys.KeyboardManagerEngine"); }
+            if (enabled) _ = EnsureComponentsAsync(); else { Stop("PowerToys"); if (settings.MacKeyboard) _ = macKeyboard.EnsureAsync(); }
         }, OpenPowerToysSettings);
         menu.Items.Add(new MenuFlyoutSeparator());
         Toggle("Dynamic wallpaper", settings.Wallpaper, enabled => {
@@ -489,19 +515,20 @@ public sealed class WindowsHub : IDisposable {
         if (!settings.AutoUpdate) Item(updateTag == null ? "Check for updates…" : "Update available: " + updateTag + "…", () => _ = CheckUpdatesAsync(true));
         Toggle("Install updates automatically", settings.AutoUpdate, enabled => { settings.AutoUpdate = enabled; if (!enabled) pendingUpdate = null; else settings.LastUpdateCheckUtc = default; });
         Item("Open portable installer", () => Process.Start(new ProcessStartInfo("explorer.exe", "/select,\"" + Path.Combine(root, "3£Windows.ps1") + "\"") { UseShellExecute = true }));
-        Item("Quit 3£Windows", () => App.Instance.Quit());
+        Item("Quit 3e", () => App.Instance.Quit());
     }
 
     public MenuFlyout CreateLauncher(Action showAllControls) {
         var launcher = new MenuFlyout();
-        launcher.Items.Add(new MenuFlyoutItem { Text = "3£Windows — choose controls", IsEnabled = false });
+        launcher.Items.Add(new MenuFlyoutItem { Text = "3e — choose controls", IsEnabled = false });
         MenuFlyoutItem ActionItem(string text, Action action) => ActionMenuItem(text, action);
         ToggleMenuFlyoutItem Switch(string text, bool value, Action<bool> change) => ToggleMenuItem(text, value, change);
-        void OpenPowerToys() => Start(Path.Combine(Path.GetDirectoryName(PowerToysPath), "WinUI3Apps", "PowerToys.Settings.exe"), "", true);
+        void OpenPowerToys() => OpenPowerToysSettings();
         launcher.Items.Add(ActionItem("Drag settings…", () => App.Instance.OpenSettingsWindow()));
         launcher.Items.Add(ActionItem("Phone Bar…", OpenPhoneTrackpad));
         launcher.Items.Add(ActionItem("PowerToys settings…", OpenPowerToys));
         var keyboard = new MenuFlyoutSubItem { Text = "Keyboard controls" };
+        keyboard.Items.Add(MacKeyboardToggle());
         keyboard.Items.Add(Switch("Enable Clicks keyboard mapping", settings.Keyboard, enabled => {
             settings.Keyboard = enabled;
             if (enabled) _ = EnsureComponentsAsync(); else StopKeyboard();
@@ -547,8 +574,8 @@ public sealed class WindowsHub : IDisposable {
             updateTag = newest?.GetProperty("tag_name").GetString();
             pendingUpdate = settings.AutoUpdate && newest != null ? newest.Value.Clone() : null;
             if (!interactive) { RefreshMenu(); return newest; }
-            if (newest == null) { MessageBox(IntPtr.Zero, "3£Windows " + Version + " is up to date.", "3£Windows", 0x40 | ForegroundDialog); return null; }
-            if (MessageBox(IntPtr.Zero, "Install 3£Windows " + newestVersion + "?\n\nThe portable installer will be downloaded, its SHA-256 checksum verified, and Windows will request administrator approval.", "3£Windows update", 0x24 | ForegroundDialog) != 6) return newest;
+            if (newest == null) { MessageBox(IntPtr.Zero, "3e " + Version + " is up to date.", "3e", 0x40 | ForegroundDialog); return null; }
+            if (MessageBox(IntPtr.Zero, "Install 3e " + newestVersion + "?\n\nThe portable installer will be downloaded, its SHA-256 checksum verified, and Windows will request administrator approval.", "3e update", 0x24 | ForegroundDialog) != 6) return newest;
             await InstallUpdateAsync(newest.Value);
             return newest;
         } catch (Exception ex) {
@@ -556,7 +583,7 @@ public sealed class WindowsHub : IDisposable {
             // Throttle failures too, so an offline device never polls every 20 seconds.
             settings.LastUpdateCheckUtc = DateTime.UtcNow;
             Save();
-            if (interactive) MessageBox(IntPtr.Zero, "Could not check or install the update.\n\n" + ex.Message, "3£Windows", 0x10 | ForegroundDialog);
+            if (interactive) MessageBox(IntPtr.Zero, "Could not check or install the update.\n\n" + ex.Message, "3e", 0x10 | ForegroundDialog);
             return null;
         }
     }
@@ -586,7 +613,7 @@ public sealed class WindowsHub : IDisposable {
         return GetLastInputInfo(ref info) ? unchecked((uint)Environment.TickCount - info.Time) / 1000.0 : 0;
     }
     // Permission policy: Windows asks once, when 3£Windows is installed. That
-    // install registers the "3£Windows" logon task with highest privileges, so
+    // install retains the "3£Windows" logon task with highest privileges, so
     // starting the suite through it gives administrator rights with no prompt.
     // A copy that somehow started without them (an update, a manual launch)
     // hands over to that task instead of asking again. The time guard keeps a
@@ -680,6 +707,7 @@ public sealed class WindowsHub : IDisposable {
         if (menuFocusHook != IntPtr.Zero) { UnhookWinEvent(menuFocusHook); menuFocusHook = IntPtr.Zero; }
         phoneBar.Dispose();
         Save();
-        StopKeyboard(); Stop("PowerToys"); Stop("PowerToys.KeyboardManagerEngine"); Stop("WinDynamicDesktop");
+        try { macKeyboard.DisableAsync().GetAwaiter().GetResult(); } catch (Exception ex) { Log(ex); }
+        StopKeyboard(); Stop("WinDynamicDesktop");
     }
 }

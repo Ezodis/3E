@@ -210,9 +210,10 @@ public sealed class NativeTrackpadInput : ITrackpadInput, IDisposable {
         SendInput(2, new[] { KeyEvent(key), KeyEvent(key, true) }, Marshal.SizeOf<Input>());
     }
     // Ctrl + one wheel notch: the standard zoom step in browsers and most apps.
+    internal static int ZoomWheelDelta(int direction) => Math.Sign(direction) * 120;
     public void Zoom(int direction) {
         if (direction == 0) return;
-        var wheel = new Input { Data = new InputData { Mouse = new Mouse { Data = unchecked((uint)(direction > 0 ? 120 : -120)), Flags = 0x0800 } } };
+        var wheel = new Input { Data = new InputData { Mouse = new Mouse { Data = unchecked((uint)ZoomWheelDelta(direction)), Flags = 0x0800 } } };
         var inputs = new[] { KeyEvent(0x11), wheel, KeyEvent(0x11, true) };
         if (SendInput(3, inputs, Marshal.SizeOf<Input>()) != 3) ReleaseKeys(0x11);
     }

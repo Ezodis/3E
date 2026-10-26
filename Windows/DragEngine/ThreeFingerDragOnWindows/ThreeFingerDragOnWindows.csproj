@@ -20,8 +20,10 @@
     <NeutralLanguage>en</NeutralLanguage>
     <AssemblyVersion>1.0.0.0</AssemblyVersion>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
-    <Title>3£Windows</Title>
-    <DisplayName>3£Windows</DisplayName>
+    <Title>3e</Title>
+    <AssemblyTitle>3e</AssemblyTitle>
+    <Product>3e</Product>
+    <DisplayName>3e</DisplayName>
     <SignAssembly>False</SignAssembly>
     <ApplicationIcon>Assets\icon.ico</ApplicationIcon>
     <GenerateTemporaryStoreCertificate>True</GenerateTemporaryStoreCertificate>
