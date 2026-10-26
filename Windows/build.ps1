@@ -57,6 +57,9 @@ foreach ($arch in @('x64','arm64')) {
 # Exercise the compiled release without starting input hooks or changing settings.
 dotnet run --project (Join-Path $PSScriptRoot 'KeyboardLayoutTests')
 if ($LASTEXITCODE -ne 0) { throw 'Mac keyboard layout restoration tests failed.' }
+# Compile the opt-in live probe, but never inject input on build/CI machines.
+dotnet build (Join-Path $PSScriptRoot 'KeyboardNativeTests') -c Release
+if ($LASTEXITCODE -ne 0) { throw 'Native keyboard test harness failed to compile.' }
 $report = Join-Path $build 'self-test.json'
 $testProcess = Start-Process -FilePath (Join-Path $build 'framework-x64\3e.exe') -ArgumentList ('--self-test "' + $report + '"') -Wait -PassThru -WindowStyle Hidden
 if ($testProcess.ExitCode -ne 0 -or -not (Test-Path -LiteralPath $report) -or -not (Get-Content -LiteralPath $report -Raw | ConvertFrom-Json).passed) { throw 'Release self-test failed.' }

@@ -76,6 +76,18 @@ public sealed class MacKeyboardLayout {
 
     public static JsonObject Profile(string json, bool legacySwap) {
         var profile = JsonNode.Parse(json).AsObject();
+        // Match logical Command (Ctrl) after the device-specific modifier
+        // translation, and accept either Shift. PowerToys distinguishes sides
+        // even when exactMatch is false. Keep explicit sides on generated
+        // output and deduplicate the old pair of Shift redo bindings.
+        var shortcuts = profile["remapShortcuts"]["global"].AsArray();
+        var seen = new System.Collections.Generic.HashSet<string>(StringComparer.Ordinal);
+        foreach (var shortcut in shortcuts.ToArray()) {
+            string source = string.Join(";", shortcut["originalKeys"].GetValue<string>().Split(';')
+                .Select(key => key is "160" or "161" ? "16" : key is "162" or "163" ? "17" : key));
+            if (!seen.Add(source)) { shortcuts.Remove(shortcut); continue; }
+            shortcut["originalKeys"] = source;
+        }
         var keys = profile["remapKeys"]["inProcess"].AsArray();
         void Key(string source, string target) => keys.Add(new JsonObject { ["originalKeys"] = source, ["newRemapKeys"] = target });
         // Left Alt occupies Command's position on a PC keyboard. Existing
@@ -87,7 +99,7 @@ public sealed class MacKeyboardLayout {
     }
 
     public async Task EnableAsync() {
-        await gate.WaitAsync();
+        await gate.WaitAsync().ConfigureAwait(false);
         try {
             using var fileLock = await LockAsync().ConfigureAwait(false);
             engine.Validate();

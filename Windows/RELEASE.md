@@ -1,3 +1,12 @@
+3e for Windows improves Command shortcut matching and keyboard recovery.
+
+- Command shortcuts match logical Ctrl after the PC or Clicks mapping. PC left Alt remains Command, and Clicks keeps its own labeled Command mapping.
+- Screenshot, selection and redo shortcuts accept either Shift key.
+- Returning from the Windows lock screen or reconnecting a session reinstalls the keyboard input hook, even if the old engine process is still running.
+- An opt-in native test checks actual Quit, Search, app switching and screenshot shortcut output without performing those system actions.
+
+Previous release:
+
 3e for Windows adds a reversible Mac keyboard layout and corrects phone zoom.
 
 - **Mac keyboard layout** in the tray turns Command shortcuts on/off immediately, without writing a system Alt/Ctrl swap. It starts off on a new PC, preserves personal PowerToys profiles, restores the previous keyboard configuration on off/quit/uninstall, and includes recovery after forced updates or crashes. Command+Tab, Command+Q, Command+Space and the existing editing shortcuts are included.

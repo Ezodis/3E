@@ -28,7 +28,7 @@ public sealed class WindowsHub : IDisposable {
     private readonly PhoneBarModule phoneBar = new();
     private readonly MacKeyboardLayout macKeyboard = MacKeyboardLayout.Create();
     private HubSettings settings;
-    private bool busy, disposed;
+    private bool busy, disposed, keyboardRefreshRequested;
     private int lastTheme = -1;
     private DateTime nextRecovery = DateTime.MinValue;
     private DateTime lastTick = DateTime.Now;
@@ -81,6 +81,7 @@ public sealed class WindowsHub : IDisposable {
         menuFocusHook = SetWinEventHook(EventObjectFocus, EventObjectFocus, IntPtr.Zero, menuPopupProc, (uint)Environment.ProcessId, 0, 0);
         RefreshMenu();
         timer.Tick += (_, _) => Tick();
+        SystemEvents.SessionSwitch += OnSessionSwitch;
         timer.Start();
         _ = StartAsync();
     }
@@ -171,9 +172,15 @@ public sealed class WindowsHub : IDisposable {
         busy = true;
         try {
             var now = DateTime.Now;
-            if ((now - lastTick).TotalSeconds > 90) {
+            if ((now - lastTick).TotalSeconds > 90 || keyboardRefreshRequested) {
+                keyboardRefreshRequested = false;
                 StopKeyboard();
-                if (settings.MacKeyboard) await macKeyboard.EnableAsync();
+                if (settings.MacKeyboard && !keyboardChanging) {
+                    keyboardChanging = true;
+                    try { await macKeyboard.EnableAsync(); }
+                    finally { keyboardChanging = false; }
+                }
+                nextRecovery = DateTime.MinValue;
                 lastTheme = -1;
             }
             lastTick = now;
@@ -187,6 +194,17 @@ public sealed class WindowsHub : IDisposable {
             await InstallPendingUpdateAsync();
         } catch (Exception ex) { Log(ex); }
         finally { busy = false; WriteDiagnostics(); }
+    }
+
+    private void OnSessionSwitch(object sender, SessionSwitchEventArgs e) {
+        if (e.Reason is not (SessionSwitchReason.SessionUnlock or SessionSwitchReason.ConsoleConnect or SessionSwitchReason.RemoteConnect)) return;
+        // A surviving process does not prove its low-level input hook survived a
+        // desktop/session change. Reinstall it on return to the user's desktop.
+        App.Instance.DispatcherQueue.TryEnqueue(() => {
+            if (disposed) return;
+            keyboardRefreshRequested = true;
+            Tick();
+        });
     }
 
     private void WriteDiagnostics() {
@@ -703,6 +721,7 @@ public sealed class WindowsHub : IDisposable {
     public void Dispose() {
         disposed = true;
         timer.Stop();
+        SystemEvents.SessionSwitch -= OnSessionSwitch;
         if (menuPopupHook != IntPtr.Zero) { UnhookWinEvent(menuPopupHook); menuPopupHook = IntPtr.Zero; }
         if (menuFocusHook != IntPtr.Zero) { UnhookWinEvent(menuFocusHook); menuFocusHook = IntPtr.Zero; }
         phoneBar.Dispose();
