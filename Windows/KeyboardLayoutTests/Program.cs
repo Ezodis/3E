@@ -14,8 +14,10 @@ bool Maps(JsonObject p, string from, string to, string section = "remapKeys", st
 Check(Maps(normal,"164","162") && Maps(normal,"162","164"), "PC modifiers swap only in the temporary profile");
 Check(!Maps(swapped,"164","162") && !Maps(swapped,"162","164"), "Existing registry swap is not applied twice");
 Check(Maps(normal,"163","162") && Maps(swapped,"163","162"), "Clicks Command bypasses the left modifier swap");
-foreach (var pair in new[] { ("162;9","164;9"), ("162;81","164;115"), ("162;32","91;83"), ("162;160;90","162;89") })
+foreach (var pair in new[] { ("17;9","164;9"), ("17;81","164;115"), ("17;32","91;83"), ("17;16;90","162;89"), ("17;16;51","91;44"), ("17;16;52","91;160;83"), ("17;16;53","91;160;83") })
     Check(Maps(normal,pair.Item1,pair.Item2,"remapShortcuts","global"), "Command shortcut " + pair.Item1 + " → " + pair.Item2);
+Check(normal["remapShortcuts"]["global"].AsArray().Count(k => (string)k["originalKeys"] == "17;16;90") == 1,
+    "Either Shift can invoke redo without duplicate source bindings");
 byte[] legacy = [0,0,0,0,0,0,0,0,3,0,0,0,0x1D,0,0x38,0,0x38,0,0x1D,0,0,0,0,0];
 Check(MacKeyboardLayout.ContainsLegacySwap(legacy) && !MacKeyboardLayout.ContainsLegacySwap(null), "Legacy scan-map detection is read-only");
 legacy[16] = 0;
