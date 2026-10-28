@@ -32,6 +32,10 @@ public sealed class WindowsHub : IDisposable {
     private int lastTheme = -1;
     private DateTime nextRecovery = DateTime.MinValue;
     private DateTime lastTick = DateTime.Now;
+    // Windows silently removes a low-level hook that answers too slowly, and the
+    // engine process keeps running without it. Reinstall periodically while idle.
+    private const int KeyboardRefreshMinutes = 5, KeyboardRefreshIdleSeconds = 15;
+    private DateTime lastKeyboardRefresh = DateTime.Now;
     private string updateTag;
     private int ssmsThemeProfiles;
     private string ssmsRotationPeriod;
@@ -172,8 +176,11 @@ public sealed class WindowsHub : IDisposable {
         busy = true;
         try {
             var now = DateTime.Now;
-            if ((now - lastTick).TotalSeconds > 90 || keyboardRefreshRequested) {
+            bool staleHook = (settings.MacKeyboard || settings.Keyboard) && !keyboardChanging &&
+                (now - lastKeyboardRefresh).TotalMinutes >= KeyboardRefreshMinutes && IdleSeconds() >= KeyboardRefreshIdleSeconds;
+            if ((now - lastTick).TotalSeconds > 90 || keyboardRefreshRequested || staleHook) {
                 keyboardRefreshRequested = false;
+                lastKeyboardRefresh = now;
                 StopKeyboard();
                 if (settings.MacKeyboard && !keyboardChanging) {
                     keyboardChanging = true;
