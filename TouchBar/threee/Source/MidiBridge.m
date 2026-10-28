@@ -8,6 +8,7 @@
 #import <math.h>
 #import <CoreMIDI/CoreMIDI.h>
 #import "ReleaseUpdates.h"
+#import "DJSurface.h"
 
 // Change labels only on this engine's own streams. Do not recreate endpoints,
 // change their unique IDs, or touch another application's MIDI connections.
@@ -665,6 +666,7 @@ static void CleanMenu(NSMenu *menu) {
     // Touch Tab is shown whenever the installed bundle is the combined edition
     // (Info.plist), never based on environment variables or build flags.
     if(menu==statusItem.menu) {
+        DJAddMenu(menu);
         NSMenuItem *toggle=nil;
         for(NSMenuItem *item in menu.itemArray) if([item.identifier isEqual:@"local.musicstrip.touchTabToggle"]) toggle=item;
         if(!toggle) {
@@ -1241,6 +1243,15 @@ static NSInteger CycleKeyCount(id delegate, NSEventModifierFlags flags) {
 }
 #import "MultiPiano.h"
 #import "ControlCustomization.h"
+static void DJActivateLayouts(void) {
+    InitializePresetCatalog();
+    BOOL install=![NSUserDefaults.standardUserDefaults objectForKey:DJBackupKey];
+    DJInstallLayouts(controlPresetCatalog);
+    if(install && [NSUserDefaults.standardUserDefaults objectForKey:DJBackupKey] && [[(id)NSApp.delegate valueForKey:@"allUserTouchbars"] count]<3) {
+        [(id)NSApp.delegate setValue:[[controlPresetCatalog subarrayWithRange:NSMakeRange(0,3)] mutableCopy] forKey:@"allUserTouchbars"];
+        [NSUserDefaults.standardUserDefaults setInteger:3 forKey:PresetCountPreference];
+    }
+}
 static void UpdateActivePianoSizing(void) {
     if(!presentation || pianoExpanded || customizationBar || recordController.activeMenuBar) return;
     // Normal presets retain the same outer host/items. No post-presentation
@@ -1783,7 +1794,29 @@ static void TestPianoEndKeys(void) {
 static void Command(NSString *command) {
     id delegate = NSApp.delegate;
     @try {
-        if ([command isEqualToString:@"CONTROLS_COLOR_TEST"]) {
+        if ([command isEqualToString:@"DJ_TEST"]) {
+            NSArray *bars=[delegate valueForKey:@"allUserTouchbars"];
+            NSCAssert(bars.count>=3,@"DJ presets available");
+            for(NSUInteger i=1;i<=2;i++) {
+                NSTouchBar *bar=bars[i];
+                NSCAssert([bar.customizationAllowedItemIdentifiers containsObject:DJMixerID] && [bar.customizationAllowedItemIdentifiers containsObject:DJPadsID],@"DJ tiles appear in native palette");
+                dispatch_after(dispatch_time(DISPATCH_TIME_NOW,(int64_t)((i-1)*NSEC_PER_SEC)),dispatch_get_main_queue(),^{
+                    [delegate setValue:@(i) forKey:@"userTouchbarNumber"];
+                    ShowPreset(delegate,NSSelectorFromString(@"showTouchbar:"),bar);
+                    dispatch_after(dispatch_time(DISPATCH_TIME_NOW,600*NSEC_PER_MSEC),dispatch_get_main_queue(),^{
+                        ThreeEDJRow *row=[(NSCustomTouchBarItem *)[bar itemForIdentifier:i==1 ? DJMixerID : DJPadsID] view];
+                        [row layoutSubtreeIfNeeded];
+                        Report([[NSString stringWithFormat:@"DJ_GEOMETRY %lu window=%d frame=%@ controls=%lu\n",(unsigned long)i,row.window!=nil,NSStringFromRect(row.frame),(unsigned long)row.controls.count] UTF8String]);
+                        if(row.window && NSWidth(row.bounds)>=599 && row.controls.count==(i==1 ? 13 : 24)) {
+                            if(i==2) Report("DJ_NATIVE_LAYOUTS_PASSED\n");
+                        } else Report("DJ_NATIVE_LAYOUT_FAILED\n");
+                    });
+                });
+            }
+        } else if ([command isEqualToString:@"DJ_STATUS"]) {
+            ThreeEDJMIDI *midi=[ThreeEDJMIDI shared];
+            Report([[NSString stringWithFormat:@"DJ_STATUS %@\n",@{@"source":@(midi.source),@"destination":@(midi.destination),@"error":@(midi.error),@"layouts":[[delegate valueForKey:@"allUserTouchbars"] valueForKey:@"itemIdentifiers"]}] UTF8String]);
+        } else if ([command isEqualToString:@"CONTROLS_COLOR_TEST"]) {
             NSTouchBar *bar=normalLayoutBar;
             NSString *key=PianoPrefsKey(bar);
             NSDictionary *prior=[NSUserDefaults.standardUserDefaults dictionaryForKey:key];
@@ -2260,6 +2293,10 @@ static void Command(NSString *command) {
                     BrandMIDIPorts();
                     ApplyBranding();
                 }];
+                InitializePresetCatalog();
+                ExtendPianoPalette(NSApp.delegate);
+                if([NSUserDefaults.standardUserDefaults boolForKey:DJEnabledKey]) DJActivateLayouts();
+                [[ThreeEDJMIDI shared] start];
                 Report("READY\n");
                 dispatch_async(dispatch_get_global_queue(QOS_CLASS_UTILITY, 0), ^{
                     char line[128];

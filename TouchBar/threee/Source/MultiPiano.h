@@ -217,6 +217,7 @@ static void ApplyInstanceSettings(NSView *piano,NSDictionary *settings) {
     piano.needsDisplay=YES;
 }
 static id MakeIndependentPiano(id delegate,SEL selector,NSTouchBar *bar,NSString *identifier) {
+    NSCustomTouchBarItem *dj=DJMakeItem(identifier); if(dj) return dj;
     if(![identifier isEqual:SecondPianoID] && ![identifier isEqual:ThirdPianoID]) {
         id item=((id(*)(id,SEL,id,id))originalMakeItem)(delegate,selector,bar,identifier);
         if([identifier isEqual:NativePianoID]) {
@@ -297,7 +298,7 @@ static void ExtendPianoPalette(id delegate) {
     for(NSTouchBar *bar in bars) {
         NSMutableArray *allowed=[bar.customizationAllowedItemIdentifiers mutableCopy];
         if(![allowed containsObject:NativePianoID] && ![allowed containsObject:SecondPianoID] && ![allowed containsObject:ThirdPianoID]) continue;
-        for(NSString *identifier in @[NativePianoID,SecondPianoID,ThirdPianoID])
+        for(NSString *identifier in @[NativePianoID,SecondPianoID,ThirdPianoID,DJMixerID,DJPadsID])
             if(![allowed containsObject:identifier]) [allowed addObject:identifier];
         bar.customizationAllowedItemIdentifiers=allowed;
     }
