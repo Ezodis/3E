@@ -11,56 +11,81 @@ static NSString *const DJBackupKey=@"ThreeEDJOriginalLayoutsV1";
 static NSColor *DJColor(NSInteger deck) {
     return deck ? [NSColor colorWithSRGBRed:1 green:.63 blue:.28 alpha:1] : [NSColor colorWithSRGBRed:.23 green:.82 blue:.94 alpha:1];
 }
+typedef struct { UInt8 status, pending; NSInteger count; BOOL sysex; } DJMIDIParser;
+static NSString *const DJTargetKey=@"ThreeEDJLiveTarget";
 @interface ThreeEDJMIDI : NSObject
 @property MIDIClientRef client;
 @property MIDIEndpointRef source;
 @property MIDIEndpointRef destination;
-@property NSMutableDictionary<NSString *,NSNumber *> *values;
-@property NSMutableDictionary<NSString *,NSNumber *> *received;
+@property MIDIEndpointRef liveSource;
+@property MIDIEndpointRef liveDestination;
+@property NSMutableDictionary<NSString *,NSNumber *> *liveValues;
+@property NSMutableDictionary<NSString *,NSNumber *> *liveReceived;
+@property DJMIDIParser rbParser;
+@property DJMIDIParser liveParser;
+@property(readonly) BOOL liveTarget;
+@property(nonatomic,strong) NSMutableDictionary<NSString *,NSNumber *> *values;
+@property(nonatomic,strong) NSMutableDictionary<NSString *,NSNumber *> *received;
 @property NSHashTable<NSView *> *views;
 @property NSTimer *timer;
 @property void (^capture)(UInt8,UInt8,UInt8);
-@property UInt8 runningStatus;
-@property UInt8 pending;
-@property NSInteger dataCount;
-@property BOOL sysex;
 @property OSStatus error;
 + (instancetype)shared;
 - (void)start;
 - (void)send:(UInt8)status number:(UInt8)number value:(UInt8)value;
 - (void)consume:(NSData *)data;
+- (void)consume:(NSData *)data live:(BOOL)live;
 - (NSInteger)value:(NSInteger)channel number:(NSInteger)number note:(BOOL)note;
 - (BOOL)confirmed:(NSInteger)channel number:(NSInteger)number note:(BOOL)note;
 - (void)redraw;
 @end
 static NSString *DJKey(NSInteger channel,NSInteger number,BOOL note) { return [NSString stringWithFormat:@"%ld:%ld:%d",(long)channel,(long)number,note]; }
-static void DJRead(const MIDIPacketList *packets,void *context,void *unused) {
+static void DJReadHost(const MIDIPacketList *packets,void *context,BOOL live) {
     ThreeEDJMIDI *midi=(__bridge ThreeEDJMIDI *)context;
     const MIDIPacket *packet=&packets->packet[0];
     NSMutableData *bytes=[NSMutableData new];
     for(UInt32 i=0;i<packets->numPackets;i++) { [bytes appendBytes:packet->data length:packet->length]; packet=MIDIPacketNext(packet); }
-    dispatch_async(dispatch_get_main_queue(),^{ [midi consume:bytes]; });
+    dispatch_async(dispatch_get_main_queue(),^{ [midi consume:bytes live:live]; });
 }
+static void DJRead(const MIDIPacketList *packets,void *context,void *unused) { DJReadHost(packets,context,NO); }
+static void DJReadLive(const MIDIPacketList *packets,void *context,void *unused) { DJReadHost(packets,context,YES); }
 @implementation ThreeEDJMIDI
+@synthesize values=_values, received=_received;
+- (BOOL)liveTarget { return [NSUserDefaults.standardUserDefaults boolForKey:DJTargetKey]; }
+- (NSMutableDictionary *)values { return self.liveTarget ? self.liveValues : _values; }
+- (NSMutableDictionary *)received { return self.liveTarget ? self.liveReceived : _received; }
 + (instancetype)shared { static ThreeEDJMIDI *midi; static dispatch_once_t once; dispatch_once(&once,^{ midi=[self new]; }); return midi; }
 - (instancetype)init {
-    if((self=[super init])) { self.values=[NSMutableDictionary new]; self.received=[NSMutableDictionary new]; self.views=[NSHashTable weakObjectsHashTable]; }
+    if((self=[super init])) { self.values=[NSMutableDictionary new]; self.received=[NSMutableDictionary new]; self.liveValues=[NSMutableDictionary new]; self.liveReceived=[NSMutableDictionary new]; self.views=[NSHashTable weakObjectsHashTable]; }
     return self;
 }
 - (void)start {
     if(self.client) return;
+#ifdef THREEE_DJ_STANDALONE_TEST
+    CFStringRef rbName=CFSTR("3£ DJ Verification"), liveName=CFSTR("3£ DJ Live Verification");
+#else
+    CFStringRef rbName=CFSTR("3£ DJ"), liveName=CFSTR("3£ DJ Live");
+#endif
     self.error=MIDIClientCreate(CFSTR("3£ DJ"),NULL,NULL,&_client);
-    if(!self.error) self.error=MIDISourceCreate(self.client,CFSTR("3£ DJ"),&_source);
-    if(!self.error) self.error=MIDIDestinationCreate(self.client,CFSTR("3£ DJ"),DJRead,(__bridge void *)self,&_destination);
+    if(!self.error) self.error=MIDISourceCreate(self.client,rbName,&_source);
+    if(!self.error) self.error=MIDIDestinationCreate(self.client,rbName,DJRead,(__bridge void *)self,&_destination);
+    if(!self.error) self.error=MIDISourceCreate(self.client,liveName,&_liveSource);
+    if(!self.error) self.error=MIDIDestinationCreate(self.client,liveName,DJReadLive,(__bridge void *)self,&_liveDestination);
     if(self.error) {
         if(self.source) MIDIEndpointDispose(self.source);
         if(self.destination) MIDIEndpointDispose(self.destination);
+        if(self.liveSource) MIDIEndpointDispose(self.liveSource);
+        if(self.liveDestination) MIDIEndpointDispose(self.liveDestination);
         if(self.client) MIDIClientDispose(self.client);
-        self.source=0; self.destination=0; self.client=0;
+        self.source=0; self.destination=0; self.liveSource=0; self.liveDestination=0; self.client=0;
         NSLog(@"3£ DJ MIDI unavailable: %d",(int)self.error); return;
     }
+#ifndef THREEE_DJ_STANDALONE_TEST
     MIDIObjectSetIntegerProperty(self.source,kMIDIPropertyUniqueID,0x33454441);
     MIDIObjectSetIntegerProperty(self.destination,kMIDIPropertyUniqueID,0x33454442);
+    MIDIObjectSetIntegerProperty(self.liveSource,kMIDIPropertyUniqueID,0x33454443);
+    MIDIObjectSetIntegerProperty(self.liveDestination,kMIDIPropertyUniqueID,0x33454444);
+#endif
     __weak ThreeEDJMIDI *weakSelf=self;
     self.timer=[NSTimer timerWithTimeInterval:.25 repeats:YES block:^(NSTimer *timer) { [weakSelf redraw]; }];
     [NSRunLoop.mainRunLoop addTimer:self.timer forMode:NSRunLoopCommonModes];
@@ -80,39 +105,45 @@ static void DJRead(const MIDIPacketList *packets,void *context,void *unused) {
     BOOL note=(status&0xf0)==0x90 || (status&0xf0)==0x80;
     if(!note) { self.values[DJKey(status&15,number,NO)]=@(value); [self.received removeObjectForKey:DJKey(status&15,number,NO)]; }
     if(self.capture) { self.capture(status,number,value); return; }
-    if(!self.source) return;
+    MIDIEndpointRef output=self.liveTarget ? self.liveSource : self.source;
+    if(!output) return;
     Byte storage[128]; MIDIPacketList *list=(MIDIPacketList *)storage;
     Byte bytes[]={status,number,value};
     MIDIPacketListAdd(list,sizeof(storage),MIDIPacketListInit(list),0,3,bytes);
-    MIDIReceived(self.source,list);
+    MIDIReceived(output,list);
     [self redraw];
 }
-- (void)consume:(NSData *)data {
+- (void)consume:(NSData *)data { [self consume:data live:self.liveTarget]; }
+- (void)consume:(NSData *)data live:(BOOL)live {
+    DJMIDIParser parser=live ? self.liveParser : self.rbParser;
+    NSMutableDictionary *values=live ? self.liveValues : _values;
+    NSMutableDictionary *received=live ? self.liveReceived : _received;
     const UInt8 *bytes=data.bytes;
     for(NSUInteger i=0;i<data.length;i++) {
         UInt8 byte=bytes[i];
         if(byte>=0xf8) continue; // Clock does not interrupt running status.
-        if(byte==0xf0) { self.sysex=YES; self.runningStatus=0; self.dataCount=0; continue; }
-        if(byte==0xf7) { self.sysex=NO; continue; }
-        if(self.sysex) continue;
-        if(byte&0x80) { self.runningStatus=byte<0xf0 ? byte : 0; self.dataCount=0; continue; }
-        UInt8 kind=self.runningStatus&0xf0;
-        if(!self.runningStatus) continue;
+        if(byte==0xf0) { parser.sysex=YES; parser.status=0; parser.count=0; continue; }
+        if(byte==0xf7) { parser.sysex=NO; continue; }
+        if(parser.sysex) continue;
+        if(byte&0x80) { parser.status=byte<0xf0 ? byte : 0; parser.count=0; continue; }
+        UInt8 kind=parser.status&0xf0;
+        if(!parser.status) continue;
         if(kind==0xc0 || kind==0xd0) continue;
-        if(!self.dataCount) { self.pending=byte; self.dataCount=1; continue; }
-        self.dataCount=0;
+        if(!parser.count) { parser.pending=byte; parser.count=1; continue; }
+        parser.count=0;
         if(kind!=0xb0 && kind!=0x90 && kind!=0x80) continue;
-        NSInteger channel=self.runningStatus&15;
+        NSInteger channel=parser.status&15;
         if(channel!=0 && channel!=1 && channel!=15) continue;
         BOOL note=kind!=0xb0;
         // Accept only our documented mapping; no unrelated MIDI can light controls.
-        BOOL allowed=note ? channel<2 && (self.pending<4 || self.pending==5 || self.pending==6 || (self.pending>=16 && self.pending<=23)) :
-            (channel<2 && (self.pending==7 || (self.pending>=16 && self.pending<=23))) || (channel==15 && self.pending==8);
+        BOOL allowed=note ? channel<2 && (parser.pending<4 || parser.pending==5 || parser.pending==6 || (parser.pending>=16 && parser.pending<=23)) :
+            (channel<2 && (parser.pending==7 || (parser.pending>=16 && parser.pending<=19))) || (channel==15 && parser.pending==8);
         if(!allowed) continue;
-        NSString *key=DJKey(channel,self.pending,note);
-        self.values[key]=@(kind==0x80 ? 0 : byte);
-        self.received[key]=@(NSProcessInfo.processInfo.systemUptime);
+        NSString *key=DJKey(channel,parser.pending,note);
+        values[key]=@(kind==0x80 ? 0 : byte);
+        received[key]=@(NSProcessInfo.processInfo.systemUptime);
     }
+    if(live) self.liveParser=parser; else self.rbParser=parser;
     [self redraw]; // Feedback never passes through send: (no MIDI echo).
 }
 @end
@@ -177,7 +208,7 @@ static void DJText(NSString *text,NSRect rect,CGFloat size,NSColor *color) {
         DJText([NSString stringWithFormat:@"%ld",(long)value],NSMakeRect(21,12,w-22,12),8,confirmed ? color : dim);
         DJText(self.caption,NSMakeRect(1,1,w-2,10),7,NSColor.whiteColor);
     } else {
-        DJText(self.caption,NSMakeRect(3,18,w-6,10),7,confirmed ? color : dim);
+        DJText(self.channel==15 ? (midi.liveTarget ? @"LIVE · A ↔ B" : @"RB · A ↔ B") : self.caption,NSMakeRect(3,18,w-6,10),7,confirmed ? color : dim);
         CGFloat inset=7, length=MAX(1,w-2*inset),x=inset+length*value/127.0;
         [[NSColor colorWithWhite:.25 alpha:1] setFill]; NSRectFill(NSMakeRect(inset,9,length,2));
         [color setFill]; NSRectFill(NSMakeRect(inset,9,x-inset,2));
@@ -315,8 +346,25 @@ static void DJInstallLayouts(NSArray<NSTouchBar *> *bars) {
         NSLog(@"Touch DJ layouts kept unchanged: %@",exception);
     }
 }
+static NSString *DJBundledMapping(void) {
+    NSString *contents=NSBundle.mainBundle.bundlePath.stringByDeletingLastPathComponent.stringByDeletingLastPathComponent;
+    return [contents stringByAppendingPathComponent:@"Resources/DJ/3£ DJ.midi.csv"];
+}
+static void DJInstallRekordboxMapping(void) {
+    NSData *data=[NSData dataWithContentsOfFile:DJBundledMapping()]; if(!data.length) return;
+    NSString *folder=[NSHomeDirectory() stringByAppendingPathComponent:@"Library/Application Support/Pioneer/rekordbox6/MidiMappings"];
+    NSString *path=[folder stringByAppendingPathComponent:@"3£ DJ.midi.csv"];
+    NSString *current=[NSString stringWithContentsOfFile:path encoding:NSUTF8StringEncoding error:nil];
+    // A populated user mapping is never replaced, including on app updates.
+    for(NSString *line in [current componentsSeparatedByCharactersInSet:NSCharacterSet.newlineCharacterSet])
+        if(line.length && ![line hasPrefix:@"@file"] && ![line hasPrefix:@"#"]) return;
+    [NSFileManager.defaultManager createDirectoryAtPath:folder withIntermediateDirectories:YES attributes:nil error:nil];
+    NSError *error=nil;
+    if(![data writeToFile:path options:NSDataWritingAtomic error:&error]) NSLog(@"3£ DJ mapping setup: %@",error);
+}
+static NSPopUpButton *djTargetChooser;
 static NSString *DJMappingGuide(void) {
-    NSMutableString *guide=[NSMutableString stringWithString:@"3£ TOUCH DJ — rekordbox / Ableton\n\nBar 2: two nudge discs, levels, HI / MID / LOW / FILTER and crossfader.\nBar 3: Play, Cue, Sync, Loop and eight Hot Cues on each deck.\nCyan = Deck A. Amber = Deck B. Swipe knobs horizontally.\nDiscs bend while your finger moves; lifting or cancelling releases the bend. They are not scratch jog wheels.\n\nSETUP\nOpen 3£ first. Choose Install / Show Touch DJ in its menu once. In rekordbox select PERFORMANCE → MIDI → 3£ DJ.\nMIDI Learn requires Core or higher, or compatible Hardware Unlock equipment.\nFor each row below, add the matching function/deck and enter MIDI IN, or use LEARN and touch the control. Turn LEARN off when finished.\nFor supported indicators, set MIDI OUT to the same code and route output to 3£ DJ.\nA dot under a pad / colored value means recently received feedback; gray values are local positions. PLAY/STOP appears only from received play feedback, then expires after five seconds without updates. The port does not prove rekordbox is connected.\n\nThe virtual port must be verified in your installed rekordbox version. Some third-party functions and jog wheels are restricted. Discs use two momentary tempo-bend notes; map them to available bend +/- actions. No driver spoofing.\nNo track titles, BPM, waveforms or audio meters are claimed through generic MIDI.\n\nABLETON\nEnable Remote for 3£ DJ input and output. Keep input Track off for controller-only use. Use Live MIDI Map on levels, EQ, filter, crossfader and clip/transport buttons. Add EQ/filter devices first. DJ Cue/Sync/Hot Cue semantics depend on your Live mapping.\n\nMAPPING (hex; MIDI channels are 1-based)\n"];
+    NSMutableString *guide=[NSMutableString stringWithString:@"3£ TOUCH DJ — rekordbox / Ableton\n\nBar 2: two nudge discs, levels, HI / MID / LOW / FILTER and crossfader.\nBar 3: Play, Cue, Sync, Loop and eight Hot Cues on each deck.\nCyan = Deck A. Amber = Deck B. Swipe knobs horizontally.\nDiscs bend while your finger moves; lifting or cancelling releases the bend. They are not scratch jog wheels.\n\nSETUP\nOpen 3£ first. Choose Install / Show Touch DJ in its menu once. This seeds a ready mapping only if 3£ DJ has no existing mapping. Restart rekordbox once after initial setup. Select rekordbox in Touch DJ Target. In rekordbox select PERFORMANCE → MIDI → 3£ DJ.\nMIDI Learn requires Core or higher, or compatible Hardware Unlock equipment.\nIf needed, use Save rekordbox Mapping below, then IMPORT it for the 3£ DJ device. For manual mapping, add the matching function/deck and enter MIDI IN, or use LEARN and touch the control. Turn LEARN off when finished.\nFor supported indicators, set MIDI OUT to the same code and route output to 3£ DJ.\nA dot under a pad / colored value means recently received feedback; gray values are local positions. PLAY/STOP appears only from received play feedback, then expires after five seconds without updates. The port does not prove rekordbox is connected.\n\nThe virtual port must be verified in your installed rekordbox version. Some third-party functions and jog wheels are restricted. Discs use two momentary tempo-bend notes; map them to available bend +/- actions. No driver spoofing.\nNo track titles, BPM, waveforms or audio meters are claimed through generic MIDI.\n\nABLETON\nEnable Remote for 3£ DJ Live input and output. Keep input Track off for controller-only use. Keep Remote off for the separate 3£ DJ port in Live. Select Ableton Live in 3£ → Touch DJ Target; choose rekordbox to return. The center fader shows LIVE or RB. Feedback is cached separately for each host. Use Live MIDI Map on levels, EQ, filter, crossfader and clip/transport buttons. Add EQ/filter devices first. DJ Cue/Sync/Hot Cue semantics depend on your Live mapping.\n\nMAPPING (hex; MIDI channels are 1-based)\n"];
     for(NSInteger deck=0;deck<2;deck++) {
         [guide appendFormat:@"\nDECK %@ — MIDI channel %ld\n",deck ? @"B" : @"A",(long)deck+1];
         NSArray *names=@[@"Play/Pause",@"Cue (momentary)",@"Beat Sync",@"Loop",@"unused",@"Tempo bend - (momentary)",@"Tempo bend + (momentary)"];
@@ -326,15 +374,39 @@ static NSString *DJMappingGuide(void) {
         [guide appendFormat:@"Channel level                %02lX07   Knob/Slider 0–127\n",(long)(0xb0+deck)];
         for(NSInteger i=0;i<4;i++) [guide appendFormat:@"%-28s %02lX%02lX   Knob/Slider 0–127\n",[knobs[i] UTF8String],(long)(0xb0+deck),(long)(16+i)];
     }
-    [guide appendString:@"\nCrossfader (global)           BF08   Knob/Slider 0–127\n\nNotes release with Note Off, velocity 0. CC values are 7-bit absolute.\nThe MIDI addresses are ready; rekordbox function assignments still need Learn.\n\nOfficial guide: https://cdn.rekordbox.com/files/20241203210623/rekordbox7.0.5_midi_learn_operation_guide_EN.pdf\nPlans: https://rekordbox.com/en/support/faq/rekordbox7/\n"];
+    [guide appendString:@"\nCrossfader (global)           BF08   Knob/Slider 0–127\n\nNotes release with Note Off, velocity 0. CC values are 7-bit absolute.\nThe bundled rekordbox mapping assigns these functions to both decks. Custom assignments can use Learn.\n\nOfficial guide: https://cdn.rekordbox.com/files/20241203210623/rekordbox7.0.5_midi_learn_operation_guide_EN.pdf\nPlans: https://rekordbox.com/en/support/faq/rekordbox7/\n"];
     return guide;
 }
 @interface ThreeEDJActions : NSObject
 + (void)setup:(id)sender;
 + (void)restore:(id)sender;
 + (void)install:(id)sender;
++ (void)targetRekordbox:(id)sender;
++ (void)targetLive:(id)sender;
++ (void)chooseTarget:(NSPopUpButton *)sender;
++ (void)saveMapping:(id)sender;
 @end
+static void DJSelectTarget(BOOL live) {
+    ThreeEDJMIDI *midi=[ThreeEDJMIDI shared];
+    // Release every held pad/nudge through the old output before switching.
+    for(NSView *view in midi.views) if([view respondsToSelector:@selector(end)]) [(ThreeEDJControl *)view end];
+    [NSUserDefaults.standardUserDefaults setBool:live forKey:DJTargetKey];
+    [djTargetChooser selectItemAtIndex:live ? 1 : 0];
+    [midi redraw];
+}
 @implementation ThreeEDJActions
++ (void)targetRekordbox:(id)sender { DJSelectTarget(NO); }
++ (void)targetLive:(id)sender { DJSelectTarget(YES); }
++ (void)chooseTarget:(NSPopUpButton *)sender { DJSelectTarget(sender.indexOfSelectedItem==1); }
++ (void)saveMapping:(id)sender {
+    NSSavePanel *panel=[NSSavePanel savePanel]; panel.nameFieldStringValue=@"3£ DJ.midi.csv";
+    if([panel runModal]!=NSModalResponseOK) return;
+    NSError *error=nil; NSData *data=[NSData dataWithContentsOfFile:DJBundledMapping()];
+    if(!data || ![data writeToURL:panel.URL options:NSDataWritingAtomic error:&error]) {
+        NSAlert *alert=[NSAlert new]; alert.messageText=@"The rekordbox mapping could not be saved";
+        alert.informativeText=error.localizedDescription ?: @"The bundled mapping file is missing.";[alert runModal];
+    }
+}
 + (void)install:(id)sender {
     [NSUserDefaults.standardUserDefaults setBool:YES forKey:DJEnabledKey];
     DJActivateLayouts();
@@ -349,11 +421,21 @@ static NSString *DJMappingGuide(void) {
     if(!window) {
         window=[[NSWindow alloc] initWithContentRect:NSMakeRect(0,0,720,580) styleMask:NSWindowStyleMaskTitled|NSWindowStyleMaskClosable|NSWindowStyleMaskResizable backing:NSBackingStoreBuffered defer:NO];
         window.releasedWhenClosed=NO; window.title=@"3£ · Touch DJ Setup";
-        NSScrollView *scroll=[[NSScrollView alloc] initWithFrame:window.contentView.bounds]; scroll.autoresizingMask=NSViewWidthSizable|NSViewHeightSizable; scroll.hasVerticalScroller=YES;
+        NSRect area=window.contentView.bounds; area.origin.y=44; area.size.height-=44;
+        NSScrollView *scroll=[[NSScrollView alloc] initWithFrame:area]; scroll.autoresizingMask=NSViewWidthSizable|NSViewHeightSizable; scroll.hasVerticalScroller=YES;
         NSTextView *text=[[NSTextView alloc] initWithFrame:NSMakeRect(0,0,690,1500)]; text.editable=NO; text.font=[NSFont monospacedSystemFontOfSize:12 weight:NSFontWeightRegular]; text.textContainerInset=NSMakeSize(20,20);
         text.string=DJMappingGuide(); text.autoresizingMask=NSViewWidthSizable; text.textContainer.widthTracksTextView=YES;
-        scroll.documentView=text; [window.contentView addSubview:scroll]; [window center];
+        scroll.documentView=text; [window.contentView addSubview:scroll];
+        djTargetChooser=[[NSPopUpButton alloc] initWithFrame:NSMakeRect(18,8,200,28) pullsDown:NO];
+        [djTargetChooser addItemsWithTitles:@[@"Target: rekordbox",@"Target: Ableton Live"]];
+        djTargetChooser.target=self;djTargetChooser.action=@selector(chooseTarget:);
+        djTargetChooser.accessibilityLabel=@"Touch DJ output target";
+        [window.contentView addSubview:djTargetChooser];
+        NSButton *save=[NSButton buttonWithTitle:@"Save rekordbox Mapping…" target:self action:@selector(saveMapping:)];
+        save.frame=NSMakeRect(240,8,230,28);[window.contentView addSubview:save];
+        [window center];
     }
+    [djTargetChooser selectItemAtIndex:[ThreeEDJMIDI shared].liveTarget ? 1 : 0];
     [window makeKeyAndOrderFront:nil]; [NSApp activateIgnoringOtherApps:YES];
 }
 + (void)restore:(id)sender {
@@ -365,6 +447,20 @@ static NSString *DJMappingGuide(void) {
 }
 @end
 static void DJAddMenu(NSMenu *menu) {
+    NSMenuItem *target=nil;
+    for(NSMenuItem *item in menu.itemArray) if([item.identifier isEqual:@"local.threepounds.dj.target"]) target=item;
+    if(!target) {
+        target=[[NSMenuItem alloc] initWithTitle:@"Touch DJ Target" action:nil keyEquivalent:@""];
+        target.identifier=@"local.threepounds.dj.target";target.submenu=[NSMenu new];
+        NSMenuItem *rb=[[NSMenuItem alloc] initWithTitle:@"rekordbox" action:@selector(targetRekordbox:) keyEquivalent:@""];
+        NSMenuItem *live=[[NSMenuItem alloc] initWithTitle:@"Ableton Live" action:@selector(targetLive:) keyEquivalent:@""];
+        rb.target=ThreeEDJActions.class; live.target=ThreeEDJActions.class;
+        [target.submenu addItem:rb];[target.submenu addItem:live];[menu addItem:target];
+    }
+    BOOL live=[ThreeEDJMIDI shared].liveTarget;
+    target.title=live ? @"Touch DJ Target: Ableton Live" : @"Touch DJ Target: rekordbox";
+    target.submenu.itemArray[0].state=live ? NSControlStateValueOff : NSControlStateValueOn;
+    target.submenu.itemArray[1].state=live ? NSControlStateValueOn : NSControlStateValueOff;
     if([menu.itemArray indexOfObjectPassingTest:^BOOL(NSMenuItem *item,NSUInteger idx,BOOL *stop) { return [item.identifier isEqual:@"local.threepounds.dj.setup"]; }]!=NSNotFound) return;
     NSMenuItem *setup=[[NSMenuItem alloc] initWithTitle:@"Touch DJ Setup…" action:@selector(setup:) keyEquivalent:@""]; setup.target=ThreeEDJActions.class; setup.identifier=@"local.threepounds.dj.setup";
     NSMenuItem *install=[[NSMenuItem alloc] initWithTitle:@"Install / Show Touch DJ" action:@selector(install:) keyEquivalent:@""]; install.target=ThreeEDJActions.class;

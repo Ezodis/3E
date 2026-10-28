@@ -1244,6 +1244,7 @@ static NSInteger CycleKeyCount(id delegate, NSEventModifierFlags flags) {
 #import "MultiPiano.h"
 #import "ControlCustomization.h"
 static void DJActivateLayouts(void) {
+    DJInstallRekordboxMapping();
     InitializePresetCatalog();
     BOOL install=![NSUserDefaults.standardUserDefaults objectForKey:DJBackupKey];
     DJInstallLayouts(controlPresetCatalog);
@@ -1794,7 +1795,13 @@ static void TestPianoEndKeys(void) {
 static void Command(NSString *command) {
     id delegate = NSApp.delegate;
     @try {
-        if ([command isEqualToString:@"DJ_TEST"]) {
+        if ([command isEqualToString:@"DJ_SETUP"]) {
+            [ThreeEDJActions setup:nil];
+        } else if ([command isEqualToString:@"DJ_TARGET_LIVE"]) {
+            [ThreeEDJActions targetLive:nil]; Report("DJ_TARGET_LIVE\n");
+        } else if ([command isEqualToString:@"DJ_TARGET_REKORDBOX"]) {
+            [ThreeEDJActions targetRekordbox:nil]; Report("DJ_TARGET_REKORDBOX\n");
+        } else if ([command isEqualToString:@"DJ_TEST"]) {
             NSArray *bars=[delegate valueForKey:@"allUserTouchbars"];
             NSCAssert(bars.count>=3,@"DJ presets available");
             for(NSUInteger i=1;i<=2;i++) {
@@ -1815,7 +1822,7 @@ static void Command(NSString *command) {
             }
         } else if ([command isEqualToString:@"DJ_STATUS"]) {
             ThreeEDJMIDI *midi=[ThreeEDJMIDI shared];
-            Report([[NSString stringWithFormat:@"DJ_STATUS %@\n",@{@"source":@(midi.source),@"destination":@(midi.destination),@"error":@(midi.error),@"layouts":[[delegate valueForKey:@"allUserTouchbars"] valueForKey:@"itemIdentifiers"]}] UTF8String]);
+            Report([[NSString stringWithFormat:@"DJ_STATUS %@\n",@{@"source":@(midi.source),@"destination":@(midi.destination),@"error":@(midi.error),@"liveSource":@(midi.liveSource),@"liveDestination":@(midi.liveDestination),@"target":midi.liveTarget ? @"live" : @"rekordbox",@"values":midi.values,@"layouts":[[delegate valueForKey:@"allUserTouchbars"] valueForKey:@"itemIdentifiers"]}] UTF8String]);
         } else if ([command isEqualToString:@"CONTROLS_COLOR_TEST"]) {
             NSTouchBar *bar=normalLayoutBar;
             NSString *key=PianoPrefsKey(bar);

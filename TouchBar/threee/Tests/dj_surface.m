@@ -7,9 +7,14 @@
 #import "../Source/DJSurface.h"
 static NSMutableArray *sent;
 static atomic_int loopbackPackets;
+static atomic_int liveLoopbackPackets;
 static void Loopback(const MIDIPacketList *packets,void *context,void *unused) {
     const MIDIPacket *p=&packets->packet[0];
     if(packets->numPackets && p->length==3 && p->data[0]==0x90 && p->data[1]==1 && p->data[2]==127) atomic_fetch_add(&loopbackPackets,1);
+}
+static void LiveLoopback(const MIDIPacketList *packets,void *context,void *unused) {
+    const MIDIPacket *p=&packets->packet[0];
+    if(packets->numPackets && p->length==3 && p->data[0]==0x90 && p->data[1]==1 && p->data[2]==127) atomic_fetch_add(&liveLoopbackPackets,1);
 }
 static ThreeEDJControl *Control(DJControlKind kind,NSInteger channel,NSInteger number) {
     ThreeEDJControl *c=[[ThreeEDJControl alloc] initWithFrame:NSMakeRect(0,0,100,30)]; c.kind=kind; c.channel=channel; c.number=number; return c;
@@ -24,7 +29,10 @@ static void Render(ThreeEDJRow *row,NSString *path) {
 int main(int argc,const char **argv) {
     @autoreleasepool {
         [NSApplication sharedApplication]; NSApp.activationPolicy=NSApplicationActivationPolicyProhibited;
-        ThreeEDJMIDI *midi=[ThreeEDJMIDI shared]; sent=[NSMutableArray new];
+        ThreeEDJMIDI *midi=[ThreeEDJMIDI shared];
+        id savedTarget=[NSUserDefaults.standardUserDefaults objectForKey:DJTargetKey];
+        DJSelectTarget(NO);
+        sent=[NSMutableArray new];
         midi.capture=^(UInt8 status,UInt8 number,UInt8 value) { [sent addObject:@[@(status),@(number),@(value)]]; };
         ThreeEDJControl *pad=Control(DJPad,1,23);
         [pad begin:NSMakePoint(20,15) identity:@1]; [pad begin:NSMakePoint(25,15) identity:@2]; [pad end]; [pad end];
@@ -49,6 +57,19 @@ int main(int argc,const char **argv) {
         NSCAssert(sent.count==before,@"Incoming feedback must never echo MIDI");
         midi.received[DJKey(1,0,YES)]=@(NSProcessInfo.processInfo.systemUptime-6);
         NSCAssert(![midi confirmed:1 number:0 note:YES],@"Stale feedback must not be represented as live");
+        // Each host retains independent values, running status and feedback freshness.
+        UInt8 rbPart[]={0xb0,18}; [midi consume:[NSData dataWithBytes:rbPart length:2] live:NO];
+        UInt8 liveFull[]={0xb0,18,91}; [midi consume:[NSData dataWithBytes:liveFull length:3] live:YES];
+        UInt8 rbEnd[]={22}; [midi consume:[NSData dataWithBytes:rbEnd length:1] live:NO];
+        NSCAssert([midi value:0 number:18 note:NO]==22,@"Interleaved Live packets must not disturb rekordbox running status");
+        DJSelectTarget(YES); NSCAssert([midi value:0 number:18 note:NO]==91,@"Host values must stay separate"); DJSelectTarget(NO);
+        NSMutableArray *sentHosts=[NSMutableArray new];
+        __weak ThreeEDJMIDI *weakMIDI=midi;
+        midi.capture=^(UInt8 status,UInt8 number,UInt8 value) { [sentHosts addObject:@(weakMIDI.liveTarget)]; };
+        ThreeEDJControl *held=Control(DJPad,0,17); [held begin:NSMakePoint(20,15) identity:@1];
+        DJSelectTarget(YES); [held begin:NSMakePoint(20,15) identity:@2]; [held end];
+        NSCAssert(([sentHosts isEqual:@[@NO,@NO,@YES,@YES]]),@"Switching must release old-host notes before routing new touches to Live");
+        DJSelectTarget(NO); midi.capture=^(UInt8 status,UInt8 number,UInt8 value) { [sent addObject:@[@(status),@(number),@(value)]]; };
         [midi.values removeAllObjects]; [midi.received removeAllObjects];
         for(BOOL pads=NO;;pads=YES) {
             ThreeEDJRow *row=[[ThreeEDJRow alloc] initWithPads:pads];
@@ -81,11 +102,13 @@ int main(int argc,const char **argv) {
         if(argc>1) [DJMappingGuide() writeToFile:[[NSString stringWithUTF8String:argv[1]] stringByAppendingPathComponent:@"Touch-DJ-Setup.txt"] atomically:YES encoding:NSUTF8StringEncoding error:nil];
         // Actual CoreMIDI source/destination round trip, with a temporary observer.
         [midi start]; NSCAssert(!midi.error && midi.source && midi.destination,@"Virtual DJ endpoints must open");
-        MIDIClientRef observer=0; MIDIPortRef input=0,output=0;
+        MIDIClientRef observer=0; MIDIPortRef input=0,liveInput=0,output=0;
         NSCAssert(MIDIClientCreate(CFSTR("3£ DJ test"),NULL,NULL,&observer)==noErr,@"Observer client");
         NSCAssert(MIDIInputPortCreate(observer,CFSTR("test input"),Loopback,NULL,&input)==noErr,@"Observer input");
         NSCAssert(MIDIOutputPortCreate(observer,CFSTR("test output"),&output)==noErr,@"Observer output");
         NSCAssert(MIDIPortConnectSource(input,midi.source,NULL)==noErr,@"Connect to actual virtual source");
+        NSCAssert(MIDIInputPortCreate(observer,CFSTR("test Live input"),LiveLoopback,NULL,&liveInput)==noErr,@"Live observer input");
+        NSCAssert(MIDIPortConnectSource(liveInput,midi.liveSource,NULL)==noErr,@"Connect to isolated Live source");
         midi.capture=nil; [midi send:0x90 number:1 value:127];
         Byte storage[128]; MIDIPacketList *list=(MIDIPacketList *)storage; Byte feedback[]={0xb1,16,101};
         MIDIPacketListAdd(list,sizeof(storage),MIDIPacketListInit(list),0,3,feedback);
@@ -95,8 +118,19 @@ int main(int argc,const char **argv) {
             [NSRunLoop.currentRunLoop runUntilDate:[NSDate dateWithTimeIntervalSinceNow:.02]];
         NSCAssert(atomic_load(&loopbackPackets)==1 && [midi value:1 number:16 note:NO]==101,@"CoreMIDI round trip must deliver exact messages in both directions");
         [midi send:0x80 number:1 value:0];
+        DJSelectTarget(YES); [midi send:0x90 number:1 value:127];
+        Byte liveFeedback[]={0xb1,16,55};
+        MIDIPacketListAdd(list,sizeof(storage),MIDIPacketListInit(list),0,3,liveFeedback);
+        NSCAssert(MIDISend(output,midi.liveDestination,list)==noErr,@"Send feedback through the isolated Live destination");
+        NSDate *liveDeadline=[NSDate dateWithTimeIntervalSinceNow:2];
+        while((!atomic_load(&liveLoopbackPackets) || [midi value:1 number:16 note:NO]!=55) && liveDeadline.timeIntervalSinceNow>0) [NSRunLoop.currentRunLoop runUntilDate:[NSDate dateWithTimeIntervalSinceNow:.02]];
+        NSCAssert(atomic_load(&liveLoopbackPackets)==1 && atomic_load(&loopbackPackets)==1 && [midi value:1 number:16 note:NO]==55,@"Live output must never reach rekordbox, or vice versa");
+        [midi send:0x80 number:1 value:0]; DJSelectTarget(NO);
+        NSCAssert([midi value:1 number:16 note:NO]==101,@"Live feedback must not overwrite rekordbox state");
+        MIDIPortDisconnectSource(liveInput,midi.liveSource);MIDIPortDispose(liveInput);
+        if(savedTarget) [NSUserDefaults.standardUserDefaults setObject:savedTarget forKey:DJTargetKey]; else [NSUserDefaults.standardUserDefaults removeObjectForKey:DJTargetKey];
         MIDIPortDisconnectSource(input,midi.source); MIDIPortDispose(input); MIDIPortDispose(output); MIDIClientDispose(observer);
-        puts("Passed real CoreMIDI source/destination round trip.");
+        puts("Passed isolated rekordbox/Live CoreMIDI source/destination round trips and host switching.");
         puts("Passed DJ gesture release/cancel/reverse, MIDI channel isolation, CC limits, fragmented/running-status feedback, no echo, stale state, row geometry and isolated layout migration/persistence.");
     }
 }

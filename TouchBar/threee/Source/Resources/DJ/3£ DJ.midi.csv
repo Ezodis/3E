@@ -1,0 +1,22 @@
+@file,1,3£ DJ
+AutoLoop,AutoLoop,Button,,9003,9103,,,,9003,9103,,,,3£ Touch DJ: AutoLoop
+CFXParameterCH1,CFXParameterCH1,KnobSlider,B013,,,,,B013,,,,,,3£ Deck 1 color filter
+CFXParameterCH2,CFXParameterCH2,KnobSlider,B113,,,,,B113,,,,,,3£ Deck 2 color filter
+ChannelFader,ChannelFader,KnobSlider,,B007,B107,,,,B007,B107,,,,3£ Touch DJ: ChannelFader
+CrossFader,CrossFader,KnobSlider,BF08,,,,,BF08,,,,,,3£ A/B crossfader
+Cue,Cue,Button,,9001,9101,,,,9001,9101,,,,3£ Touch DJ: Cue
+EQHigh,EQHigh,KnobSlider,,B010,B110,,,,B010,B110,,,,3£ Touch DJ: EQHigh
+EQLow,EQLow,KnobSlider,,B012,B112,,,,B012,B112,,,,3£ Touch DJ: EQLow
+EQMid,EQMid,KnobSlider,,B011,B111,,,,B011,B111,,,,3£ Touch DJ: EQMid
+PAD1_HotCue,PAD1_HotCue,DdjSxPad,,9010,9110,,,,9010,9110,,,,3£ Touch DJ: PAD1_HotCue
+PAD2_HotCue,PAD2_HotCue,DdjSxPad,,9011,9111,,,,9011,9111,,,,3£ Touch DJ: PAD2_HotCue
+PAD3_HotCue,PAD3_HotCue,DdjSxPad,,9012,9112,,,,9012,9112,,,,3£ Touch DJ: PAD3_HotCue
+PAD4_HotCue,PAD4_HotCue,DdjSxPad,,9013,9113,,,,9013,9113,,,,3£ Touch DJ: PAD4_HotCue
+PAD5_HotCue,PAD5_HotCue,DdjSxPad,,9014,9114,,,,9014,9114,,,,3£ Touch DJ: PAD5_HotCue
+PAD6_HotCue,PAD6_HotCue,DdjSxPad,,9015,9115,,,,9015,9115,,,,3£ Touch DJ: PAD6_HotCue
+PAD7_HotCue,PAD7_HotCue,DdjSxPad,,9016,9116,,,,9016,9116,,,,3£ Touch DJ: PAD7_HotCue
+PAD8_HotCue,PAD8_HotCue,DdjSxPad,,9017,9117,,,,9017,9117,,,,3£ Touch DJ: PAD8_HotCue
+PitchBendDown,PitchBendDown,Button,,9005,9105,,,,,,,,,3£ Touch DJ: PitchBendDown
+PitchBendUp,PitchBendUp,Button,,9006,9106,,,,,,,,,3£ Touch DJ: PitchBendUp
+PlayPause,PlayPause,Button,,9000,9100,,,,9000,9100,,,,3£ Touch DJ: PlayPause
+Sync,Sync,Button,,9002,9102,,,,9002,9102,,,,3£ Touch DJ: Sync
