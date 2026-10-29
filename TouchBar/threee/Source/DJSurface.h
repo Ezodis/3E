@@ -36,12 +36,15 @@ static NSString *const DJTargetKey=@"ThreeEDJLiveTarget";
 @property void (^capture)(UInt8,UInt8,UInt8);
 @property OSStatus error;
 @property BOOL directSearchAvailable;
-@property NSMutableDictionary<NSString *,NSNumber *> *transportReady;
+@property NSMutableDictionary<NSString *,NSMutableArray *> *transportQueues;
 + (instancetype)shared;
 - (void)start;
 - (void)send:(UInt8)status number:(UInt8)number value:(UInt8)value;
 - (void)emit:(UInt8)status number:(UInt8)number value:(UInt8)value live:(BOOL)live;
 - (void)pulseTransport:(NSInteger)channel;
+- (void)pulseTransport:(NSInteger)channel when:(BOOL (^)(void))condition;
+- (void)enqueueTransport:(void (^)(void (^)(void)))action channel:(NSInteger)channel live:(BOOL)live;
+- (void)runTransport:(NSString *)key;
 - (void)consume:(NSData *)data;
 - (void)consume:(NSData *)data live:(BOOL)live;
 - (NSInteger)value:(NSInteger)channel number:(NSInteger)number note:(BOOL)note;
@@ -70,7 +73,7 @@ static void DJReadLive(const MIDIPacketList *packets,void *context,void *unused)
 - (NSMutableDictionary *)received { return self.liveTarget ? self.liveReceived : _received; }
 + (instancetype)shared { static ThreeEDJMIDI *midi; static dispatch_once_t once; dispatch_once(&once,^{ midi=[self new]; }); return midi; }
 - (instancetype)init {
-    if((self=[super init])) { self.values=[NSMutableDictionary new]; self.received=[NSMutableDictionary new]; self.liveValues=[NSMutableDictionary new]; self.liveReceived=[NSMutableDictionary new]; self.views=[NSHashTable weakObjectsHashTable];self.transportReady=[NSMutableDictionary new]; }
+    if((self=[super init])) { self.values=[NSMutableDictionary new]; self.received=[NSMutableDictionary new]; self.liveValues=[NSMutableDictionary new]; self.liveReceived=[NSMutableDictionary new]; self.views=[NSHashTable weakObjectsHashTable];self.transportQueues=[NSMutableDictionary new]; }
     return self;
 }
 - (void)start {
@@ -143,15 +146,29 @@ static void DJReadLive(const MIDIPacketList *packets,void *context,void *unused)
     MIDIReceived(output,list);
     [self redraw];
 }
-- (void)pulseTransport:(NSInteger)channel {
-    BOOL live=self.liveTarget;NSString *key=[NSString stringWithFormat:@"%d:%ld",live,(long)channel];
-    double now=NSProcessInfo.processInfo.systemUptime,delay=MAX(0,self.transportReady[key].doubleValue-now);
-    self.transportReady[key]=@(now+delay+.09);
-    // A zero-duration Play pulse can disappear inside rekordbox's input poll.
-    // Serialize a rapid lift/resume behind pause, with a real 45 ms press.
-    void (^press)(void)=^{[self emit:0x90|channel number:0 value:127 live:live];};
-    if(delay==0) press();else dispatch_after(dispatch_time(DISPATCH_TIME_NOW,(int64_t)(delay*NSEC_PER_SEC)),dispatch_get_main_queue(),press);
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW,(int64_t)((delay+.045)*NSEC_PER_SEC)),dispatch_get_main_queue(),^{[self emit:0x80|channel number:0 value:0 live:live];});
+- (void)runTransport:(NSString *)key {
+    NSMutableArray *queue=self.transportQueues[key];if(!queue.count) return;
+    void (^action)(void (^)(void))=queue.firstObject;
+    action(^{[queue removeObjectAtIndex:0];if(queue.count) [self runTransport:key];});
+}
+- (void)enqueueTransport:(void (^)(void (^)(void)))action channel:(NSInteger)channel live:(BOOL)live {
+    NSString *key=[NSString stringWithFormat:@"%d:%ld",live,(long)channel];
+    NSMutableArray *queue=self.transportQueues[key];if(!queue) self.transportQueues[key]=queue=[NSMutableArray new];
+    [queue addObject:[action copy]];if(queue.count==1) [self runTransport:key];
+}
+- (void)pulseTransport:(NSInteger)channel { [self pulseTransport:channel when:nil]; }
+- (void)pulseTransport:(NSInteger)channel when:(BOOL (^)(void))condition {
+    BOOL live=self.liveTarget;
+    [self enqueueTransport:^(void (^done)(void)) {
+        if(condition && !condition()) { done();return; }
+        [self emit:0x90|channel number:0 value:127 live:live];
+        // Measure from the actual press, not a scheduled deadline: a busy main
+        // thread must never collapse press/release or reorder seek and resume.
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW,45*NSEC_PER_MSEC),dispatch_get_main_queue(),^{
+            [self emit:0x80|channel number:0 value:0 live:live];
+            dispatch_after(dispatch_time(DISPATCH_TIME_NOW,30*NSEC_PER_MSEC),dispatch_get_main_queue(),done);
+        });
+    } channel:channel live:live];
 }
 - (void)consume:(NSData *)data { [self consume:data live:self.liveTarget]; }
 - (void)consume:(NSData *)data live:(BOOL)live {
@@ -420,22 +437,21 @@ static void DJText(NSString *text,NSRect rect,CGFloat size,NSColor *color) {
                     self.seekResume=playing;
                     if(playing) {
                         [midi pulseTransport:self.channel];
-                        self.seekReadyTime=[midi.transportReady[[NSString stringWithFormat:@"0:%ld",(long)self.channel]] doubleValue]-.015;
+                        self.seekReadyTime=NSProcessInfo.processInfo.systemUptime;
                     }
                 }
                 double seconds=MAX(0,MIN(self.seekDuration,self.seekOrigin+dx*(self.seekSecondsPerPoint>0 ? self.seekSecondsPerPoint : .06)));
                 NSInteger value=MAX(0,MIN(127,lround(seconds/self.seekDuration*128)));
                 if(value!=self.seekLastValue) {
                     self.seekLastValue=value;NSUInteger generation=self.seekGeneration,serial=++self.seekSerial;
-                    void (^seek)(void)=^{
+                    [midi enqueueTransport:^(void (^done)(void)) {
                         NSDictionary *current=[[ThreeEDJTelemetry shared] deck:self.channel];
-                        if(self.seekGeneration!=generation || self.seekSerial!=serial || ![current[@"title"] isEqual:self.seekTitle] || fabs([current[@"duration"] doubleValue]-self.seekDuration)>=.5) return;
+                        if(self.seekGeneration!=generation || self.seekSerial!=serial || ![current[@"title"] isEqual:self.seekTitle] || fabs([current[@"duration"] doubleValue]-self.seekDuration)>=.5) { done();return; }
                         // Pause must settle before Needle Search, which otherwise races transport.
                         if(midi.liveTarget) [midi emit:0xb0|self.channel number:20 value:(UInt8)value live:NO];
                         else [midi send:0xb0|self.channel number:20 value:(UInt8)value];
-                    };
-                    double delay=self.seekReadyTime-NSProcessInfo.processInfo.systemUptime;
-                    if(delay>0) dispatch_after(dispatch_time(DISPATCH_TIME_NOW,(int64_t)(delay*NSEC_PER_SEC)),dispatch_get_main_queue(),seek);else seek();
+                        self.seekReadyTime=NSProcessInfo.processInfo.systemUptime;done();
+                    } channel:self.channel live:NO];
                 }
             }
             self.last=point;self.needsDisplay=YES;return;
@@ -480,7 +496,13 @@ static void DJText(NSString *text,NSRect rect,CGFloat size,NSColor *color) {
     NSDictionary *deck=midi.liveTarget ? nil : [[ThreeEDJTelemetry shared] deck:self.channel];
     BOOL resume=self.seekHolding && self.seekResume && [deck[@"title"] isEqual:self.seekTitle] && fabs([deck[@"duration"] doubleValue]-self.seekDuration)<.5;
     self.seekHolding=self.seekResume=NO;
-    if(resume) [midi pulseTransport:self.channel];
+    if(resume) {
+        NSString *title=self.seekTitle;double duration=self.seekDuration;
+        [midi pulseTransport:self.channel when:^BOOL{
+            NSDictionary *current=[[ThreeEDJTelemetry shared] deck:self.channel];
+            return [current[@"title"] isEqual:title] && fabs([current[@"duration"] doubleValue]-duration)<.5;
+        }];
+    }
 
     if(self.kind==DJPad) [[ThreeEDJMIDI shared] send:0x80|self.channel number:(UInt8)self.number value:0];
     if(self.nudge>=0) [[ThreeEDJMIDI shared] send:0x80|self.channel number:(UInt8)self.nudge value:0];

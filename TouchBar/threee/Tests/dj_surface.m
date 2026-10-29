@@ -266,7 +266,7 @@ int main(int argc,const char **argv) {
         telemetry.decks=@[rapidPlaying];telemetry.updated=NSProcessInfo.processInfo.systemUptime;
         NSMutableArray *pulseTimes=[NSMutableArray new];[sent removeAllObjects];
         midi.capture=^(UInt8 status,UInt8 number,UInt8 value) { [sent addObject:@[@(status),@(number),@(value)]];[pulseTimes addObject:@(NSProcessInfo.processInfo.systemUptime)]; };
-        [seek begin:NSMakePoint(20,15) identity:@1];[seek move:NSMakePoint(60,15)];[seek move:NSMakePoint(100,15)];[seek end];DrainTransport();
+        [seek begin:NSMakePoint(20,15) identity:@1];[seek move:NSMakePoint(60,15)];[seek move:NSMakePoint(100,15)];[seek end];[NSThread sleepForTimeInterval:.08];DrainTransport();
         NSCAssert(sent.count==5 && [sent[0][0] intValue]==0x90 && [sent[1][0] intValue]==0x80 && [sent[2][1] intValue]==20 && [sent[3][0] intValue]==0x90 && [sent[4][0] intValue]==0x80,@"A fast swipe/lift must sequence pause press/release, final coalesced seek, then resume press/release");
         NSCAssert([pulseTimes[1] doubleValue]-[pulseTimes[0] doubleValue]>=.04 && [pulseTimes[4] doubleValue]-[pulseTimes[3] doubleValue]>=.04,@"Both real transport pulses must remain pressed long enough for rekordbox's input polling");
         midi.capture=^(UInt8 status,UInt8 number,UInt8 value) { [sent addObject:@[@(status),@(number),@(value)]]; };
