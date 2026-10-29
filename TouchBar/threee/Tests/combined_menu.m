@@ -12,6 +12,10 @@
 @property BOOL editTouchBar;
 @property BOOL editCCs;
 @property BOOL touchbarShown;
+@property BOOL controlSurfadeMode;
+@property NSMutableArray *allUserTouchbars;
+@property NSTouchBar *mainTouchBar;
+@property NSInteger userTouchbarNumber;
 @end
 @implementation TestDelegate
 @end
@@ -19,6 +23,27 @@ int main(void) { @autoreleasepool {
     [NSApplication sharedApplication]; NSApp.activationPolicy=NSApplicationActivationPolicyProhibited;
     TestStatusBrand();
     TestDelegate *delegate=[TestDelegate new]; delegate.theItem=[TestStatus new]; delegate.theItem.menu=[NSMenu new]; NSApp.delegate=delegate;
+    // Consolidation is stable on cold relaunch and count changes; unrelated
+    // keyboard presets keep their own persistent bar identities.
+    NSUserDefaults *prefs=NSUserDefaults.standardUserDefaults;
+    NSArray *keys=@[DJEnabledKey,PresetCountPreference,@"ThreeEDJUnifiedSetV1"];
+    NSMutableDictionary *prior=[NSMutableDictionary new];for(NSString *key in keys) if([prefs objectForKey:key]) prior[key]=[prefs objectForKey:key];
+    NSMutableArray *raw=[NSMutableArray new];
+    for(NSArray *ids in @[@[@"piano-original"],@[DJMixerID],@[DJPadsID],@[@"piano-personal"],@[@"other-personal"]]) { NSTouchBar *bar=[NSTouchBar new];bar.defaultItemIdentifiers=ids;bar.customizationAllowedItemIdentifiers=@[NativePianoID,DJPadsID];[raw addObject:bar]; }
+    @try {
+        [prefs setBool:YES forKey:DJEnabledKey];[prefs setInteger:4 forKey:PresetCountPreference];[prefs removeObjectForKey:@"ThreeEDJUnifiedSetV1"];
+        delegate.allUserTouchbars=raw.mutableCopy;controlPresetCatalog=nil;InitializePresetCatalog();
+        NSCAssert(([delegate.allUserTouchbars isEqual:@[raw[0],raw[1],raw[3]]]) && [prefs integerForKey:PresetCountPreference]==3,@"Only the generated pad bar leaves active navigation");
+        delegate.allUserTouchbars=raw.mutableCopy;controlPresetCatalog=nil;InitializePresetCatalog();
+        NSCAssert(([delegate.allUserTouchbars isEqual:@[raw[0],raw[1],raw[3]]]),@"Cold relaunch must not hide the personal preset or decrement count twice");
+        ExtendPianoPalette(delegate);
+        NSCAssert([delegate.allUserTouchbars[1] customizationAllowedItemIdentifiers].count>0 && ![[delegate.allUserTouchbars[1] customizationAllowedItemIdentifiers] containsObject:DJPadsID],@"Only the unified DJ tile remains in customization");
+        StripPresetCountEditor *editor=[StripPresetCountEditor new];editor.stepper=[NSStepper new];editor.stepper.integerValue=4;editor.label=[NSTextField labelWithString:@""];[editor changeCount:nil];
+        NSCAssert(delegate.allUserTouchbars.count==4 && delegate.allUserTouchbars.lastObject==raw[4],@"Changing preset count must not resurrect the retired generated bar");
+    } @finally {
+        for(NSString *key in keys) { if(prior[key]) [prefs setObject:prior[key] forKey:key];else [prefs removeObjectForKey:key]; }
+        controlPresetCatalog=nil;delegate.allUserTouchbars=nil;
+    }
     NSCAssert(StripCombinedRelease(),@"Build with -DSTRIP_TEST_EDITION_COMBINED=1");
     CleanMenu(delegate.theItem.menu);
     NSCAssert(delegate.theItem.menu.numberOfItems==15,@"Add gesture, App, Phone Bar, DJ setup, downloads, automatic-update and Restart controls to the existing menu");

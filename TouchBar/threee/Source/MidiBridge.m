@@ -1248,9 +1248,9 @@ static void DJActivateLayouts(void) {
     InitializePresetCatalog();
     BOOL install=![NSUserDefaults.standardUserDefaults objectForKey:DJBackupKey];
     DJInstallLayouts(controlPresetCatalog);
-    if(install && [NSUserDefaults.standardUserDefaults objectForKey:DJBackupKey] && [[(id)NSApp.delegate valueForKey:@"allUserTouchbars"] count]<3) {
-        [(id)NSApp.delegate setValue:[[controlPresetCatalog subarrayWithRange:NSMakeRange(0,3)] mutableCopy] forKey:@"allUserTouchbars"];
-        [NSUserDefaults.standardUserDefaults setInteger:3 forKey:PresetCountPreference];
+    if(install && [NSUserDefaults.standardUserDefaults objectForKey:DJBackupKey] && [[(id)NSApp.delegate valueForKey:@"allUserTouchbars"] count]<2) {
+        [(id)NSApp.delegate setValue:[[controlPresetCatalog subarrayWithRange:NSMakeRange(0,2)] mutableCopy] forKey:@"allUserTouchbars"];
+        [NSUserDefaults.standardUserDefaults setInteger:2 forKey:PresetCountPreference];
     }
 }
 static void UpdateActivePianoSizing(void) {
@@ -1803,32 +1803,29 @@ static void Command(NSString *command) {
             [ThreeEDJActions targetRekordbox:nil]; Report("DJ_TARGET_REKORDBOX\n");
         } else if ([command isEqualToString:@"DJ_TEST"]) {
             NSArray *bars=[delegate valueForKey:@"allUserTouchbars"];
-            NSCAssert(bars.count>=3,@"DJ presets available");
-            for(NSUInteger i=1;i<=2;i++) {
-                NSTouchBar *bar=bars[i];
-                NSCAssert([bar.customizationAllowedItemIdentifiers containsObject:DJMixerID] && [bar.customizationAllowedItemIdentifiers containsObject:DJPadsID],@"DJ tiles appear in native palette");
-                dispatch_after(dispatch_time(DISPATCH_TIME_NOW,(int64_t)((i-1)*NSEC_PER_SEC)),dispatch_get_main_queue(),^{
-                    [delegate setValue:@(i) forKey:@"userTouchbarNumber"];
-                    ShowPreset(delegate,NSSelectorFromString(@"showTouchbar:"),bar);
-                    dispatch_after(dispatch_time(DISPATCH_TIME_NOW,600*NSEC_PER_MSEC),dispatch_get_main_queue(),^{
-                        ThreeEDJRow *row=[(NSCustomTouchBarItem *)[bar itemForIdentifier:i==1 ? DJMixerID : DJPadsID] view];
-                        [row layoutSubtreeIfNeeded];
-                        Report([[NSString stringWithFormat:@"DJ_GEOMETRY %lu window=%d frame=%@ controls=%lu\n",(unsigned long)i,row.window!=nil,NSStringFromRect(row.frame),(unsigned long)row.controls.count] UTF8String]);
-                        CGFloat center=[row convertPoint:NSMakePoint(NSMidX(row.controls.lastObject.frame),15) toView:nil].x;
-                        CGFloat host=row.window.contentView.bounds.size.width;
-                        Report([[NSString stringWithFormat:@"DJ_CENTER hub=%g host=%g origin=%g close=%@ record=%@\n",center,host,[row convertPoint:NSZeroPoint toView:nil].x,NSStringFromRect([closeButton convertRect:closeButton.bounds toView:nil]),NSStringFromRect([recordController.button convertRect:recordController.button.bounds toView:nil])] UTF8String]);
-                        NSCAssert(fabs(center-host/2)<1,@"DJ hub must be centered in the physical host, without moving fixed controls");
-                        NSRect closeFrame=[closeButton convertRect:closeButton.bounds toView:nil],recordFrame=[recordController.button convertRect:recordController.button.bounds toView:nil];
-                        for(NSInteger page=0;page<(row.pads ? 3 : 2);page++) {
-                            [row nextPage];[row layoutSubtreeIfNeeded];
-                            NSCAssert(NSEqualRects(closeFrame,[closeButton convertRect:closeButton.bounds toView:nil]) && NSEqualRects(recordFrame,[recordController.button convertRect:recordController.button.bounds toView:nil]),@"Page changes must never move close/change/record controls");
-                        }
-                        if(row.window && NSWidth(row.bounds)>=599 && row.controls.count==(i==1 ? 13 : 25)) {
-                            if(i==2) Report("DJ_NATIVE_LAYOUTS_PASSED\n");
-                        } else Report("DJ_NATIVE_LAYOUT_FAILED\n");
-                    });
-                });
-            }
+            NSCAssert(bars.count>=2,@"Unified DJ preset available");
+            NSTouchBar *bar=bars[1];
+            NSCAssert([bar.customizationAllowedItemIdentifiers containsObject:DJMixerID] && ![bar.customizationAllowedItemIdentifiers containsObject:DJPadsID],@"Only one DJ tile appears in native palette");
+            for(NSTouchBar *preset in bars) NSCAssert(!DJIsRetiredPreset(preset),@"Generated standalone pads no longer appear in preset navigation");
+            [delegate setValue:@1 forKey:@"userTouchbarNumber"];ShowPreset(delegate,NSSelectorFromString(@"showTouchbar:"),bar);
+            dispatch_after(dispatch_time(DISPATCH_TIME_NOW,600*NSEC_PER_MSEC),dispatch_get_main_queue(),^{
+                ThreeEDJRow *row=[(NSCustomTouchBarItem *)[bar itemForIdentifier:DJMixerID] view];
+                row.page=0;[row layoutSubtreeIfNeeded];[row layout];
+                NSPoint platterA=[row.controls[0] convertPoint:row.controls[0].platterCenter toView:nil],platterB=[row.controls[14] convertPoint:row.controls[14].platterCenter toView:nil];
+                NSRect closeFrame=[closeButton convertRect:closeButton.bounds toView:nil],recordFrame=[recordController.button convertRect:recordController.button.bounds toView:nil];
+                for(NSInteger page=0;page<2;page++) {
+                    row.page=page;[row layout];[row layoutSubtreeIfNeeded];
+                    CGFloat center=[row convertPoint:NSMakePoint(NSMidX(row.controls.lastObject.frame),15) toView:nil].x,host=row.window.contentView.bounds.size.width;
+                    NSUInteger visible=0;CGFloat minimum=1000;
+                    for(ThreeEDJControl *control in row.controls) if(!control.hidden) { visible++;minimum=MIN(minimum,NSWidth(control.frame)); }
+                    Report([[NSString stringWithFormat:@"DJ_GEOMETRY view=%ld window=%d width=%g visible=%lu minTarget=%g hub=%g host=%g\n",(long)page,row.window!=nil,NSWidth(row.bounds),(unsigned long)visible,minimum,center,host] UTF8String]);
+                    NSCAssert(row.window && row.controls.count==29 && visible==(page ? 19 : 13) && minimum>=24,@"Unified set must fit both real native views");
+                    NSCAssert(fabs(center-host/2)<1,@"The shared hub remains centered");
+                    NSCAssert(NSEqualPoints(platterA,[row.controls[0] convertPoint:row.controls[0].platterCenter toView:nil]) && NSEqualPoints(platterB,[row.controls[14] convertPoint:row.controls[14].platterCenter toView:nil]),@"Both wheels remain anchored across views");
+                    NSCAssert(NSEqualRects(closeFrame,[closeButton convertRect:closeButton.bounds toView:nil]) && NSEqualRects(recordFrame,[recordController.button convertRect:recordController.button.bounds toView:nil]),@"Close, Change and Record never move");
+                }
+                row.page=0;[row layout];Report("DJ_NATIVE_LAYOUTS_PASSED\n");
+            });
         } else if ([command isEqualToString:@"DJ_STATUS"]) {
             ThreeEDJMIDI *midi=[ThreeEDJMIDI shared];
             Report([[NSString stringWithFormat:@"DJ_STATUS %@\n",@{@"source":@(midi.source),@"destination":@(midi.destination),@"error":@(midi.error),@"liveSource":@(midi.liveSource),@"liveDestination":@(midi.liveDestination),@"target":midi.liveTarget ? @"live" : @"rekordbox",@"metadata":[ThreeEDJTelemetry shared].decks ?: @[],@"metadataPermission":@(AXIsProcessTrusted()),@"values":midi.values,@"layouts":[[delegate valueForKey:@"allUserTouchbars"] valueForKey:@"itemIdentifiers"]}] UTF8String]);

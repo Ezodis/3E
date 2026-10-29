@@ -298,8 +298,9 @@ static void ExtendPianoPalette(id delegate) {
     for(NSTouchBar *bar in bars) {
         NSMutableArray *allowed=[bar.customizationAllowedItemIdentifiers mutableCopy];
         if(![allowed containsObject:NativePianoID] && ![allowed containsObject:SecondPianoID] && ![allowed containsObject:ThirdPianoID]) continue;
-        for(NSString *identifier in @[NativePianoID,SecondPianoID,ThirdPianoID,DJMixerID,DJPadsID])
+        for(NSString *identifier in @[NativePianoID,SecondPianoID,ThirdPianoID,DJMixerID])
             if(![allowed containsObject:identifier]) [allowed addObject:identifier];
+        [allowed removeObject:DJPadsID];
         bar.customizationAllowedItemIdentifiers=allowed;
     }
 }

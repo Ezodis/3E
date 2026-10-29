@@ -18,10 +18,22 @@ static void InitializePresetCatalog(void) {
     if(controlPresetCatalog.count) return;
     NSArray *bars=[(id)NSApp.delegate valueForKey:@"allUserTouchbars"];
     if(!bars.count) return;
-    controlPresetCatalog=[bars mutableCopy];
     NSInteger saved=[NSUserDefaults.standardUserDefaults integerForKey:PresetCountPreference];
+    if([NSUserDefaults.standardUserDefaults boolForKey:DJEnabledKey]) {
+        controlPresetCatalog=DJUnifiedCatalog(bars);
+        NSString *migration=@"ThreeEDJUnifiedSetV1";
+        if(controlPresetCatalog.count!=bars.count && ![NSUserDefaults.standardUserDefaults boolForKey:migration]) {
+            NSArray *active=[bars subarrayWithRange:NSMakeRange(0,saved>0 ? MIN((NSUInteger)saved,bars.count) : bars.count)];
+            saved=MAX(1,(NSInteger)DJUnifiedCatalog(active).count);
+            [NSUserDefaults.standardUserDefaults setInteger:saved forKey:PresetCountPreference];
+            [NSUserDefaults.standardUserDefaults setBool:YES forKey:migration];
+            [(id)NSApp.delegate setValue:@1 forKey:@"userTouchbarNumber"];
+        }
+    } else controlPresetCatalog=[bars mutableCopy];
     if(saved>0 && saved<(NSInteger)controlPresetCatalog.count)
         [(id)NSApp.delegate setValue:[[controlPresetCatalog subarrayWithRange:NSMakeRange(0,saved)] mutableCopy] forKey:@"allUserTouchbars"];
+    else if(controlPresetCatalog.count!=bars.count)
+        [(id)NSApp.delegate setValue:controlPresetCatalog.mutableCopy forKey:@"allUserTouchbars"];
 }
 
 static void HideExpandedOnlySettings(id controller) {

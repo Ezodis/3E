@@ -45,14 +45,37 @@ int main(int argc,const char **argv) {
         NSCAssert(([sent isEqual:@[@[@0x90,@6,@127],@[@0x80,@6,@0],@[@0x90,@5,@127],@[@0x80,@5,@0]]]),@"Nudge must release previous direction, avoid repeats, and release on cancellation");
         [sent removeAllObjects];
         ThreeEDJControl *knob=Control(DJKnob,1,16);
-        [knob begin:NSMakePoint(50,15) identity:@1]; [knob move:NSMakePoint(50,1000)]; [knob move:NSMakePoint(50,-1000)]; [knob move:NSMakePoint(50,15)]; [knob end];
-        NSCAssert(([sent isEqual:@[@[@0xb1,@16,@127],@[@0xb1,@16,@0],@[@0xb1,@16,@64]]]),@"Swipe clamps both ends and reverses from original value");
-        // Short vertical strokes keep two opposing fingers in their own lanes.
+        [knob begin:NSMakePoint(50,15) identity:@1];[knob move:NSMakePoint(50,29)];
+        [knob advanceKnobToTime:knob.knobTickTime+.1];
+        NSCAssert(sent.count==0,@"Vertical coordinates must never adjust a Touch Bar knob");
+        [knob move:NSMakePoint(58,15)];
+        for(NSInteger tick=0;tick<25;tick++) [knob advanceKnobToTime:knob.knobTickTime+.1];
+        NSCAssert([midi value:1 number:16 note:NO]==127,@"An eight-point horizontal displacement can reach maximum while held");
+        [knob move:NSMakePoint(42,15)];
+        for(NSInteger tick=0;tick<25;tick++) [knob advanceKnobToTime:knob.knobTickTime+.1];
+        NSCAssert([midi value:1 number:16 note:NO]==0,@"Reversing a short horizontal gesture decreases without crossing lanes");
+        [knob move:NSMakePoint(50,15)];NSInteger stopped=[midi value:1 number:16 note:NO];
+        [knob advanceKnobToTime:knob.knobTickTime+.1];
+        NSCAssert(knob.knobRate==0 && [midi value:1 number:16 note:NO]==stopped,@"Return to the original x stops the change");
+        [knob end];NSCAssert(!knob.knobTimer,@"Lift must invalidate the rate timer");
+        [midi.values removeAllObjects];
         ThreeEDJControl *hi=Control(DJKnob,0,16),*mid=Control(DJKnob,0,17);
-        [hi begin:NSMakePoint(25,15) identity:@1];[mid begin:NSMakePoint(25,15) identity:@2];
-        [hi move:NSMakePoint(25,23)];[mid move:NSMakePoint(25,7)];
-        NSCAssert([midi value:0 number:16 note:NO]>64 && [midi value:0 number:17 note:NO]<64,@"Simultaneous opposing vertical changes must not share a gesture origin");
-        [hi end];[mid end];
+        [hi begin:NSMakePoint(20,15) identity:@1];[mid begin:NSMakePoint(60,15) identity:@2];
+        [hi move:NSMakePoint(28,15)];[mid move:NSMakePoint(52,15)];
+        for(NSInteger tick=0;tick<5;tick++) { [hi advanceKnobToTime:hi.knobTickTime+.1];[mid advanceKnobToTime:mid.knobTickTime+.1]; }
+        NSCAssert([midi value:0 number:16 note:NO]>64 && [midi value:0 number:17 note:NO]<64,@"Independent x-only fingers must turn knobs in opposite directions");
+        [mid move:NSMakePoint(68,15)];
+        for(NSInteger tick=0;tick<5;tick++) [mid advanceKnobToTime:mid.knobTickTime+.1];
+        NSCAssert(mid.knobRate>0 && hi.knobRate>0,@"Both fingers can turn in the same direction independently");
+        [hi touchesCancelledWithEvent:nil];[mid end];
+        NSInteger released=[midi value:0 number:16 note:NO];[hi advanceKnobToTime:hi.knobTickTime+.1];
+        NSCAssert(!hi.knobTimer && [midi value:0 number:16 note:NO]==released,@"Cancellation cannot keep changing a knob");
+        ThreeEDJControl *timed=Control(DJKnob,1,17);
+        NSInteger initial=[midi value:1 number:17 note:NO];[timed begin:NSMakePoint(20,15) identity:@1];[timed move:NSMakePoint(28,15)];
+        [NSRunLoop.currentRunLoop runUntilDate:[NSDate dateWithTimeIntervalSinceNow:.18]];
+        NSCAssert([midi value:1 number:17 note:NO]>initial,@"A horizontal hold must run the actual rate timer");[timed end];
+        NSInteger final=[midi value:1 number:17 note:NO];[NSRunLoop.currentRunLoop runUntilDate:[NSDate dateWithTimeIntervalSinceNow:.1]];
+        NSCAssert([midi value:1 number:17 note:NO]==final,@"The actual timer must stop sending after lift");
         NSCAssert(DJWireStatus(0x81,NO)==0x91 && DJWireStatus(0x81,YES)==0x81,@"Rekordbox momentary releases use Note On zero; Live uses Note Off");
         [sent removeAllObjects]; disc.search=YES;
         [disc begin:NSMakePoint(50,15) identity:@1];[disc move:NSMakePoint(75,15)];
@@ -88,25 +111,35 @@ int main(int argc,const char **argv) {
         NSCAssert(([sentHosts isEqual:@[@NO,@NO,@YES,@YES]]),@"Switching must release old-host notes before routing new touches to Live");
         DJSelectTarget(NO); midi.capture=^(UInt8 status,UInt8 number,UInt8 value) { [sent addObject:@[@(status),@(number),@(value)]]; };
         [midi.values removeAllObjects]; [midi.received removeAllObjects];
-        for(BOOL pads=NO;;pads=YES) {
-            ThreeEDJRow *row=[[ThreeEDJRow alloc] initWithPads:pads];
-            for(NSNumber *width in @[@600,@480,@720]) {
-                row.frame=NSMakeRect(0,0,width.doubleValue,30); [row layout];
-                for(ThreeEDJControl *c in row.controls) if(!c.hidden) NSCAssert(NSMinX(c.frame)>=0 && NSMaxX(c.frame)<=width.doubleValue+.1 && NSWidth(c.frame)>10,@"All controls must fit their row");
+        ThreeEDJRow *row=[[ThreeEDJRow alloc] initWithPads:NO];
+        NSCAssert(row.controls.count==29,@"The unified set owns two discs, ten mixer controls, sixteen buttons and one hub");
+        for(NSNumber *width in @[@480,@600,@756,@880]) {
+            row.frame=NSMakeRect(0,0,width.doubleValue,30);
+            for(NSInteger page=0;page<2;page++) {
+                row.page=page;[row layout];NSUInteger visible=0;
+                NSMutableArray *frames=[NSMutableArray new];
+                for(ThreeEDJControl *c in row.controls) if(!c.hidden) {
+                    visible++;NSCAssert(NSMinX(c.frame)>=0 && NSMaxX(c.frame)<=width.doubleValue+.1 && NSWidth(c.frame)>10,@"Every visible control must fit");
+                    for(NSValue *frame in frames) NSCAssert(!NSIntersectsRect(c.frame,frame.rectValue),@"Targets must not overlap");
+                    [frames addObject:[NSValue valueWithRect:c.frame]];
+                }
+                NSCAssert(visible==(page ? 19 : 13),@"Mixer shows all EQ/levels; Performance shows eight buttons and a disc per deck");
+                for(NSInteger deck=0;deck<2;deck++) for(NSInteger i=0;i<4;i++) NSCAssert(!row.controls[deck*14+10+i].hidden==page,@"Only four hot cues per deck appear in Performance");
             }
-            row.frame=NSMakeRect(0,0,600,30); [row layout];
-            if(argc>1) Render(row,[[NSString stringWithUTF8String:argv[1]] stringByAppendingPathComponent:pads ? @"dj-pads.png" : @"dj-mixer.png"]);
-            NSUInteger pages=pads ? 3 : 2;
-            for(NSUInteger page=0;page<pages;page++) {
-                [row layout];NSUInteger visible=0;
-                for(ThreeEDJControl *c in row.controls) if(!c.hidden) { visible++;NSCAssert(NSWidth(c.frame)>=40,@"Every visible target must be finger-sized"); }
-                NSCAssert(visible==(pads ? 9 : row.page ? 9 : 7),@"Pages expose fewer, larger controls");
-                NSCAssert(fabs(NSMidX(row.controls.lastObject.frame)-300)<.1,@"Hub remains centered across pages");
-                if(argc>1 && page>0) Render(row,[[NSString stringWithUTF8String:argv[1]] stringByAppendingPathComponent:pads ? [NSString stringWithFormat:@"dj-pads-%lu.png",(unsigned long)page] : @"dj-eq.png"]);
-                [row nextPage];
-            }
-            if(pads) break;
+            row.page=0;[row layout];
+            NSPoint a=[row.controls[0] convertPoint:row.controls[0].platterCenter toView:row],b=[row.controls[14] convertPoint:row.controls[14].platterCenter toView:row];
+            [row nextPage];
+            NSCAssert(NSEqualPoints(a,[row.controls[0] convertPoint:row.controls[0].platterCenter toView:row]) && NSEqualPoints(b,[row.controls[14] convertPoint:row.controls[14].platterCenter toView:row]),@"Platter centers must never move when metadata folds away");
+            NSCAssert(fabs(NSMidX(row.controls.lastObject.frame)-width.doubleValue/2)<.1,@"The same hub remains centered");
         }
+        row.frame=NSMakeRect(0,0,756,30);row.page=0;[row layout];
+        ThreeEDJControl *hub=row.controls.lastObject;NSUInteger tapBefore=sent.count;
+        [hub begin:NSMakePoint(30,15) identity:@1];[hub move:NSMakePoint(31,15)];[hub finish];
+        NSCAssert(row.page==1 && sent.count==tapBefore,@"A center tap, including small jitter, switches view without moving the crossfader");
+        row.page=0;[row layout];
+        if(argc>1) Render(row,[[NSString stringWithUTF8String:argv[1]] stringByAppendingPathComponent:@"dj-mixer.png"]);
+        [row nextPage];
+        if(argc>1) Render(row,[[NSString stringWithUTF8String:argv[1]] stringByAppendingPathComponent:@"dj-pads.png"]);
         // Real AppKit customization persistence, isolated identifiers, restored defaults.
         NSString *domain=NSUUID.UUID.UUIDString;
         NSMutableArray *bars=[NSMutableArray new];
@@ -116,7 +149,7 @@ int main(int argc,const char **argv) {
             for(NSInteger i=0;i<3;i++) { NSTouchBar *bar=[NSTouchBar new]; bar.customizationIdentifier=[NSString stringWithFormat:@"%@.%ld",domain,(long)i]; bar.defaultItemIdentifiers=@[@"original-control"]; [bars addObject:bar]; }
             DJInstallLayouts(bars);
             NSCAssert(([bars[0] itemIdentifiers].count==1 && [[[bars[0] itemIdentifiers] firstObject] isEqual:@"original-control"]),@"First preset stays unchanged");
-            NSCAssert(([[bars[1] itemIdentifiers] isEqual:@[DJMixerID]] && [[bars[2] itemIdentifiers] isEqual:@[DJPadsID]]),@"Second and third presets must contain actual custom items");
+            NSCAssert(([[bars[1] itemIdentifiers] isEqual:@[DJMixerID]] && [[bars[2] itemIdentifiers] isEqual:@[@"original-control"]]),@"Only the second preset receives the unified DJ set");
             NSDictionary *backup=[NSUserDefaults.standardUserDefaults dictionaryForKey:DJBackupKey];
             NSCAssert(([backup[[bars[1] customizationIdentifier]] isEqual:@[@"original-control"]]),@"Migration preserves the former layout");
             DJSetLayout(bars[1],@[@"user-edited"]); DJInstallLayouts(bars);
@@ -125,6 +158,11 @@ int main(int argc,const char **argv) {
             if(previous) [NSUserDefaults.standardUserDefaults setObject:previous forKey:DJBackupKey]; else [NSUserDefaults.standardUserDefaults removeObjectForKey:DJBackupKey];
             for(NSTouchBar *bar in bars) [NSUserDefaults.standardUserDefaults removeObjectForKey:[@"NSTouchBarConfig: " stringByAppendingString:[bar.customizationIdentifier stringByReplacingOccurrencesOfString:@"." withString:@"·"]]];
         }
+        NSTouchBar *legacy=[NSTouchBar new];legacy.defaultItemIdentifiers=@[DJPadsID];
+        NSTouchBar *custom=[NSTouchBar new];custom.defaultItemIdentifiers=@[DJPadsID,@"custom-control"];
+        NSArray *catalog=DJUnifiedCatalog(@[bars[0],legacy,bars[1],custom,bars[2]]);
+        NSCAssert(catalog.count==4 && catalog[1]==bars[1] && catalog[2]==custom,@"Retire only the generated pad-only preset; preserve every unrelated or customized bar");
+        NSCAssert([DJUnifiedCatalog(catalog) isEqual:catalog],@"Catalog consolidation must be idempotent");
         if(argc>1) [DJMappingGuide() writeToFile:[[NSString stringWithUTF8String:argv[1]] stringByAppendingPathComponent:@"Touch-DJ-Setup.txt"] atomically:YES encoding:NSUTF8StringEncoding error:nil];
         NSArray *fixture=@[
             @{@"role":@"AXStaticText",@"text":@"Actual track",@"help":@""},@{@"role":@"AXImage",@"text":@"",@"help":@""},
@@ -141,8 +179,10 @@ int main(int argc,const char **argv) {
         [disc begin:NSMakePoint(50,15) identity:@1];[disc move:NSMakePoint(60,15)];
         NSCAssert(([sent[0] isEqual:@[@0x90,@2,@127]] && [sent[1] isEqual:@[@0x80,@2,@0]] && [sent[2] isEqual:@[@0x90,@6,@127]]),@"Known enabled Sync must be disabled before bending");[disc end];telemetry.decks=nil;
         ThreeEDJRow *paged=[[ThreeEDJRow alloc] initWithPads:YES];[paged layout];
-        [paged.controls[0] begin:NSMakePoint(10,15) identity:@1];[paged nextPage];
-        NSCAssert(!paged.controls[0].tracking && [sent.lastObject[0] intValue]==0x80,@"Paging must release hidden held pads");
+        [paged.controls[6] begin:NSMakePoint(10,15) identity:@1];[paged nextPage];
+        NSCAssert(!paged.controls[6].tracking && [sent.lastObject[0] intValue]==0x80,@"Changing view must release hidden held buttons");
+        ThreeEDJControl *running=paged.controls[2];[running begin:NSMakePoint(10,15) identity:@1];[running move:NSMakePoint(18,15)];[paged nextPage];
+        NSCAssert(!running.knobTimer && !running.tracking,@"Changing view must cancel held knob rates");
         // Actual CoreMIDI source/destination round trip, with a temporary observer.
         [midi start]; NSCAssert(!midi.error && midi.source && midi.destination,@"Virtual DJ endpoints must open");
         MIDIClientRef observer=0; MIDIPortRef input=0,liveInput=0,output=0;
