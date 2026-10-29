@@ -88,6 +88,8 @@ int main(int argc,const char **argv) {
         [edgeKnob move:NSMakePoint(7,15)];NSCAssert(edgeKnob.knobRate>0,@"Moving away from minimum resumes fine increase");[edgeKnob end];
         midi.values[DJKey(0,18,NO)]=@64;[edgeKnob begin:NSMakePoint(40,15) identity:@1];[edgeKnob move:NSMakePoint(41,15)];[edgeKnob end];
         NSCAssert([midi value:0 number:18 note:NO]==64,@"An edge tap or tiny jitter must not snap to maximum");
+        [edgeKnob begin:NSMakePoint(32,15) identity:@1];[edgeKnob move:NSMakePoint(40,15)];
+        NSCAssert([midi value:0 number:18 note:NO]!=127 && edgeKnob.knobRate>0,@"An ordinary eight-point hold gesture must stay fine even when it ends near an edge");[edgeKnob end];
         ThreeEDJRow *endpointMixer=[[ThreeEDJRow alloc] initWithPads:NO];endpointMixer.frame=NSMakeRect(0,0,756,30);[endpointMixer layout];
         NSUInteger endpointKnobs=0;
         for(ThreeEDJControl *c in endpointMixer.controls) if(c.kind==DJKnob && !c.hidden) {

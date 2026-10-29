@@ -278,8 +278,8 @@ static void DJText(NSString *text,NSRect rect,CGFloat size,NSColor *color) {
         // A deliberate swipe to a control's edge is an immediate endpoint.
         // Small gestures near the touch anchor retain the fine hold behavior.
         CGFloat edge=MIN(4,NSWidth(self.bounds)*.1);
-        BOOL minimum=dx<=-6 && point.x<=edge;
-        BOOL maximum=dx>=6 && point.x>=NSWidth(self.bounds)-edge;
+        BOOL minimum=dx<=-12 && point.x<=edge;
+        BOOL maximum=dx>=12 && point.x>=NSWidth(self.bounds)-edge;
         if(minimum || maximum) {
             NSInteger value=maximum ? 127 : 0;
             self.knobPosition=value;self.knobRate=0;
