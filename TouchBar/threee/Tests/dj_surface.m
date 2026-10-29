@@ -76,6 +76,26 @@ int main(int argc,const char **argv) {
         NSCAssert([midi value:1 number:17 note:NO]>initial,@"A horizontal hold must run the actual rate timer");[timed end];
         NSInteger final=[midi value:1 number:17 note:NO];[NSRunLoop.currentRunLoop runUntilDate:[NSDate dateWithTimeIntervalSinceNow:.1]];
         NSCAssert([midi value:1 number:17 note:NO]==final,@"The actual timer must stop sending after lift");
+        // Real mixer-width knobs: both endpoints are immediate, independent,
+        // and reversible, while an edge tap alone never resets a parameter.
+        ThreeEDJControl *edgeKnob=Control(DJKnob,0,18);edgeKnob.frame=NSMakeRect(0,0,42,30);
+        [edgeKnob begin:NSMakePoint(21,15) identity:@1];[edgeKnob move:NSMakePoint(41,15)];
+        NSCAssert([midi value:0 number:18 note:NO]==127 && edgeKnob.knobRate==0,@"Right-edge swipe reaches maximum without waiting for a timer");
+        [edgeKnob move:NSMakePoint(35,15)];
+        NSCAssert(edgeKnob.knobRate<0,@"Reversing away from the endpoint resumes fine decrease");
+        [edgeKnob move:NSMakePoint(1,15)];
+        NSCAssert([midi value:0 number:18 note:NO]==0 && edgeKnob.knobRate==0,@"Left-edge swipe reaches minimum immediately in the same touch");
+        [edgeKnob move:NSMakePoint(7,15)];NSCAssert(edgeKnob.knobRate>0,@"Moving away from minimum resumes fine increase");[edgeKnob end];
+        midi.values[DJKey(0,18,NO)]=@64;[edgeKnob begin:NSMakePoint(40,15) identity:@1];[edgeKnob move:NSMakePoint(41,15)];[edgeKnob end];
+        NSCAssert([midi value:0 number:18 note:NO]==64,@"An edge tap or tiny jitter must not snap to maximum");
+        ThreeEDJRow *endpointMixer=[[ThreeEDJRow alloc] initWithPads:NO];endpointMixer.frame=NSMakeRect(0,0,756,30);[endpointMixer layout];
+        NSUInteger endpointKnobs=0;
+        for(ThreeEDJControl *c in endpointMixer.controls) if(c.kind==DJKnob && !c.hidden) {
+            [c begin:NSMakePoint(NSWidth(c.bounds)/2,15) identity:@(endpointKnobs)];
+            [c move:NSMakePoint(NSWidth(c.bounds),15)];NSCAssert([midi value:c.channel number:c.number note:NO]==127,@"Every first-view knob supports immediate maximum");
+            [c move:NSMakePoint(0,15)];NSCAssert([midi value:c.channel number:c.number note:NO]==0,@"Every first-view knob supports immediate minimum");[c end];endpointKnobs++;
+        }
+        NSCAssert(endpointKnobs==8,@"All four knobs on both decks are covered in the first view");
         NSCAssert(DJWireStatus(0x81,NO)==0x91 && DJWireStatus(0x81,YES)==0x81,@"Rekordbox momentary releases use Note On zero; Live uses Note Off");
         [sent removeAllObjects]; disc.search=YES;
         [disc begin:NSMakePoint(50,15) identity:@1];[disc move:NSMakePoint(75,15)];
