@@ -11,7 +11,7 @@ static NSArray *DJParseDecks(NSArray<NSDictionary *> *nodes) {
     NSMutableArray *decks=[NSMutableArray new];
     NSRegularExpression *time=[NSRegularExpression regularExpressionWithPattern:@"^-?[0-9]{1,3}:[0-9]{2}$" options:0 error:nil];
     for(NSUInteger i=0;i<nodes.count && decks.count<2;i++) {
-        if(![nodes[i][@"help"] hasPrefix:@"Beat Sync:"]) continue;
+        if(![nodes[i][@"help"] hasPrefix:@"Beat Sync:"] && ![nodes[i][@"help"] hasPrefix:@"BPM Sync:"]) continue;
         NSInteger image=-1;
         for(NSInteger j=(NSInteger)i-1;j>=MAX(0,(NSInteger)i-10);j--) if([nodes[j][@"role"] isEqual:@"AXImage"]) { image=j;break; }
         if(image<1) return @[];
@@ -53,10 +53,26 @@ static void DJCollectAX(AXUIElementRef element,NSMutableArray *nodes,NSInteger d
 + (instancetype)shared;
 - (void)poll;
 - (NSDictionary *)deck:(NSInteger)deck;
+- (void)updateDecks:(NSArray *)decks at:(double)time;
 @end
 @implementation ThreeEDJTelemetry
 + (instancetype)shared { static id instance; static dispatch_once_t once;dispatch_once(&once,^{instance=[self new];});return instance; }
 - (NSDictionary *)deck:(NSInteger)deck { return NSProcessInfo.processInfo.systemUptime-self.updated<2.5 && deck>=0 && (NSUInteger)deck<self.decks.count ? self.decks[deck] : nil; }
+- (void)updateDecks:(NSArray *)decks at:(double)time {
+    NSMutableArray *observed=[NSMutableArray new];double dt=time-self.updated;
+    for(NSUInteger i=0;i<decks.count;i++) {
+        NSMutableDictionary *deck=[decks[i] mutableCopy];
+        NSDictionary *previous=i<self.decks.count ? self.decks[i] : nil;
+        if(dt>.15 && dt<2.5 && [previous[@"title"] isEqual:deck[@"title"]] && fabs([previous[@"duration"] doubleValue]-[deck[@"duration"] doubleValue])<.5) {
+            double travel=[deck[@"elapsed"] doubleValue]-[previous[@"elapsed"] doubleValue];
+            // Infer transport only from consecutive real host positions. Large seeks are unknown.
+            if(fabs(travel)<.04) deck[@"playing"]=@NO;
+            else if(travel>dt*.2 && travel<dt*3) deck[@"playing"]=@YES;
+        }
+        [observed addObject:deck];
+    }
+    self.decks=observed;self.updated=time;
+}
 - (void)poll {
 #ifndef THREEE_DJ_STANDALONE_TEST
     if(self.busy || !AXIsProcessTrusted() || NSProcessInfo.processInfo.systemUptime-self.lastPoll<.65) return;
@@ -70,7 +86,7 @@ static void DJCollectAX(AXUIElementRef element,NSMutableArray *nodes,NSInteger d
         CFAbsoluteTime deadline=CFAbsoluteTimeGetCurrent()+.35;
         for(id window in windows) if([DJAX((__bridge AXUIElementRef)window,kAXTitleAttribute) isEqual:@"rekordbox"]) { DJCollectAX((__bridge AXUIElementRef)window,nodes,0,deadline);break; }
         CFRelease(root); NSArray *decks=DJParseDecks(nodes);
-        dispatch_async(dispatch_get_main_queue(),^{self.decks=decks;self.updated=NSProcessInfo.processInfo.systemUptime;self.busy=NO;});
+        dispatch_async(dispatch_get_main_queue(),^{[self updateDecks:decks at:NSProcessInfo.processInfo.systemUptime];self.busy=NO;});
     });
 #endif
 }

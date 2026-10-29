@@ -5,6 +5,27 @@
 #define THREEE_DJ_STANDALONE_TEST 1
 #import <stdatomic.h>
 #import "../Source/DJSurface.h"
+// AppKit-shaped direct-touch fixtures exercise handlers, including a captured
+// finger reported against a neighboring view after leaving the compact wheel.
+@interface DJTestTouch : NSObject
+@property NSPoint point;
+@property id identity;
+@property NSView *target;
+@end
+@implementation DJTestTouch
+- (NSTouchType)type { return NSTouchTypeDirect; }
+- (BOOL)isResting { return YES; }
+- (NSPoint)locationInView:(NSView *)view { return self.point; }
+@end
+@interface DJTestEvent : NSObject
+@property DJTestTouch *touch;
+@property NSTouchPhase phase;
+@end
+@implementation DJTestEvent
+- (NSSet *)touchesMatchingPhase:(NSTouchPhase)phase inView:(NSView *)view {
+    return (phase & self.phase) && (!view || view==self.touch.target) ? [NSSet setWithObject:self.touch] : NSSet.set;
+}
+@end
 static NSMutableArray *sent;
 static atomic_int loopbackPackets;
 static atomic_int liveLoopbackPackets;
@@ -21,6 +42,7 @@ static void LiveLoopback(const MIDIPacketList *packets,void *context,void *unuse
 static ThreeEDJControl *Control(DJControlKind kind,NSInteger channel,NSInteger number) {
     ThreeEDJControl *c=[[ThreeEDJControl alloc] initWithFrame:NSMakeRect(0,0,100,30)]; c.kind=kind; c.channel=channel; c.number=number; return c;
 }
+static void DrainTransport(void) { [NSRunLoop.currentRunLoop runUntilDate:[NSDate dateWithTimeIntervalSinceNow:.2]]; }
 static void Feed(ThreeEDJMIDI *midi,const UInt8 *bytes,NSUInteger count) { [midi consume:[NSData dataWithBytes:bytes length:count]]; }
 static void Render(ThreeEDJRow *row,NSString *path) {
     [row layoutSubtreeIfNeeded];
@@ -215,6 +237,56 @@ int main(int argc,const char **argv) {
         [seek move:NSMakePoint(90,15)];NSCAssert(sent.count==seekMessages,@"A track load during a gesture cannot seek using the previous track's origin");[seek end];
         telemetry.decks=nil;[seek begin:NSMakePoint(50,15) identity:@1];[seek move:NSMakePoint(75,15)];
         NSCAssert(sent.count==seekMessages,@"Direct seeking requires real track/time metadata and never silently falls back to fast scan");[seek end];
+        // The same real handlers must seek and hold in MIX and compact PADS.
+        for(NSInteger page=0;page<2;page++) for(NSInteger deck=0;deck<2;deck++) {
+            row.page=page;[row layout];ThreeEDJControl *wheel=row.controls[deck*14];wheel.search=YES;
+            NSMutableDictionary *playing=[metadata[0] mutableCopy];playing[@"playing"]=@YES;
+            telemetry.decks=@[playing,playing];telemetry.updated=NSProcessInfo.processInfo.systemUptime;
+            midi.values[DJKey(deck,0,YES)]=@127;
+            [sent removeAllObjects];DJTestTouch *touch=[DJTestTouch new];touch.identity=NSUUID.UUID;touch.target=wheel;touch.point=NSMakePoint(16,15);
+            DJTestEvent *event=[DJTestEvent new];event.touch=touch;event.phase=NSTouchPhaseBegan;
+            [wheel touchesBeganWithEvent:(id)event];
+            NSCAssert(wheel.tracking && sent.count==0,@"Resting-marked direct touches must start in both views without interrupting a mode tap");
+            touch.target=row.controls[deck*14+6];touch.point=NSMakePoint(96,15);event.phase=NSTouchPhaseMoved;
+            [wheel touchesMovedWithEvent:(id)event];DrainTransport();
+            NSCAssert(wheel.seekHolding && wheel.seekResume && sent.count==3 && [sent[0][1] intValue]==0 && [sent[1][0] intValue]==(0x80|deck) && [sent[2][1] intValue]==20,@"A captured wheel swipe outside its compact bounds pauses once, releases Play, then seeks");
+            NSUInteger held=sent.count;[wheel releaseIdleAt:wheel.lastMotion+4];event.phase=NSTouchPhaseStationary;[wheel touchesMovedWithEvent:(id)event];DrainTransport();
+            NSCAssert(sent.count==held && wheel.seekHolding,@"Waiting with a stationary finger must remain held without repeated seeks or transport toggles");
+            [row layout];NSCAssert(wheel.tracking && !wheel.hidden,@"A repeated layout must preserve active wheels");
+            event.phase=NSTouchPhaseEnded;[wheel touchesEndedWithEvent:(id)event];DrainTransport();
+            NSCAssert(!wheel.tracking && !wheel.seekHolding && sent.count==held+2 && [sent.lastObject[1] intValue]==0,@"Lift outside the compact wheel resumes precisely once");
+            [wheel end];NSCAssert(sent.count==held+2,@"Duplicate end cannot toggle transport again");
+            playing[@"playing"]=@NO;telemetry.decks=@[playing,playing];midi.values[DJKey(deck,0,YES)]=@0;
+            [sent removeAllObjects];[wheel begin:NSMakePoint(16,15) identity:@1];[wheel move:NSMakePoint(96,15)];[wheel end];
+            NSCAssert(sent.count==1 && [sent[0][1] intValue]==20,@"A deck already paused must remain paused after seeking and lifting");
+        }
+        // A rapid release must finish the coalesced seek before resuming,
+        // with real nonzero transport press intervals on the main run loop.
+        NSMutableDictionary *rapidPlaying=[metadata[0] mutableCopy];rapidPlaying[@"playing"]=@YES;
+        telemetry.decks=@[rapidPlaying];telemetry.updated=NSProcessInfo.processInfo.systemUptime;
+        NSMutableArray *pulseTimes=[NSMutableArray new];[sent removeAllObjects];
+        midi.capture=^(UInt8 status,UInt8 number,UInt8 value) { [sent addObject:@[@(status),@(number),@(value)]];[pulseTimes addObject:@(NSProcessInfo.processInfo.systemUptime)]; };
+        [seek begin:NSMakePoint(20,15) identity:@1];[seek move:NSMakePoint(60,15)];[seek move:NSMakePoint(100,15)];[seek end];DrainTransport();
+        NSCAssert(sent.count==5 && [sent[0][0] intValue]==0x90 && [sent[1][0] intValue]==0x80 && [sent[2][1] intValue]==20 && [sent[3][0] intValue]==0x90 && [sent[4][0] intValue]==0x80,@"A fast swipe/lift must sequence pause press/release, final coalesced seek, then resume press/release");
+        NSCAssert([pulseTimes[1] doubleValue]-[pulseTimes[0] doubleValue]>=.04 && [pulseTimes[4] doubleValue]-[pulseTimes[3] doubleValue]>=.04,@"Both real transport pulses must remain pressed long enough for rekordbox's input polling");
+        midi.capture=^(UInt8 status,UInt8 number,UInt8 value) { [sent addObject:@[@(status),@(number),@(value)]]; };
+        telemetry.decks=metadata;telemetry.updated=NSProcessInfo.processInfo.systemUptime;midi.values[DJKey(0,0,YES)]=@127;
+        [sent removeAllObjects];[seek begin:NSMakePoint(20,15) identity:@1];[seek move:NSMakePoint(80,15)];DrainTransport();NSUInteger pausedMessages=sent.count;
+        NSMutableDictionary *manualPlay=[metadata[0] mutableCopy];manualPlay[@"playing"]=@YES;telemetry.decks=@[manualPlay];telemetry.updated=seek.seekReadyTime+.7;
+        [seek releaseIdleAt:seek.lastMotion+1];[seek end];
+        NSCAssert(sent.count==pausedMessages,@"Manual host playback takes ownership back; lift cannot pause it again");
+        telemetry.decks=metadata;telemetry.updated=NSProcessInfo.processInfo.systemUptime;
+        [sent removeAllObjects];[seek begin:NSMakePoint(20,15) identity:@1];[seek move:NSMakePoint(80,15)];DrainTransport();pausedMessages=sent.count;
+        telemetry.decks=@[different];[seek end];NSCAssert(sent.count==pausedMessages,@"A track load must never resume the new track");
+        telemetry.decks=metadata;telemetry.updated=NSProcessInfo.processInfo.systemUptime;
+        [sent removeAllObjects];[seek begin:NSMakePoint(20,15) identity:@1];[seek move:NSMakePoint(80,15)];DrainTransport();pausedMessages=sent.count;
+        DJSelectTarget(YES);DrainTransport();NSCAssert(sent.count==pausedMessages+2 && !seek.seekHolding,@"Target changes restore an owned pause through the old host before switching");DJSelectTarget(NO);
+        NSMutableArray *bpmFixture=[fixture mutableCopy];NSMutableDictionary *bpmNode=[fixture[2] mutableCopy];bpmNode[@"help"]=@"BPM Sync: mode";bpmFixture[2]=bpmNode;
+        NSCAssert(DJParseDecks(bpmFixture).count==1,@"BPM Sync and Beat Sync must both anchor real deck telemetry");
+        double observedTime=NSProcessInfo.processInfo.systemUptime;telemetry.decks=nil;telemetry.updated=0;[telemetry updateDecks:metadata at:observedTime];
+        [telemetry updateDecks:metadata at:observedTime+.75];NSCAssert([telemetry.decks[0][@"playing"] isEqual:@NO],@"Consecutive stationary real positions confirm a paused deck without MIDI feedback");
+        NSMutableDictionary *advanced=[metadata[0] mutableCopy];advanced[@"elapsed"]=@([advanced[@"elapsed"] doubleValue]+.75);
+        [telemetry updateDecks:@[advanced] at:observedTime+1.5];NSCAssert([telemetry.decks[0][@"playing"] isEqual:@YES],@"Natural host position progression confirms playback");
         midi.directSearchAvailable=NO;telemetry.decks=metadata;telemetry.updated=NSProcessInfo.processInfo.systemUptime;
         ThreeEDJControl *animated=Control(DJDisc,0,0);midi.values[DJKey(0,0,YES)]=@127;
         double animationTime=NSProcessInfo.processInfo.systemUptime;[animated animateAt:animationTime];
