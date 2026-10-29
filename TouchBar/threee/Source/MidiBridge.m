@@ -1811,6 +1811,8 @@ static void Command(NSString *command) {
             dispatch_after(dispatch_time(DISPATCH_TIME_NOW,600*NSEC_PER_MSEC),dispatch_get_main_queue(),^{
                 ThreeEDJRow *row=[(NSCustomTouchBarItem *)[bar itemForIdentifier:DJMixerID] view];
                 row.page=0;[row layoutSubtreeIfNeeded];[row layout];
+                NSCAssert(row.controls[0].animationFrames>=10 && row.controls[14].animationFrames>=10,@"Both platters must receive animation updates faster than metadata polling");
+                Report([[NSString stringWithFormat:@"DJ_ANIMATION ticksA=%lu ticksB=%lu directSeek=%d\n",(unsigned long)row.controls[0].animationFrames,(unsigned long)row.controls[14].animationFrames,[ThreeEDJMIDI shared].directSearchAvailable] UTF8String]);
                 NSPoint platterA=[row.controls[0] convertPoint:row.controls[0].platterCenter toView:nil],platterB=[row.controls[14] convertPoint:row.controls[14].platterCenter toView:nil];
                 NSRect closeFrame=[closeButton convertRect:closeButton.bounds toView:nil],recordFrame=[recordController.button convertRect:recordController.button.bounds toView:nil];
                 for(NSInteger page=0;page<2;page++) {
@@ -1828,7 +1830,7 @@ static void Command(NSString *command) {
             });
         } else if ([command isEqualToString:@"DJ_STATUS"]) {
             ThreeEDJMIDI *midi=[ThreeEDJMIDI shared];
-            Report([[NSString stringWithFormat:@"DJ_STATUS %@\n",@{@"source":@(midi.source),@"destination":@(midi.destination),@"error":@(midi.error),@"liveSource":@(midi.liveSource),@"liveDestination":@(midi.liveDestination),@"target":midi.liveTarget ? @"live" : @"rekordbox",@"metadata":[ThreeEDJTelemetry shared].decks ?: @[],@"metadataPermission":@(AXIsProcessTrusted()),@"values":midi.values,@"layouts":[[delegate valueForKey:@"allUserTouchbars"] valueForKey:@"itemIdentifiers"]}] UTF8String]);
+            Report([[NSString stringWithFormat:@"DJ_STATUS %@\n",@{@"source":@(midi.source),@"destination":@(midi.destination),@"error":@(midi.error),@"liveSource":@(midi.liveSource),@"liveDestination":@(midi.liveDestination),@"target":midi.liveTarget ? @"live" : @"rekordbox",@"metadata":[ThreeEDJTelemetry shared].decks ?: @[],@"metadataPermission":@(AXIsProcessTrusted()),@"directSearch":@(midi.directSearchAvailable),@"values":midi.values,@"layouts":[[delegate valueForKey:@"allUserTouchbars"] valueForKey:@"itemIdentifiers"]}] UTF8String]);
         } else if ([command isEqualToString:@"CONTROLS_COLOR_TEST"]) {
             NSTouchBar *bar=normalLayoutBar;
             NSString *key=PianoPrefsKey(bar);
