@@ -42,7 +42,15 @@ static void LiveLoopback(const MIDIPacketList *packets,void *context,void *unuse
 static ThreeEDJControl *Control(DJControlKind kind,NSInteger channel,NSInteger number) {
     ThreeEDJControl *c=[[ThreeEDJControl alloc] initWithFrame:NSMakeRect(0,0,100,30)]; c.kind=kind; c.channel=channel; c.number=number; return c;
 }
-static void DrainTransport(void) { [NSRunLoop.currentRunLoop runUntilDate:[NSDate dateWithTimeIntervalSinceNow:.2]]; }
+static void DrainTransport(void) {
+    double deadline=NSProcessInfo.processInfo.systemUptime+2;
+    while(YES) {
+        BOOL pending=NO;for(NSArray *queue in [ThreeEDJMIDI shared].transportQueues.allValues) if(queue.count) pending=YES;
+        if(!pending) return;
+        NSCAssert(NSProcessInfo.processInfo.systemUptime<deadline,@"Transport queue must finish within the bounded test deadline");
+        [NSRunLoop.currentRunLoop runUntilDate:[NSDate dateWithTimeIntervalSinceNow:.01]];
+    }
+}
 static void Feed(ThreeEDJMIDI *midi,const UInt8 *bytes,NSUInteger count) { [midi consume:[NSData dataWithBytes:bytes length:count]]; }
 static void Render(ThreeEDJRow *row,NSString *path) {
     [row layoutSubtreeIfNeeded];
@@ -249,7 +257,7 @@ int main(int argc,const char **argv) {
             NSCAssert(wheel.tracking && sent.count==0,@"Resting-marked direct touches must start in both views without interrupting a mode tap");
             touch.target=row.controls[deck*14+6];touch.point=NSMakePoint(96,15);event.phase=NSTouchPhaseMoved;
             [wheel touchesMovedWithEvent:(id)event];DrainTransport();
-            NSCAssert(wheel.seekHolding && wheel.seekResume && sent.count==3 && [sent[0][1] intValue]==0 && [sent[1][0] intValue]==(0x80|deck) && [sent[2][1] intValue]==20,@"A captured wheel swipe outside its compact bounds pauses once, releases Play, then seeks");
+            NSCAssert(wheel.seekHolding && wheel.seekResume && sent.count==3 && [sent[0][1] intValue]==0 && [sent[1][0] intValue]==(0x80|deck) && [sent[2][1] intValue]==20,@"A captured wheel swipe outside its compact bounds pauses once, releases Play, then seeks: messages=%@ holding=%d resume=%d page=%ld deck=%ld",sent,wheel.seekHolding,wheel.seekResume,(long)page,(long)deck);
             NSUInteger held=sent.count;[wheel releaseIdleAt:wheel.lastMotion+4];event.phase=NSTouchPhaseStationary;[wheel touchesMovedWithEvent:(id)event];DrainTransport();
             NSCAssert(sent.count==held && wheel.seekHolding,@"Waiting with a stationary finger must remain held without repeated seeks or transport toggles");
             [row layout];NSCAssert(wheel.tracking && !wheel.hidden,@"A repeated layout must preserve active wheels");
