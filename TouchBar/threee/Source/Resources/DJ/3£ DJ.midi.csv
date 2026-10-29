@@ -20,3 +20,5 @@ PitchBendDown,PitchBendDown,Button,,9005,9105,,,,,,,,,3£ Touch DJ: PitchBendDow
 PitchBendUp,PitchBendUp,Button,,9006,9106,,,,,,,,,3£ Touch DJ: PitchBendUp
 PlayPause,PlayPause,Button,,9000,9100,,,,9000,9100,,,,3£ Touch DJ: PlayPause
 Sync,Sync,Button,,9002,9102,,,,9002,9102,,,,3£ Touch DJ: Sync
+SearchRev,SearchRev,Button,,9007,9107,,,,,,,,,3£ Touch DJ: SearchRev
+SearchFwd,SearchFwd,Button,,9008,9108,,,,,,,,,3£ Touch DJ: SearchFwd

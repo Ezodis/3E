@@ -8,13 +8,15 @@
 static NSMutableArray *sent;
 static atomic_int loopbackPackets;
 static atomic_int liveLoopbackPackets;
+static atomic_int rbReleases,liveReleases;
 static void Loopback(const MIDIPacketList *packets,void *context,void *unused) {
     const MIDIPacket *p=&packets->packet[0];
-    if(packets->numPackets && p->length==3 && p->data[0]==0x90 && p->data[1]==1 && p->data[2]==127) atomic_fetch_add(&loopbackPackets,1);
+    if(packets->numPackets && p->length==3 && p->data[0]==0x90 && p->data[1]==1) { if(p->data[2]==127) atomic_fetch_add(&loopbackPackets,1);else if(p->data[2]==0) atomic_fetch_add(&rbReleases,1); }
 }
 static void LiveLoopback(const MIDIPacketList *packets,void *context,void *unused) {
     const MIDIPacket *p=&packets->packet[0];
     if(packets->numPackets && p->length==3 && p->data[0]==0x90 && p->data[1]==1 && p->data[2]==127) atomic_fetch_add(&liveLoopbackPackets,1);
+    if(packets->numPackets && p->length==3 && p->data[0]==0x80 && p->data[1]==1 && p->data[2]==0) atomic_fetch_add(&liveReleases,1);
 }
 static ThreeEDJControl *Control(DJControlKind kind,NSInteger channel,NSInteger number) {
     ThreeEDJControl *c=[[ThreeEDJControl alloc] initWithFrame:NSMakeRect(0,0,100,30)]; c.kind=kind; c.channel=channel; c.number=number; return c;
@@ -43,8 +45,23 @@ int main(int argc,const char **argv) {
         NSCAssert(([sent isEqual:@[@[@0x90,@6,@127],@[@0x80,@6,@0],@[@0x90,@5,@127],@[@0x80,@5,@0]]]),@"Nudge must release previous direction, avoid repeats, and release on cancellation");
         [sent removeAllObjects];
         ThreeEDJControl *knob=Control(DJKnob,1,16);
-        [knob begin:NSMakePoint(50,15) identity:@1]; [knob move:NSMakePoint(1000,15)]; [knob move:NSMakePoint(-1000,15)]; [knob move:NSMakePoint(50,15)]; [knob end];
+        [knob begin:NSMakePoint(50,15) identity:@1]; [knob move:NSMakePoint(50,1000)]; [knob move:NSMakePoint(50,-1000)]; [knob move:NSMakePoint(50,15)]; [knob end];
         NSCAssert(([sent isEqual:@[@[@0xb1,@16,@127],@[@0xb1,@16,@0],@[@0xb1,@16,@64]]]),@"Swipe clamps both ends and reverses from original value");
+        // Short vertical strokes keep two opposing fingers in their own lanes.
+        ThreeEDJControl *hi=Control(DJKnob,0,16),*mid=Control(DJKnob,0,17);
+        [hi begin:NSMakePoint(25,15) identity:@1];[mid begin:NSMakePoint(25,15) identity:@2];
+        [hi move:NSMakePoint(25,23)];[mid move:NSMakePoint(25,7)];
+        NSCAssert([midi value:0 number:16 note:NO]>64 && [midi value:0 number:17 note:NO]<64,@"Simultaneous opposing vertical changes must not share a gesture origin");
+        [hi end];[mid end];
+        NSCAssert(DJWireStatus(0x81,NO)==0x91 && DJWireStatus(0x81,YES)==0x81,@"Rekordbox momentary releases use Note On zero; Live uses Note Off");
+        [sent removeAllObjects]; disc.search=YES;
+        [disc begin:NSMakePoint(50,15) identity:@1];[disc move:NSMakePoint(75,15)];
+        NSCAssert(([sent.lastObject isEqual:@[@0x90,@8,@127]]),@"Search uses its own forward control");
+        [disc releaseIdleAt:disc.lastMotion+.2];
+        NSCAssert(disc.nudge==8,@"Search keeps scanning while held, allowing the host hold threshold to elapse");[disc end];
+        NSCAssert(([sent.lastObject isEqual:@[@0x80,@8,@0]]),@"Lifting must release search");
+        disc.search=NO;[disc begin:NSMakePoint(50,15) identity:@1];[disc move:NSMakePoint(75,15)];[disc releaseIdleAt:disc.lastMotion+.2];
+        NSCAssert(disc.nudge<0,@"A stationary finger must stop tempo bending");[disc end];
         ThreeEDJControl *fader=Control(DJFader,15,8);
         [fader begin:NSMakePoint(7,15) identity:@1]; [fader move:NSMakePoint(93,15)]; [fader end];
         NSCAssert(([sent.lastObject isEqual:@[@0xbf,@8,@127]]),@"Crossfader uses a dedicated master channel");
@@ -75,10 +92,19 @@ int main(int argc,const char **argv) {
             ThreeEDJRow *row=[[ThreeEDJRow alloc] initWithPads:pads];
             for(NSNumber *width in @[@600,@480,@720]) {
                 row.frame=NSMakeRect(0,0,width.doubleValue,30); [row layout];
-                for(ThreeEDJControl *c in row.controls) NSCAssert(NSMinX(c.frame)>=0 && NSMaxX(c.frame)<=width.doubleValue+.1 && NSWidth(c.frame)>10,@"All controls must fit their row");
+                for(ThreeEDJControl *c in row.controls) if(!c.hidden) NSCAssert(NSMinX(c.frame)>=0 && NSMaxX(c.frame)<=width.doubleValue+.1 && NSWidth(c.frame)>10,@"All controls must fit their row");
             }
             row.frame=NSMakeRect(0,0,600,30); [row layout];
             if(argc>1) Render(row,[[NSString stringWithUTF8String:argv[1]] stringByAppendingPathComponent:pads ? @"dj-pads.png" : @"dj-mixer.png"]);
+            NSUInteger pages=pads ? 3 : 2;
+            for(NSUInteger page=0;page<pages;page++) {
+                [row layout];NSUInteger visible=0;
+                for(ThreeEDJControl *c in row.controls) if(!c.hidden) { visible++;NSCAssert(NSWidth(c.frame)>=40,@"Every visible target must be finger-sized"); }
+                NSCAssert(visible==(pads ? 9 : row.page ? 9 : 7),@"Pages expose fewer, larger controls");
+                NSCAssert(fabs(NSMidX(row.controls.lastObject.frame)-300)<.1,@"Hub remains centered across pages");
+                if(argc>1 && page>0) Render(row,[[NSString stringWithUTF8String:argv[1]] stringByAppendingPathComponent:pads ? [NSString stringWithFormat:@"dj-pads-%lu.png",(unsigned long)page] : @"dj-eq.png"]);
+                [row nextPage];
+            }
             if(pads) break;
         }
         // Real AppKit customization persistence, isolated identifiers, restored defaults.
@@ -100,6 +126,23 @@ int main(int argc,const char **argv) {
             for(NSTouchBar *bar in bars) [NSUserDefaults.standardUserDefaults removeObjectForKey:[@"NSTouchBarConfig: " stringByAppendingString:[bar.customizationIdentifier stringByReplacingOccurrencesOfString:@"." withString:@"·"]]];
         }
         if(argc>1) [DJMappingGuide() writeToFile:[[NSString stringWithUTF8String:argv[1]] stringByAppendingPathComponent:@"Touch-DJ-Setup.txt"] atomically:YES encoding:NSUTF8StringEncoding error:nil];
+        NSArray *fixture=@[
+            @{@"role":@"AXStaticText",@"text":@"Actual track",@"help":@""},@{@"role":@"AXImage",@"text":@"",@"help":@""},
+            @{@"role":@"AXButton",@"text":@"1",@"help":@"Beat Sync: mode"},
+            @{@"role":@"AXStaticText",@"text":@"-02:30",@"help":@""},@{@"role":@"AXStaticText",@"text":@".3",@"help":@""},
+            @{@"role":@"AXStaticText",@"text":@"00:12",@"help":@""},@{@"role":@"AXButton",@"text":@"",@"help":@"Sync Master:"},
+            @{@"role":@"AXStaticText",@"text":@"Library selection is not loaded",@"help":@""}];
+        NSArray *metadata=DJParseDecks(fixture);
+        NSCAssert(metadata.count==1 && [metadata[0][@"title"] isEqual:@"Actual track"] && fabs([metadata[0][@"duration"] doubleValue]-162.3)<.01,@"Only anchored deck metadata and real time fields may be displayed");
+        ThreeEDJTelemetry *telemetry=[ThreeEDJTelemetry shared];telemetry.decks=metadata;telemetry.updated=NSProcessInfo.processInfo.systemUptime-3;
+        NSCAssert(![telemetry deck:0],@"Stale host metadata must disappear");
+        telemetry.updated=NSProcessInfo.processInfo.systemUptime;
+        disc.search=NO;[sent removeAllObjects];
+        [disc begin:NSMakePoint(50,15) identity:@1];[disc move:NSMakePoint(60,15)];
+        NSCAssert(([sent[0] isEqual:@[@0x90,@2,@127]] && [sent[1] isEqual:@[@0x80,@2,@0]] && [sent[2] isEqual:@[@0x90,@6,@127]]),@"Known enabled Sync must be disabled before bending");[disc end];telemetry.decks=nil;
+        ThreeEDJRow *paged=[[ThreeEDJRow alloc] initWithPads:YES];[paged layout];
+        [paged.controls[0] begin:NSMakePoint(10,15) identity:@1];[paged nextPage];
+        NSCAssert(!paged.controls[0].tracking && [sent.lastObject[0] intValue]==0x80,@"Paging must release hidden held pads");
         // Actual CoreMIDI source/destination round trip, with a temporary observer.
         [midi start]; NSCAssert(!midi.error && midi.source && midi.destination,@"Virtual DJ endpoints must open");
         MIDIClientRef observer=0; MIDIPortRef input=0,liveInput=0,output=0;
@@ -126,6 +169,9 @@ int main(int argc,const char **argv) {
         while((!atomic_load(&liveLoopbackPackets) || [midi value:1 number:16 note:NO]!=55) && liveDeadline.timeIntervalSinceNow>0) [NSRunLoop.currentRunLoop runUntilDate:[NSDate dateWithTimeIntervalSinceNow:.02]];
         NSCAssert(atomic_load(&liveLoopbackPackets)==1 && atomic_load(&loopbackPackets)==1 && [midi value:1 number:16 note:NO]==55,@"Live output must never reach rekordbox, or vice versa");
         [midi send:0x80 number:1 value:0]; DJSelectTarget(NO);
+        NSDate *releaseDeadline=[NSDate dateWithTimeIntervalSinceNow:1];
+        while((!atomic_load(&rbReleases) || !atomic_load(&liveReleases)) && releaseDeadline.timeIntervalSinceNow>0) [NSRunLoop.currentRunLoop runUntilDate:[NSDate dateWithTimeIntervalSinceNow:.01]];
+        NSCAssert(atomic_load(&rbReleases)==1 && atomic_load(&liveReleases)==1,@"Actual wire release formats must match each host");
         NSCAssert([midi value:1 number:16 note:NO]==101,@"Live feedback must not overwrite rekordbox state");
         MIDIPortDisconnectSource(liveInput,midi.liveSource);MIDIPortDispose(liveInput);
         if(savedTarget) [NSUserDefaults.standardUserDefaults setObject:savedTarget forKey:DJTargetKey]; else [NSUserDefaults.standardUserDefaults removeObjectForKey:DJTargetKey];

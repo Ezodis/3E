@@ -1814,7 +1814,16 @@ static void Command(NSString *command) {
                         ThreeEDJRow *row=[(NSCustomTouchBarItem *)[bar itemForIdentifier:i==1 ? DJMixerID : DJPadsID] view];
                         [row layoutSubtreeIfNeeded];
                         Report([[NSString stringWithFormat:@"DJ_GEOMETRY %lu window=%d frame=%@ controls=%lu\n",(unsigned long)i,row.window!=nil,NSStringFromRect(row.frame),(unsigned long)row.controls.count] UTF8String]);
-                        if(row.window && NSWidth(row.bounds)>=599 && row.controls.count==(i==1 ? 13 : 24)) {
+                        CGFloat center=[row convertPoint:NSMakePoint(NSMidX(row.controls.lastObject.frame),15) toView:nil].x;
+                        CGFloat host=row.window.contentView.bounds.size.width;
+                        Report([[NSString stringWithFormat:@"DJ_CENTER hub=%g host=%g origin=%g close=%@ record=%@\n",center,host,[row convertPoint:NSZeroPoint toView:nil].x,NSStringFromRect([closeButton convertRect:closeButton.bounds toView:nil]),NSStringFromRect([recordController.button convertRect:recordController.button.bounds toView:nil])] UTF8String]);
+                        NSCAssert(fabs(center-host/2)<1,@"DJ hub must be centered in the physical host, without moving fixed controls");
+                        NSRect closeFrame=[closeButton convertRect:closeButton.bounds toView:nil],recordFrame=[recordController.button convertRect:recordController.button.bounds toView:nil];
+                        for(NSInteger page=0;page<(row.pads ? 3 : 2);page++) {
+                            [row nextPage];[row layoutSubtreeIfNeeded];
+                            NSCAssert(NSEqualRects(closeFrame,[closeButton convertRect:closeButton.bounds toView:nil]) && NSEqualRects(recordFrame,[recordController.button convertRect:recordController.button.bounds toView:nil]),@"Page changes must never move close/change/record controls");
+                        }
+                        if(row.window && NSWidth(row.bounds)>=599 && row.controls.count==(i==1 ? 13 : 25)) {
                             if(i==2) Report("DJ_NATIVE_LAYOUTS_PASSED\n");
                         } else Report("DJ_NATIVE_LAYOUT_FAILED\n");
                     });
@@ -1822,7 +1831,7 @@ static void Command(NSString *command) {
             }
         } else if ([command isEqualToString:@"DJ_STATUS"]) {
             ThreeEDJMIDI *midi=[ThreeEDJMIDI shared];
-            Report([[NSString stringWithFormat:@"DJ_STATUS %@\n",@{@"source":@(midi.source),@"destination":@(midi.destination),@"error":@(midi.error),@"liveSource":@(midi.liveSource),@"liveDestination":@(midi.liveDestination),@"target":midi.liveTarget ? @"live" : @"rekordbox",@"values":midi.values,@"layouts":[[delegate valueForKey:@"allUserTouchbars"] valueForKey:@"itemIdentifiers"]}] UTF8String]);
+            Report([[NSString stringWithFormat:@"DJ_STATUS %@\n",@{@"source":@(midi.source),@"destination":@(midi.destination),@"error":@(midi.error),@"liveSource":@(midi.liveSource),@"liveDestination":@(midi.liveDestination),@"target":midi.liveTarget ? @"live" : @"rekordbox",@"metadata":[ThreeEDJTelemetry shared].decks ?: @[],@"metadataPermission":@(AXIsProcessTrusted()),@"values":midi.values,@"layouts":[[delegate valueForKey:@"allUserTouchbars"] valueForKey:@"itemIdentifiers"]}] UTF8String]);
         } else if ([command isEqualToString:@"CONTROLS_COLOR_TEST"]) {
             NSTouchBar *bar=normalLayoutBar;
             NSString *key=PianoPrefsKey(bar);
