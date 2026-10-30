@@ -7,6 +7,12 @@ static void DJActivateLayouts(void);
 #else
 static void DJActivateLayouts(void) {}
 #endif
+static void DJSetSharedPage(NSInteger page);
+static void DJSelectTarget(BOOL live);
+static NSDictionary *DJPhoneSnapshot(void);
+static void DJPhoneTick(void);
+static NSHashTable *DJRows;
+static NSInteger DJSharedPage=0;
 static NSString *const DJEnabledKey=@"ThreeEDJEnabled";
 static NSString *const DJBackupKey=@"ThreeEDJOriginalLayoutsV1";
 static NSColor *DJColor(NSInteger deck) {
@@ -36,6 +42,8 @@ static NSString *const DJTargetKey=@"ThreeEDJLiveTarget";
 @property NSTimer *animationTimer;
 @property void (^capture)(UInt8,UInt8,UInt8);
 @property OSStatus error;
+@property void (^phoneUpdate)(NSDictionary *);
+@property BOOL (^phonePaired)(void);
 @property BOOL directSearchAvailable;
 @property BOOL highResolutionSearchAvailable;
 @property NSMutableDictionary<NSString *,NSNumber *> *rbSentAt;
@@ -123,7 +131,7 @@ static void DJReadLive(const MIDIPacketList *packets,void *context,void *unused)
     MIDIObjectSetIntegerProperty(self.liveDestination,kMIDIPropertyUniqueID,0x33454444);
 #endif
     __weak ThreeEDJMIDI *weakSelf=self;
-    self.timer=[NSTimer timerWithTimeInterval:.25 repeats:YES block:^(NSTimer *timer) { [weakSelf syncTelemetry];[weakSelf redraw]; if(!weakSelf.liveTarget) [[ThreeEDJTelemetry shared] poll]; }];
+    self.timer=[NSTimer timerWithTimeInterval:.25 repeats:YES block:^(NSTimer *timer) { [weakSelf syncTelemetry];[weakSelf redraw];DJPhoneTick(); if(!weakSelf.liveTarget) [[ThreeEDJTelemetry shared] poll]; }];
     [NSRunLoop.mainRunLoop addTimer:self.timer forMode:NSRunLoopCommonModes];
     // Separate animation from the slower MIDI/metadata polling clock.
     self.animationTimer=[NSTimer timerWithTimeInterval:1.0/60 repeats:YES block:^(NSTimer *timer) {
@@ -648,7 +656,10 @@ static void DJText(NSString *text,NSRect rect,CGFloat size,NSColor *color) {
     BOOL tap=self.tracking && !self.moved;
     if(self.kind==DJDisc && NSProcessInfo.processInfo.systemUptime-self.touchStartTime>.3) tap=NO;
     [self end];
-    if(tap && self.kind==DJDisc) { self.search=!self.search;self.needsDisplay=YES; }
+    if(tap && self.kind==DJDisc) {
+        BOOL next=!self.search;
+        for(ThreeEDJControl *view in [ThreeEDJMIDI shared].views) if(view.kind==DJDisc && view.channel==self.channel) {view.search=next;view.needsDisplay=YES;}
+    }
     else if(tap && self.tapAction) self.tapAction();
 }
 - (void)finishAt:(NSPoint)point {
@@ -675,7 +686,8 @@ static void DJText(NSString *text,NSRect rect,CGFloat size,NSColor *color) {
 - (instancetype)initWithPads:(BOOL)pads {
     if((self=[super initWithFrame:NSMakeRect(0,0,600,30)])) {
         self.controls=[NSMutableArray new];
-        self.page=pads ? 1 : 0; // Legacy tile opens the same unified set.
+        if(!DJRows)DJRows=[NSHashTable weakObjectsHashTable];[DJRows addObject:self];
+        self.page=DJSharedPage; // All mounted views share a single mode.
         for(NSInteger deck=0;deck<2;deck++) {
             NSArray *labels=@[@"DISC",@"LEVEL",@"HI",@"MID",@"LOW",@"FILTER",@"▶",@"CUE",@"SYNC",@"LOOP",@"1",@"2",@"3",@"4"];
             for(NSInteger i=0;i<(NSInteger)labels.count;i++) {
@@ -698,8 +710,7 @@ static void DJText(NSString *text,NSRect rect,CGFloat size,NSColor *color) {
 }
 - (NSSize)intrinsicContentSize { return NSMakeSize(600,30); }
 - (void)nextPage {
-    for(ThreeEDJControl *control in self.controls) [control end];
-    self.page=1-self.page;[self layout];self.needsDisplay=YES;
+    DJSetSharedPage(1-self.page);
 }
 - (void)layout {
     [super layout]; CGFloat w=NSWidth(self.bounds),center=w/2;
@@ -755,6 +766,77 @@ static void DJText(NSString *text,NSRect rect,CGFloat size,NSColor *color) {
 }
 
 @end
+// The phone reuses the native gesture engine; it never drives the on-screen
+// NSViews directly, so one device cannot steal another device's finger.
+static ThreeEDJRow *DJPhoneRow;
+static BOOL DJPhoneActive;
+static double DJPhoneSeen,DJPhonePublished;
+static NSMutableDictionary<NSNumber *,NSNumber *> *DJPhoneHeld;
+static void DJSetSharedPage(NSInteger page) {
+    DJSharedPage=page?1:0;
+    for(ThreeEDJRow *row in DJRows) {for(ThreeEDJControl *control in row.controls)[control end];row.page=DJSharedPage;[row layout];row.needsDisplay=YES;}
+    [DJPhoneHeld removeAllObjects];
+}
+static void DJPhoneCancel(void) {
+    for(ThreeEDJControl *control in DJPhoneRow.controls)[control end];[DJPhoneHeld removeAllObjects];
+}
+static NSDictionary *DJPhoneSnapshot(void) {
+    ThreeEDJMIDI *midi=[ThreeEDJMIDI shared];BOOL paired=NO;
+    for(ThreeEDJRow *row in DJRows)if(row!=DJPhoneRow && row.window && !row.hiddenOrHasHiddenAncestor){paired=YES;break;}
+    if(midi.phonePaired)paired=paired && midi.phonePaired();
+    NSMutableArray *decks=[NSMutableArray new];
+    for(NSInteger d=0;d<2;d++) {
+        NSMutableDictionary *deck=[NSMutableDictionary new];
+        if(!midi.liveTarget)[deck addEntriesFromDictionary:[[ThreeEDJTelemetry shared] deck:d] ?: @{}];
+        NSMutableArray *values=[NSMutableArray new],*confirmed=[NSMutableArray new];
+        for(NSInteger i=0;i<14;i++){ThreeEDJControl *control=DJPhoneRow.controls[d*14+i];[values addObject:@([midi value:d number:control.number note:control.kind==DJPad])];[confirmed addObject:@([midi confirmed:d number:control.number note:control.kind==DJPad])];}
+        ThreeEDJControl *disc=DJPhoneRow.controls[d*14];
+        deck[@"values"]=values;deck[@"confirmed"]=confirmed;deck[@"search"]=@(disc.search);deck[@"holding"]=@(disc.tracking);deck[@"angle"]=@(disc.angle);
+        if(disc.seekHolding)deck[@"elapsed"]=@(disc.seekPositionSeconds);
+        [decks addObject:deck];
+    }
+    return @{@"available":@YES,@"paired":@(paired),@"touchPage":@(DJSharedPage),@"page":@(paired ? 1-DJSharedPage : DJSharedPage),@"target":midi.liveTarget ? @"live" : @"rekordbox",@"crossfader":@([midi value:15 number:8 note:NO]),@"decks":decks};
+}
+static void DJPhoneTick(void) {
+    if(!DJPhoneActive)return;
+    if(NSProcessInfo.processInfo.systemUptime-DJPhoneSeen>3) {DJPhoneCancel();DJPhoneActive=NO;return;}
+    double now=NSProcessInfo.processInfo.systemUptime;if(now-DJPhonePublished<.1)return;DJPhonePublished=now;
+    if([ThreeEDJMIDI shared].phoneUpdate)[ThreeEDJMIDI shared].phoneUpdate(DJPhoneSnapshot());
+}
+static void DJPhoneCommand(NSDictionary *command) {
+    if(![command isKindOfClass:NSDictionary.class])return;
+    NSString *op=command[@"op"];if(![op isKindOfClass:NSString.class])return;
+    if([op isEqual:@"cancel"]||[op isEqual:@"close"]){DJPhoneCancel();if([op isEqual:@"close"])DJPhoneActive=NO;return;}
+    if(!DJPhoneRow){DJPhoneRow=[[ThreeEDJRow alloc] initWithPads:NO];DJPhoneRow.frame=NSMakeRect(0,0,880,30);[DJPhoneRow layout];DJPhoneRow.controls[28].tapAction=nil;
+        for(ThreeEDJControl *view in [ThreeEDJMIDI shared].views)if(view.kind==DJDisc && view.window)DJPhoneRow.controls[view.channel*14].search=view.search;
+        DJPhoneHeld=[NSMutableDictionary new];}
+    DJPhoneActive=YES;DJPhoneSeen=NSProcessInfo.processInfo.systemUptime;
+    if([op isEqual:@"page"]) {
+        NSInteger page=[command[@"page"] integerValue];if(page<0||page>1)return;
+        BOOL paired=[DJPhoneSnapshot()[@"paired"] boolValue];DJSetSharedPage(paired ? 1-page : page);
+    } else if([op isEqual:@"target"]) {
+        NSString *target=command[@"target"];if(![@[@"live",@"rekordbox"] containsObject:target])return;
+        DJPhoneCancel();DJSelectTarget([target isEqual:@"live"]);
+    } else if([@[@"begin",@"move",@"end",@"abort"] containsObject:op]) {
+        NSInteger index=[command[@"control"] integerValue],identity=[command[@"id"] integerValue];double x=[command[@"x"] doubleValue];
+        if(index<0||index>=29||identity<0||identity>1000000||!isfinite(x)||fabs(x)>10000)return;
+        ThreeEDJControl *control=DJPhoneRow.controls[index];NSNumber *key=@(index),*finger=@(identity);
+        if([op isEqual:@"begin"]) {
+            if(control.tracking)return;
+            // Reject a competing touch on the same parameter while preserving
+            // independent simultaneous controls across devices.
+            for(ThreeEDJControl *view in [ThreeEDJMIDI shared].views)if(view!=control&&view.tracking&&view.channel==control.channel&&view.kind==control.kind&&view.number==control.number)return;
+            DJPhoneHeld[key]=finger;
+            double start=control.kind==DJFader ? 7+[[ThreeEDJMIDI shared] value:control.channel number:control.number note:NO]/127.0*(NSWidth(control.bounds)-14) : 7;
+            [control begin:NSMakePoint(start,15) identity:finger];
+        } else if([DJPhoneHeld[key] isEqual:finger]) {
+            double point=control.kind==DJDisc ? 7+x : control.kind==DJFader ? 7+MAX(0,MIN(1,x))*(NSWidth(control.bounds)-14) : 7+x*MAX(1,NSWidth(control.bounds)-8);
+            if([op isEqual:@"move"])[control move:NSMakePoint(point,15)];
+            else {if([op isEqual:@"abort"])[control end];else [control finish];[DJPhoneHeld removeObjectForKey:key];}
+        }
+    }
+    DJPhoneTick();
+}
 static NSCustomTouchBarItem *DJMakeItem(NSString *identifier) {
     if(![identifier isEqual:DJMixerID] && ![identifier isEqual:DJPadsID]) return nil;
     NSCustomTouchBarItem *item=[[NSCustomTouchBarItem alloc] initWithIdentifier:identifier];

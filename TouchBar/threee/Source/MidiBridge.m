@@ -1801,7 +1801,9 @@ static void TestPianoEndKeys(void) {
 static void Command(NSString *command) {
     id delegate = NSApp.delegate;
     @try {
-        if ([command isEqualToString:@"DJ_SETUP"]) {
+        if([command hasPrefix:@"PHONE_DJ "]) {
+            NSDictionary *action=[NSJSONSerialization JSONObjectWithData:[[command substringFromIndex:9] dataUsingEncoding:NSUTF8StringEncoding] options:0 error:nil];DJPhoneCommand(action);
+        } else if ([command isEqualToString:@"DJ_SETUP"]) {
             [ThreeEDJActions setup:nil];
         } else if ([command isEqualToString:@"DJ_TARGET_LIVE"]) {
             [ThreeEDJActions targetLive:nil]; Report("DJ_TARGET_LIVE\n");
@@ -2321,10 +2323,12 @@ static void Command(NSString *command) {
                 InitializePresetCatalog();
                 ExtendPianoPalette(NSApp.delegate);
                 if([NSUserDefaults.standardUserDefaults boolForKey:DJEnabledKey]) DJActivateLayouts();
+                [ThreeEDJMIDI shared].phonePaired=^BOOL{return presentation && !recordController.activeMenuBar && !customizationBar && [[(id)NSApp.delegate valueForKey:@"touchbarShown"] boolValue] && ([normalLayoutBar.itemIdentifiers containsObject:DJMixerID] || [normalLayoutBar.itemIdentifiers containsObject:DJPadsID]);};
+                [ThreeEDJMIDI shared].phoneUpdate=^(NSDictionary *state){NSData *data=[NSJSONSerialization dataWithJSONObject:state options:0 error:nil];Report([[NSString stringWithFormat:@"PHONE_DJ %@\n",[[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding]] UTF8String]);};
                 [[ThreeEDJMIDI shared] start];
                 Report("READY\n");
                 dispatch_async(dispatch_get_global_queue(QOS_CLASS_UTILITY, 0), ^{
-                    char line[128];
+                    char line[4096];
                     while (fgets(line, sizeof(line), stdin)) {
                         NSString *command = [[NSString stringWithUTF8String:line] stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
                         dispatch_async(dispatch_get_main_queue(), ^{ Command(command); });

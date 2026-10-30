@@ -45,6 +45,8 @@ public sealed class MacInput : ITrackpadInput, IDisposable {
     private object controls;
     private long lastClick; private Point lastClickPoint; private int clicks;
     public MacInput(Action<int> media,Action<string,int> systemAction) { this.media=media;this.systemAction=systemAction;pointer=new(ClampPointer);navigation=new(()=>ThreeEHasMultipleSpaces()!=0,d=>systemAction("space",d),BeginApps,AppsStep,AppsEnd);midi.Select(0); }
+    public Action<PhoneDJCommand> DJAction {get;set;}
+    public void DJ(PhoneDJCommand command)=>DJAction?.Invoke(command);
     public void SetControls(object snapshot) => Volatile.Write(ref controls,snapshot);
     public string Platform => "macos";
     public object GetConnectionInfo() => new {platform=Platform,multipleDesktops=ThreeEHasMultipleSpaces()!=0,volume=volume.State,inputPermission=CGPreflightPostEventAccess(),controls=Volatile.Read(ref controls)};
@@ -208,7 +210,7 @@ public sealed class MacInput : ITrackpadInput, IDisposable {
     public void Midi(bool note,int channel,int number,int value)=>midi.Send(note,channel,number,value);
     public void MidiPanic()=>midi.Panic();
     public void VolumeStep(int direction){if(direction==0)return;int level=ThreeEGetOutputVolume();if(level>=0)volume.Set(Math.Clamp(level+direction*6,0,100));}
-    public void ReleaseAll(){volume.CancelPending();try{Release();navigation.End();}finally{pointer.Reset();midi.Panic();}}
+    public void ReleaseAll(){volume.CancelPending();try{Release();navigation.End();}finally{pointer.Reset();midi.Panic();DJAction?.Invoke(new PhoneDJCommand("cancel"));}}
     public void Dispose(){try{ReleaseAll();}finally{volume.Dispose();midi.Dispose();if(mouseSource!=IntPtr.Zero){CFRelease(mouseSource);mouseSource=IntPtr.Zero;}}}
 }
 

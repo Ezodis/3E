@@ -21,6 +21,11 @@ static NSString *const ThreeEPhoneBarEnabledKey=@"ThreeEPhoneBarEnabled";
 @property(copy) void (^media)(int);
 @property(copy) void (^systemAction)(NSString *,NSInteger);
 @property NSString *controlsJSON;
+@property NSDictionary *djState;
+@property NSDictionary *artworkState;
+@property(copy) void (^dj)(NSDictionary *);
+- (void)updateDJ:(NSDictionary *)state;
+- (void)sendControls;
 @property NSString *appsIcon;
 - (void)show;
 - (void)startReceiver;
@@ -86,6 +91,12 @@ static NSString *const ThreeEPhoneBarEnabledKey=@"ThreeEPhoneBarEnabled";
         self.appsIcon=[NSFileManager.defaultManager fileExistsAtPath:path] ? [self iconData:[NSWorkspace.sharedWorkspace iconForFile:path]] : @"";
     }
     NSDictionary *controls=@{@"appsIcon":self.appsIcon,@"media":@{@"artwork":[self iconData:image],@"playing":playing<0 ? NSNull.null : (playing==1 ? @YES : @NO),@"stop":@(stop)}};
+    self.artworkState=controls;[self sendControls];
+}
+- (void)updateDJ:(NSDictionary *)state {self.djState=state;[self sendControls];}
+- (void)sendControls {
+    if(!self.task.running)return;
+    NSMutableDictionary *controls=[self.artworkState mutableCopy] ?: [NSMutableDictionary new];if(self.djState)controls[@"dj"]=self.djState;
     NSString *json=[[NSString alloc] initWithData:[NSJSONSerialization dataWithJSONObject:@{@"controls":controls} options:0 error:nil] encoding:NSUTF8StringEncoding];
     if(![json isEqual:self.controlsJSON]){self.controlsJSON=json;[self send:json];}
 }
@@ -128,6 +139,7 @@ static NSString *const ThreeEPhoneBarEnabledKey=@"ThreeEPhoneBarEnabled";
             for(NSUInteger i=0;i<count;i++)if(bytes[i]=='\n'){
                 NSData *line=[strong.buffer subdataWithRange:NSMakeRange(start,i-start)];start=i+1;
                 NSDictionary *reply=[NSJSONSerialization JSONObjectWithData:line options:0 error:nil];if(![reply isKindOfClass:NSDictionary.class])continue;
+                if([reply[@"dj"] isKindOfClass:NSDictionary.class]){if(strong.dj)strong.dj(reply[@"dj"]);continue;}
                 if([reply[@"media"] isKindOfClass:NSNumber.class]){if(strong.media)strong.media([reply[@"media"] intValue]);continue;}
                 if([reply[@"systemAction"] isKindOfClass:NSString.class]){[strong performSystemAction:reply[@"systemAction"] direction:[reply[@"direction"] integerValue]];continue;}
                 if([reply[@"url"] isKindOfClass:NSString.class]){strong.url=reply[@"url"];strong.retryDelay=1;if(strong.qrRequested)[strong showQR];}

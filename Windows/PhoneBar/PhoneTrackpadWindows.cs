@@ -26,7 +26,7 @@ public sealed class TrackpadFirewall : ITrackpadFirewall {
             rule.Name = PhoneTrackpad.FirewallName;
             rule.Description = "Optional local iPhone trackpad. Open only during a manually started session.";
             rule.Protocol = 6; rule.LocalPorts = port.ToString();
-            rule.LocalAddresses = address.ToString(); rule.RemoteAddresses = "LocalSubnet";
+            rule.LocalAddresses = string.Join(",",PhoneNetwork.Paths.Select(p=>p.Address.ToString()).Append(address.ToString()).Distinct()); rule.RemoteAddresses = "LocalSubnet";
             rule.Direction = 1; rule.Action = 1; rule.Profiles = int.MaxValue;
             rule.EdgeTraversal = false; rule.Enabled = true;
             policy.Rules.Add(rule);

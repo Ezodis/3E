@@ -416,6 +416,11 @@ static OSStatus SendSpotifyCommand(pid_t pid, int command) {
     self.phoneController=[ThreeEPhoneController new];
     __weak AppDelegate *phoneSelf=self;
     self.phoneController.media=^(int action){ [phoneSelf performMediaCommand:action==1?5:action==2?4:2]; };
+    self.phoneController.dj=^(NSDictionary *action){
+        if(!StripHasModule(@"touchbar"))return;
+        [phoneSelf startMidi];
+        if(phoneSelf.midiReady){NSData *data=[NSJSONSerialization dataWithJSONObject:action options:0 error:nil];[phoneSelf sendMidi:[@"PHONE_DJ " stringByAppendingString:[[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding]]];}
+    };
     self.phoneController.systemAction=^(NSString *action,NSInteger direction){
         PostMacSystemAction(action,direction);
     };
@@ -682,6 +687,7 @@ static OSStatus SendSpotifyCommand(pid_t pid, int command) {
             while ((newline = [self.midiBuffer rangeOfString:@"\n"]).location != NSNotFound) {
                 NSString *line = [self.midiBuffer substringToIndex:newline.location];
                 [self.midiBuffer deleteCharactersInRange:NSMakeRange(0, newline.location + 1)];
+                if([line hasPrefix:@"PHONE_DJ "]){NSDictionary *state=[NSJSONSerialization JSONObjectWithData:[[line substringFromIndex:9] dataUsingEncoding:NSUTF8StringEncoding] options:0 error:nil];if([state isKindOfClass:NSDictionary.class])[self.phoneController updateDJ:state];continue;}
                 NSLog(@"MIDI engine: %@", line);
                 if([line hasPrefix:@"MODULE_CHANGE "]) {
                     NSString *module=[line substringFromIndex:14];
@@ -737,7 +743,7 @@ static OSStatus SendSpotifyCommand(pid_t pid, int command) {
         dispatch_async(dispatch_get_main_queue(), ^{
             if (weakSelf.midiTask != task) return;
             NSLog(@"MIDI engine exited: status %d, reason %ld", task.terminationStatus, (long)task.terminationReason);
-            weakSelf.midiReady = NO; weakSelf.midiVisible = NO; [weakSelf refresh];
+            weakSelf.midiReady = NO; weakSelf.midiVisible = NO; [weakSelf.phoneController updateDJ:@{@"available":@NO}]; [weakSelf refresh];
         });
     };
     self.midiStarting = YES;

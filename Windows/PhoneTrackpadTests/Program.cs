@@ -1,6 +1,7 @@
 using ThreeE.PhoneControl;
 using System.Net;
 using System.Net.Sockets;
+using System.Net.NetworkInformation;
 using System.Net.WebSockets;
 using System.Text;
 using System.Collections.Concurrent;
@@ -10,6 +11,11 @@ using ThreeE.PhoneBar.Windows;
 var results = new List<string>();
 // The ::error:: line becomes a CI annotation, so a failure is visible without the raw log.
 void Check(bool value, string name) { if (!value) { Console.WriteLine("::error::FAIL: " + name); throw new Exception("FAIL: " + name); } results.Add(name); Console.WriteLine("PASS: " + name); }
+Check(PhoneNetwork.Kind("iPhone USB",NetworkInterfaceType.Ethernet)=="usb" && PhoneNetwork.Kind("Remote NDIS based Internet Sharing Device",NetworkInterfaceType.Ethernet)=="usb", "USB tether adapters are recognized on Mac and Windows");
+Check(PhoneNetwork.Kind("iPhone hotspot",NetworkInterfaceType.Wireless80211)=="wifi", "A Wi-Fi hotspot is not falsely labeled USB");
+Check(PhoneNetwork.Choose(new[]{new PhoneNetwork.PathInfo(IPAddress.Parse("192.168.1.2"),"wifi","Wi-Fi",true),new PhoneNetwork.PathInfo(IPAddress.Parse("172.20.10.2"),"usb","iPhone USB",false)}).Equals(IPAddress.Parse("172.20.10.2")), "USB direct link is preferred even without a gateway");
+using(var cmd=JsonDocument.Parse("{\"op\":\"move\",\"control\":17,\"id\":42,\"x\":-0.15}"))Check(PhoneDJCommand.Parse(cmd.RootElement).x==-.15,"Bounded DJ gestures preserve fractional travel");
+foreach(var invalid in new[]{"{\"op\":\"shell\"}","{\"op\":\"move\",\"control\":29}","{\"op\":\"move\",\"x\":1e30}","{\"op\":\"target\",\"target\":\"other\"}"}){bool rejected=false;try{using var doc=JsonDocument.Parse(invalid);PhoneDJCommand.Parse(doc.RootElement);}catch{rejected=true;}Check(rejected,"Malformed DJ commands are rejected: "+invalid);}
 Check(NativeTrackpadInput.ZoomWheelDelta(1) == 120 && NativeTrackpadInput.ZoomWheelDelta(-1) == -120 && NativeTrackpadInput.ZoomWheelDelta(0) == 0, "Spread zooms in, pinch zooms out at the Windows wheel boundary");
 // Simulate delayed/intermediate Quartz observations without moving a real cursor.
 var pointerMotion=new ThreeE.PhoneHost.MacPointerMotion();
@@ -86,6 +92,7 @@ if (args.Length == 2 && args[0] == "--preview") {
 }
 if (args.Length == 4 && args[0] == "--preview-receiver") {
     var previewInput = new FakeInput();
+    if(Environment.GetEnvironmentVariable("THREEE_PREVIEW_DJ")=="1")previewInput.PreviewDJ=true;
     // A computer clipboard for the page's "Copy from" sheet: text, HTML, a picture and a file.
     var previewFile = Path.Combine(Directory.CreateTempSubdirectory().FullName, "Quarterly report.pdf");
     File.WriteAllText(previewFile, "%PDF-1.4 preview");
@@ -302,7 +309,7 @@ Check(fake.Commands.Contains("history:-1") && fake.Commands.Contains("zoom:1"),"
     await Until(() => !follow.Running);
     Check(!followFirewall.IsOpen && follow.Status.Contains("automatically"), "Network loss pauses the receiver and says it will reconnect");
     current = IPAddress.Loopback;
-    await Until(() => follow.Running);
+    await Until(() => follow.Running && changes >= 1 && followFirewall.IsOpen);
     Check(follow.Running && follow.NamedUrl == stableLink && changes >= 1 && followFirewall.IsOpen, "The receiver resumes by itself with the identical link and notifies the host");
     using var web = new HttpClient();
     Check((await web.GetStringAsync(new Uri(stableLink).GetLeftPart(UriPartial.Authority) + "/")).Contains("Trackpad"), "The same saved link serves the page after the network returns");
@@ -633,10 +640,14 @@ sealed class FakeInput : ITrackpadInput {
     public readonly ConcurrentQueue<string> Commands = new(); public volatile bool Held;
     public volatile bool Switching;public int MidiNotes;private int selected=-1;
     public bool FailMidiDiscovery;
+    public bool PreviewDJ;
+    private int previewPage=1;
+    private object DJInfo=>PreviewDJ ? new {available=true,paired=true,page=previewPage,touchPage=1-previewPage,target="rekordbox",crossfader=64,decks=new[]{new {title="Breaks 3",duration=218,elapsed=73,bpm=121,tempo=0.0,tempoRange="±6",search=true,values=new[]{0,100,64,64,64,64,0,0,0,0,0,0,0,0}},new {title="House 4",duration=246,elapsed=25,bpm=121,tempo=-13.5,tempoRange="±16",search=false,values=new[]{0,100,64,64,64,64,0,0,0,0,0,0,0,0}}}} : null;
+    public void DJ(PhoneDJCommand command){Commands.Enqueue("dj:"+JsonSerializer.Serialize(command));if(PreviewDJ&&command.op=="page")previewPage=command.page;}
     private int outputVolume=50;
-    public object GetConnectionInfo()=>new {platform="windows",volume=new {available=true,level=outputVolume}};
+    public object GetConnectionInfo()=>new {platform="windows",controls=new {dj=DJInfo},volume=new {available=true,level=outputVolume}};
     public void Volume(int level){outputVolume=level;Commands.Enqueue($"volume:{level}");}
-    public object GetInfo(){if(FailMidiDiscovery)throw new InvalidOperationException("MIDI driver unavailable");return new {platform="windows",volume=new {available=true,level=outputVolume},midi=new {ports=new[]{new MidiPort(0,"Test MIDI (no hardware)")},selected,status="Test MIDI"}};}
+    public object GetInfo(){if(FailMidiDiscovery)throw new InvalidOperationException("MIDI driver unavailable");return new {platform="windows",controls=new {dj=DJInfo},volume=new {available=true,level=outputVolume},midi=new {ports=new[]{new MidiPort(0,"Test MIDI (no hardware)")},selected,status="Test MIDI"}};}
     public void ReleaseAll(){Release();AppsEnd();MidiPanic();}
     public void AppsBegin(){Switching=true;Commands.Enqueue("appsBegin");}
     public void AppsStep(int direction)=>Commands.Enqueue($"appsStep:{direction}");

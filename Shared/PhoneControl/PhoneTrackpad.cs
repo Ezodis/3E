@@ -177,16 +177,7 @@ public sealed class PhoneTrackpad : IDisposable {
         this.addressProvider = addressProvider; this.input = input; this.firewall = firewall; this.port = port;
     }
 
-    public static IPAddress GetLocalAddress() {
-        return NetworkInterface.GetAllNetworkInterfaces()
-            .Where(n => n.OperationalStatus == OperationalStatus.Up &&
-                (n.NetworkInterfaceType == NetworkInterfaceType.Wireless80211 || n.NetworkInterfaceType == NetworkInterfaceType.Ethernet))
-            .OrderBy(n => n.NetworkInterfaceType == NetworkInterfaceType.Wireless80211 ? 0 : 1)
-            .Where(n => n.GetIPProperties().GatewayAddresses.Any(g => g.Address.AddressFamily == AddressFamily.InterNetwork && !g.Address.Equals(IPAddress.Any)))
-            .SelectMany(n => n.GetIPProperties().UnicastAddresses)
-            .Where(a => a.Address.AddressFamily == AddressFamily.InterNetwork && IsPrivateAddress(a.Address))
-            .Select(a => a.Address).FirstOrDefault();
-    }
+    public static IPAddress GetLocalAddress() => PhoneNetwork.Refresh();
 
     public static bool IsPrivateAddress(IPAddress address) {
         var b = address.GetAddressBytes();
@@ -210,7 +201,7 @@ public sealed class PhoneTrackpad : IDisposable {
         Session candidate = null;
         try {
             var address = addressProvider();
-            if (address == null) { status = FollowNetwork ? "No local network — starts automatically when Wi-Fi connects." : "No local network — connect to Wi-Fi, then try again."; return false; }
+            if (address == null) { status = FollowNetwork ? "No local network — starts automatically when Wi-Fi or USB tethering connects." : "No local network — connect to Wi-Fi or USB tethering, then try again."; return false; }
             var token = SessionToken();
             candidate = new Session(address, port, token, AliasHost);
             if (OperatingSystem.IsWindows()) {
@@ -222,8 +213,9 @@ public sealed class PhoneTrackpad : IDisposable {
                 // request's Host/Origin is still validated by the receiver.
                 candidate.Listener.Prefixes.Add($"http://+:{port}/");
             } else {
-                candidate.Listener.Prefixes.Add(candidate.Origin + "/");
-                if (candidate.AliasOrigin != null) candidate.Listener.Prefixes.Add(candidate.AliasOrigin + "/");
+                // All active local literals (USB + Wi-Fi) are validated by
+                // Session.IsHost/IsOrigin; the cable can appear after startup.
+                candidate.Listener.Prefixes.Add($"http://*:{port}/");
             }
             try { candidate.Listener.Start(); }
             catch (HttpListenerException) when (!OperatingSystem.IsWindows()) {
@@ -375,7 +367,7 @@ public sealed class PhoneTrackpad : IDisposable {
                 slotReleased = true; owner.Slots.Release();
                 try {
                     using var ws = (await context.AcceptWebSocketAsync(null)).WebSocket;
-                    await ControlAsync(owner, ws);
+                    await ControlAsync(owner, ws, request.LocalEndPoint.Address);
                 } finally { owner.Sockets.Release(); }
                 return;
             }
@@ -391,7 +383,7 @@ public sealed class PhoneTrackpad : IDisposable {
             if (pairing && !CanShowPairing(request.RemoteEndPoint.Address, owner.Address)) {
                 context.Response.StatusCode = 403; context.Response.Close(); return;
             }
-            var resource = request.Url.AbsolutePath switch { "/" => "PhoneTrackpad.html", "/pad.js" => "PhoneTrackpad.js", "/surface.js" => "surface.js", "/dock.js" => "dock.js", "/clip.js" => "clip.js", "/surface.css" => "surface.css", "/host.js" => "host.js", "/pair" => "pair", "/icon.png" => "icon.png", _ => null };
+            var resource = request.Url.AbsolutePath switch { "/" => "PhoneTrackpad.html", "/pad.js" => "PhoneTrackpad.js", "/surface.js" => "surface.js", "/dj.js" => "dj.js", "/dj.css" => "dj.css", "/dock.js" => "dock.js", "/clip.js" => "clip.js", "/surface.css" => "surface.css", "/host.js" => "host.js", "/pair" => "pair", "/icon.png" => "icon.png", _ => null };
             if (resource == null) { Refuse(context.Response, 404, "Nothing here. Open the Phone Bar link from the computer's QR code."); return; }
             var response = context.Response;
             response.ContentType = resource.EndsWith(".png") ? "image/png" : resource.EndsWith(".js") ? "text/javascript; charset=utf-8" : resource.EndsWith(".css") ? "text/css; charset=utf-8" : "text/html; charset=utf-8";
@@ -581,7 +573,7 @@ public sealed class PhoneTrackpad : IDisposable {
         response.StatusCode = code;
         response.ContentType = "application/json";
         byte[] result;
-        lock(gate) result = Encoding.UTF8.GetBytes(code == 200 ? (describe || handshake ? JsonSerializer.Serialize(new { ready=true, build=Build, host=describe ? input.GetInfo() : input.GetConnectionInfo() }) : "{\"ready\":true}") : replaced ? "{\"ready\":false,\"error\":\"replaced\"}" : "{\"ready\":false}");
+        lock(gate) result = Encoding.UTF8.GetBytes(code == 200 ? (describe || handshake ? JsonSerializer.Serialize(new { ready=true, build=Build, host=JsonSerializer.Deserialize<JsonElement>(HostInfo(request.LocalEndPoint.Address, describe)) }) : "{\"ready\":true}") : replaced ? "{\"ready\":false,\"error\":\"replaced\"}" : "{\"ready\":false}");
         response.ContentLength64 = result.Length;
         await response.OutputStream.WriteAsync(result, owner.Cancel.Token);
         response.Close();
@@ -734,7 +726,12 @@ input{width:100%;padding:13px;border:1px solid #415260;border-radius:10px;backgr
         return JsonDocument.Parse(buffer.AsMemory(0, count), new JsonDocumentOptions { MaxDepth = 4 });
     }
 
-    private async Task ControlAsync(Session owner, WebSocket ws) {
+    private string HostInfo(IPAddress local,bool full) {
+        var fields=JsonSerializer.Deserialize<Dictionary<string,JsonElement>>(JsonSerializer.Serialize(full?input.GetInfo():input.GetConnectionInfo()));
+        fields["connection"]=JsonSerializer.SerializeToElement(PhoneNetwork.Describe(local,port));
+        return JsonSerializer.Serialize(fields);
+    }
+    private async Task ControlAsync(Session owner, WebSocket ws, IPAddress local) {
         bool acquired = false;
         try {
             using var auth = await ReceiveAsync(ws, owner.Cancel.Token, 5);
@@ -763,7 +760,7 @@ input{width:100%;padding:13px;border:1px solid #415260;border-radius:10px;backgr
             if (!acquired) { await ws.SendAsync(Encoding.UTF8.GetBytes("{\"error\":\"" + refusal + "\"}"), WebSocketMessageType.Text, true, owner.Cancel.Token); return; }
             // Connecting the trackpad must not wait on native MIDI driver discovery.
             // The MIDI surface requests the full description when it opens.
-            string lastHost = JsonSerializer.Serialize(input.GetConnectionInfo());
+            string lastHost = HostInfo(local, false);
             await ws.SendAsync(Encoding.UTF8.GetBytes("{\"ready\":true,\"build\":" + JsonSerializer.Serialize(Build) + ",\"host\":" + lastHost + "}"), WebSocketMessageType.Text, true, owner.Cancel.Token);
             var rateStart = Environment.TickCount64;
             var count = 0;
@@ -786,13 +783,13 @@ input{width:100%;padding:13px;border:1px solid #415260;border-radius:10px;backgr
                 }
                 if (message.RootElement.GetProperty("type").GetString() == "ping") {
                     // Heartbeats stay a few bytes; host state is resent only when it changed.
-                    var host = JsonSerializer.Serialize(input.GetConnectionInfo());
+                    var host = HostInfo(local, false);
                     var reply = host == lastHost ? "{\"pong\":true}" : "{\"pong\":true,\"host\":" + host + "}";
                     lastHost = host;
                     await ws.SendAsync(Encoding.UTF8.GetBytes(reply), WebSocketMessageType.Text, true, owner.Cancel.Token);
                 }
                 if (message.RootElement.GetProperty("type").GetString() is "midiPort" or "info")
-                    await ws.SendAsync(Encoding.UTF8.GetBytes(JsonSerializer.Serialize(new {host=input.GetInfo()})), WebSocketMessageType.Text, true, owner.Cancel.Token);
+                    await ws.SendAsync(Encoding.UTF8.GetBytes("{\"host\":"+HostInfo(local, true)+"}"), WebSocketMessageType.Text, true, owner.Cancel.Token);
             }
         } catch { /* Disconnects, sleep and malformed packets affect only this controller. */ }
         finally {
@@ -868,6 +865,7 @@ input{width:100%;padding:13px;border:1px solid #415260;border-radius:10px;backgr
             case "midiCC": sink.Midi(false,Range("channel",0,15),Range("number",0,119),Range("value",0,127)); break;
             case "midiNote": sink.Midi(true,Range("channel",0,15),Range("number",0,127),Range("value",0,127)); break;
             case "midiPanic": sink.MidiPanic(); break;
+            case "dj": sink.DJ(PhoneDJCommand.Parse(command)); break;
             case "shortcut": sink.Shortcut(Range("id",0,ShortcutCount-1)); break;
             case "releaseAll": sink.ReleaseAll(); break;
             case "info": break;
@@ -904,6 +902,7 @@ public interface ITrackpadInput {
     void MidiPort(int id) { }
     void Midi(bool note,int channel,int number,int value) { }
     void MidiPanic() { }
+    void DJ(PhoneDJCommand command) { }
     void Shortcut(int id) { }
     // Phone keyboard: Unicode text and the fixed PhoneClipboard key palette.
     // Hosts that implement them return true so the phone shows the Keyboard button.

@@ -2,7 +2,7 @@
 # Kept independent of Live's framework so routing can be tested without a DAW.
 CONTROL_CHANNEL = 15
 CCS = (1,) + tuple(range(16, 42)) + tuple(range(48, 56))
-NOTES = (36, 37, 38, 39, 42, 43) + tuple(range(48, 64))
+NOTES = (64, 65) + tuple(range(68, 76)) + (36, 37, 38, 39, 42, 43) + tuple(range(48, 64))
 
 
 class Mapping:
@@ -43,6 +43,21 @@ class Mapping:
         if note:
             if not value:
                 return
+            if 64 <= number <= 75:
+                index = number - 64 if number < 66 else (number - 68) // 4
+                track = self.track(index)
+                if track is None:
+                    return
+                if number < 66:
+                    at = track.playing_slot_index
+                    slot = track.clip_slots[at] if at >= 0 and at < len(track.clip_slots) else self.slot(track)
+                    if slot is not None and slot.has_clip:
+                        slot.clip.looping = not slot.clip.looping
+                elif number >= 68:
+                    at = (number - 68) % 4
+                    if at < len(track.clip_slots) and track.clip_slots[at].has_clip:
+                        track.clip_slots[at].fire()
+                return
             if 48 <= number <= 63:
                 index = number - (48 if number < 56 else 56)
                 track = self.track(index)
@@ -55,6 +70,9 @@ class Mapping:
             if track is None:
                 return
             if number in (36, 37):
+                if track.playing_slot_index >= 0:
+                    track.stop_all_clips()
+                    return
                 slot = self.slot(track)
                 if slot is not None and slot.has_clip:
                     slot.fire()

@@ -16,13 +16,26 @@ class MappingTest(unittest.TestCase):
         self.fired=[]; self.stopped=[]; self.jogged=[]; self.messages=[]
         tracks=[]
         for i in range(8):
-            clip=NS(is_recording=False, is_midi_clip=True, warping=False, move_playing_pos=self.jogged.append)
+            clip=NS(is_recording=False, is_midi_clip=True, warping=False, looping=False, move_playing_pos=self.jogged.append)
             slot=NS(has_clip=True, clip=clip, fire=lambda i=i:self.fired.append(i))
             mixer=NS(volume=parameter(),panning=parameter(low=-1),sends=[parameter()],crossfade_assign=1)
             tracks.append(NS(mixer_device=mixer,mute=False,solo=False,clip_slots=[slot],playing_slot_index=0,devices=[],stop_all_clips=lambda i=i:self.stopped.append(i)))
         scene=object()
         self.song=NS(tracks=tracks,scenes=[scene],view=NS(selected_scene=scene,selected_track=None,highlighted_clip_slot=None),master_track=NS(mixer_device=NS(crossfader=parameter(low=-1))))
         self.mapping=module.Mapping(self.song,self.messages.append)
+
+    def test_loop_and_scene_pads(self):
+        for d in range(2):
+            track=self.song.tracks[d]
+            self.mapping.receive(True,64+d,127)
+            self.assertTrue(track.clip_slots[0].clip.looping)
+            self.mapping.receive(True,64+d,0)
+            self.assertTrue(track.clip_slots[0].clip.looping)
+            self.mapping.receive(True,68+d*4,127)
+            self.assertEqual(self.fired[-1],d)
+            for pad in range(1,4):self.mapping.receive(True,68+d*4+pad,127)
+            self.mapping.receive(True,36+d,127)
+            self.assertEqual(self.stopped[-1],d)
 
     def test_mixer(self):
         for i,t in enumerate(self.song.tracks):
@@ -36,7 +49,9 @@ class MappingTest(unittest.TestCase):
 
     def test_decks(self):
         for i in range(2):
+            self.song.tracks[i].playing_slot_index=-1
             self.mapping.receive(True,36+i,127);self.mapping.receive(True,42+i,127)
+            self.song.tracks[i].playing_slot_index=0
             self.mapping.receive(True,38+i,127);self.assertIs(self.song.view.selected_track,self.song.tracks[i])
             self.mapping.receive(False,40+i,65);self.mapping.receive(False,40+i,63)
         self.assertEqual(self.fired,[0,1]);self.assertEqual(self.stopped,[0,1]);self.assertEqual(self.jogged,[.0625,-.0625,.0625,-.0625])

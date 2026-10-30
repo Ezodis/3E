@@ -722,7 +722,7 @@
   // reaches this receiver, move there so a bookmark or home-screen icon keeps
   // working when the laptop's IP changes. Networks that block .local stay on IP.
   const alias = window.ThreeEHost?.alias;
-  if (alias && location.host !== alias && /^[0-9.]+(:\d+)?$/.test(location.host)) {
+  if (new URLSearchParams(location.search).get('usb') !== '1' && alias && location.host !== alias && /^[0-9.]+(:\d+)?$/.test(location.host)) {
     const abort = new AbortController(), timer = setTimeout(() => abort.abort(), 2000);
     fetch('http://' + alias + '/alive', { mode:'cors', cache:'no-store', signal:abort.signal })
       .then(response => { if (response.ok || response.status === 204) location.replace('http://' + alias + '/' + location.hash); })
