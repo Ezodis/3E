@@ -40,7 +40,6 @@ public sealed class MacInput : ITrackpadInput, IDisposable {
     private IntPtr mouseSource;
     private readonly uint[] displayIds=new uint[32];
     private readonly List<MacPointerMotion.Display> displays=new();
-    private long displayRefresh;
     private bool appSwitcherHeld;
     private object controls;
     private long lastClick; private Point lastClickPoint; private int clicks;
@@ -55,16 +54,14 @@ public sealed class MacInput : ITrackpadInput, IDisposable {
     private static void Post(IntPtr e) { if(e==IntPtr.Zero)throw new InvalidOperationException("macOS event unavailable");try{CGEventPost(0,e);}finally{CFRelease(e);} }
     private static void Key(ushort key,bool down,ulong flags=0) { var e=CGEventCreateKeyboardEvent(IntPtr.Zero,key,down);if(e==IntPtr.Zero)throw new InvalidOperationException("macOS keyboard event unavailable");CGEventSetFlags(e,flags);Post(e); }
     private (double X,double Y) ClampPointer(double x,double y) {
-        long now=Environment.TickCount64;
-        if(displays.Count==0||now-displayRefresh>=1000) {
-            if(CGGetActiveDisplayList((uint)displayIds.Length,displayIds,out uint count)==0) {
-                displays.Clear();
-                for(int i=0;i<Math.Min(count,(uint)displayIds.Length);i++) {
-                    var r=CGDisplayBounds(displayIds[i]);
-                    displays.Add(new(r.X,r.Y,r.Width,r.Height));
-                }
+        // Read the current logical bounds for each event. Car View can resize
+        // the desktop mid-gesture; cached bounds would leave an invisible edge.
+        if(CGGetActiveDisplayList((uint)displayIds.Length,displayIds,out uint count)==0) {
+            displays.Clear();
+            for(int i=0;i<Math.Min(count,(uint)displayIds.Length);i++) {
+                var r=CGDisplayBounds(displayIds[i]);
+                displays.Add(new(r.X,r.Y,r.Width,r.Height));
             }
-            displayRefresh=now;
         }
         return MacPointerMotion.Clamp(x,y,displays);
     }
@@ -101,7 +98,8 @@ public sealed class MacInput : ITrackpadInput, IDisposable {
         } finally {CFRelease(source);}
     }
     private Point PointerLocation() {
-        var observed=Location();var target=pointer.Resolve(observed.X,observed.Y,Environment.TickCount64);
+        var observed=Location();var resolved=pointer.Resolve(observed.X,observed.Y,Environment.TickCount64);
+        var target=ClampPointer(resolved.X,resolved.Y);
         return new Point {X=target.X,Y=target.Y};
     }
     public void Move(int x,int y) {

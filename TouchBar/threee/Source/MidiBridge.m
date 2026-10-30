@@ -9,6 +9,7 @@
 #import <CoreMIDI/CoreMIDI.h>
 #import "ReleaseUpdates.h"
 #import "DJSurface.h"
+#import "CarViewMenu.h"
 
 // Change labels only on this engine's own streams. Do not recreate endpoints,
 // change their unique IDs, or touch another application's MIDI connections.
@@ -660,6 +661,7 @@ static void IgnoreKeyCommands(id self, SEL selector, id sender) {}
 static NSString *combinedGestureState=@"permission";
 static BOOL appsMenuVisible;
 static BOOL downloadsEnabled;
+static BOOL carViewEnabled;
 static NSMenuItem *MenuSeparator(void) { return [NSMenuItem separatorItem]; }
 static void CleanMenu(NSMenu *menu) {
     NSStatusItem *statusItem=[(id)NSApp.delegate valueForKey:@"theItem"];
@@ -713,13 +715,14 @@ static void CleanMenu(NSMenu *menu) {
         if(item.submenu) CleanMenu(item.submenu);
     }
     if(menu==statusItem.menu) {
-        NSMenuItem *version=nil,*trackTab=nil,*phone=nil,*apps=nil,*midi=nil,*surface=nil,*downloads=nil,*automatic=nil;
+        NSMenuItem *version=nil,*trackTab=nil,*phone=nil,*car=nil,*apps=nil,*midi=nil,*surface=nil,*downloads=nil,*automatic=nil;
         NSMenuItem *reset=nil,*restart=nil,*quit=nil;NSMutableArray<NSMenuItem *> *remaining=[NSMutableArray array];
         for(NSMenuItem *item in menu.itemArray.copy) {
             NSString *title=item.title.lowercaseString;
             if(!version && [title containsString:@"(v."])version=item;
             else if([item.identifier isEqual:@"local.musicstrip.touchTabToggle"])trackTab=item;
             else if([item.identifier isEqual:@"local.musicstrip.phone"])phone=item;
+            else if([item.identifier isEqual:@"local.musicstrip.carView"])car=item;
             else if([item.identifier isEqual:@"local.musicstrip.appsToggle"])apps=item;
             else if(item.action==NSSelectorFromString(@"toggleMidi:"))midi=item;
             else if(item.action==NSSelectorFromString(@"toggleSurfaceMode:"))surface=item;
@@ -760,6 +763,10 @@ static void CleanMenu(NSMenu *menu) {
         [menu removeAllItems];
         if(version)[menu addItem:version];
         [menu addItem:phone];if(trackTab)[menu addItem:trackTab];
+        // This is owned by the main process, including when the MIDI helper
+        // supplies the suite's single menu-bar icon.
+        if(!car)car=ThreeECarViewMenu(NSClassFromString(@"ThreeEMidiBridge"),carViewEnabled);
+        car.state=carViewEnabled?NSControlStateValueOn:NSControlStateValueOff;[menu addItem:car];
         [menu addItem:MenuSeparator()];
         [menu addItem:apps];if(midi)[menu addItem:midi];if(surface)[menu addItem:surface];
         [menu addItem:MenuSeparator()];
@@ -1970,6 +1977,8 @@ static void Command(NSString *command) {
             appsMenuVisible=[[command substringFromIndex:11] boolValue]; ApplyBranding();
         } else if ([command hasPrefix:@"DOWNLOADS_STATE "]) {
             downloadsEnabled=[[command substringFromIndex:16] boolValue]; ApplyBranding();
+        } else if ([command hasPrefix:@"CAR_VIEW_STATE "]) {
+            carViewEnabled=[[command substringFromIndex:15] boolValue];ApplyBranding();
         } else if ([command hasPrefix:@"TOUCHTAB_STATE "]) {
             combinedGestureState=[command substringFromIndex:15];
             ApplyBranding();
@@ -2213,6 +2222,7 @@ static void Command(NSString *command) {
     } @catch (NSException *e) { Report("BRIDGE_ERROR\n"); NSLog(@"ThreeE MIDI bridge: %@", e); }
 }
 @implementation ThreeEMidiBridge
++ (void)openCarView:(id)sender { Report("CAR_VIEW_OPEN\n"); }
 + (void)toggleTouchTab:(id)sender { Report("TOUCHTAB_TOGGLE\n"); }
 + (void)toggleApps:(id)sender { Report("APPS_TOGGLE\n"); }
 + (void)openPhone:(id)sender { Report("PHONE_OPEN\n"); }
@@ -2229,6 +2239,7 @@ static void Command(NSString *command) {
 + (void)toggleAutomaticUpdates:(id)sender { StripToggleAutomaticUpdates(self,_cmd,sender); }
 + (void)toggleSurfaceMode:(id)sender { ChangeMode(NSApp.delegate,NSSelectorFromString(@"changeMode:"),sender); }
 + (BOOL)validateMenuItem:(NSMenuItem *)item {
+    if(item.action==@selector(openCarView:)){item.state=carViewEnabled?NSControlStateValueOn:NSControlStateValueOff;return YES;}
     if(item.action==@selector(toggleApps:)) {
         item.state=appsMenuVisible&&!recordController.activeMenuBar ? NSControlStateValueOn : NSControlStateValueOff; return YES;
     }

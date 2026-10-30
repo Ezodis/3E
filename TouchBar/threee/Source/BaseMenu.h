@@ -1,10 +1,12 @@
 // The base app remains usable when macOS cannot load the optional Touch Bar APIs.
 #import "../../../Shared/PhoneControl/MacHost/PhoneBarMenu.h"
+#import "CarViewMenu.h"
 static NSMenu *StripBaseMenu(id target,BOOL gestures) {
     NSMenu *menu=[NSMenu new];
     NSMenuItem *phone=ThreeEPhoneBarMenu(target);
     if(!StripHasModule(@"phone")) { phone.title=@"Phone Bar — Install…"; phone.state=NSControlStateValueOff; }
     [menu addItem:phone];
+    [menu addItem:ThreeECarViewMenu(target,NO)];
     if(YES) {
         NSMenuItem *touchTab=[[NSMenuItem alloc] initWithTitle:StripHasModule(@"touchtab")?@"Touch Tab":@"Touch Tab — Install…" action:NSSelectorFromString(@"toggleBaseTouchTab:") keyEquivalent:@""];
         touchTab.identifier=@"local.musicstrip.touchTabToggle";touchTab.target=target;[menu addItem:touchTab];

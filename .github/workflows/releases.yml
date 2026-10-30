@@ -65,6 +65,8 @@ jobs:
             "TouchBar/build/threee/3E.app/Contents/Resources/PhoneControl/$arch/ThreeE.PhoneHost" --native-self-test
           fi
           zsh TouchBar/threee/Tests/test_dj.sh
+          xcrun clang -fobjc-arc -Wno-deprecated-declarations -framework AppKit -framework Carbon -framework ApplicationServices -framework QuartzCore -framework AVFoundation -framework CoreMedia -weak_framework ScreenCaptureKit TouchBar/threee/Tests/car_view.m -o /tmp/car-view-test
+          /tmp/car-view-test
           python3 -m unittest discover -s TouchBar/threee/Tests -p test_record.py
           python3 -m unittest discover -s scripts -p test_release.py
           if [[ "${{ matrix.edition }}" == combined ]]; then python3 TouchBar/threee/Tests/module_bundles.py; fi

@@ -46,7 +46,7 @@ int main(void) { @autoreleasepool {
     }
     NSCAssert(StripCombinedRelease(),@"Build with -DSTRIP_TEST_EDITION_COMBINED=1");
     CleanMenu(delegate.theItem.menu);
-    NSCAssert(delegate.theItem.menu.numberOfItems==15,@"Add gesture, App, Phone Bar, DJ setup, downloads, automatic-update and Restart controls to the existing menu");
+    NSCAssert(delegate.theItem.menu.numberOfItems==16,@"Add gesture, App, Phone Bar, Car View, DJ setup, downloads, automatic-update and Restart controls to the existing menu");
     NSMenuItem *restart=delegate.theItem.menu.itemArray.lastObject;
     NSCAssert([restart.identifier isEqual:@"local.musicstrip.restart"] && [restart.title isEqual:@"Restart"] && restart.target==ThreeEMidiBridge.class && restart.action==@selector(restartAll:),@"Restart (update check + relaunch) is in the full menu, like Windows");
     NSMenuItem *phone=nil;
@@ -54,15 +54,18 @@ int main(void) { @autoreleasepool {
     NSCAssert(phone!=nil,@"Phone Bar control is present");
     NSCAssert([phone.identifier isEqual:@"local.musicstrip.phone"] && [phone.title isEqual:@"Phone Bar"] && phone.view!=nil,@"Phone Bar is a bundled module in the existing menu");
     NSMenu *base=StripBaseMenu(delegate,YES);
-    NSCAssert([base.itemArray[0].identifier isEqual:@"local.musicstrip.phone"] && [base.itemArray[1].identifier isEqual:@"local.musicstrip.touchTabToggle"],@"Base menu places Phone Bar before Touch Tab without Touch Bar interfaces");
-    NSCAssert(!base.itemArray[2].enabled,@"Only the unavailable Touch Bar module is disabled");
+    NSCAssert([base.itemArray[0].identifier isEqual:@"local.musicstrip.phone"] && [base.itemArray[1].identifier isEqual:@"local.musicstrip.carView"] && [base.itemArray[2].identifier isEqual:@"local.musicstrip.touchTabToggle"],@"Car View is available without Touch Bar interfaces");
+    NSCAssert(!base.itemArray[4].enabled,@"Only the unavailable Touch Bar module is disabled");
+    NSMenuItem *car=nil;for(NSMenuItem *item in delegate.theItem.menu.itemArray)if([item.identifier isEqual:@"local.musicstrip.carView"])car=item;
+    NSCAssert(car.target==ThreeEMidiBridge.class && car.action==NSSelectorFromString(@"openCarView:"),@"Car View uses the parent pipe");
+    carViewEnabled=YES;[ThreeEMidiBridge validateMenuItem:car];NSCAssert(car.state==NSControlStateValueOn,@"Car View check follows the host");carViewEnabled=NO;
     NSMenuItem *toggle=nil;
     for(NSMenuItem *item in delegate.theItem.menu.itemArray)if([item.identifier isEqual:@"local.musicstrip.touchTabToggle"])toggle=item;
     NSCAssert(toggle.target==ThreeEMidiBridge.class && toggle.action==@selector(toggleTouchTab:),@"Use the existing parent/helper pipe action");
     combinedGestureState=@"on"; CleanMenu(delegate.theItem.menu);
     NSCAssert(toggle.state==NSControlStateValueOn && [toggle.title isEqual:@"Touch Tab"],@"Reflect actual enabled runtime state without changing the label");
     combinedGestureState=@"off"; CleanMenu(delegate.theItem.menu);
-    NSCAssert(toggle.state==NSControlStateValueOff && delegate.theItem.menu.numberOfItems==15,@"Disabling never duplicates the menu items");
+    NSCAssert(toggle.state==NSControlStateValueOff && delegate.theItem.menu.numberOfItems==16,@"Disabling never duplicates the menu items");
     combinedGestureState=@"permission"; CleanMenu(delegate.theItem.menu);
     NSCAssert([toggle.title isEqual:@"Touch Tab"] && toggle.toolTip.length>0,@"Permission explanation belongs in tooltip, not the toggle label");
     NSMenuItem *hide=[[NSMenuItem alloc] initWithTitle:@"Hide 3£" action:nil keyEquivalent:@""];
@@ -76,7 +79,7 @@ int main(void) { @autoreleasepool {
     [delegate.theItem.menu insertItem:version atIndex:0]; CleanMenu(delegate.theItem.menu); CleanMenu(delegate.theItem.menu);
     NSMenuItem *apps=nil;
     for(NSMenuItem *item in delegate.theItem.menu.itemArray)if([item.identifier isEqual:@"local.musicstrip.appsToggle"])apps=item;
-    NSCAssert(delegate.theItem.menu.itemArray[0]==version && delegate.theItem.menu.itemArray[1]==phone && delegate.theItem.menu.itemArray[2]==toggle && [delegate.theItem.menu.itemArray[3] isSeparatorItem] && delegate.theItem.menu.itemArray[4]==apps && delegate.theItem.menu.itemArray[5]==hide && hide.action==@selector(toggleMidi:),@"Phone Bar precedes Touch Tab and the existing rows remain in stable order without duplicates");
+    NSCAssert(delegate.theItem.menu.itemArray[0]==version && delegate.theItem.menu.itemArray[1]==phone && delegate.theItem.menu.itemArray[2]==toggle && delegate.theItem.menu.itemArray[3]==car && [delegate.theItem.menu.itemArray[4] isSeparatorItem] && delegate.theItem.menu.itemArray[5]==apps && delegate.theItem.menu.itemArray[6]==hide && hide.action==@selector(toggleMidi:),@"Phone Bar, Touch Tab and Car View remain in stable order without duplicates");
     NSCAssert(apps.target==ThreeEMidiBridge.class && apps.action==@selector(toggleApps:),@"App menu uses the existing main-process pipe");
     appsMenuVisible=YES; [ThreeEMidiBridge validateMenuItem:apps]; NSCAssert(apps.state==NSControlStateValueOn,@"Visible apps are checked");
     appsMenuVisible=NO; [ThreeEMidiBridge validateMenuItem:apps]; NSCAssert(apps.state==NSControlStateValueOff,@"Hidden apps are unchecked");

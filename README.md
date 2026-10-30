@@ -19,6 +19,12 @@ Windows always bundles the [Phone Bar module](Windows/PhoneBar/) and shared rece
 
 Included does not mean automatically running: Phone Bar starts only when selected and has its own stop/cleanup lifecycle. Windows' keyboard, shortcuts, themes and wallpaper retain their independent toggles. Platform-specific hardware and permissions still apply. There is no separate plugin download or duplicate copy of the phone web interface to keep updated.
 
+## Car View (Mac)
+
+Open **3£ → Car View…** for larger controls and a large neon-outlined pointer. Car View temporarily selects a lower logical resolution on the main display; turning it off restores the original mode. It also turns off on main-display changes, sleep or session locking. The display change is scoped to the app so macOS restores it if the process exits unexpectedly.
+
+**Mirror for Window Reflection** flips the live main display horizontally, including the neon pointer. Look at the reflected image in glass: physical mouse, Mac trackpad and Phone Bar gestures retain their normal directions and click coordinates. Mirror requires macOS 12.3+ and Screen Recording access for 3£. Frames stay on the Mac; this view does not record or transmit the desktop. **⌃⌥⌘0** exits Car View and restores the display size. Car View starts off on every launch.
+
 ## Downloads
 
 Get the current **Combined**, **TouchBar only**, or **TouchTab only** download from [Releases](https://github.com/Ezodis/3E/releases). Each is a universal Intel/Apple Silicon build; see hardware and permission requirements below. Current Mac installs use the Combined update feed and preserve their module selection.
