@@ -70,9 +70,9 @@ jobs:
         run: 'TouchBar/build/threee/3E.app/Contents/MacOS/ThreeE --self-test'
       - name: Existing native menu and app-switcher regression tests
         run: |
-          xcrun clang -fobjc-arc -framework AppKit -framework Carbon -framework ApplicationServices -framework QuartzCore -framework CoreImage TouchBar/threee/Tests/window_chooser.m -o /tmp/window-test
+          xcrun clang -fobjc-arc -framework AppKit -framework Carbon -framework ApplicationServices -framework QuartzCore -framework CoreImage -framework AVFoundation -framework CoreMedia -weak_framework ScreenCaptureKit TouchBar/threee/Tests/window_chooser.m -o /tmp/window-test
           /tmp/window-test
-          xcrun clang -fobjc-arc -Wno-deprecated-declarations -framework AppKit -framework Carbon -framework ApplicationServices -framework QuartzCore -framework CoreImage TouchBar/threee/Tests/apps_launcher_hold.m -o /tmp/apps-test
+          xcrun clang -fobjc-arc -Wno-deprecated-declarations -framework AppKit -framework Carbon -framework ApplicationServices -framework QuartzCore -framework CoreImage -framework AVFoundation -framework CoreMedia -weak_framework ScreenCaptureKit TouchBar/threee/Tests/apps_launcher_hold.m -o /tmp/apps-test
           /tmp/apps-test
           xcrun clang -fobjc-arc -DSTRIP_TEST_EDITION_COMBINED=1 -framework AppKit -framework CoreMIDI TouchBar/threee/Tests/combined_menu.m -o /tmp/menu-test
           /tmp/menu-test
