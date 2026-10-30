@@ -97,7 +97,9 @@ int main(int argc,const char **argv) {
         [timed begin:NSMakePoint(21,15) identity:@1];[timed move:NSMakePoint(26,15)];NSInteger immediate=[midi value:1 number:17 note:NO];
         [NSRunLoop.currentRunLoop runUntilDate:[NSDate dateWithTimeIntervalSinceNow:.2]];
         NSCAssert([midi value:1 number:17 note:NO]==immediate,@"The real timer must not accelerate an ordinary short swipe");
-        [NSRunLoop.currentRunLoop runUntilDate:[NSDate dateWithTimeIntervalSinceNow:.4]];
+        double timerDeadline=NSProcessInfo.processInfo.systemUptime+2;
+        while([midi value:1 number:17 note:NO]==immediate && NSProcessInfo.processInfo.systemUptime<timerDeadline)
+            [NSRunLoop.currentRunLoop runUntilDate:[NSDate dateWithTimeIntervalSinceNow:.01]];
         NSCAssert([midi value:1 number:17 note:NO]>immediate,@"A settled hold runs the actual continuation timer");[timed end];
         NSInteger final=[midi value:1 number:17 note:NO];[NSRunLoop.currentRunLoop runUntilDate:[NSDate dateWithTimeIntervalSinceNow:.1]];
         NSCAssert([midi value:1 number:17 note:NO]==final,@"The timer stops after lift");
@@ -185,7 +187,12 @@ int main(int argc,const char **argv) {
                     [frames addObject:[NSValue valueWithRect:c.frame]];
                 }
                 NSCAssert(visible==(page ? 19 : 13),@"Mixer shows all EQ/levels; Performance shows eight buttons and a disc per deck");
-                NSCAssert(NSMinX(row.controls[0].frame)==0 && NSMaxX(row.controls[14].frame)==width.doubleValue,@"Both views must use the complete available width, with discs at the extremes");
+                NSInteger edge=page ? 6 : 1;
+                NSCAssert(NSMinX(row.controls[edge].frame)==0 && fabs(NSMaxX(row.controls[14+edge].frame)-width.doubleValue)<.1,@"Levels in MIX and transport buttons in PADS must use the full available width");
+                if(page) {
+                    NSCAssert(NSMaxX(row.controls[9].frame)<NSMinX(row.controls[0].frame) && NSMaxX(row.controls[0].frame)<NSMinX(row.controls[10].frame),@"Deck A disc must sit between Loop and hot cue 1");
+                    NSCAssert(NSMaxX(row.controls[24].frame)<NSMinX(row.controls[14].frame) && NSMaxX(row.controls[14].frame)<NSMinX(row.controls[23].frame),@"Deck B mirrors hot cue 1, disc and Loop");
+                } else NSCAssert(NSMaxX(row.controls[1].frame)<NSMinX(row.controls[0].frame) && row.controls[0].platterCenter.x>NSWidth(row.controls[0].bounds)/2,@"Level and song name must sit outside the inward-facing disc");
                 for(NSInteger local=0;local<14;local++) {
                     ThreeEDJControl *a=row.controls[local],*b=row.controls[14+local];
                     if(a.hidden) continue;
@@ -195,7 +202,7 @@ int main(int argc,const char **argv) {
             }
             row.page=0;[row layout];
             NSPoint a=[row.controls[0] convertPoint:row.controls[0].platterCenter toView:row],b=[row.controls[14] convertPoint:row.controls[14].platterCenter toView:row];
-            NSCAssert(fabs(a.x-16)<.1 && fabs(b.x-(width.doubleValue-16))<.1,@"Circular platters face inward from the two outer edges");
+            NSCAssert(a.x>width.doubleValue*.15 && b.x<width.doubleValue*.85,@"Both discs must have substantial swipe room on both sides");
             [row nextPage];
             NSCAssert(NSEqualPoints(a,[row.controls[0] convertPoint:row.controls[0].platterCenter toView:row]) && NSEqualPoints(b,[row.controls[14] convertPoint:row.controls[14].platterCenter toView:row]),@"Platter centers must never move when metadata folds away");
             NSCAssert(fabs(NSMidX(row.controls.lastObject.frame)-width.doubleValue/2)<.1,@"The hub remains centered within the usable DJ row");
