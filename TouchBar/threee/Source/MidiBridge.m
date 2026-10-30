@@ -860,7 +860,7 @@ static void Open(id self, SEL sel, NSTouchBar *bar, id identifier) {
     // Surplus width belongs to the spacer, never to pads/transport buttons.
     // Piano-only rows explicitly claim their usable width; keep the same
     // identifiers for every normal preset so the outer controls never move.
-    outer.defaultItemIdentifiers = @[CloseID,RecordID,LayoutID,NSTouchBarItemIdentifierFlexibleSpace];
+    outer.defaultItemIdentifiers = @[CloseID,LayoutID,NSTouchBarItemIdentifierFlexibleSpace,RecordID];
     if (pianoExpanded) {
         recordController.button.joinedEdge=0;
         NSCustomTouchBarItem *options=[[NSCustomTouchBarItem alloc] initWithIdentifier:OctavesID];
@@ -1415,15 +1415,17 @@ static void TestArrangementLayout(BOOL viaMenu,BOOL fromHidden) {
     StripRecordController *controller=recordController;
     NSCAssert(controller,@"Menu must initialize MIDI even from hidden");
     if(!viaMenu) {
+        Report([[NSString stringWithFormat:@"NORMAL_RECORD %@ host=%g\n",NSStringFromRect([controller.button convertRect:controller.button.bounds toView:nil]),controller.button.window.contentView.bounds.size.width] UTF8String]);
         NSCAssert(!controller.activeMenuBar,@"Start on a normal MIDI preset");
-        [controller.button beginAt:NSMakePoint(16,15) identity:NSUUID.UUID]; [controller.button fireHold]; [controller.button finishAt:NSMakePoint(16,15)];
+        [controller.button beginAt:NSMakePoint(16,15) identity:NSUUID.UUID]; [controller.button fireHold];
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW,270*NSEC_PER_MSEC),dispatch_get_main_queue(),^{[controller.button finishAt:NSMakePoint(16,15)];});
     }
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW,300*NSEC_PER_MSEC),dispatch_get_main_queue(),^{
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW,400*NSEC_PER_MSEC),dispatch_get_main_queue(),^{
         NSTouchBar *arrangement=controller.activeMenuBar;
         NSCAssert([[(id)NSApp.delegate valueForKey:@"controlSurfadeMode"] boolValue],@"The native surface engine must actually enter Control Surface Mode, not just display its view");
         NSCAssert(arrangement && ![arrangement.itemIdentifiers containsObject:CloseID],@"Record hold opens Arrangement without a close or preset-switch item");
-        NSArray *expectedArrangement=@[[RecordID stringByAppendingString:@".performance.loop"],@"local.musicstrip.performance.record",[RecordID stringByAppendingString:@".performance.tempo"],[RecordID stringByAppendingString:@".performance.more"],NSTouchBarItemIdentifierFlexibleSpace,@"local.musicstrip.performance.native-surface"];
-        NSCAssert([arrangement.defaultItemIdentifiers isEqualToArray:expectedArrangement],@"Loop, Record, BPM, More and the native surface must stay in the requested left-to-right order");
+        NSArray *expectedArrangement=@[[RecordID stringByAppendingString:@".performance.loop"],[RecordID stringByAppendingString:@".performance.tempo"],[RecordID stringByAppendingString:@".performance.more"],NSTouchBarItemIdentifierFlexibleSpace,@"local.musicstrip.performance.native-surface",@"local.musicstrip.performance.record"];
+        NSCAssert([arrangement.defaultItemIdentifiers isEqualToArray:expectedArrangement],@"Loop, BPM, More and the native surface precede the consistent far-right Record control");
         for(NSString *identifier in arrangement.itemIdentifiers) {
             if([identifier isEqual:NSTouchBarItemIdentifierFlexibleSpace]) continue;
             NSTouchBarItem *item=[arrangement itemForIdentifier:identifier];
@@ -1448,7 +1450,7 @@ static void TestArrangementLayout(BOOL viaMenu,BOOL fromHidden) {
                 [[rep representationUsingType:NSBitmapImageFileTypePNG properties:@{}] writeToFile:@"/tmp/3e-native-surface.png" atomically:YES];
             }
         }
-        StripRecordButton *record=(id)((NSCustomTouchBarItem *)[arrangement itemForIdentifier:@"local.musicstrip.performance.record"]).view.subviews.firstObject;
+        StripRecordButton *record=(id)((NSCustomTouchBarItem *)[arrangement itemForIdentifier:@"local.musicstrip.performance.record"]).view;
         NSRect frame=[record convertRect:record.bounds toView:nil];
         for(NSString *action in @[@"loop",@"tempo"]) {
             NSView *button=controller.options[action];
@@ -1460,17 +1462,21 @@ static void TestArrangementLayout(BOOL viaMenu,BOOL fromHidden) {
         }
         NSView *loopView=controller.performanceMenus[@"loop"].collapsedRepresentation;
         NSRect loopFrame=[loopView convertRect:loopView.bounds toView:nil];
-        NSCAssert(record.window && fabs(NSWidth(frame)-32)<.1 && fabs(NSMinX(frame)-76)<.1 && fabs(NSWidth(loopFrame)-76)<.1,@"Arrangement aligns the 32-point Record button after the 76-point Loop slot: Loop %@ Record %@",NSStringFromRect(loopFrame),NSStringFromRect(frame));
+        NSCAssert(record.window && fabs(NSWidth(frame)-32)<.1 && fabs(NSMaxX(frame)-record.window.contentView.bounds.size.width)<1 && fabs(NSWidth(loopFrame)-76)<.1,@"Arrangement places the 32-point Record button at the far right: Loop %@ Record %@",NSStringFromRect(loopFrame),NSStringFromRect(frame));
         NSTouchBar *device=[(id)NSApp.delegate valueForKey:@"eightFaderGroup"];
         Open(NSApp.delegate,NSSelectorFromString(@"openTouchbar:fromIdentifier:"),device,nil);
         dispatch_after(dispatch_time(DISPATCH_TIME_NOW,300*NSEC_PER_MSEC),dispatch_get_main_queue(),^{
             NSTouchBar *active=controller.activeMenuBar;
-            NSGroupTouchBarItem *deviceGroup=(id)[active itemForIdentifier:@"local.musicstrip.performance.controls"];
-            NSCAssert(deviceGroup.groupTouchBar.itemIdentifiers.count==1 && [deviceGroup.groupTouchBar.itemIdentifiers.firstObject isEqual:@"local.musicstrip.performance.native-device"],@"Native device faders retain the Record wrapper without the vendor close button");
-            StripRecordButton *back=(id)((NSCustomTouchBarItem *)[active itemForIdentifier:@"local.musicstrip.performance.record"]).view.subviews.firstObject;
-            [back beginAt:NSMakePoint(16,15) identity:NSUUID.UUID]; [back fireHold]; [back finishAt:NSMakePoint(16,15)];
-            dispatch_after(dispatch_time(DISPATCH_TIME_NOW,200*NSEC_PER_MSEC),dispatch_get_main_queue(),^{
+            NSCustomTouchBarItem *deviceItem=(id)[active itemForIdentifier:@"local.musicstrip.performance.native-device"];
+            NSCAssert(deviceItem.view==controller.nativeDeviceView && deviceItem.view.window && [active.itemIdentifiers.lastObject isEqual:@"local.musicstrip.performance.record"] && ![active.itemIdentifiers containsObject:CloseID],@"Native device faders retain the real view and a far-right Record slot without the vendor close button");
+            StripRecordButton *back=(id)((NSCustomTouchBarItem *)[active itemForIdentifier:@"local.musicstrip.performance.record"]).view;
+            NSCAssert(fabs(NSMinX([back convertRect:back.bounds toView:nil])-NSMinX(frame))<1,@"Nested device controls must keep Record in the same right slot: nested %@ root %@ host=%g",NSStringFromRect([back convertRect:back.bounds toView:nil]),NSStringFromRect(frame),back.window.contentView.bounds.size.width);
+            [back beginAt:NSMakePoint(16,15) identity:NSUUID.UUID]; [back fireHold];
+            dispatch_after(dispatch_time(DISPATCH_TIME_NOW,270*NSEC_PER_MSEC),dispatch_get_main_queue(),^{[back finishAt:NSMakePoint(16,15)];});
+            dispatch_after(dispatch_time(DISPATCH_TIME_NOW,500*NSEC_PER_MSEC),dispatch_get_main_queue(),^{
                 NSCAssert(!controller.activeMenuBar && controller.menuStack.count==0 && recordController==controller,@"Holding Record returns directly to the original MIDI bar even from nested device controls");
+                NSRect returnedRecord=[controller.button convertRect:controller.button.bounds toView:nil];
+                NSCAssert(controller.button.window && fabs(NSMinX(returnedRecord)-NSMinX(frame))<1,@"Returning to MIDI keeps Record aligned with Control Surface Mode");
                 Report("COMBINED_NATIVE_SURFACE_ARRANGEMENT_DEVICE_AND_RECORD_HOLD_RETURN_PASSED\n");
                 if(viaMenu) {
                     [ThreeEMidiBridge toggleSurfaceMode:nil];
@@ -1565,7 +1571,7 @@ static void TestNativeFlexiblePianos(NSInteger count) {
             NSRect recordFrame=[recordController.button convertRect:recordController.button.bounds toView:nil];
             Report([[NSString stringWithFormat:@"FIXED_CONTROL_GEOMETRY close=%@ navigation=%@ record=%@\n",NSStringFromRect(closeFrame),NSStringFromRect(navigationFrame),NSStringFromRect(recordFrame)] UTF8String]);
             NSCAssert(fabs(NSMinX(closeButton.frame))<=1 && fabs(NSMaxX(closeButton.frame)-NSMinX(navigationButton.frame))<1,@"Keep the X in its original slot and join navigation directly beside it (allow native half-point alignment)");
-            NSCAssert(NSMinX(recordFrame)>=NSMaxX(navigationFrame)-1 && NSMinX(recordFrame)-NSMaxX(navigationFrame)<8,@"Record stays immediately after the joined X and preset arrows");
+            NSCAssert([presentation.itemIdentifiers.lastObject isEqual:RecordID] && fabs(NSMaxX(recordFrame)-recordController.button.window.contentView.bounds.size.width)<1 && NSMinX(recordFrame)>NSMaxX(navigationFrame),@"Record stays at the far right while X and preset navigation remain joined on the left");
             for(NSDictionary *view in geometry) {
                 NSRect position=NSRectFromString(view[@"position"]);
                 NSCAssert([view[@"attached"] boolValue] && fabs([view[@"width"] doubleValue]-width)<1 && position.origin.y>=0 && NSMaxX(position)<=[view[@"windowWidth"] doubleValue],@"Actual native Touch Bar must display all three keyboards at equal widths without clipping or hidden containers");
@@ -2166,7 +2172,7 @@ static void Command(NSString *command) {
                 @"backKeyCount": @(CycleKeyCount(delegate, NSEventModifierFlagControl)),
                 @"presentation": presentation.itemIdentifiers ?: @[],
                 @"closeIsFirst": @([presentation.itemIdentifiers.firstObject isEqualToString:CloseID]),
-                @"recordFollowsClose": @(presentation.itemIdentifiers.count>1 && [presentation.itemIdentifiers[1] isEqualToString:RecordID]),
+                @"recordIsLast": @([presentation.itemIdentifiers.lastObject isEqualToString:RecordID]),
                 @"closeNavigationJoined": @(navigationButton && navigationButton.superview==closeButton.superview),
                 @"navigationPresetHue": @(navigationButton.presetHue),
                 @"recordLit": @(recordController.button.recordLit),

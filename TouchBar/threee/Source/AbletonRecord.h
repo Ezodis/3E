@@ -429,10 +429,11 @@ static void ApplyRecordLight(StripRecordButton *button,BOOL connected,NSDictiona
     NSCustomTouchBarItem *record=[[NSCustomTouchBarItem alloc] initWithIdentifier:@"local.musicstrip.performance.record"];
     StripRecordButton *button=[[StripRecordButton alloc] initWithFrame:NSMakeRect(0,0,32,30)];
     button.recordController=self; button.standaloneRecord=YES;
-    NSView *recordHost=[[NSView alloc] initWithFrame:NSMakeRect(0,0,32,30)];
-    [recordHost.widthAnchor constraintEqualToConstant:32].active=YES; [recordHost.heightAnchor constraintEqualToConstant:30].active=YES;
-    button.frame=recordHost.bounds; button.autoresizingMask=NSViewWidthSizable|NSViewHeightSizable;
-    [recordHost addSubview:button]; record.view=recordHost; [self.menuRecordButtons addObject:button];
+    // Use the same direct button view as normal MIDI so AppKit applies
+    // identical alignment insets at the shared right edge.
+    [button.widthAnchor constraintEqualToConstant:32].active=YES;
+    record.view=button;record.visibilityPriority=NSTouchBarItemPriorityHigh;
+    [self.menuRecordButtons addObject:button];
     ApplyRecordLight(button,[self connected],self.state);
     NSString *nativeID=@"local.musicstrip.performance.native-surface";
     if([source.itemIdentifiers containsObject:nativeID]) {
@@ -441,18 +442,18 @@ static void ApplyRecordLight(StripRecordButton *button,BOOL connected,NSDictiona
         NSString *moreID=[RecordID stringByAppendingString:@".performance.more"];
         NSMutableSet *rootItems=source.templateItems.mutableCopy;
         [rootItems addObject:record]; bar.templateItems=rootItems;
-        // The 76-point Loop control replaces the 76-point X/preset group, so
-        // Record remains at the same coordinate. Tempo and More follow it;
-        // the flexible space keeps the native surface at the far right.
-        bar.defaultItemIdentifiers=@[loopID,record.identifier,tempoID,moreID,NSTouchBarItemIdentifierFlexibleSpace,nativeID];
-        bar.principalItemIdentifier=nativeID;
+        // Match normal MIDI: Record owns the fixed rightmost slot. Loop,
+        // Tempo, More and the native surface use the area to its left.
+        bar.defaultItemIdentifiers=@[loopID,tempoID,moreID,NSTouchBarItemIdentifierFlexibleSpace,nativeID,record.identifier];
+        // The trailing Record slot is positioned by flexible space, as in MIDI.
     } else {
-        NSGroupTouchBarItem *group=[[NSGroupTouchBarItem alloc] initWithIdentifier:@"local.musicstrip.performance.controls"];
-        group.groupTouchBar=source;
-        group.prefersEqualWidths=NO;
-        bar.templateItems=[NSSet setWithArray:@[group,record]];
-        bar.defaultItemIdentifiers=@[record.identifier,NSTouchBarItemIdentifierFlexibleSpace,group.identifier];
-        bar.principalItemIdentifier=group.identifier;
+        // Keep the source's real items directly on the root bar. A nested
+        // group adds native alignment padding that shifts the Record slot.
+        NSMutableSet *items=source.templateItems.mutableCopy;[items addObject:record];
+        bar.templateItems=items;bar.delegate=source.delegate;
+        NSMutableArray *ids=source.itemIdentifiers.mutableCopy;
+        [ids addObjectsFromArray:@[NSTouchBarItemIdentifierFlexibleSpace,record.identifier]];
+        bar.defaultItemIdentifiers=ids;
     }
     ((void(*)(id,SEL,id))originalClose)(NSApp.delegate,NSSelectorFromString(@"closeTouchbar:"),self.activeMenuBar ?: presentation);
     self.activeMenuBar=bar; [self.menuStack addObject:bar];
