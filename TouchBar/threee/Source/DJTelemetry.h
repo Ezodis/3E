@@ -7,6 +7,57 @@ static double DJSeconds(NSString *text) {
 static NSString *DJTime(double seconds) {
     NSInteger n=MAX(0,(NSInteger)lround(seconds)); return [NSString stringWithFormat:@"%02ld:%02ld",(long)n/60,(long)n%60];
 }
+static NSNumber *DJNumericText(NSString *text) {
+    if(![text isKindOfClass:NSString.class]) return nil;
+    NSScanner *scanner=[NSScanner scannerWithString:text];double number;
+    return [scanner scanDouble:&number] && scanner.isAtEnd && isfinite(number) ? @(number) : nil;
+}
+static NSArray *DJDeckVitals(NSArray *decks,NSArray<NSDictionary *> *nodes) {
+    NSMutableArray *result=[NSMutableArray new],*loaded=[NSMutableArray new],*fields=[NSMutableArray new];
+    for(NSUInteger i=0;i<decks.count;i++) { [result addObject:[decks[i] mutableCopy]];if([decks[i][@"duration"] doubleValue]>0) [loaded addObject:@(i)]; }
+    for(NSUInteger i=0;i<nodes.count;i++) if([nodes[i][@"help"] hasPrefix:@"Deck BPM display:"]) [fields addObject:@(i)];
+    NSArray *order=nil;
+    // Keep unloaded slots in place when exposed; otherwise require exactly
+    // one tempo panel per loaded deck. Partial reads never shift Deck B to A.
+    if(fields.count==decks.count) { NSMutableArray *all=[NSMutableArray new];for(NSUInteger i=0;i<decks.count;i++) [all addObject:@(i)];order=all; }
+    else if(fields.count==loaded.count) order=loaded;
+    for(NSUInteger i=0;order && i<fields.count;i++) {
+        NSUInteger at=[fields[i] unsignedIntegerValue],deckIndex=[order[i] unsignedIntegerValue];
+        NSMutableDictionary *deck=result[deckIndex];NSNumber *bpm=DJNumericText(nodes[at][@"text"]);
+        if([deck[@"duration"] doubleValue]<=0 || !bpm || bpm.doubleValue<=0 || bpm.doubleValue>1000) continue;
+        deck[@"bpm"]=bpm;
+        NSUInteger end=MIN(nodes.count,at+12);if(i+1<fields.count) end=MIN(end,[fields[i+1] unsignedIntegerValue]);
+        for(NSUInteger j=at+1;j<end;j++) {
+            NSString *help=nodes[j][@"help"] ?: @"",*text=nodes[j][@"text"] ?: @"";
+            if([help hasPrefix:@"Playing speed display"] || [text hasPrefix:@"Playing speed display"]) {
+                for(NSInteger back=1;back<=2 && j>at+(NSUInteger)back;back++) {
+                    NSNumber *pitch=DJNumericText([nodes[j-back][@"text"] stringByReplacingOccurrencesOfString:@"%" withString:@""]);
+                    if(pitch && pitch.doubleValue>=-100 && pitch.doubleValue<=1000) { deck[@"tempo"]=pitch;break; }
+                }
+            }
+            if([help hasPrefix:@"Tempo Range"]) {
+                NSString *range=[[text componentsSeparatedByCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet] componentsJoinedByString:@""].uppercaseString;
+                if([@[@"±6",@"±10",@"±16",@"WIDE"] containsObject:range]) deck[@"tempoRange"]=range;
+            }
+        }
+    }
+    // Browse renders BPM as separate whole/fraction text, followed by pitch.
+    // Accept that exact pattern only in the known compact layout.
+    BOOL browse=NO;for(NSDictionary *node in nodes) if([node[@"help"] hasPrefix:@"Change layout:"] && [node[@"text"] isEqual:@"Browse"]) browse=YES;
+    if(!fields.count && browse) {
+        NSMutableArray *pairs=[NSMutableArray new];
+        for(NSUInteger i=2;i<nodes.count;i++) {
+            NSString *pitchText=nodes[i][@"text"] ?: @"",*fraction=nodes[i-1][@"text"] ?: @"";
+            if(![pitchText hasSuffix:@"%"] || ![fraction hasPrefix:@"."] || fraction.length!=3) continue;
+            NSNumber *whole=DJNumericText(nodes[i-2][@"text"]),*part=DJNumericText(fraction),*pitch=DJNumericText([pitchText substringToIndex:pitchText.length-1]);
+            double bpm=whole.doubleValue+part.doubleValue;
+            if(whole && part && pitch && whole.doubleValue==floor(whole.doubleValue) && bpm>0 && bpm<=1000 && pitch.doubleValue>=-100 && pitch.doubleValue<=1000)
+                [pairs addObject:@{@"bpm":@(bpm),@"tempo":pitch}];
+        }
+        if(pairs.count==loaded.count) for(NSUInteger i=0;i<pairs.count;i++) [result[[loaded[i] unsignedIntegerValue]] addEntriesFromDictionary:pairs[i]];
+    }
+    return result;
+}
 static NSArray *DJParseDecks(NSArray<NSDictionary *> *nodes) {
     NSMutableArray *decks=[NSMutableArray new];
     NSRegularExpression *time=[NSRegularExpression regularExpressionWithPattern:@"^-?[0-9]{1,3}:[0-9]{2}$" options:0 error:nil];
@@ -31,7 +82,7 @@ static NSArray *DJParseDecks(NSArray<NSDictionary *> *nodes) {
         // rekordbox displays remaining first, elapsed second.
         [decks addObject:@{@"title":title,@"elapsed":@(second),@"duration":@(first+second),@"time":[NSString stringWithFormat:@"%@ / %@",DJTime(second),DJTime(first+second)],@"sync":@([nodes[i][@"text"] isEqual:@"1"] || [nodes[i][@"text"] isEqual:@"On"])}];
     }
-    return decks;
+    return DJDeckVitals(decks,nodes);
 }
 static id DJAX(AXUIElementRef element,CFStringRef key) {
     CFTypeRef result=NULL; if(AXUIElementCopyAttributeValue(element,key,&result)!=kAXErrorSuccess) return nil; return CFBridgingRelease(result);
@@ -68,10 +119,12 @@ static void DJCollectAX(AXUIElementRef element,NSMutableArray *nodes,NSInteger d
     NSString *role=[attributes[0] isKindOfClass:NSString.class] ? attributes[0] : @"";
     // Never walk the library's rows or inspect its track data.
     if([@[@"AXTable",@"AXOutline"] containsObject:role]) return;
-    if([@[@"AXStaticText",@"AXTextField",@"AXButton",@"AXImage",@"AXSlider"] containsObject:role]) {
+    if([@[@"AXStaticText",@"AXTextField",@"AXTextArea",@"AXButton",@"AXImage",@"AXSlider",@"AXPopUpButton"] containsObject:role]) {
         id value=attributes[1];NSString *text=[value isKindOfClass:NSString.class] ? value : [value respondsToSelector:@selector(stringValue)] ? [value stringValue] : [attributes[4] isKindOfClass:NSString.class] ? attributes[4] : @"";
         NSString *help=[attributes[2] isKindOfClass:NSString.class] ? attributes[2] : [attributes[3] isKindOfClass:NSString.class] ? attributes[3] : @"";
         if(!help.length && [attributes[3] isKindOfClass:NSString.class]) help=attributes[3];
+        if([role isEqual:@"AXPopUpButton"] && ![help hasPrefix:@"Change layout:"] && ![help hasPrefix:@"Tempo Range"]) return;
+        if([role isEqual:@"AXTextArea"] && ![help hasPrefix:@"Deck BPM display:"] && ![help hasPrefix:@"Tempo Range"] && ![help hasPrefix:@"Playing speed display"]) return;
         NSMutableDictionary *node=[@{@"role":role,@"text":text,@"help":help} mutableCopy];
         if([role isEqual:@"AXSlider"]) {
             id low=DJAX(element,kAXMinValueAttribute),high=DJAX(element,kAXMaxValueAttribute);
@@ -121,7 +174,7 @@ static void DJCollectAX(AXUIElementRef element,NSMutableArray *nodes,NSInteger d
     dispatch_async(dispatch_get_global_queue(QOS_CLASS_UTILITY,0),^{
         AXUIElementRef root=AXUIElementCreateApplication(app.processIdentifier); AXUIElementSetMessagingTimeout(root,.08);
         NSArray *windows=DJAX(root,kAXWindowsAttribute);NSArray *decks=@[];NSDictionary *controls=@{};
-        CFAbsoluteTime deadline=CFAbsoluteTimeGetCurrent()+.8;double sampled=NSProcessInfo.processInfo.systemUptime;NSUInteger checked=0;
+        CFAbsoluteTime deadline=CFAbsoluteTimeGetCurrent()+.8;double sampled=NSProcessInfo.processInfo.systemUptime;NSUInteger checked=0;NSInteger best=0;
         // Split Screen can put a separate browser window first. Select the
         // window containing actual deck anchors, rather than the first title.
         for(id window in windows) {
@@ -130,8 +183,11 @@ static void DJCollectAX(AXUIElementRef element,NSMutableArray *nodes,NSInteger d
             NSMutableArray *nodes=[NSMutableArray new];
             DJCollectAX((__bridge AXUIElementRef)window,nodes,0,MIN(deadline,CFAbsoluteTimeGetCurrent()+.35));
             NSArray *candidate=DJParseDecks(nodes);
-            if(candidate.count>decks.count) { decks=candidate;controls=DJParseMixerValues(nodes); }
-            if(decks.count==2) break;
+            NSDictionary *mixer=DJParseMixerValues(nodes);NSInteger vitals=0,loaded=0;
+            for(NSDictionary *deck in candidate) { loaded+=[deck[@"duration"] doubleValue]>0;vitals+=(deck[@"bpm"]!=nil)+(deck[@"tempo"]!=nil)+(deck[@"tempoRange"]!=nil); }
+            NSInteger quality=candidate.count*100+mixer.count+vitals;
+            if(candidate.count && quality>best) { best=quality;decks=candidate;controls=mixer; }
+            if(candidate.count==2 && mixer.count>=9 && vitals>=loaded*3) break;
         }
         CFRelease(root);
         dispatch_async(dispatch_get_main_queue(),^{self.controlValues=controls;self.controlsUpdated=sampled;[self updateDecks:decks at:NSProcessInfo.processInfo.systemUptime];self.busy=NO;});

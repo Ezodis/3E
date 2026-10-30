@@ -236,11 +236,11 @@ int main(int argc,const char **argv) {
                     [frames addObject:[NSValue valueWithRect:c.frame]];
                 }
                 NSCAssert(visible==(page ? 19 : 13),@"Mixer shows all EQ/levels; Performance shows eight buttons and a disc per deck");
-                NSInteger edge=page ? 6 : 1;
+                NSInteger edge=page ? 7 : 1;
                 NSCAssert(NSMinX(row.controls[edge].frame)==0 && fabs(NSMaxX(row.controls[14+edge].frame)-width.doubleValue)<.1,@"Levels in MIX and transport buttons in PADS must use the full available width");
                 if(page) {
-                    NSCAssert(NSMaxX(row.controls[9].frame)<NSMinX(row.controls[0].frame) && NSMaxX(row.controls[0].frame)<NSMinX(row.controls[10].frame),@"Deck A disc must sit between Loop and hot cue 1");
-                    NSCAssert(NSMaxX(row.controls[24].frame)<NSMinX(row.controls[14].frame) && NSMaxX(row.controls[14].frame)<NSMinX(row.controls[23].frame),@"Deck B mirrors hot cue 1, disc and Loop");
+                    NSCAssert(NSMaxX(row.controls[9].frame)<NSMinX(row.controls[0].frame) && NSMaxX(row.controls[0].frame)<NSMinX(row.controls[6].frame) && NSMaxX(row.controls[6].frame)<NSMinX(row.controls[10].frame),@"Deck A has Loop, disc, Play, then hot cue 1");
+                    NSCAssert(NSMaxX(row.controls[24].frame)<NSMinX(row.controls[20].frame) && NSMaxX(row.controls[20].frame)<NSMinX(row.controls[14].frame) && NSMaxX(row.controls[14].frame)<NSMinX(row.controls[23].frame),@"Deck B mirrors hot cue 1, Play, disc and Loop");
                 } else NSCAssert(NSMaxX(row.controls[1].frame)<NSMinX(row.controls[0].frame) && row.controls[0].platterCenter.x>NSWidth(row.controls[0].bounds)/2,@"Level and song name must sit outside the inward-facing disc");
                 for(NSInteger local=0;local<14;local++) {
                     ThreeEDJControl *a=row.controls[local],*b=row.controls[14+local];
@@ -251,6 +251,11 @@ int main(int argc,const char **argv) {
             }
             row.page=0;[row layout];
             NSPoint a=[row.controls[0] convertPoint:row.controls[0].platterCenter toView:row],b=[row.controls[14] convertPoint:row.controls[14].platterCenter toView:row];
+            if(width.doubleValue==880) {
+                NSCAssert(NSWidth(row.controls[2].frame)>=52 && NSWidth(row.controls[0].frame)<=120,@"Compact descriptions must give every MIX knob at least 52 points on the native bar");
+                NSCAssert(a.x<=160 && b.x>=720,@"Both platters must move outward with the shorter descriptions");
+                NSCAssert(fabs(row.controls[0].seekTravelPoints-156.5)<.001,@"Shorter descriptions must preserve the approved physical seek response");
+            }
             NSCAssert(a.x>width.doubleValue*.15 && b.x<width.doubleValue*.85,@"Both discs must have substantial swipe room on both sides");
             [row nextPage];
             NSCAssert(NSEqualPoints(a,[row.controls[0] convertPoint:row.controls[0].platterCenter toView:row]) && NSEqualPoints(b,[row.controls[14] convertPoint:row.controls[14].platterCenter toView:row]),@"Platter centers must never move when metadata folds away");
@@ -263,11 +268,15 @@ int main(int argc,const char **argv) {
         row.page=0;[row layout];
         if(argc>1) {
             row.frame=NSMakeRect(0,0,880,30);[row layout];midi.directSearchAvailable=YES;row.controls[0].search=YES;
+            [ThreeEDJTelemetry shared].decks=@[
+                @{@"title":@"Deck A",@"time":@"00:03 / 00:08",@"duration":@8,@"elapsed":@3,@"bpm":@121,@"tempo":@0,@"tempoRange":@"±6"},
+                @{@"title":@"Deck B",@"time":@"00:12 / 00:14",@"duration":@14,@"elapsed":@12,@"bpm":@121,@"tempo":@-13.5,@"tempoRange":@"±16"}];
+            [ThreeEDJTelemetry shared].updated=NSProcessInfo.processInfo.systemUptime;
             Render(row,[[NSString stringWithUTF8String:argv[1]] stringByAppendingPathComponent:@"dj-mixer.png"]);
         }
         [row nextPage];
         if(argc>1) Render(row,[[NSString stringWithUTF8String:argv[1]] stringByAppendingPathComponent:@"dj-pads.png"]);
-        if(argc>1) { midi.directSearchAvailable=NO;row.controls[0].search=NO; }
+        if(argc>1) { midi.directSearchAvailable=NO;row.controls[0].search=NO;[ThreeEDJTelemetry shared].decks=nil;[ThreeEDJTelemetry shared].updated=0; }
         row.controls[0].search=YES;
         NSCAssert([[row.controls[0] accessibilityValue] hasPrefix:@"SEEK"] && [[row.controls[14] accessibilityValue] hasPrefix:@"BEND"],@"Both wheel modes must expose full unambiguous names");row.controls[0].search=NO;
         // Real AppKit customization persistence, isolated identifiers, restored defaults.
@@ -302,6 +311,29 @@ int main(int argc,const char **argv) {
             @{@"role":@"AXStaticText",@"text":@"Library selection is not loaded",@"help":@""}];
         NSArray *metadata=DJParseDecks(fixture);
         NSCAssert(metadata.count==1 && [metadata[0][@"title"] isEqual:@"Actual track"] && fabs([metadata[0][@"duration"] doubleValue]-162.3)<.01,@"Only anchored deck metadata and real time fields may be displayed");
+        NSArray *vitalPanels=@[
+            @{@"text":@"140.00",@"help":@""}, // Original track BPM is not the playing BPM.
+            @{@"text":@" 121.00",@"help":@"Deck BPM display:"},@{@"text":@" 0.0",@"help":@""},
+            @{@"text":@"",@"help":@"Playing speed display :"},@{@"text":@"%",@"help":@""},@{@"text":@"±6",@"help":@"Tempo Range :"},
+            @{@"text":@" 121.00",@"help":@"Deck BPM display:"},@{@"text":@"-13.5",@"help":@""},
+            @{@"text":@"Playing speed display :",@"help":@""},@{@"text":@"%",@"help":@""},@{@"text":@"± 16",@"help":@"Tempo Range :"}];
+        NSArray *vitals=DJDeckVitals(@[metadata[0],metadata[0]],vitalPanels);
+        NSCAssert([vitals[0][@"bpm"] doubleValue]==121 && [vitals[0][@"tempo"] doubleValue]==0 && [vitals[0][@"tempoRange"] isEqual:@"±6"] && [vitals[1][@"tempo"] doubleValue]==-13.5 && [vitals[1][@"tempoRange"] isEqual:@"±16"],@"Each platter must use its real playing BPM, pitch and range, not the original track BPM");
+        NSArray *partialPanels=[vitalPanels subarrayWithRange:NSMakeRange(1,5)];
+        NSArray *partialVitals=DJDeckVitals(@[metadata[0],metadata[0]],partialPanels);
+        NSCAssert(!partialVitals[0][@"bpm"] && !partialVitals[1][@"bpm"],@"An incomplete panel read must not assign one deck's tempo to another");
+        NSArray *oneLoaded=DJDeckVitals(@[@{@"duration":@0},metadata[0]],partialPanels);
+        NSCAssert(!oneLoaded[0][@"bpm"] && [oneLoaded[1][@"bpm"] doubleValue]==121,@"An unloaded Deck A cannot consume Deck B's tempo panel");
+        NSArray *browsePanels=@[
+            @{@"text":@"Browse",@"help":@"Change layout:"},
+            @{@"text":@"121",@"help":@""},@{@"text":@".00",@"help":@""},@{@"text":@"0.0%",@"help":@""},
+            @{@"text":@"121",@"help":@""},@{@"text":@".00",@"help":@""},@{@"text":@"-13.5%",@"help":@""}];
+        NSArray *browseVitals=DJDeckVitals(@[metadata[0],metadata[0]],browsePanels);
+        NSCAssert([browseVitals[1][@"bpm"] doubleValue]==121 && [browseVitals[1][@"tempo"] doubleValue]==-13.5 && !browseVitals[1][@"tempoRange"],@"Browse may supply its segmented BPM/pitch, but must not invent a hidden tempo range");
+        NSArray *unanchored=DJDeckVitals(@[metadata[0],metadata[0]],[browsePanels subarrayWithRange:NSMakeRange(1,6)]);
+        NSCAssert(!unanchored[0][@"bpm"] && !unanchored[1][@"bpm"],@"Unrelated numeric text must not become deck tempo");
+        NSArray *badVitals=DJDeckVitals(@[metadata[0]],@[@{@"text":@"NaN",@"help":@"Deck BPM display:"}]);
+        NSCAssert(!badVitals[0][@"bpm"],@"Non-finite or unavailable host values must remain unavailable");
         ThreeEDJTelemetry *telemetry=[ThreeEDJTelemetry shared];telemetry.decks=metadata;telemetry.updated=NSProcessInfo.processInfo.systemUptime-3;
         NSCAssert(![telemetry deck:0],@"Stale host metadata must disappear");
         NSArray *mixerFixture=@[

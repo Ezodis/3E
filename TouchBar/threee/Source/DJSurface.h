@@ -362,33 +362,38 @@ static void DJText(NSString *text,NSRect rect,CGFloat size,NSColor *color) {
     BOOL confirmed=[midi confirmed:self.channel number:self.number note:self.kind==DJPad];
     if(self.kind==DJDisc) {
         BOOL left=self.channel==0;
-        CGFloat discX=self.platterCenter.x-12, textX=left ? 3 : 31;
-        NSRect disc=NSMakeRect(discX,3,24,24);
-        [[NSColor colorWithWhite:.17 alpha:1] setFill]; [[NSBezierPath bezierPathWithOvalInRect:disc] fill];
-        [color setStroke]; NSBezierPath *ring=[NSBezierPath bezierPathWithOvalInRect:NSInsetRect(disc,1,1)]; ring.lineWidth=self.search ? 1.8 : 1.1;
+        CGFloat discX=self.platterCenter.x-14, textX=left ? 3 : 31;
+        NSRect disc=NSMakeRect(discX,1,28,28);
+        [NSColor.blackColor setFill]; [[NSBezierPath bezierPathWithOvalInRect:disc] fill];
+        [[NSColor colorWithWhite:self.seekHolding ? 1 : .9 alpha:1] setStroke]; NSBezierPath *ring=[NSBezierPath bezierPathWithOvalInRect:NSInsetRect(disc,1,1)]; ring.lineWidth=self.search ? 1.8 : 1.1;
         if(!self.search) { CGFloat dash[]={3,2};[ring setLineDash:dash count:2 phase:0]; }
         [ring stroke];
         NSDictionary *deck=midi.liveTarget ? nil : [[ThreeEDJTelemetry shared] deck:self.channel];
         double angle=self.animationReady ? self.displayAngle : self.angle;
-        NSPoint center=NSMakePoint(discX+12,15);
-        for(NSNumber *radius in @[@5,@8,@10]) {
-            NSBezierPath *groove=[NSBezierPath bezierPathWithOvalInRect:NSMakeRect(center.x-radius.doubleValue,center.y-radius.doubleValue,2*radius.doubleValue,2*radius.doubleValue)];
-            groove.lineWidth=.35;[[NSColor colorWithWhite:.45 alpha:.35] setStroke];[groove stroke];
-        }
-        NSBezierPath *shine=[NSBezierPath bezierPath];
-        [shine appendBezierPathWithArcWithCenter:center radius:9 startAngle:angle*180/M_PI+15 endAngle:angle*180/M_PI+70];
-        shine.lineWidth=1.3;[[color colorWithAlphaComponent:.65] setStroke];[shine stroke];
-        NSBezierPath *needle=[NSBezierPath bezierPath];
-        [needle moveToPoint:center]; [needle lineToPoint:NSMakePoint(center.x+8*sin(angle),center.y+8*cos(angle))]; needle.lineWidth=1.5; [needle stroke];
+        NSPoint center=self.platterCenter;
+        NSBezierPath *inner=[NSBezierPath bezierPathWithOvalInRect:NSMakeRect(center.x-11.1,center.y-11.1,22.2,22.2)];
+        inner.lineWidth=.75;[color setStroke];[inner stroke];
+        NSBezierPath *marker=[NSBezierPath bezierPath];
+        [marker moveToPoint:NSMakePoint(center.x+11.8*sin(angle),center.y+11.8*cos(angle))];
+        [marker lineToPoint:NSMakePoint(center.x+13*sin(angle),center.y+13*cos(angle))];
+        marker.lineWidth=1.8;[NSColor.systemRedColor setStroke];[marker stroke];
+        NSString *bpm=deck[@"bpm"] ? [NSString stringWithFormat:@"%.2f",[deck[@"bpm"] doubleValue]] : @"—";
+        NSArray *bpmParts=[bpm componentsSeparatedByString:@"."];
+        NSMutableAttributedString *bpmFace=[[NSMutableAttributedString alloc] initWithString:bpmParts[0] attributes:@{NSFontAttributeName:[NSFont monospacedDigitSystemFontOfSize:6.4 weight:NSFontWeightSemibold],NSForegroundColorAttributeName:NSColor.whiteColor}];
+        if(bpmParts.count==2) [bpmFace appendAttributedString:[[NSAttributedString alloc] initWithString:[@"." stringByAppendingString:bpmParts[1]] attributes:@{NSFontAttributeName:[NSFont monospacedDigitSystemFontOfSize:4.2 weight:NSFontWeightSemibold],NSForegroundColorAttributeName:NSColor.whiteColor}]];
+        if(bpmFace.size.width>21.5) [bpmFace addAttribute:NSFontAttributeName value:[NSFont monospacedDigitSystemFontOfSize:5.2 weight:NSFontWeightSemibold] range:NSMakeRange(0,bpmFace.length)];
+        [bpmFace drawAtPoint:NSMakePoint(center.x-bpmFace.size.width/2,13)];
+        NSString *pitch=deck[@"tempo"] ? [NSString stringWithFormat:@"%.1f%%",[deck[@"tempo"] doubleValue]] : @"—";
+        NSString *range=deck[@"tempoRange"] ?: @"—";
+        NSMutableAttributedString *footer=[[NSMutableAttributedString alloc] initWithString:[pitch stringByAppendingString:@" "] attributes:@{NSFontAttributeName:[NSFont monospacedDigitSystemFontOfSize:4.2 weight:NSFontWeightMedium],NSForegroundColorAttributeName:deck[@"tempo"] ? NSColor.whiteColor : dim}];
+        [footer appendAttributedString:[[NSAttributedString alloc] initWithString:range attributes:@{NSFontAttributeName:[NSFont monospacedDigitSystemFontOfSize:4.2 weight:NSFontWeightMedium],NSForegroundColorAttributeName:deck[@"tempoRange"] ? [NSColor colorWithSRGBRed:.25 green:.9 blue:.3 alpha:1] : dim}]];
+        if(footer.size.width>19.5) [footer addAttribute:NSFontAttributeName value:[NSFont monospacedDigitSystemFontOfSize:4.2*19.5/footer.size.width weight:NSFontWeightMedium] range:NSMakeRange(0,footer.length)];
+        [footer drawAtPoint:NSMakePoint(center.x-footer.size.width/2,8.5)];
         if(!self.compactDisc) {
         DJText(deck[@"title"] ?: (left ? @"Deck A" : @"Deck B"),NSMakeRect(textX,17,w-34,11),8,color);
         DJText(deck[@"time"] ?: @"— / —",NSMakeRect(textX,8,w-34,9),6.5,dim);
         DJText(self.seekHolding ? (self.seekResume ? @"SEEK · HOLD / lift to play" : @"SEEK · HOLD / paused") : self.search ? (midi.directSearchAvailable && !midi.liveTarget ? @"SEEK · position ↔" : @"SCAN · position ↔") : @"BEND · tempo − / +",NSMakeRect(textX,0,w-34,9),6,self.tracking ? color : dim);
         }
-        NSRect badge=NSMakeRect(discX-1,10,26,10);
-        [[NSColor colorWithWhite:.045 alpha:1] setFill];[[NSBezierPath bezierPathWithRoundedRect:badge xRadius:3 yRadius:3] fill];
-        if(self.search) { [[color colorWithAlphaComponent:self.seekHolding ? .4 : .18] setFill];[[NSBezierPath bezierPathWithRoundedRect:badge xRadius:3 yRadius:3] fill]; }
-        DJText(self.search ? @"SEEK" : @"BEND",badge,6.5,self.search ? NSColor.whiteColor : color);
     } else if(self.kind==DJPad) {
         BOOL lit=self.tracking || value>0;
         if(lit) { [[color colorWithAlphaComponent:.25] setFill]; [[NSBezierPath bezierPathWithRoundedRect:NSInsetRect(self.bounds,1,1) xRadius:5 yRadius:5] fill]; }
@@ -703,11 +708,11 @@ static void DJText(NSString *text,NSRect rect,CGFloat size,NSColor *color) {
         CGFloat target=MAX(300,host-124);
         if(fabs(self.rowWidth.constant-target)>.1) self.rowWidth.constant=target;
     }
-    // Both pages share the platter anchor between four transport controls
-    // and four hot cues. Mixer metadata grows outward from that same anchor.
+    // Cue/Sync/Loop sit outside the platter; Play joins the hot cues inside.
+    // The shorter metadata area frees that same space for the MIX knobs.
     CGFloat hub=64,hubGap=7,half=(w-hub)/2-hubGap;
     CGFloat padGap=3,compactWheel=40,padWidth=(half-compactWheel-8*padGap)/8;
-    CGFloat discStart=4*(padWidth+padGap),discEnd=discStart+compactWheel;
+    CGFloat discStart=3*(padWidth+padGap),discEnd=discStart+compactWheel;
     CGFloat mixGap=4,levelWidth=MAX(24,MIN(52,round(half*.13*2)/2));
     CGFloat mixerDiscStart=levelWidth+mixGap,mixerDiscWidth=discEnd-mixerDiscStart;
     for(NSUInteger index=0;index<self.controls.count;index++) {
@@ -725,12 +730,13 @@ static void DJText(NSString *text,NSRect rect,CGFloat size,NSColor *color) {
         };
         ThreeEDJControl *disc=self.controls[deck*14];
         // Store a single physical travel reference for both layouts; compact
-        // platters must never multiply a finger's sensitivity.
-        disc.seekTravelPoints=MAX(96,mixerDiscWidth-8);
+        // platters must never multiply a finger's sensitivity. Include the
+        // reclaimed button slot to retain the approved short-clip response.
+        disc.seekTravelPoints=MAX(96,mixerDiscWidth+padWidth+padGap-8);
         disc.compactDisc=self.page==1;
         if(self.page) {
             CGFloat x=0;
-            for(NSNumber *index in @[@6,@7,@8,@9,@0,@10,@11,@12,@13]) {
+            for(NSNumber *index in @[@7,@8,@9,@0,@6,@10,@11,@12,@13]) {
                 ThreeEDJControl *control=self.controls[deck*14+index.integerValue];
                 CGFloat width=index.integerValue==0 ? compactWheel : padWidth;
                 control.frame=frame(x,width);x+=width+padGap;
@@ -805,7 +811,7 @@ static void DJInstallRekordboxMapping(void) {
 }
 static NSPopUpButton *djTargetChooser;
 static NSString *DJMappingGuide(void) {
-    NSMutableString *guide=[NSMutableString stringWithString:@"3£ TOUCH DJ — rekordbox / Ableton\n\nOne DJ set: tap the center RB/LIVE hub to switch MIX / PADS without changing presets. Swipe the hub for crossfade. The DJ set fills its available width. Levels sit at the outer edges. Each song name sits outside its disc; the discs stay fixed between Loop and hot cue 1 when switching to PADS.\nMIX: channel levels, HI / MID / LOW / FILTER, track names, elapsed / total time and both discs.\nPADS: Play, Cue, Sync, Loop and four hot cues per deck. The same discs stay active, with their metadata area folded away.\nCyan = Deck A. Amber = Deck B. Knobs follow horizontal swipe distance with a gentle curve: a short swipe makes a small change; a full control-width stroke can cover the complete range. There is no edge snap. A settled hold starts a steady, gentle continuation after 350 ms. A slight displacement creeps slowly; a larger hold reaches at most 24 MIDI values per second. Deliberate reversals change direction; small fingertip jitter does not restart the hold. Lift to stop; return to the touch anchor to stop holding. Each finger remains independent.\nTap a disc to switch BEND / SEEK. The full mode name stays on each disc in both views: solid ring for SEEK, segmented ring for BEND. Swipe left/right to slow/speed or search backward/forward. Bend accumulates slow movements, ignores tiny reversal jitter and releases after 220 ms without motion. A swipe or stationary hold cannot switch wheel mode; only a short still tap does. With the updated rekordbox mapping, S is direct needle seeking: movement changes position and pauses a playing deck for the hold. Keep your finger down to wait at that position; lift resumes only a deck paused by that gesture. A deck already paused stays paused. Both views use the same physical wheel sensitivity: compact wheels do not amplify travel. Small motions make small cue adjustments (about 0.015 seconds per point, gentler for very short clips). Repeat swipes for longer travel. Reversing at either track end responds immediately, including after overshooting. It acquires its starting position when the swipe begins, including playback since the last sample. The updated mapping sends 14-bit paired CC 20/52; older Value mappings retain 7-bit input. rekordbox may still land Needle Search on beat-sized steps, even with Quantize off; it is not sample-accurate scratching. It needs fresh track/time data. Mappings without Needle Search retain fast scan until the new mapping is imported and rekordbox is restarted. Live has no needle-position mapping in the supplied set. If rekordbox reports Sync enabled, bending first turns it off. These are MIDI bend/search controls, not scratch jog wheels.\n\nSETUP\nOpen 3£ first. Choose Install / Show Touch DJ in its menu once. This seeds a ready mapping only if 3£ DJ has no existing mapping. Restart rekordbox once after initial setup. Select rekordbox in Touch DJ Target. In rekordbox select PERFORMANCE → MIDI → 3£ DJ.\nMIDI Learn requires an eligible plan or trial, or compatible Hardware Unlock equipment.\nIf needed, use Save rekordbox Mapping below, then IMPORT it for the 3£ DJ device. For manual mapping, add the matching function/deck and enter MIDI IN, or use LEARN and touch the control. Turn LEARN off when finished.\nFor supported indicators, set MIDI OUT to the same code and route output to 3£ DJ.\nA dot under a pad / colored value means recent MIDI feedback or a verified visible mixer value; gray values are local positions. Track name, time and visible EQ/level/crossfader values come from a read-only adapter for rekordbox, using existing macOS Accessibility permission. It finds the deck window in Split Screen and reads only known controls. A held control and recent gesture values are protected from delayed reads. Metadata clears after 2.5 seconds without a fresh read. The port does not prove rekordbox is connected.\n\nThe virtual port must be verified in your installed rekordbox version. Some third-party functions and jog wheels are restricted. Bend uses momentary +/- notes. Updated S uses paired 14-bit Needle Search on CC 20/52, with fine horizontal sensitivity (at most 0.015 seconds per point, identical in both views). It is position seeking, not vinyl scratching. Needle Lock in rekordbox can restrict seeking during playback. No driver spoofing.\nGeneric MIDI does not provide track titles or time. The separate accessibility adapter reads only visible rekordbox deck and mixer fields; it skips library tables and does not inspect the library database, track selections or audio. No waveform is simulated. If unavailable, the discs show dashes. Live metadata is not provided by this adapter.\n\nABLETON\nEnable Remote for 3£ DJ Live input and output. Keep input Track off for controller-only use. Keep Remote off for the separate 3£ DJ port in Live. Select Ableton Live in 3£ → Touch DJ Target; choose rekordbox to return. The center fader shows LIVE or RB. Feedback is cached separately for each host. Use Live MIDI Map on levels, EQ, filter, crossfader and clip/transport buttons. Add EQ/filter devices first. DJ Cue/Sync/Hot Cue semantics depend on your Live mapping.\n\nMAPPING (hex; MIDI channels are 1-based)\n"];
+    NSMutableString *guide=[NSMutableString stringWithString:@"3£ TOUCH DJ — rekordbox / Ableton\n\nOne DJ set: tap the center RB/LIVE hub to switch MIX / PADS without changing presets. Swipe the hub for crossfade. The DJ set fills its available width. Levels sit at the outer edges. Compact song descriptions sit outside each disc, leaving wider MIX knobs. The discs sit farther out and stay fixed when switching to PADS. In PADS, the outer-to-inner order is Cue, Sync, Loop, disc, Play, then hot cues 1–4; the right deck mirrors it.\nMIX: channel levels, HI / MID / LOW / FILTER, track names, elapsed / total time and both discs.\nPADS: Play, Cue, Sync, Loop and four hot cues per deck. The same discs stay active, with their metadata area folded away.\nCyan = Deck A. Amber = Deck B. Knobs follow horizontal swipe distance with a gentle curve: a short swipe makes a small change; a full control-width stroke can cover the complete range. There is no edge snap. A settled hold starts a steady, gentle continuation after 350 ms. A slight displacement creeps slowly; a larger hold reaches at most 24 MIDI values per second. Deliberate reversals change direction; small fingertip jitter does not restart the hold. Lift to stop; return to the touch anchor to stop holding. Each finger remains independent.\nTap a disc to switch BEND / SEEK. The outline identifies the mode without covering the disc: solid for SEEK, segmented for BEND. Each face shows the live playing BPM, pitch percentage and tempo range when rekordbox exposes them. Missing fields show dashes, including a hidden range in Browse. Swipe left/right to slow/speed or search backward/forward. Bend accumulates slow movements, ignores tiny reversal jitter and releases after 220 ms without motion. A swipe or stationary hold cannot switch wheel mode; only a short still tap does. With the updated rekordbox mapping, S is direct needle seeking: movement changes position and pauses a playing deck for the hold. Keep your finger down to wait at that position; lift resumes only a deck paused by that gesture. A deck already paused stays paused. Both views use the same physical wheel sensitivity: compact wheels do not amplify travel. Small motions make small cue adjustments (about 0.015 seconds per point, gentler for very short clips). Repeat swipes for longer travel. Reversing at either track end responds immediately, including after overshooting. It acquires its starting position when the swipe begins, including playback since the last sample. The updated mapping sends 14-bit paired CC 20/52; older Value mappings retain 7-bit input. rekordbox may still land Needle Search on beat-sized steps, even with Quantize off; it is not sample-accurate scratching. It needs fresh track/time data. Mappings without Needle Search retain fast scan until the new mapping is imported and rekordbox is restarted. Live has no needle-position mapping in the supplied set. If rekordbox reports Sync enabled, bending first turns it off. These are MIDI bend/search controls, not scratch jog wheels.\n\nSETUP\nOpen 3£ first. Choose Install / Show Touch DJ in its menu once. This seeds a ready mapping only if 3£ DJ has no existing mapping. Restart rekordbox once after initial setup. Select rekordbox in Touch DJ Target. In rekordbox select PERFORMANCE → MIDI → 3£ DJ.\nMIDI Learn requires an eligible plan or trial, or compatible Hardware Unlock equipment.\nIf needed, use Save rekordbox Mapping below, then IMPORT it for the 3£ DJ device. For manual mapping, add the matching function/deck and enter MIDI IN, or use LEARN and touch the control. Turn LEARN off when finished.\nFor supported indicators, set MIDI OUT to the same code and route output to 3£ DJ.\nA dot under a pad / colored value means recent MIDI feedback or a verified visible mixer value; gray values are local positions. Track name, time, BPM/pitch/range and visible EQ/level/crossfader values come from a read-only adapter for rekordbox, using existing macOS Accessibility permission. It finds the deck window in Split Screen and reads only known controls. A held control and recent gesture values are protected from delayed reads. Metadata clears after 2.5 seconds without a fresh read. The port does not prove rekordbox is connected.\n\nThe virtual port must be verified in your installed rekordbox version. Some third-party functions and jog wheels are restricted. Bend uses momentary +/- notes. Updated S uses paired 14-bit Needle Search on CC 20/52, with fine horizontal sensitivity (at most 0.015 seconds per point, identical in both views). It is position seeking, not vinyl scratching. Needle Lock in rekordbox can restrict seeking during playback. No driver spoofing.\nGeneric MIDI does not provide track titles or time. The separate accessibility adapter reads only visible rekordbox deck and mixer fields; it skips library tables and does not inspect the library database, track selections or audio. No waveform is simulated. If unavailable, the discs show dashes. Live metadata is not provided by this adapter.\n\nABLETON\nEnable Remote for 3£ DJ Live input and output. Keep input Track off for controller-only use. Keep Remote off for the separate 3£ DJ port in Live. Select Ableton Live in 3£ → Touch DJ Target; choose rekordbox to return. The center fader shows LIVE or RB. Feedback is cached separately for each host. Use Live MIDI Map on levels, EQ, filter, crossfader and clip/transport buttons. Add EQ/filter devices first. DJ Cue/Sync/Hot Cue semantics depend on your Live mapping.\n\nMAPPING (hex; MIDI channels are 1-based)\n"];
     for(NSInteger deck=0;deck<2;deck++) {
         [guide appendFormat:@"\nDECK %@ — MIDI channel %ld\n",deck ? @"B" : @"A",(long)deck+1];
         NSArray *names=@[@"Play/Pause",@"Cue (momentary)",@"Beat Sync",@"Loop",@"unused",@"Tempo bend - (momentary)",@"Tempo bend + (momentary)",@"Search reverse (momentary)",@"Search forward (momentary)"];
