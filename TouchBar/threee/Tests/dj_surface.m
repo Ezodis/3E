@@ -101,6 +101,27 @@ int main(int argc,const char **argv) {
         [mid move:NSMakePoint(18,15)];NSCAssert(mid.knobRate>0 && hi.knobRate>0,@"Reversing a finger makes both holds move in the same direction");
         [hi touchesCancelledWithEvent:nil];[mid end];NSInteger released=[midi value:0 number:16 note:NO];
         [hi advanceKnobToTime:hi.knobTickTime+.1];NSCAssert(!hi.knobTimer && [midi value:0 number:16 note:NO]==released,@"Cancellation cannot continue changing a knob");
+        midi.values[DJKey(0,16,NO)]=@64;midi.values[DJKey(0,17,NO)]=@64;
+        [hi begin:NSMakePoint(21,15) identity:@1];[mid begin:NSMakePoint(21,15) identity:@2];
+        [hi move:NSMakePoint(23,15)];[mid move:NSMakePoint(19,15)];
+        NSCAssert(hi.knobRate>0 && hi.knobRate<1.5 && mid.knobRate<0 && mid.knobRate>-1.5,@"Small opposite swipes must select gentle independent hold rates");
+        double steady=MAX(hi.knobMotionTime,mid.knobMotionTime)+.7;
+        [hi advanceKnobToTime:steady];[mid advanceKnobToTime:steady];
+        double hiStart=hi.knobPosition,midStart=mid.knobPosition;
+        for(NSInteger tick=1;tick<=40;tick++) { [hi advanceKnobToTime:steady+tick*.025];[mid advanceKnobToTime:steady+tick*.025]; }
+        double firstChange=hi.knobPosition-hiStart;
+        NSCAssert(fabs(firstChange-hi.knobRate)<.001 && fabs(mid.knobPosition-midStart-mid.knobRate)<.001,@"Settled holds must integrate a steady rate in either direction");
+        hiStart=hi.knobPosition;
+        for(NSInteger tick=41;tick<=80;tick++) [hi advanceKnobToTime:steady+tick*.025];
+        NSCAssert(fabs(hi.knobPosition-hiStart-firstChange)<.001,@"Equal hold intervals must produce equal gradual changes without acceleration");
+        double settledAt=hi.knobMotionTime,steadyRate=hi.knobRate;
+        [hi move:NSMakePoint(22.5,15)];
+        NSCAssert(hi.knobRate==steadyRate && hi.knobMotionTime==settledAt,@"Small reversal jitter must not flip or restart a steady hold");
+        [hi move:NSMakePoint(23,15)];
+        for(NSInteger jitter=0;jitter<10;jitter++) { [hi move:NSMakePoint(22.5,15)];[hi move:NSMakePoint(23,15)]; }
+        NSCAssert(hi.knobRate==steadyRate && hi.knobMotionTime==settledAt,@"Repeated stationary fingertip jitter must not ratchet up hold speed or postpone continuation");
+        [hi move:NSMakePoint(21.7,15)];NSCAssert(hi.knobRate<0 && mid.knobRate<0,@"A deliberate reversal can make both independent holds decrease together");
+        [hi move:NSMakePoint(21,15)];NSCAssert(hi.knobRate==0,@"Returning to the anchor still stops continuation");[hi end];[mid end];
         ThreeEDJControl *timed=Control(DJKnob,1,17);timed.frame=NSMakeRect(0,0,42,30);
         [timed begin:NSMakePoint(21,15) identity:@1];[timed move:NSMakePoint(26,15)];NSInteger immediate=[midi value:1 number:17 note:NO];
         [NSRunLoop.currentRunLoop runUntilDate:[NSDate dateWithTimeIntervalSinceNow:.2]];
@@ -220,9 +241,15 @@ int main(int argc,const char **argv) {
         [hub begin:NSMakePoint(30,15) identity:@1];[hub move:NSMakePoint(31,15)];[hub finish];
         NSCAssert(row.page==1 && sent.count==tapBefore,@"A center tap, including small jitter, switches view without moving the crossfader");
         row.page=0;[row layout];
-        if(argc>1) Render(row,[[NSString stringWithUTF8String:argv[1]] stringByAppendingPathComponent:@"dj-mixer.png"]);
+        if(argc>1) {
+            row.frame=NSMakeRect(0,0,880,30);[row layout];midi.directSearchAvailable=YES;row.controls[0].search=YES;
+            Render(row,[[NSString stringWithUTF8String:argv[1]] stringByAppendingPathComponent:@"dj-mixer.png"]);
+        }
         [row nextPage];
         if(argc>1) Render(row,[[NSString stringWithUTF8String:argv[1]] stringByAppendingPathComponent:@"dj-pads.png"]);
+        if(argc>1) { midi.directSearchAvailable=NO;row.controls[0].search=NO; }
+        row.controls[0].search=YES;
+        NSCAssert([[row.controls[0] accessibilityValue] hasPrefix:@"SEEK"] && [[row.controls[14] accessibilityValue] hasPrefix:@"BEND"],@"Both wheel modes must expose full unambiguous names");row.controls[0].search=NO;
         // Real AppKit customization persistence, isolated identifiers, restored defaults.
         NSString *domain=NSUUID.UUID.UUIDString;
         NSMutableArray *bars=[NSMutableArray new];
@@ -286,6 +313,23 @@ int main(int argc,const char **argv) {
         NSUInteger fineCount=sent.count;[seek move:NSMakePoint(50.9,15)];[seek end];
         NSCAssert(sent.count==fineCount,@"Stationary and lift on a paused deck send no extra position or transport");
         NSCAssert(DJSeekValue(0,200,YES)==0 && DJSeekValue(200,200,YES)==16383 && DJSeekValue(100,200,YES)==8192,@"High-resolution limits and midpoint must be exact");
+        NSMutableDictionary *shortTrack=[metadata[0] mutableCopy];shortTrack[@"title"]=@"Short cueing track";shortTrack[@"duration"]=@8;shortTrack[@"elapsed"]=@4;shortTrack[@"playing"]=@NO;
+        double pagePosition[2];
+        for(NSInteger page=0;page<2;page++) {
+            row.page=page;[row layout];ThreeEDJControl *wheel=row.controls[0];wheel.search=YES;
+            telemetry.decks=@[shortTrack];telemetry.updated=NSProcessInfo.processInfo.systemUptime;
+            NSPoint center=wheel.platterCenter;[wheel begin:center identity:@1];[wheel move:NSMakePoint(center.x+10,15)];
+            pagePosition[page]=wheel.seekPositionSeconds;
+            NSCAssert(pagePosition[page]>4 && pagePosition[page]<=4.15+.00001,@"Ten physical points must make a small cue adjustment, not traverse a short track");[wheel end];
+        }
+        NSCAssert(fabs(pagePosition[0]-pagePosition[1])<.00001,@"Identical physical travel must seek identically in MIX and PADS");
+        shortTrack[@"elapsed"]=@7.99;telemetry.decks=@[shortTrack];telemetry.updated=NSProcessInfo.processInfo.systemUptime;
+        ThreeEDJControl *edgeWheel=row.controls[0];NSPoint edgeCenter=edgeWheel.platterCenter;
+        [edgeWheel begin:edgeCenter identity:@1];[edgeWheel move:NSMakePoint(edgeCenter.x+300,15)];
+        NSCAssert(edgeWheel.seekPositionSeconds==8,@"A long swipe can reach the track end");
+        [edgeWheel move:NSMakePoint(edgeCenter.x+299,15)];
+        NSCAssert(edgeWheel.seekPositionSeconds<8 && edgeWheel.seekLastValue<16383,@"The first reverse movement after overshooting an end must move back immediately");[edgeWheel end];
+        NSCAssert(DJSeekSensitivity(.5,160)*10<.02,@"Very short clips must also reserve physical travel for fine cueing");
         midi.highResolutionSearchAvailable=NO;
         // The same real handlers must seek and hold in MIX and compact PADS.
         for(NSInteger resolution=0;resolution<2;resolution++) for(NSInteger page=0;page<2;page++) for(NSInteger deck=0;deck<2;deck++) {
