@@ -1822,7 +1822,9 @@ static void Command(NSString *command) {
                     for(ThreeEDJControl *control in row.controls) if(!control.hidden) { visible++;minimum=MIN(minimum,NSWidth(control.frame)); }
                     Report([[NSString stringWithFormat:@"DJ_GEOMETRY view=%ld window=%d width=%g visible=%lu minTarget=%g hub=%g host=%g\n",(long)page,row.window!=nil,NSWidth(row.bounds),(unsigned long)visible,minimum,center,host] UTF8String]);
                     NSCAssert(row.window && row.controls.count==29 && visible==(page ? 19 : 13) && minimum>=24,@"Unified set must fit both real native views");
-                    NSCAssert(fabs(center-host/2)<1,@"The shared hub remains centered");
+                    NSCAssert(fabs(center-[row convertPoint:NSMakePoint(NSMidX(row.bounds),15) toView:nil].x)<1,@"The hub sits between equally distributed decks in the available DJ area");
+                    NSCAssert(NSMinX(row.controls[0].frame)==0 && fabs(NSMaxX(row.controls[14].frame)-NSWidth(row.bounds))<.1,@"The discs occupy both outer extremes without unused right space");
+                    for(NSInteger local=0;local<14;local++) if(!row.controls[local].hidden) NSCAssert(fabs(NSMidX(row.controls[local].frame)+NSMidX(row.controls[14+local].frame)-NSWidth(row.bounds))<.1,@"Both native deck rows must mirror their corresponding controls");
                     NSCAssert(NSEqualPoints(platterA,[row.controls[0] convertPoint:row.controls[0].platterCenter toView:nil]) && NSEqualPoints(platterB,[row.controls[14] convertPoint:row.controls[14].platterCenter toView:nil]),@"Both wheels remain anchored across views");
                     NSCAssert(NSEqualRects(closeFrame,[closeButton convertRect:closeButton.bounds toView:nil]) && NSEqualRects(recordFrame,[recordController.button convertRect:recordController.button.bounds toView:nil]),@"Close, Change and Record never move");
                 }

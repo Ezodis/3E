@@ -185,13 +185,20 @@ int main(int argc,const char **argv) {
                     [frames addObject:[NSValue valueWithRect:c.frame]];
                 }
                 NSCAssert(visible==(page ? 19 : 13),@"Mixer shows all EQ/levels; Performance shows eight buttons and a disc per deck");
+                NSCAssert(NSMinX(row.controls[0].frame)==0 && NSMaxX(row.controls[14].frame)==width.doubleValue,@"Both views must use the complete available width, with discs at the extremes");
+                for(NSInteger local=0;local<14;local++) {
+                    ThreeEDJControl *a=row.controls[local],*b=row.controls[14+local];
+                    if(a.hidden) continue;
+                    NSCAssert(fabs(NSMidX(a.frame)+NSMidX(b.frame)-width.doubleValue)<.1 && fabs(NSWidth(a.frame)-NSWidth(b.frame))<.1,@"The right deck must mirror every corresponding left control in both views");
+                }
                 for(NSInteger deck=0;deck<2;deck++) for(NSInteger i=0;i<4;i++) NSCAssert(!row.controls[deck*14+10+i].hidden==page,@"Only four hot cues per deck appear in Performance");
             }
             row.page=0;[row layout];
             NSPoint a=[row.controls[0] convertPoint:row.controls[0].platterCenter toView:row],b=[row.controls[14] convertPoint:row.controls[14].platterCenter toView:row];
+            NSCAssert(fabs(a.x-16)<.1 && fabs(b.x-(width.doubleValue-16))<.1,@"Circular platters face inward from the two outer edges");
             [row nextPage];
             NSCAssert(NSEqualPoints(a,[row.controls[0] convertPoint:row.controls[0].platterCenter toView:row]) && NSEqualPoints(b,[row.controls[14] convertPoint:row.controls[14].platterCenter toView:row]),@"Platter centers must never move when metadata folds away");
-            NSCAssert(fabs(NSMidX(row.controls.lastObject.frame)-width.doubleValue/2)<.1,@"The same hub remains centered");
+            NSCAssert(fabs(NSMidX(row.controls.lastObject.frame)-width.doubleValue/2)<.1,@"The hub remains centered within the usable DJ row");
         }
         row.frame=NSMakeRect(0,0,756,30);row.page=0;[row layout];
         ThreeEDJControl *hub=row.controls.lastObject;NSUInteger tapBefore=sent.count;
