@@ -284,6 +284,34 @@ int main(int argc,const char **argv) {
         NSCAssert(metadata.count==1 && [metadata[0][@"title"] isEqual:@"Actual track"] && fabs([metadata[0][@"duration"] doubleValue]-162.3)<.01,@"Only anchored deck metadata and real time fields may be displayed");
         ThreeEDJTelemetry *telemetry=[ThreeEDJTelemetry shared];telemetry.decks=metadata;telemetry.updated=NSProcessInfo.processInfo.systemUptime-3;
         NSCAssert(![telemetry deck:0],@"Stale host metadata must disappear");
+        NSArray *mixerFixture=@[
+            @{@"role":@"AXSlider",@"help":@"EQ/ISO (High) knob:",@"text":@"0",@"min":@-50,@"max":@50},
+            @{@"role":@"AXSlider",@"help":@"EQ/ISO (High) knob:",@"text":@"-24",@"min":@-50,@"max":@50},
+            @{@"role":@"AXSlider",@"help":@"Channel Fader:",@"text":@"80",@"min":@0,@"max":@100},
+            @{@"role":@"AXSlider",@"help":@"CROSSFADER:",@"text":@"-10",@"min":@-50,@"max":@50},
+            @{@"role":@"AXSlider",@"help":@"EQ/ISO (Mid) knob:",@"text":@"-14"},
+            @{@"role":@"AXSlider",@"help":@"EQ/ISO (Mid) knob:",@"text":@"not available"},
+            @{@"role":@"AXSlider",@"help":@"Library selection",@"text":@"90",@"min":@0,@"max":@100}];
+        NSDictionary *mixerValues=DJParseMixerValues(mixerFixture);
+        NSCAssert(mixerValues.count==5 && [mixerValues[DJKey(0,16,NO)] intValue]==64 && [mixerValues[DJKey(1,16,NO)] intValue]==33 && [mixerValues[DJKey(0,7,NO)] intValue]==102 && [mixerValues[DJKey(0,17,NO)] intValue]==46,@"Only known numeric mixer controls with explicit or verified percentage ranges may supply values");
+        [midi.values removeAllObjects];[midi.received removeAllObjects];[midi.rbSentAt removeAllObjects];
+        telemetry.controlValues=mixerValues;telemetry.controlsUpdated=NSProcessInfo.processInfo.systemUptime;
+        NSUInteger beforeRead=sent.count;[midi syncTelemetry];
+        NSCAssert([midi value:1 number:16 note:NO]==33 && sent.count==beforeRead,@"Reading host controls must update the display without echoing MIDI");
+        [hi begin:NSMakePoint(21,15) identity:@1];
+        telemetry.controlValues=@{DJKey(0,16,NO):@20,DJKey(1,16,NO):@21};telemetry.controlsUpdated=NSProcessInfo.processInfo.systemUptime;[midi syncTelemetry];
+        NSCAssert([midi value:0 number:16 note:NO]==64 && [midi value:1 number:16 note:NO]==21,@"An active finger owns its CC while the other deck can still refresh");[hi end];
+        [midi send:0xb0 number:16 value:70];[midi syncTelemetry];
+        NSCAssert([midi value:0 number:16 note:NO]==70,@"A delayed read cannot pull back a recently sent gesture");
+        midi.rbSentAt[DJKey(0,16,NO)]=@(NSProcessInfo.processInfo.systemUptime-1);[midi syncTelemetry];
+        NSCAssert([midi value:0 number:16 note:NO]==20,@"Fresh host values may take over after the gesture settles");
+        midi.received[DJKey(0,16,NO)]=@(telemetry.controlsUpdated+.1);midi.values[DJKey(0,16,NO)]=@30;[midi syncTelemetry];
+        NSCAssert([midi value:0 number:16 note:NO]==30,@"A newer MIDI feedback value must win over an older accessibility sample");
+        telemetry.controlsUpdated=NSProcessInfo.processInfo.systemUptime-3;midi.values[DJKey(1,16,NO)]=@32;[midi syncTelemetry];
+        NSCAssert([midi value:1 number:16 note:NO]==32,@"Stale host controls cannot overwrite current values");
+        DJSelectTarget(YES);telemetry.controlsUpdated=NSProcessInfo.processInfo.systemUptime;midi.values[DJKey(0,16,NO)]=@40;[midi syncTelemetry];
+        NSCAssert([midi value:0 number:16 note:NO]==40,@"rekordbox mixer reads must never alter Live controls");DJSelectTarget(NO);
+        telemetry.controlValues=nil;telemetry.controlsUpdated=0;[midi.rbSentAt removeAllObjects];
         telemetry.updated=NSProcessInfo.processInfo.systemUptime;telemetry.decks=metadata;midi.directSearchAvailable=YES;
         ThreeEDJControl *seek=Control(DJDisc,0,0);seek.search=YES;[sent removeAllObjects];
         [seek begin:NSMakePoint(50,15) identity:@1];[seek move:NSMakePoint(70,15)];
