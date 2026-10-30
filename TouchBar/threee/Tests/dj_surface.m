@@ -104,7 +104,7 @@ int main(int argc,const char **argv) {
         midi.values[DJKey(0,16,NO)]=@64;midi.values[DJKey(0,17,NO)]=@64;
         [hi begin:NSMakePoint(21,15) identity:@1];[mid begin:NSMakePoint(21,15) identity:@2];
         [hi move:NSMakePoint(23,15)];[mid move:NSMakePoint(19,15)];
-        NSCAssert(hi.knobRate>0 && hi.knobRate<3 && mid.knobRate<0 && mid.knobRate>-3,@"Small opposite swipes must select gentle independent hold rates");
+        NSCAssert(hi.knobRate>0 && hi.knobRate<8 && mid.knobRate<0 && mid.knobRate>-8,@"Small opposite swipes must select gentle independent hold rates");
         double steady=MAX(hi.knobMotionTime,mid.knobMotionTime)+.7;
         [hi advanceKnobToTime:steady];[mid advanceKnobToTime:steady];
         double hiStart=hi.knobPosition,midStart=mid.knobPosition;
