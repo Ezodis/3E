@@ -11,6 +11,8 @@ using ThreeE.PhoneBar.Windows;
 var results = new List<string>();
 // The ::error:: line becomes a CI annotation, so a failure is visible without the raw log.
 void Check(bool value, string name) { if (!value) { Console.WriteLine("::error::FAIL: " + name); throw new Exception("FAIL: " + name); } results.Add(name); Console.WriteLine("PASS: " + name); }
+Check(PhoneNetwork.ParseBridgeMembers("bridge100: flags\n\tmember: en9 flags=3<LEARNING,DISCOVER>\n\tmember: en3 flags=3<LEARNING,DISCOVER>\n").SequenceEqual(new[]{"en9","en3"}),"USB bridge membership uses explicit member names");
+Check(PhoneNetwork.ParseBridgeMembers("inet 192.168.234.1\nmember: bad;name flags=3\n").Length==0,"IP ranges and malformed bridge member names cannot identify USB");
 Check(PhoneNetwork.Kind("iPhone USB",NetworkInterfaceType.Ethernet)=="usb" && PhoneNetwork.Kind("Remote NDIS based Internet Sharing Device",NetworkInterfaceType.Ethernet)=="usb", "USB tether adapters are recognized on Mac and Windows");
 Check(PhoneNetwork.Kind("iPhone hotspot",NetworkInterfaceType.Wireless80211)=="wifi", "A Wi-Fi hotspot is not falsely labeled USB");
 Check(PhoneNetwork.Choose(new[]{new PhoneNetwork.PathInfo(IPAddress.Parse("192.168.1.2"),"wifi","Wi-Fi",true),new PhoneNetwork.PathInfo(IPAddress.Parse("172.20.10.2"),"usb","iPhone USB",false)}).Equals(IPAddress.Parse("172.20.10.2")), "USB direct link is preferred even without a gateway");

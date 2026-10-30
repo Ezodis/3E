@@ -5,6 +5,7 @@ using System.Security.Cryptography;
 using ThreeE.PhoneControl;
 using ThreeE.PhoneHost;
 
+if(args.Contains("--network-status")) {var preferred=PhoneNetwork.Refresh();Console.WriteLine(JsonSerializer.Serialize(new {preferred=preferred?.ToString(),paths=PhoneNetwork.Paths.Select(p=>new {address=p.Address.ToString(),kind=p.Kind,name=p.Name,gateway=p.Gateway})}));return;}
 if(args.Contains("--bonjour-self-test")) {
     string name=$"threee-recovery-{Environment.ProcessId}.local";
     for(int attempt=0;attempt<3;attempt++) {
