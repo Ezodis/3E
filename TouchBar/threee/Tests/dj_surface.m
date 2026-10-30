@@ -104,7 +104,7 @@ int main(int argc,const char **argv) {
         midi.values[DJKey(0,16,NO)]=@64;midi.values[DJKey(0,17,NO)]=@64;
         [hi begin:NSMakePoint(21,15) identity:@1];[mid begin:NSMakePoint(21,15) identity:@2];
         [hi move:NSMakePoint(23,15)];[mid move:NSMakePoint(19,15)];
-        NSCAssert(hi.knobRate>0 && hi.knobRate<1.5 && mid.knobRate<0 && mid.knobRate>-1.5,@"Small opposite swipes must select gentle independent hold rates");
+        NSCAssert(hi.knobRate>0 && hi.knobRate<3 && mid.knobRate<0 && mid.knobRate>-3,@"Small opposite swipes must select gentle independent hold rates");
         double steady=MAX(hi.knobMotionTime,mid.knobMotionTime)+.7;
         [hi advanceKnobToTime:steady];[mid advanceKnobToTime:steady];
         double hiStart=hi.knobPosition,midStart=mid.knobPosition;
@@ -120,6 +120,9 @@ int main(int argc,const char **argv) {
         [hi move:NSMakePoint(23,15)];
         for(NSInteger jitter=0;jitter<10;jitter++) { [hi move:NSMakePoint(22.5,15)];[hi move:NSMakePoint(23,15)]; }
         NSCAssert(hi.knobRate==steadyRate && hi.knobMotionTime==settledAt,@"Repeated stationary fingertip jitter must not ratchet up hold speed or postpone continuation");
+        [hi move:NSMakePoint(23.5,15)];[hi move:NSMakePoint(24,15)];
+        for(NSInteger resting=0;resting<10;resting++) { [hi move:NSMakePoint(23.5,15)];[hi move:NSMakePoint(24,15)]; }
+        NSCAssert(hi.knobRate==steadyRate && hi.knobMotionTime==settledAt,@"Small resting-touch drift must not continually re-arm the dwell or alter the latched hold rate");
         [hi move:NSMakePoint(21.7,15)];NSCAssert(hi.knobRate<0 && mid.knobRate<0,@"A deliberate reversal can make both independent holds decrease together");
         [hi move:NSMakePoint(21,15)];NSCAssert(hi.knobRate==0,@"Returning to the anchor still stops continuation");[hi end];[mid end];
         ThreeEDJControl *timed=Control(DJKnob,1,17);timed.frame=NSMakeRect(0,0,42,30);
@@ -132,6 +135,23 @@ int main(int argc,const char **argv) {
         NSCAssert([midi value:1 number:17 note:NO]>immediate,@"A settled hold runs the actual continuation timer");[timed end];
         NSInteger final=[midi value:1 number:17 note:NO];[NSRunLoop.currentRunLoop runUntilDate:[NSDate dateWithTimeIntervalSinceNow:.1]];
         NSCAssert([midi value:1 number:17 note:NO]==final,@"The timer stops after lift");
+        // Touch tracking may use a run-loop mode outside the common modes.
+        // Begin inside that mode and keep a resting finger down there.
+        NSString *trackingMode=@"ThreeEDJDirectTouchTrackingTest";
+        ThreeEDJControl *trackingKnob=Control(DJKnob,1,18);trackingKnob.frame=NSMakeRect(0,0,42,30);
+        midi.values[DJKey(1,18,NO)]=@64;__block NSInteger trackingInitial=-1;
+        NSTimer *startTracking=[NSTimer timerWithTimeInterval:.001 repeats:NO block:^(NSTimer *timer) {
+            [trackingKnob begin:NSMakePoint(21,15) identity:@"resting-finger"];
+            [trackingKnob move:NSMakePoint(23,15)];trackingInitial=[midi value:1 number:18 note:NO];
+        }];
+        NSTimer *trackingHeartbeat=[NSTimer timerWithTimeInterval:.02 repeats:YES block:^(NSTimer *timer) {}];
+        [NSRunLoop.mainRunLoop addTimer:startTracking forMode:trackingMode];[NSRunLoop.mainRunLoop addTimer:trackingHeartbeat forMode:trackingMode];
+        NSDate *trackingDeadline=[NSDate dateWithTimeIntervalSinceNow:1.3];
+        while(trackingDeadline.timeIntervalSinceNow>0) [NSRunLoop.mainRunLoop runMode:trackingMode beforeDate:trackingDeadline];
+        [trackingHeartbeat invalidate];
+        NSCAssert(trackingInitial>=0 && trackingKnob.knobTickTime>trackingKnob.touchStartTime+.5,@"A held knob's timer must continue firing inside the actual touch-tracking run-loop mode");
+        NSCAssert([midi value:1 number:18 note:NO]>trackingInitial,@"A small swipe-and-hold must visibly continue while the finger rests");
+        [trackingKnob end];NSCAssert(!trackingKnob.knobTimer && !trackingKnob.knobTrackingMode,@"Lift must invalidate the timer across all registered tracking modes");
         ThreeEDJControl *smooth=Control(DJKnob,0,18);smooth.frame=NSMakeRect(0,0,42,30);
         midi.values[DJKey(0,18,NO)]=@64;[smooth begin:NSMakePoint(21,15) identity:@1];[smooth move:NSMakePoint(33,15)];
         NSCAssert([midi value:0 number:18 note:NO]<110,@"The former endpoint threshold must no longer jump a modest swipe to maximum");[smooth end];

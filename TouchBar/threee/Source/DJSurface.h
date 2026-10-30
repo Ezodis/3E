@@ -275,6 +275,8 @@ typedef NS_ENUM(NSInteger,DJControlKind) { DJKnob,DJFader,DJDisc,DJPad };
 @property double knobAcceptedX;
 @property double knobHoldTravel;
 @property double knobReverseTravel;
+@property double knobSettleX;
+@property NSString *knobTrackingMode;
 @property double touchStartTime;
 @property double discAnchorX;
 @property double discMotionX;
@@ -296,6 +298,7 @@ typedef NS_ENUM(NSInteger,DJControlKind) { DJKnob,DJFader,DJDisc,DJPad };
 @property NSString *seekTitle;
 - (void)publishKnob;
 - (void)advanceKnobToTime:(double)time;
+- (void)trackKnobTimerInCurrentMode;
 - (NSPoint)platterCenter;
 @property BOOL search;
 @property BOOL gestureSearch;
@@ -315,7 +318,7 @@ static double DJKnobHoldRate(double distance,double width) {
     double strength=MAX(0,MIN(1,(fabs(distance)-.6)/MAX(8,(width-8)*.5-.6)));
     // The low end remains usable: a tiny settled displacement creeps steadily,
     // while a large hold tops out at 8 values/second. Direct swipes stay fast.
-    return copysign(.5+7.5*pow(strength,1.5),distance);
+    return copysign(2+6*pow(strength,1.5),distance);
 }
 static double DJSeekSensitivity(double duration,double travel) {
     // A physical movement has the same meaning on both pages. Keep even short
@@ -420,9 +423,12 @@ static void DJText(NSString *text,NSRect rect,CGFloat size,NSColor *color) {
     if(self.kind==DJKnob) {
         self.knobPosition=self.originValue;self.knobRate=0;self.knobTickTime=self.knobMotionTime=self.touchStartTime;
         self.knobPreviousDrag=0;self.knobAcceptedX=point.x;self.knobHoldTravel=0;self.knobReverseTravel=0;
+        self.knobSettleX=point.x;
         __weak ThreeEDJControl *weakSelf=self;
         self.knobTimer=[NSTimer timerWithTimeInterval:.03 repeats:YES block:^(NSTimer *timer) { [weakSelf advanceKnobToTime:NSProcessInfo.processInfo.systemUptime]; }];
         [NSRunLoop.mainRunLoop addTimer:self.knobTimer forMode:NSRunLoopCommonModes];
+        [NSRunLoop.mainRunLoop addTimer:self.knobTimer forMode:NSEventTrackingRunLoopMode];
+        [self trackKnobTimerInCurrentMode];
     }
     if(self.kind==DJDisc) {
         self.discAnchorX=self.discMotionX=self.discTurnX=point.x;self.lastMotion=self.touchStartTime;
@@ -450,6 +456,12 @@ static void DJText(NSString *text,NSRect rect,CGFloat size,NSColor *color) {
     if(value!=[midi value:self.channel number:self.number note:NO]) [midi send:0xb0|self.channel number:(UInt8)self.number value:(UInt8)value];
     self.needsDisplay=YES;
 }
+- (void)trackKnobTimerInCurrentMode {
+    NSString *mode=NSRunLoop.mainRunLoop.currentMode;
+    if(self.knobTimer && mode.length && ![mode isEqual:self.knobTrackingMode]) {
+        [NSRunLoop.mainRunLoop addTimer:self.knobTimer forMode:mode];self.knobTrackingMode=mode;
+    }
+}
 - (void)advanceKnobToTime:(double)time {
     if(!self.tracking || self.kind!=DJKnob || !isfinite(time)) return;
     // Movement is distance-based. Holding adds a slower continuation only
@@ -468,6 +480,7 @@ static void DJText(NSString *text,NSRect rect,CGFloat size,NSColor *color) {
     // Only horizontal input is meaningful on the Touch Bar.
     if(fabs(dx)>(self.kind==DJDisc ? .8 : 2)) self.moved=YES;
     if(self.kind==DJKnob) {
+        [self trackKnobTimerInCurrentMode];
         [self advanceKnobToTime:NSProcessInfo.processInfo.systemUptime];
         double motion=point.x-self.knobAcceptedX;
         if(fabs(motion)>=.45) {
@@ -489,9 +502,18 @@ static void DJText(NSString *text,NSRect rect,CGFloat size,NSColor *color) {
             double span=MAX(8,(NSWidth(self.bounds)-8)*.5);
             self.knobHoldTravel=MAX(-span,MIN(span,self.knobHoldTravel));
             if(fabs(dx)<=.6) { self.knobHoldTravel=0;self.knobReverseTravel=0;deliberate=YES; }
-            self.knobRate=DJKnobHoldRate(self.knobHoldTravel,NSWidth(self.bounds));
-            // Normal fingertip jitter must not repeatedly restart a settled hold.
-            if(deliberate) self.knobMotionTime=NSProcessInfo.processInfo.systemUptime;
+            double proposedRate=DJKnobHoldRate(self.knobHoldTravel,NSWidth(self.bounds));
+            BOOL atAnchor=fabs(dx)<=.6;
+            BOOL engage=self.knobRate==0 && proposedRate!=0;
+            BOOL reverse=self.knobRate*proposedRate<0;
+            BOOL shifted=fabs(point.x-self.knobSettleX)>=2;
+            // Latch a settled hold. Small drifting/resting-touch updates cannot
+            // continually postpone it or change its rate; deliberate travel,
+            // a reversal, or a return to the anchor can re-arm it.
+            if(atAnchor || (deliberate && (engage || reverse || shifted))) {
+                self.knobRate=proposedRate;self.knobSettleX=point.x;
+                self.knobMotionTime=NSProcessInfo.processInfo.systemUptime;
+            }
             [self publishKnob];
         }
     } else if(self.kind==DJFader) {
@@ -603,7 +625,7 @@ static void DJText(NSString *text,NSRect rect,CGFloat size,NSColor *color) {
 
     if(self.kind==DJPad) [[ThreeEDJMIDI shared] send:0x80|self.channel number:(UInt8)self.number value:0];
     if(self.nudge>=0) [[ThreeEDJMIDI shared] send:0x80|self.channel number:(UInt8)self.nudge value:0];
-    [self.knobTimer invalidate];self.knobTimer=nil;self.knobRate=0;
+    [self.knobTimer invalidate];self.knobTimer=nil;self.knobRate=0;self.knobTrackingMode=nil;
     [self.discTimer invalidate];self.discTimer=nil;self.needleSearch=NO;
     self.nudge=-1; self.tracking=NO; self.identity=nil; self.needsDisplay=YES;
 }
