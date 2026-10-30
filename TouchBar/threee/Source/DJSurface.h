@@ -79,7 +79,7 @@ static void DJReadHost(const MIDIPacketList *packets,void *context,BOOL live) {
     const MIDIPacket *packet=&packets->packet[0];
     NSMutableData *bytes=[NSMutableData new];
     for(UInt32 i=0;i<packets->numPackets;i++) { [bytes appendBytes:packet->data length:packet->length]; packet=MIDIPacketNext(packet); }
-    dispatch_async(dispatch_get_main_queue(),^{ [midi consume:bytes live:live]; });
+    DJRunOnMain(^{ [midi consume:bytes live:live]; });
 }
 static void DJRead(const MIDIPacketList *packets,void *context,void *unused) { DJReadHost(packets,context,NO); }
 static void DJReadLive(const MIDIPacketList *packets,void *context,void *unused) { DJReadHost(packets,context,YES); }
@@ -132,13 +132,13 @@ static void DJReadLive(const MIDIPacketList *packets,void *context,void *unused)
 #endif
     __weak ThreeEDJMIDI *weakSelf=self;
     self.timer=[NSTimer timerWithTimeInterval:.25 repeats:YES block:^(NSTimer *timer) { [weakSelf syncTelemetry];[weakSelf redraw];DJPhoneTick(); if(!weakSelf.liveTarget) [[ThreeEDJTelemetry shared] poll]; }];
-    [NSRunLoop.mainRunLoop addTimer:self.timer forMode:NSRunLoopCommonModes];
+    DJRegisterTimer(self.timer);
     // Separate animation from the slower MIDI/metadata polling clock.
     self.animationTimer=[NSTimer timerWithTimeInterval:1.0/60 repeats:YES block:^(NSTimer *timer) {
         double now=NSProcessInfo.processInfo.systemUptime;
         for(NSView *view in weakSelf.views) if(view.window && !view.hiddenOrHasHiddenAncestor && [view respondsToSelector:@selector(animateAt:)]) [(id<ThreeEDJAnimating>)view animateAt:now];
     }];
-    [NSRunLoop.mainRunLoop addTimer:self.animationTimer forMode:NSRunLoopCommonModes];
+    DJRegisterTimer(self.animationTimer);
 }
 - (void)redraw { for(NSView *view in self.views) if(view.window) view.needsDisplay=YES; }
 - (void)syncTelemetry {
@@ -214,9 +214,9 @@ static void DJReadLive(const MIDIPacketList *packets,void *context,void *unused)
         [self emit:0x90|channel number:0 value:127 live:live];
         // Measure from the actual press, not a scheduled deadline: a busy main
         // thread must never collapse press/release or reorder seek and resume.
-        dispatch_after(dispatch_time(DISPATCH_TIME_NOW,45*NSEC_PER_MSEC),dispatch_get_main_queue(),^{
+        DJAfter(.045,^{
             [self emit:0x80|channel number:0 value:0 live:live];
-            dispatch_after(dispatch_time(DISPATCH_TIME_NOW,30*NSEC_PER_MSEC),dispatch_get_main_queue(),done);
+            DJAfter(.030,done);
         });
     } channel:channel live:live];
 }
@@ -430,6 +430,7 @@ static void DJText(NSString *text,NSRect rect,CGFloat size,NSColor *color) {
 - (void)begin:(NSPoint)point identity:(id)identity {
     if(self.tracking || !NSPointInRect(point,self.bounds)) return;
     [[ThreeEDJMIDI shared] syncTelemetry];
+    DJTrackCurrentMode();
     self.tracking=YES; self.identity=identity; self.origin=self.last=point; self.moved=NO;
     self.gestureSearch=self.search;self.touchStartTime=NSProcessInfo.processInfo.systemUptime;
     self.originValue=[[ThreeEDJMIDI shared] value:self.channel number:self.number note:NO];
@@ -439,7 +440,7 @@ static void DJText(NSString *text,NSRect rect,CGFloat size,NSColor *color) {
         self.knobSettleX=point.x;
         __weak ThreeEDJControl *weakSelf=self;
         self.knobTimer=[NSTimer timerWithTimeInterval:.03 repeats:YES block:^(NSTimer *timer) { [weakSelf advanceKnobToTime:NSProcessInfo.processInfo.systemUptime]; }];
-        [NSRunLoop.mainRunLoop addTimer:self.knobTimer forMode:NSRunLoopCommonModes];
+        DJRegisterTimer(self.knobTimer);
         [NSRunLoop.mainRunLoop addTimer:self.knobTimer forMode:NSEventTrackingRunLoopMode];
         [self trackKnobTimerInCurrentMode];
     }
@@ -456,7 +457,7 @@ static void DJText(NSString *text,NSRect rect,CGFloat size,NSColor *color) {
         if(self.animationReady) self.angle=self.displayAngle;
         __weak ThreeEDJControl *weakSelf=self;
         self.discTimer=[NSTimer timerWithTimeInterval:.02 repeats:YES block:^(NSTimer *timer) { [weakSelf releaseIdleAt:NSProcessInfo.processInfo.systemUptime]; }];
-        [NSRunLoop.mainRunLoop addTimer:self.discTimer forMode:NSRunLoopCommonModes];
+        DJRegisterTimer(self.discTimer);
     }
     if(self.kind==DJPad) [[ThreeEDJMIDI shared] send:0x90|self.channel number:self.number value:127];
     if(self.kind==DJFader && !self.tapAction) [self move:point];

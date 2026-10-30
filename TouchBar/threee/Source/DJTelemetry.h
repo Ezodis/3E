@@ -1,5 +1,6 @@
 // Read-only, bounded adapter for rekordbox's visible deck and mixer fields.
 #import <ApplicationServices/ApplicationServices.h>
+#import "DJTracking.h"
 static double DJSeconds(NSString *text) {
     NSArray *parts=[[text stringByReplacingOccurrencesOfString:@"-" withString:@""] componentsSeparatedByString:@":"];
     return parts.count==2 ? [parts[0] doubleValue]*60+[parts[1] doubleValue] : -1;
@@ -190,7 +191,7 @@ static void DJCollectAX(AXUIElementRef element,NSMutableArray *nodes,NSInteger d
             if(candidate.count==2 && mixer.count>=9 && vitals>=loaded*3) break;
         }
         CFRelease(root);
-        dispatch_async(dispatch_get_main_queue(),^{self.controlValues=controls;self.controlsUpdated=sampled;[self updateDecks:decks at:NSProcessInfo.processInfo.systemUptime];self.busy=NO;});
+        DJRunOnMain(^{self.controlValues=controls;self.controlsUpdated=sampled;[self updateDecks:decks at:NSProcessInfo.processInfo.systemUptime];self.busy=NO;});
     });
 #endif
 }

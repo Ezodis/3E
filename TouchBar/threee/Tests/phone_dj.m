@@ -27,7 +27,24 @@ int main(void){@autoreleasepool{
  [sent removeAllObjects];DJPhoneCommand(@{@"op":@"begin",@"control":@20,@"id":@12});DJPhoneSeen-=4;DJPhoneTick();NSCAssert(!DJPhoneRow.controls[20].tracking&&sent.count==2,@"Lease expiry releases held pads");
  [sent removeAllObjects];[row.controls[2] begin:NSMakePoint(20,15) identity:@"real"];DJPhoneCommand(@{@"op":@"begin",@"control":@2,@"id":@13});NSCAssert(!a.tracking,@"Phone cannot steal a physically held knob");[row.controls[2] end];
  DJPhoneCommand(@{@"op":@"begin",@"control":@0,@"id":@14});DJPhoneCommand(@{@"op":@"abort",@"control":@0,@"id":@14});NSCAssert(!DJPhoneRow.controls[0].search,@"Cancelled disc touch does not switch SEEK/BEND");
+
+ // A real cross-device failure: AppKit's private tracking loop does not drain
+ // the ordinary main dispatch queue. Phone input, held knobs and transport
+ // releases must all progress while the physical finger remains down.
+ NSString *privateMode=@"ThreeEPhoneAndTouchBarTracking";__block NSInteger deliveries=0;
+ NSTimer *keep=[NSTimer timerWithTimeInterval:1 repeats:YES block:^(NSTimer *t){}];[NSRunLoop.mainRunLoop addTimer:keep forMode:privateMode];
+ midi.values[DJKey(0,16,NO)]=@64;[sent removeAllObjects];
+ NSTimer *enter=[NSTimer timerWithTimeInterval:.005 repeats:NO block:^(NSTimer *t){
+   [row.controls[4] begin:NSMakePoint(20,15) identity:@"physical"];
+   dispatch_async(dispatch_get_global_queue(0,0),^{DJRunOnMain(^{deliveries++;DJPhoneCommand(@{@"op":@"begin",@"control":@2,@"id":@91});DJPhoneCommand(@{@"op":@"move",@"control":@2,@"id":@91,@"x":@.15});[midi pulseTransport:1];});});
+ }];[NSRunLoop.mainRunLoop addTimer:enter forMode:privateMode];
+ NSDate *until=[NSDate dateWithTimeIntervalSinceNow:2];while(until.timeIntervalSinceNow>0){[NSRunLoop.mainRunLoop runMode:privateMode beforeDate:[NSDate dateWithTimeIntervalSinceNow:.03]];if(deliveries==1&&[midi value:0 number:16 note:NO]>75&&[sent containsObject:@[@0x81,@0,@0]])break;}
+ NSCAssert(deliveries==1 && row.controls[4].tracking && [midi value:0 number:16 note:NO]>75,@"Phone swipe and hold continue without lifting the physical Touch Bar finger");
+ NSCAssert(([sent containsObject:@[@0x91,@0,@127]] && [sent containsObject:@[@0x81,@0,@0]]),@"Transport press and release must complete inside private tracking");
+ [keep invalidate];[row.controls[4] end];DJPhoneCancel();
+ NSDate *drain=[NSDate dateWithTimeIntervalSinceNow:.02];while(drain.timeIntervalSinceNow>0)[NSRunLoop.mainRunLoop runMode:NSDefaultRunLoopMode beforeDate:drain];
+ NSCAssert(deliveries==1,@"Returning to ordinary mode must not replay a phone command");
  window.contentView=nil;NSCAssert(![DJPhoneSnapshot()[@"paired"] boolValue],@"Removing Touch Bar returns phone to standalone");
  if(saved)[NSUserDefaults.standardUserDefaults setObject:saved forKey:DJTargetKey];else[NSUserDefaults.standardUserDefaults removeObjectForKey:DJTargetKey];
- puts("PASS: complementary views, independent holds, shared MIDI, level continuity, per-finger cancel, conflict ownership and disconnect lease");
+ puts("PASS: complementary views, independent holds, shared MIDI, level continuity, per-finger cancel, conflict ownership, disconnect lease and simultaneous private-mode tracking");
 }}

@@ -2331,7 +2331,8 @@ static void Command(NSString *command) {
                     char line[4096];
                     while (fgets(line, sizeof(line), stdin)) {
                         NSString *command = [[NSString stringWithUTF8String:line] stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
-                        dispatch_async(dispatch_get_main_queue(), ^{ Command(command); });
+                        if([command hasPrefix:@"PHONE_DJ "]) DJRunOnMain(^{Command(command);});
+                        else dispatch_async(dispatch_get_main_queue(), ^{ Command(command); });
                     }
                     // Parent exited or crashed: don't leave an orphan MIDI engine.
                     dispatch_async(dispatch_get_main_queue(), ^{ [NSApp terminate:nil]; });
