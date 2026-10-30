@@ -30,9 +30,17 @@ static NSMutableArray *sent;
 static atomic_int loopbackPackets;
 static atomic_int liveLoopbackPackets;
 static atomic_int rbReleases,liveReleases;
+static atomic_int hiResPackets;
 static void Loopback(const MIDIPacketList *packets,void *context,void *unused) {
     const MIDIPacket *p=&packets->packet[0];
-    if(packets->numPackets && p->length==3 && p->data[0]==0x90 && p->data[1]==1) { if(p->data[2]==127) atomic_fetch_add(&loopbackPackets,1);else if(p->data[2]==0) atomic_fetch_add(&rbReleases,1); }
+    for(UInt32 i=0;i<packets->numPackets;i++,p=MIDIPacketNext(p)) {
+        // CoreMIDI can coalesce consecutive received packets in this callback.
+        for(UInt16 j=0;j+2<p->length;j+=3) {
+            const Byte *b=p->data+j;
+            if(b[0]==0x90 && b[1]==1) { if(b[2]==127) atomic_fetch_add(&loopbackPackets,1);else if(b[2]==0) atomic_fetch_add(&rbReleases,1); }
+            if(j+5<p->length && b[0]==0xb1 && b[1]==20 && b[2]==64 && b[3]==0xb1 && b[4]==52 && b[5]==64) atomic_fetch_add(&hiResPackets,1);
+        }
+    }
 }
 static void LiveLoopback(const MIDIPacketList *packets,void *context,void *unused) {
     const MIDIPacket *p=&packets->packet[0];
@@ -259,8 +267,29 @@ int main(int argc,const char **argv) {
         [seek move:NSMakePoint(90,15)];NSCAssert(sent.count==seekMessages,@"A track load during a gesture cannot seek using the previous track's origin");[seek end];
         telemetry.decks=nil;[seek begin:NSMakePoint(50,15) identity:@1];[seek move:NSMakePoint(75,15)];
         NSCAssert(sent.count==seekMessages,@"Direct seeking requires real track/time metadata and never silently falls back to fast scan");[seek end];
+        // Tiny movements must survive the controller's conversion, including
+        // reversals. A long stationary touch must not reuse touch-down time.
+        midi.highResolutionSearchAvailable=YES;
+        telemetry.decks=metadata;telemetry.updated=NSProcessInfo.processInfo.systemUptime;
+        [seek begin:NSMakePoint(50,15) identity:@1];
+        NSMutableDictionary *later=[metadata[0] mutableCopy];later[@"elapsed"]=@20;later[@"playing"]=@NO;
+        telemetry.decks=@[later];telemetry.updated=NSProcessInfo.processInfo.systemUptime;[sent removeAllObjects];
+        [seek move:NSMakePoint(51,15)];
+        NSCAssert(seek.seekOrigin==20 && sent.count==2 && [sent[0][1] intValue]==20 && [sent[1][1] intValue]==52,@"A tiny swipe uses a fresh origin and emits both high-resolution bytes");
+        NSInteger fineForward=([sent[0][2] integerValue]<<7)|[sent[1][2] integerValue];
+        [seek move:NSMakePoint(51.5,15)];
+        NSInteger finerForward=([sent[sent.count-2][2] integerValue]<<7)|[sent.lastObject[2] integerValue];
+        NSCAssert(finerForward>fineForward && finerForward-fineForward<8,@"A half-point movement must remain a small proportional seek");
+        [seek move:NSMakePoint(50.9,15)];
+        NSInteger fineBackward=([sent[sent.count-2][2] integerValue]<<7)|[sent.lastObject[2] integerValue];
+        NSCAssert(fineBackward<finerForward,@"Small reverse movement must reverse immediately without a coarse-value dead zone");
+        NSUInteger fineCount=sent.count;[seek move:NSMakePoint(50.9,15)];[seek end];
+        NSCAssert(sent.count==fineCount,@"Stationary and lift on a paused deck send no extra position or transport");
+        NSCAssert(DJSeekValue(0,200,YES)==0 && DJSeekValue(200,200,YES)==16383 && DJSeekValue(100,200,YES)==8192,@"High-resolution limits and midpoint must be exact");
+        midi.highResolutionSearchAvailable=NO;
         // The same real handlers must seek and hold in MIX and compact PADS.
-        for(NSInteger page=0;page<2;page++) for(NSInteger deck=0;deck<2;deck++) {
+        for(NSInteger resolution=0;resolution<2;resolution++) for(NSInteger page=0;page<2;page++) for(NSInteger deck=0;deck<2;deck++) {
+            midi.highResolutionSearchAvailable=resolution;NSUInteger positionMessages=resolution ? 2 : 1;
             row.page=page;[row layout];ThreeEDJControl *wheel=row.controls[deck*14];wheel.search=YES;
             NSMutableDictionary *playing=[metadata[0] mutableCopy];playing[@"playing"]=@YES;
             telemetry.decks=@[playing,playing];telemetry.updated=NSProcessInfo.processInfo.systemUptime;
@@ -271,7 +300,7 @@ int main(int argc,const char **argv) {
             NSCAssert(wheel.tracking && sent.count==0,@"Resting-marked direct touches must start in both views without interrupting a mode tap");
             touch.target=row.controls[deck*14+6];touch.point=NSMakePoint(96,15);event.phase=NSTouchPhaseMoved;
             [wheel touchesMovedWithEvent:(id)event];DrainTransport();
-            NSCAssert(wheel.seekHolding && wheel.seekResume && sent.count==3 && [sent[0][1] intValue]==0 && [sent[1][0] intValue]==(0x80|deck) && [sent[2][1] intValue]==20,@"A captured wheel swipe outside its compact bounds pauses once, releases Play, then seeks: messages=%@ holding=%d resume=%d page=%ld deck=%ld",sent,wheel.seekHolding,wheel.seekResume,(long)page,(long)deck);
+            NSCAssert(wheel.seekHolding && wheel.seekResume && sent.count==2+positionMessages && [sent[0][1] intValue]==0 && [sent[1][0] intValue]==(0x80|deck) && [sent[2][1] intValue]==20,@"A captured wheel swipe outside its compact bounds pauses once, releases Play, then seeks: messages=%@ holding=%d resume=%d page=%ld deck=%ld",sent,wheel.seekHolding,wheel.seekResume,(long)page,(long)deck);
             NSUInteger held=sent.count;[wheel releaseIdleAt:wheel.lastMotion+4];event.phase=NSTouchPhaseStationary;[wheel touchesMovedWithEvent:(id)event];DrainTransport();
             NSCAssert(sent.count==held && wheel.seekHolding,@"Waiting with a stationary finger must remain held without repeated seeks or transport toggles");
             [row layout];NSCAssert(wheel.tracking && !wheel.hidden,@"A repeated layout must preserve active wheels");
@@ -280,8 +309,9 @@ int main(int argc,const char **argv) {
             [wheel end];NSCAssert(sent.count==held+2,@"Duplicate end cannot toggle transport again");
             playing[@"playing"]=@NO;telemetry.decks=@[playing,playing];midi.values[DJKey(deck,0,YES)]=@0;
             [sent removeAllObjects];[wheel begin:NSMakePoint(16,15) identity:@1];[wheel move:NSMakePoint(96,15)];[wheel end];
-            NSCAssert(sent.count==1 && [sent[0][1] intValue]==20,@"A deck already paused must remain paused after seeking and lifting");
+            NSCAssert(sent.count==positionMessages && [sent[0][1] intValue]==20,@"A deck already paused must remain paused after seeking and lifting");
         }
+        midi.highResolutionSearchAvailable=NO;
         // A rapid release must finish the coalesced seek before resuming,
         // with real nonzero transport press intervals on the main run loop.
         NSMutableDictionary *rapidPlaying=[metadata[0] mutableCopy];rapidPlaying[@"playing"]=@YES;
@@ -341,13 +371,15 @@ int main(int argc,const char **argv) {
         NSCAssert(MIDIInputPortCreate(observer,CFSTR("test Live input"),LiveLoopback,NULL,&liveInput)==noErr,@"Live observer input");
         NSCAssert(MIDIPortConnectSource(liveInput,midi.liveSource,NULL)==noErr,@"Connect to isolated Live source");
         midi.capture=nil; [midi send:0x90 number:1 value:127];
+        [midi seekPosition:8256 channel:1 highResolution:YES];
         Byte storage[128]; MIDIPacketList *list=(MIDIPacketList *)storage; Byte feedback[]={0xb1,16,101};
         MIDIPacketListAdd(list,sizeof(storage),MIDIPacketListInit(list),0,3,feedback);
         NSCAssert(MIDISend(output,midi.destination,list)==noErr,@"Send feedback through actual virtual destination");
         NSDate *deadline=[NSDate dateWithTimeIntervalSinceNow:2];
-        while(([midi value:1 number:16 note:NO]!=101 || !atomic_load(&loopbackPackets)) && deadline.timeIntervalSinceNow>0)
+        while(([midi value:1 number:16 note:NO]!=101 || !atomic_load(&loopbackPackets) || !atomic_load(&hiResPackets)) && deadline.timeIntervalSinceNow>0)
             [NSRunLoop.currentRunLoop runUntilDate:[NSDate dateWithTimeIntervalSinceNow:.02]];
-        NSCAssert(atomic_load(&loopbackPackets)==1 && [midi value:1 number:16 note:NO]==101,@"CoreMIDI round trip must deliver exact messages in both directions");
+        NSCAssert(atomic_load(&loopbackPackets)==1 && [midi value:1 number:16 note:NO]==101,@"CoreMIDI round trip must deliver exact messages in both directions: notes=%d feedback=%ld hires=%d",atomic_load(&loopbackPackets),(long)[midi value:1 number:16 note:NO],atomic_load(&hiResPackets));
+        NSCAssert(atomic_load(&hiResPackets)==1,@"The real MIDI source must deliver a single ordered MSB/LSB packet on the correct deck");
         [midi send:0x80 number:1 value:0];
         DJSelectTarget(YES); [midi send:0x90 number:1 value:127];
         Byte liveFeedback[]={0xb1,16,55};

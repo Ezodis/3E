@@ -1840,7 +1840,7 @@ static void Command(NSString *command) {
             });
         } else if ([command isEqualToString:@"DJ_STATUS"]) {
             ThreeEDJMIDI *midi=[ThreeEDJMIDI shared];
-            Report([[NSString stringWithFormat:@"DJ_STATUS %@\n",@{@"source":@(midi.source),@"destination":@(midi.destination),@"error":@(midi.error),@"liveSource":@(midi.liveSource),@"liveDestination":@(midi.liveDestination),@"target":midi.liveTarget ? @"live" : @"rekordbox",@"metadata":[ThreeEDJTelemetry shared].decks ?: @[],@"metadataPermission":@(AXIsProcessTrusted()),@"directSearch":@(midi.directSearchAvailable),@"values":midi.values,@"layouts":[[delegate valueForKey:@"allUserTouchbars"] valueForKey:@"itemIdentifiers"]}] UTF8String]);
+            Report([[NSString stringWithFormat:@"DJ_STATUS %@\n",@{@"source":@(midi.source),@"destination":@(midi.destination),@"error":@(midi.error),@"liveSource":@(midi.liveSource),@"liveDestination":@(midi.liveDestination),@"target":midi.liveTarget ? @"live" : @"rekordbox",@"metadata":[ThreeEDJTelemetry shared].decks ?: @[],@"metadataPermission":@(AXIsProcessTrusted()),@"directSearch":@(midi.directSearchAvailable),@"highResolutionSearch":@(midi.highResolutionSearchAvailable),@"values":midi.values,@"layouts":[[delegate valueForKey:@"allUserTouchbars"] valueForKey:@"itemIdentifiers"]}] UTF8String]);
         } else if ([command isEqualToString:@"CONTROLS_COLOR_TEST"]) {
             NSTouchBar *bar=normalLayoutBar;
             NSString *key=PianoPrefsKey(bar);
