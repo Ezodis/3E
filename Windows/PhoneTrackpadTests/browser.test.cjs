@@ -108,8 +108,8 @@ async function directClipFlow(browser,name,url){
  }finally{await ctx.close();}
 }
 if(require.main===module)(async()=>{
- for(const [name,engine] of [['webkit',webkit],['chromium',chromium]]){
-  const browser=await engine.launch({headless:true});
+ for(const [name,engine] of [['webkit',webkit],['chromium',chromium]].filter(([name])=>!process.env.PLAYWRIGHT_ENGINE||name===process.env.PLAYWRIGHT_ENGINE)){
+  const options={headless:true};if(process.env.PLAYWRIGHT_BROWSER_PATH)options.executablePath=process.env.PLAYWRIGHT_BROWSER_PATH;const browser=await engine.launch(options);
   // The receiver remembers phone settings (view, octave, speed…); start each engine from defaults.
   {const origin=new URL(url).origin;const reset=await fetch(origin+'/prefs',{method:'POST',headers:{'Content-Type':'application/json','Origin':origin,'X-Trackpad-Token':new URL(url).hash.slice(1)},body:JSON.stringify({prefs:{}})});
    assert.equal(reset.status,200,'saved phone settings can be reset');}
@@ -270,15 +270,15 @@ if(require.main===module)(async()=>{
    assert.equal(await p.locator('#studio').isVisible(),true);
    assert.equal(await p.locator('#studio h1').innerText(),'3£ Phone Bar');
    const returnTarget=async page=>{
-    const media=await page.locator('#media').boundingBox(),back=await page.locator('#closeStudio').boundingBox();
-    for(const axis of ['x','y','width','height'])assert.ok(Math.abs(media[axis]-back[axis])<1,'return target matches Media '+axis);
-    for(const property of ['backgroundColor','color','borderRadius','borderColor'])assert.equal(await page.locator('#closeStudio').evaluate((el,p)=>getComputedStyle(el)[p],property),await page.locator('#media').evaluate((el,p)=>getComputedStyle(el)[p],property));
-    const nav=await page.locator('.studio-tabs').boundingBox();assert.ok(nav.y>400&&nav.x+nav.width<=back.x,'view buttons sit beside return at the bottom');
+    const back=await page.locator('#closeStudio').boundingBox(),nav=await page.locator('.studio-tabs').boundingBox(),viewport=page.viewportSize();
+    assert.ok(back.width>=40&&back.height>=36&&back.x+back.width<=viewport.width&&back.y+back.height<=viewport.height,'compact return target stays reachable');
+    assert.ok(nav.y>=viewport.height-80&&nav.x+nav.width<=back.x,'view tabs share the fixed bottom row');
    };
    await returnTarget(p);
    await p.waitForFunction(()=>document.getElementById('midiOutput').options.length>1);
    assert.equal(commands.filter(c=>c.type==='media').length,mediaCount,'holding Media must not play/pause on release');
-   await p.locator('#midiOutput').selectOption('0');await p.waitForFunction(()=>document.getElementById('midiStatus').textContent.startsWith('Sending to'));
+   await p.locator('#djSetupOpen').click();await p.locator('#djOutput').selectOption('0');await p.locator('#djSetupClose').click();await p.waitForFunction(()=>document.getElementById('midiStatus').textContent.startsWith('Sending to'));
+   await p.locator('#djAbleton').click();if(await p.locator('#decksView').getAttribute('data-mode')!=='mix')await p.locator('#djMode').click();
    const low=p.locator('.dj-a .dj-knob[data-index="4"]');
    await drag(p,low,0,-24);
    assert.ok(+await low.getAttribute('aria-valuenow')>64);
@@ -286,7 +286,7 @@ if(require.main===module)(async()=>{
    await p.mouse.move(r.x+r.width/2,r.y+r.height/2);await p.mouse.down();await p.mouse.move(r.x+r.width/2+6,r.y+r.height/2);await p.waitForTimeout(900);await p.mouse.up();
    assert.ok(+await low.getAttribute('aria-valuenow')>before,'small swipe and hold keeps turning the knob');
    await p.locator('#djMode').click();
-   await p.locator('.dj-a').getByRole('button',{name:'Deck A Play/pause',exact:true}).click();
+   await p.locator('.dj-a .dj-action[data-index="6"]').click();
    await p.locator('.dj-a .dj-platter').focus();await p.keyboard.press('ArrowRight');await p.keyboard.press('ArrowLeft');
    await p.locator('#djCross').fill('100');await p.waitForTimeout(50);
    assert.ok(commands.some(c=>c.type==='midiCC'&&c.channel===15&&c.number===50&&c.value>64));
@@ -333,8 +333,7 @@ if(require.main===module)(async()=>{
    assert.deepEqual(commands.slice(noteStart).filter(c=>c.type==='midiNote').map(c=>[c.number,c.value]),[[48,100],[48,0],[52,100],[55,100],[52,0],[55,0]],'multi-touch shares held notes, plays chords and cannot restart after panic');
    await p.screenshot({path:path.join(out,'studio-midi-'+name+'.png')});
    await p.setViewportSize({width:844,height:390});await p.waitForTimeout(100);await p.screenshot({path:path.join(out,'studio-landscape-'+name+'.png')});
-   const landscapeMedia=await p.locator('#media').boundingBox(),landscapeBack=await p.locator('#closeStudio').boundingBox();
-   assert.deepEqual(landscapeBack,landscapeMedia,'return target follows Media after rotation');
+   await returnTarget(p);
 
    await wake(p);
    await p.waitForFunction(()=>document.getElementById('midiStatus').textContent.startsWith('Sending to'));
@@ -360,7 +359,7 @@ if(require.main===module)(async()=>{
    await drag(w,w.locator('#apps'),34);
    await drag(w,w.locator('#media'),0,0,650);
    assert.equal(await w.locator('#studio').isVisible(),true);
-   await w.locator('#midiOutput').selectOption('0');await w.waitForFunction(()=>document.getElementById('midiStatus').textContent.startsWith('Sending to'));
+   if(await w.locator('#djSetupOpen').isVisible()){await w.locator('#djSetupOpen').click();await w.locator('#djOutput').selectOption('0');await w.locator('#djSetupClose').click();}else{await w.locator('#studioSetupOpen').click();await w.locator('#midiOutput').selectOption('0');await w.locator('#studioSetupClose').click();}await w.waitForFunction(()=>document.getElementById('midiStatus').textContent.startsWith('Sending to'));
    await w.screenshot({path:path.join(out,'studio-watch-'+name+'.png')});
    assert.ok(posts.filter(p=>p.type==='commands').flatMap(p=>p.commands).some(c=>c.type==='navigateEnd'));
    await w.goto('about:blank');

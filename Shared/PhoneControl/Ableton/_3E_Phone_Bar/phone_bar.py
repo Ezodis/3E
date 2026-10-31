@@ -1,5 +1,9 @@
 # SPDX-License-Identifier: MIT
 from functools import partial
+import json
+import os
+import sys
+import time
 from ableton.v2.control_surface import ControlSurface, MIDI_CC_TYPE, MIDI_NOTE_TYPE
 from ableton.v2.control_surface.elements import ButtonElement, SliderElement
 from .mapping import Mapping, CONTROL_CHANNEL, CCS, NOTES
@@ -10,6 +14,9 @@ class PhoneBar(ControlSurface):
         super(PhoneBar, self).__init__(*args, **kwargs)
         self._phone_mapping = Mapping(self.song, self.show_message)
         self._phone_controls = []
+        self._feedback_at = 0
+        base = os.path.expanduser('~/Library/Application Support') if sys.platform == 'darwin' else os.getenv('LOCALAPPDATA', os.path.expanduser('~'))
+        self._feedback_path = os.path.join(base, '3E', 'phone-live.json')
         with self.component_guard():
             for number in CCS:
                 control = SliderElement(MIDI_CC_TYPE, CONTROL_CHANNEL, number, name='Phone_CC_%d' % number)
@@ -28,3 +35,22 @@ class PhoneBar(ControlSurface):
         except (RuntimeError, AttributeError, IndexError) as error:
             # A track/device may disappear during a gesture or Set change.
             self.log_message('3E Phone Bar: %s' % error)
+
+    def update_display(self):
+        super(PhoneBar, self).update_display()
+        now = time.time()
+        if now - self._feedback_at < .25:
+            return
+        self._feedback_at = now
+        try:
+            snapshot = self._phone_mapping.snapshot()
+            snapshot['updated'] = now
+            directory = os.path.dirname(self._feedback_path)
+            if not os.path.isdir(directory):
+                os.makedirs(directory)
+            temporary = self._feedback_path + '.tmp'
+            with open(temporary, 'w') as output:
+                json.dump(snapshot, output, separators=(',', ':'))
+            os.replace(temporary, self._feedback_path)
+        except (OSError, RuntimeError, AttributeError, ValueError):
+            pass

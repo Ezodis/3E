@@ -133,6 +133,7 @@ if (args.Length == 1 && args[0] == "--firewall-smoke") {
 await MediaRouterTests.Run(Check);
 await OutputVolumeTests.Run(Check);
 ClipboardTests.Run(Check);
+LiveClipTelemetryTests.Run(Check);
 var fake = new FakeInput(); var firewall = new FakeFirewall();
 using(var volumeCommand=JsonDocument.Parse("{\"type\":\"volume\",\"level\":37}"))PhoneTrackpad.Apply(volumeCommand.RootElement,fake);
 Check(fake.Commands.Contains("volume:37"),"Volume commands reach the native boundary");

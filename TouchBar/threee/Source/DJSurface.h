@@ -818,6 +818,8 @@ static NSDictionary *DJPhoneSnapshot(void) {
         ThreeEDJControl *disc=DJPhoneRow.controls[d*14];
         deck[@"values"]=values;deck[@"confirmed"]=confirmed;deck[@"search"]=@(disc.search);deck[@"holding"]=@(disc.tracking);deck[@"angle"]=@(disc.angle);
         if(disc.seekHolding)deck[@"elapsed"]=@(disc.seekPositionSeconds);
+        if(!midi.liveTarget && [[ThreeEDJTelemetry shared] artworkForDeck:d]) { NSString *image=[ThreeEDJTelemetry shared].artworkDataURLs[@(d)];if(image)deck[@"artwork"]=image; }
+        [deck removeObjectForKey:@"artworkRect"];
         [decks addObject:deck];
     }
     return @{@"available":@YES,@"paired":@(paired),@"touchPage":@(DJSharedPage),@"page":@(paired ? 1-DJSharedPage : DJSharedPage),@"target":midi.liveTarget ? @"live" : @"rekordbox",@"crossfader":@([midi value:15 number:8 note:NO]),@"decks":decks};

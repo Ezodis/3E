@@ -67,8 +67,8 @@ public sealed class NativeTrackpadInput : ITrackpadInput, IDisposable {
         this.controls=controls;this.media=media;this.volumeState=volumeState;this.volume=volume;this.cancelVolume=cancelVolume;this.refreshVolume=refreshVolume;
         navigation=new(HasMultipleDesktops,SendDesktopShortcut,BeginApps,AppsStep,AppsEnd);
     }
-    public object GetConnectionInfo() => new {platform="windows",multipleDesktops=HasMultipleDesktops(),volume=volumeState?.Invoke(),controls=controls?.Invoke()};
-    public object GetInfo() => new {platform="windows",multipleDesktops=HasMultipleDesktops(),volume=volumeState?.Invoke(),controls=controls?.Invoke(),midi=midi.Info()};
+    public object GetConnectionInfo() => new {platform="windows",multipleDesktops=HasMultipleDesktops(),volume=volumeState?.Invoke(),controls=controls?.Invoke(),live=LiveClipTelemetry.Default.Read()};
+    public object GetInfo() => new {platform="windows",multipleDesktops=HasMultipleDesktops(),volume=volumeState?.Invoke(),controls=controls?.Invoke(),live=LiveClipTelemetry.Default.Read(),midi=midi.Info()};
     public static bool HasMultipleDesktops() {
         // Explorer's list includes empty desktops that cannot be found by
         // enumerating windows. Missing/changed OS data falls back to windows.

@@ -48,8 +48,8 @@ public sealed class MacInput : ITrackpadInput, IDisposable {
     public void DJ(PhoneDJCommand command)=>DJAction?.Invoke(command);
     public void SetControls(object snapshot) => Volatile.Write(ref controls,snapshot);
     public string Platform => "macos";
-    public object GetConnectionInfo() => new {platform=Platform,multipleDesktops=ThreeEHasMultipleSpaces()!=0,volume=volume.State,inputPermission=CGPreflightPostEventAccess(),controls=Volatile.Read(ref controls)};
-    public object GetInfo() => new {platform=Platform,multipleDesktops=ThreeEHasMultipleSpaces()!=0,volume=volume.State,inputPermission=CGPreflightPostEventAccess(),controls=Volatile.Read(ref controls),midi=midi.Info()};
+    public object GetConnectionInfo() => new {platform=Platform,multipleDesktops=ThreeEHasMultipleSpaces()!=0,volume=volume.State,inputPermission=CGPreflightPostEventAccess(),controls=Volatile.Read(ref controls),live=LiveClipTelemetry.Default.Read()};
+    public object GetInfo() => new {platform=Platform,multipleDesktops=ThreeEHasMultipleSpaces()!=0,volume=volume.State,inputPermission=CGPreflightPostEventAccess(),controls=Volatile.Read(ref controls),live=LiveClipTelemetry.Default.Read(),midi=midi.Info()};
     private static Point Location() { var e=CGEventCreate(IntPtr.Zero);if(e==IntPtr.Zero)throw new InvalidOperationException("macOS pointer event unavailable");try{return CGEventGetLocation(e);}finally{if(e!=IntPtr.Zero)CFRelease(e);} }
     private static void Post(IntPtr e) { if(e==IntPtr.Zero)throw new InvalidOperationException("macOS event unavailable");try{CGEventPost(0,e);}finally{CFRelease(e);} }
     private static void Key(ushort key,bool down,ulong flags=0) { var e=CGEventCreateKeyboardEvent(IntPtr.Zero,key,down);if(e==IntPtr.Zero)throw new InvalidOperationException("macOS keyboard event unavailable");CGEventSetFlags(e,flags);Post(e); }

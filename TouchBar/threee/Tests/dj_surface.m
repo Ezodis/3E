@@ -323,10 +323,15 @@ int main(int argc,const char **argv) {
         [covers updateDecks:metadata at:coverTime];NSString *coverKey=DJArtworkKey(metadata[0]);
         [covers acceptArtwork:@{@0:cover} keys:@[coverKey] generation:0];
         NSCAssert([covers artworkForDeck:0]==cover && ![covers artworkForDeck:1],@"Cover artwork stays isolated by deck and track identity");
+        NSBitmapImageRep *artPixels=[[NSBitmapImageRep alloc] initWithBitmapDataPlanes:NULL pixelsWide:8 pixelsHigh:8 bitsPerSample:8 samplesPerPixel:3 hasAlpha:NO isPlanar:NO colorSpaceName:NSDeviceRGBColorSpace bytesPerRow:0 bitsPerPixel:0];
+        memset(artPixels.bitmapData,180,artPixels.bytesPerRow*8);
+        NSImage *realCover=[[NSImage alloc] initWithCGImage:artPixels.CGImage size:NSMakeSize(8,8)];
+        [covers acceptArtwork:@{@0:realCover} keys:@[coverKey] generation:0];
+        NSCAssert([covers.artworkDataURLs[@0] hasPrefix:@"data:image/jpeg;base64,"] && [covers.artworkDataURLs[@0] length]<33000,@"Phone artwork is a bounded image snapshot, separate from AX coordinates");
         NSDictionary *newTrack=@{@"title":@"Another track",@"duration":@100};[covers updateDecks:@[newTrack] at:coverTime];
         [covers acceptArtwork:@{@0:cover} keys:@[coverKey] generation:0];NSCAssert(![covers artworkForDeck:0] && !covers.artworks.count,@"A late screenshot must never paint the previous track onto a newly loaded disc");
         covers.artworkGeneration=2;[covers acceptArtwork:@{@0:cover} keys:@[DJArtworkKey(newTrack)] generation:1];NSCAssert(!covers.artworks.count,@"Timed-out capture generations cannot overwrite newer artwork");
-        [covers acceptArtwork:@{@0:cover} keys:@[DJArtworkKey(newTrack)] generation:2];[covers updateDecks:@[] at:coverTime];NSCAssert(!covers.artworks.count && ![covers artworkForDeck:0],@"Unload must clear cached cover artwork");
+        [covers acceptArtwork:@{@0:cover} keys:@[DJArtworkKey(newTrack)] generation:2];[covers updateDecks:@[] at:coverTime];NSCAssert(!covers.artworks.count && !covers.artworkDataURLs.count && ![covers artworkForDeck:0],@"Unload must clear cached cover artwork");
         NSArray *vitalPanels=@[
             @{@"text":@"140.00",@"help":@""}, // Original track BPM is not the playing BPM.
             @{@"text":@" 121.00",@"help":@"Deck BPM display:"},@{@"text":@" 0.0",@"help":@""},
@@ -335,6 +340,9 @@ int main(int argc,const char **argv) {
             @{@"text":@"Playing speed display :",@"help":@""},@{@"text":@"%",@"help":@""},@{@"text":@"± 16",@"help":@"Tempo Range :"}];
         NSArray *vitals=DJDeckVitals(@[metadata[0],metadata[0]],vitalPanels);
         NSCAssert([vitals[0][@"bpm"] doubleValue]==121 && [vitals[0][@"tempo"] doubleValue]==0 && [vitals[0][@"tempoRange"] isEqual:@"±6"] && [vitals[1][@"tempo"] doubleValue]==-13.5 && [vitals[1][@"tempoRange"] isEqual:@"±16"],@"Each platter must use its real playing BPM, pitch and range, not the original track BPM");
+        NSArray *loopPanels=[vitalPanels arrayByAddingObjectsFromArray:@[@{@"text":@"4",@"help":@"Auto Beat Loop:"},@{@"text":@"8",@"help":@"Auto Beat Loop:"}]];
+        NSArray *loopDecks=DJDeckVitals(@[metadata[0],metadata[0]],loopPanels);
+        NSCAssert([loopDecks[0][@"loopBeats"] integerValue]==4 && [loopDecks[1][@"loopBeats"] integerValue]==8,@"Phone loop displays use each deck's exposed loop size");
         NSArray *partialPanels=[vitalPanels subarrayWithRange:NSMakeRange(1,5)];
         NSArray *partialVitals=DJDeckVitals(@[metadata[0],metadata[0]],partialPanels);
         NSCAssert(!partialVitals[0][@"bpm"] && !partialVitals[1][@"bpm"],@"An incomplete panel read must not assign one deck's tempo to another");

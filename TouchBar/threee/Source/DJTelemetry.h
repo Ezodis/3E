@@ -57,6 +57,12 @@ static NSArray *DJDeckVitals(NSArray *decks,NSArray<NSDictionary *> *nodes) {
         }
         if(pairs.count==loaded.count) for(NSUInteger i=0;i<pairs.count;i++) [result[[loaded[i] unsignedIntegerValue]] addEntriesFromDictionary:pairs[i]];
     }
+    NSMutableArray *loops=[NSMutableArray new];
+    for(NSDictionary *node in nodes) if([node[@"help"] hasPrefix:@"Auto Beat Loop:"]) [loops addObject:node];
+    if(loops.count==decks.count) for(NSUInteger i=0;i<loops.count;i++) {
+        NSNumber *beats=DJNumericText(loops[i][@"text"]);
+        if([result[i][@"duration"] doubleValue]>0 && beats.doubleValue>0 && beats.doubleValue<=512) result[i][@"loopBeats"]=beats;
+    }
     return result;
 }
 static NSArray *DJParseDecks(NSArray<NSDictionary *> *nodes) {
@@ -150,6 +156,7 @@ static void DJCollectAX(AXUIElementRef element,NSMutableArray *nodes,NSInteger d
 @property double controlsUpdated;
 @property NSMutableDictionary<NSNumber *,NSImage *> *artworks;
 @property NSMutableDictionary<NSNumber *,NSString *> *artworkKeys;
+@property NSMutableDictionary<NSNumber *,NSString *> *artworkDataURLs;
 @property BOOL artworkBusy;
 @property double artworkStarted;
 @property NSUInteger artworkGeneration;
@@ -184,10 +191,14 @@ static void DJCollectAX(AXUIElementRef element,NSMutableArray *nodes,NSInteger d
     self.artworkBusy=NO;
     for(NSNumber *index in images) if(index.unsignedIntegerValue<keys.count && [keys[index.unsignedIntegerValue] isEqual:DJArtworkKey([self deck:index.integerValue])]) {
         self.artworks[index]=images[index];self.artworkKeys[index]=keys[index.unsignedIntegerValue];
+        NSImage *cover=images[index];NSData *tiff=cover.representations.count ? cover.TIFFRepresentation : nil;
+        NSBitmapImageRep *bitmap=tiff ? [NSBitmapImageRep imageRepWithData:tiff] : nil;
+        NSData *jpeg=[bitmap representationUsingType:NSBitmapImageFileTypeJPEG properties:@{NSImageCompressionFactor:@.7}];
+        if(jpeg.length && jpeg.length<=24576) self.artworkDataURLs[index]=[@"data:image/jpeg;base64," stringByAppendingString:[jpeg base64EncodedStringWithOptions:0]];
     }
 }
 - (void)updateDecks:(NSArray *)decks at:(double)time {
-    if(!self.artworks) self.artworks=[NSMutableDictionary new];if(!self.artworkKeys) self.artworkKeys=[NSMutableDictionary new];
+    if(!self.artworkDataURLs) self.artworkDataURLs=[NSMutableDictionary new];if(!self.artworks) self.artworks=[NSMutableDictionary new];if(!self.artworkKeys) self.artworkKeys=[NSMutableDictionary new];
     NSMutableArray *observed=[NSMutableArray new];double dt=time-self.updated;
     for(NSUInteger i=0;i<decks.count;i++) {
         NSMutableDictionary *deck=[decks[i] mutableCopy];
@@ -201,7 +212,7 @@ static void DJCollectAX(AXUIElementRef element,NSMutableArray *nodes,NSInteger d
         [observed addObject:deck];
     }
     self.decks=observed;self.updated=time;
-    for(NSNumber *index in self.artworkKeys.allKeys) if(![self.artworkKeys[index] isEqual:DJArtworkKey([self deck:index.integerValue])]) { [self.artworks removeObjectForKey:index];[self.artworkKeys removeObjectForKey:index]; }
+    for(NSNumber *index in self.artworkKeys.allKeys) if(![self.artworkKeys[index] isEqual:DJArtworkKey([self deck:index.integerValue])]) { [self.artworks removeObjectForKey:index];[self.artworkKeys removeObjectForKey:index];[self.artworkDataURLs removeObjectForKey:index]; }
 }
 - (void)poll {
 #ifndef THREEE_DJ_STANDALONE_TEST

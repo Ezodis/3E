@@ -16,12 +16,12 @@ class MappingTest(unittest.TestCase):
         self.fired=[]; self.stopped=[]; self.jogged=[]; self.messages=[]
         tracks=[]
         for i in range(8):
-            clip=NS(is_recording=False, is_midi_clip=True, warping=False, looping=False, move_playing_pos=self.jogged.append)
+            clip=NS(is_recording=False, is_midi_clip=True, warping=False, looping=False, loop_start=0, loop_end=16, playing_position=2, is_playing=True, name="Clip", signature_numerator=4, signature_denominator=4, move_playing_pos=self.jogged.append)
             slot=NS(has_clip=True, clip=clip, fire=lambda i=i:self.fired.append(i))
             mixer=NS(volume=parameter(),panning=parameter(low=-1),sends=[parameter()],crossfade_assign=1)
-            tracks.append(NS(mixer_device=mixer,mute=False,solo=False,clip_slots=[slot],playing_slot_index=0,devices=[],stop_all_clips=lambda i=i:self.stopped.append(i)))
+            tracks.append(NS(name="Track %d" % i,mixer_device=mixer,mute=False,solo=False,clip_slots=[slot],playing_slot_index=0,devices=[],stop_all_clips=lambda i=i:self.stopped.append(i)))
         scene=object()
-        self.song=NS(tracks=tracks,scenes=[scene],view=NS(selected_scene=scene,selected_track=None,highlighted_clip_slot=None),master_track=NS(mixer_device=NS(crossfader=parameter(low=-1))))
+        self.song=NS(tempo=123,tracks=tracks,scenes=[scene],view=NS(selected_scene=scene,selected_track=None,highlighted_clip_slot=None),master_track=NS(mixer_device=NS(crossfader=parameter(low=-1))))
         self.mapping=module.Mapping(self.song,self.messages.append)
 
     def test_loop_and_scene_pads(self):
@@ -75,6 +75,27 @@ class MappingTest(unittest.TestCase):
         self.song.tracks[0].devices=[NS(class_name='AudioEffectGroupDevice',parameters=[],can_have_chains=True,chains=[NS(devices=[NS(class_name='FilterEQ3',parameters=eq),NS(class_name='AutoFilter',parameters=[freq])])])]
         for cc,p in [(48,freq),(50,eq[0]),(52,eq[1]),(54,eq[2])]:
             self.mapping.receive(False,cc,127);self.assertEqual(p.value,p.max)
+
+    def test_loop_sizes_and_fine_jog(self):
+        clip=self.song.tracks[1].clip_slots[0].clip
+        self.mapping.receive(True,81,127);self.assertEqual(clip.loop_end,8)
+        self.mapping.receive(True,83,127);self.assertEqual(clip.loop_end,16)
+        for note,length in [(85,4),(87,8),(89,16),(91,32)]:
+            self.mapping.receive(True,note,127);self.assertEqual(clip.loop_end,length)
+        self.mapping.receive(False,43,63);self.assertEqual(self.jogged,[-.015625])
+        clip.signature_numerator=3;clip.signature_denominator=8
+        self.mapping.receive(True,85,127);self.assertEqual(clip.loop_end,1.5)
+        clip.loop_end=32
+        clip.is_midi_clip=False;clip.warping=False
+        self.mapping.receive(True,81,127);self.assertEqual(clip.loop_end,32)
+
+    def test_feedback_uses_actual_clip_and_parameters(self):
+        snapshot=self.mapping.snapshot();deck=snapshot['decks'][0]
+        self.assertEqual(deck['title'],'Clip');self.assertEqual(deck['bpm'],123)
+        self.assertEqual(deck['positionBeats'],2);self.assertEqual(deck['loopEnd'],16)
+        self.assertTrue(deck['playing']);self.assertEqual(len(deck['values']),14)
+        self.song.tracks[0].clip_slots[0].has_clip=False
+        self.assertNotIn('positionBeats',self.mapping.snapshot()['decks'][0])
 
     def test_controls_only_reserve_channel_16(self):
         self.assertEqual(module.CONTROL_CHANNEL,15)

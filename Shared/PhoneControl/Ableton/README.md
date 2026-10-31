@@ -23,12 +23,21 @@ instruments, change track arming, or modify an existing Set when connected.
 | Stop | Stop the deck track's clips |
 | Cue | Select the deck track and its clip slot |
 | Crossfader | Main crossfader; assigns deck tracks to A / B when moved |
-| Jog | Nudge a playing warped-audio or MIDI clip by 1/16 beat per tick |
+| JOG / FINE | Move a playing warped-audio or MIDI clip by 1/16 or 1/64 beat per tick |
+| Loop | Toggle the loaded clip loop; halve/double it or set 1, 2, 4 or 8 clip bars |
+| Scene pads | Launch existing clips in scenes 1–4 on the deck track |
 | Low / Mid / High | EQ Three gains, when that effect is present on the deck |
 | Filter | Auto Filter frequency, when that effect is present on the deck |
 
 Mappings look up tracks/devices at gesture time, so they follow track reordering
-and device changes. No output port is required: this version is an input surface
-and does not receive Live's parameter or playback feedback.
+and device changes. No MIDI output port is required. The surface writes a small local feedback snapshot
+with current clip names, playback position, loop bounds and mixer parameters.
+Phone Bar reads it at most four times a second and clears stale data. Audio-file
+paths are never included. Restart Live once after updating the script.
+
+Loop size controls use channel-16 notes 80/81 (halve A/B), 82/83 (double),
+and 84–91 (1/2/4/8 bars, alternating A/B). Fine jog uses CC42/43; ordinary
+jog keeps CC40/41. Unwarped audio and recording clips are protected from jog
+and loop-length edits.
 
 Run routing tests with `python3 Shared/PhoneControl/Ableton/test_mapping.py`.

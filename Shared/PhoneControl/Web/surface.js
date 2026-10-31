@@ -4,10 +4,10 @@
   'use strict';
   const $=id=>document.getElementById(id), C=window.ThreeEControl, P=window.ThreeEPrefs||{get:(n,f)=>f,set(){},onLoad(){}};
   const values=new Map(), dirty=new Map(), notes=new Set();
-  let autoPicked=null;
+  let autoPicked=null, midiDescription=null;
   let channel=15, pianoChannel=Math.max(0,Math.min(14,Math.trunc(+P.get('pianoChannel',0))||0)), activeView="decks", output=-1, dirtyTimer, epoch=0;
   const studio=$('studio');
-  studio.innerHTML=`<header><h1><span>3£</span> Phone Bar</h1></header>
+  studio.innerHTML=`<header class="studio-heading"><h1><span>3£</span> Phone Bar</h1><button id="mixerBank" hidden aria-label="Switch mixer track bank">1–4 ⇄ 5–8</button><button id="studioSetupOpen" aria-label="MIDI connection and help">⚙</button></header>
   <div class="routing"><label>Output <select id="midiOutput" aria-label="MIDI output"><option value="-1">Choose MIDI output</option></select></label><label>Ch <select id="midiChannel" aria-label="MIDI channel"></select></label></div><p id="midiStatus" role="status">Choose a MIDI output and select 3E Phone Bar in Ableton’s Control Surface settings.</p>
   <div id="decksView" class="decks"></div><div id="mixerView" class="mixer" hidden></div>
   <div id="midiView" hidden><div class="piano-toolbar"><button id="octaveDown" aria-label="Lower octave">− Oct</button><output id="octaveLabel"></output><button id="octaveUp" aria-label="Higher octave">+ Oct</button><label>Velocity <input id="noteVelocity" type="range" min="1" max="127" value="100"></label></div><div id="piano" aria-label="MIDI piano keyboard"></div><p class="piano-hint">Hold notes together for chords · slide between keys</p></div>
@@ -15,6 +15,12 @@
   <div class="studio-footer"><span id="studioHint">Up turns right · turn the rim to rotate</span><button class="panic" id="panic">Release notes</button></div>
   <details class="studio-help"><summary>Connect to Ableton & control guide</summary><p>In Ableton’s Link, Tempo & MIDI settings, select <strong>3E Phone Bar</strong> as a Control Surface and choose <strong>3E Phone Bar</strong> as its Input. Output can stay None. Enable Track and Remote for that input. Restart Ableton once after installing 3E so the new surface appears.</p><p>Mac: 3E creates the port automatically. Windows: create a loopMIDI port named “3E Phone Bar”, select it here and as the surface Input in Ableton. The script is installed in existing Ableton User Libraries when Phone Bar starts.</p><p>Mixer controls tracks 1–8: volume, pan, Send A, mute and solo. Deck A/B control tracks 1/2. Launch fires the clip in the selected scene; Stop stops that track; Cue selects the track and clip. Using the crossfader assigns those two tracks to A/B. Jog wheels nudge a playing warped audio or MIDI clip. Add EQ Three and Auto Filter to a deck track for its EQ and filter knobs.</p><p>Mixer and decks use channel 16 automatically. The piano uses channel 1 by default, separately from control messages. Arm an instrument track and choose this MIDI input to play it. Hold several keys for chords or slide between them. Changing view, octave, channel or output releases held notes.</p><p>Move through a knob’s centre vertically for precision, or turn around its outer rim. Double-tap a knob to reset.</p><button id="refreshMidi">Refresh outputs</button></details>
   <nav class="studio-nav" aria-label="MIDI views"><div class="studio-tabs"><button id="decksTab" aria-pressed="true" aria-controls="decksView">DJ</button><button id="mixerTab" aria-pressed="false" aria-controls="mixerView">Mixer</button><button id="midiTab" aria-pressed="false" aria-controls="midiView">MIDI</button></div><button id="closeStudio" aria-label="Return to trackpad" title="Return to trackpad"><svg viewBox="0 0 32 32" aria-hidden="true"><rect x="4" y="5" width="24" height="22" rx="5" fill="none" stroke="currentColor" stroke-width="2"/><path d="M4 21h24M16 21v6m3-16-5 4 5 4m-5-4h9" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button></nav>`;
+  const setup=document.createElement('dialog');setup.id='studioSetup';setup.className='dj-dialog';setup.innerHTML='<header><h2>MIDI connection</h2><button id="studioSetupClose">Done</button></header>';
+  for(const el of [studio.querySelector('.routing'),$('midiStatus'),studio.querySelector('.studio-help')])setup.append(el);
+  studio.append(setup);$('studioSetupOpen').addEventListener('click',()=>{cancel();setup.showModal();});$('studioSetupClose').addEventListener('click',()=>setup.close());
+  const panic=$('panic');panic.textContent='⏏';panic.setAttribute('aria-label','Release held MIDI notes');studio.querySelector('.studio-heading').append(panic);
+  let mixerBank=0;function drawBank(){studio.dataset.bank=mixerBank;$('mixerBank').textContent=(mixerBank?'5–8':'1–4')+' ⇄';studio.querySelectorAll('.strip').forEach((strip,i)=>strip.hidden=Math.floor(i/4)!==mixerBank);}
+  $('mixerBank').addEventListener('click',()=>{cancel();mixerBank=1-mixerBank;drawBank();});
   for(let i=0;i<16;i++) {const option=document.createElement('option');option.value=i;option.textContent=i+1;$('midiChannel').append(option);} $('midiChannel').value='15';$('midiChannel').disabled=true;
   const valid=()=>C.connected()&&output>=0;
   function warn(){ $('midiStatus').textContent=C.connected()?'Choose a MIDI output to send controls.':'Reconnecting — controls will resume when connected.'; }
@@ -107,7 +113,7 @@
   piano.addEventListener('contextmenu',e=>e.preventDefault());
   for(const [id,direction] of [['octaveDown',-1],['octaveUp',1]])$(id).addEventListener('click',()=>{cancel();octave=Math.max(-1,Math.min(7,octave+direction));P.set('octave',octave);drawPiano();});
   drawPiano();
-  function tab(name){cancel();activeView=name;P.set('view',name);channel=name==='midi'?pianoChannel:15;$('midiChannel').value=String(channel);$('midiChannel').disabled=name!=='midi';$('midiChannel').options[15].disabled=name==='midi';for(const view of ['decks','mixer','midi']){$(view+'View').hidden=view!==name;$(view+'Tab').setAttribute('aria-pressed',String(view===name));}$('crossfaderPanel').hidden=name==='midi'||name==='decks';$('studioHint').textContent=name==='midi'?'Hold keys to play · lift to release':'Up turns right · turn the rim to rotate';}
+  function tab(name){cancel();activeView=name;studio.dataset.view=name;$('mixerBank').hidden=name!=='mixer';drawBank();P.set('view',name);channel=name==='midi'?pianoChannel:15;$('midiChannel').value=String(channel);$('midiChannel').disabled=name!=='midi';$('midiChannel').options[15].disabled=name==='midi';for(const view of ['decks','mixer','midi']){$(view+'View').hidden=view!==name;$(view+'Tab').setAttribute('aria-pressed',String(view===name));}$('crossfaderPanel').hidden=name==='midi'||name==='decks';$('studioHint').textContent=name==='midi'?'Hold keys to play · lift to release':'Up turns right · turn the rim to rotate';}
   for(const name of ['decks','mixer','midi'])$(name+'Tab').addEventListener('click',()=>tab(name));
   // Read the real Media target so the return target stays identical on phones,
   // landscape layouts, safe-area insets and the compact watch layout.
@@ -135,6 +141,7 @@
   $('panic').addEventListener('click',()=>{cancel();C.send('midiPanic');});
   function cancel(){window.ThreeEDJ?.cancel();epoch++;window.ThreeEDock?.cancel();clearTimeout(dirtyTimer);dirtyTimer=null;dirty.clear();for(const number of notes)C.send('midiNote',{channel,number,value:0});notes.clear();contacts.clear();heldKeys.clear();for(const id of activePointers)if(piano.hasPointerCapture(id))piano.releasePointerCapture(id);activePointers.clear();piano.querySelectorAll('.held').forEach(key=>key.classList.remove('held'));}
   function describe(info){
+    if(info?.midi)midiDescription=info.midi;else if(midiDescription)info={...info,midi:midiDescription};
     window.ThreeEDock?.describe(info);window.ThreeEDJ?.describe(info);
     if(!info?.midi)return;output=info.midi.selected;
     const select=$('midiOutput'),signature=JSON.stringify(info.midi.ports);
@@ -144,7 +151,7 @@
     select.value=output;$('midiStatus').textContent=output>=0?'Sending to '+info.midi.status+' · Ableton: 3E Phone Bar':info.platform==='windows'?'Choose a MIDI output. Ableton uses a loopback port such as loopMIDI.':info.midi.status;
   }
   // The MIDI controls are in use while a note is held or the studio is open.
-  window.ThreeESurface={cancel,describe,openStudio,setControl(number,value){values.set(number,value);render(number,value);},busy:()=>notes.size>0||!studio.hidden,state(ready){window.ThreeEDJ?.state(ready);if(!ready){cancel();studio.querySelectorAll('.vinyl').forEach(v=>v.classList.remove('is-spinning'));$('midiStatus').textContent='Disconnected — controls paused';}else {if(C.info)describe(C.info);if(!studio.hidden)C.send('info');}}};
+  window.ThreeESurface={cancel,describe,openStudio,setControl(number,value){values.set(number,value);render(number,value);},busy:()=>notes.size>0||!studio.hidden,state(ready){window.ThreeEDJ?.state(ready);if(!ready){midiDescription=null;cancel();studio.querySelectorAll('.vinyl').forEach(v=>v.classList.remove('is-spinning'));$('midiStatus').textContent='Disconnected — controls paused';}else {if(C.info)describe(C.info);if(!studio.hidden)C.send('info');}}};
   // Restore the rest of the studio as it was left: velocity, then view.
   function restore(){const velocity=+P.get('velocity',100);if(velocity>=1&&velocity<=127)$('noteVelocity').value=velocity;
     const p=Math.trunc(+P.get('pianoChannel',pianoChannel));if(p>=0&&p<=14)pianoChannel=p;
