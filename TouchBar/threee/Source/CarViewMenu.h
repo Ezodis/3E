@@ -27,7 +27,7 @@
 - (BOOL)isFlipped{return YES;}
 - (void)setFrameSize:(NSSize)size{[super setFrameSize:size];[self layout];}
 - (void)layout {
-    [super layout];self.toggle.frame=NSMakeRect(38,0,MAX(0,self.bounds.size.width-84),self.bounds.size.height);
+    [super layout];self.toggle.frame=NSMakeRect(30,0,MAX(0,self.bounds.size.width-76),self.bounds.size.height);
     self.mirror.frame=NSMakeRect(self.bounds.size.width-39,2,30,self.bounds.size.height-4);
 }
 - (void)updateTrackingAreas {
@@ -39,7 +39,7 @@
 - (void)drawRect:(NSRect)dirty {
     if(self.hovered){[NSColor.selectedContentBackgroundColor setFill];[[NSBezierPath bezierPathWithRoundedRect:NSInsetRect(self.bounds,5,1) xRadius:4 yRadius:4] fill];}
     self.toggle.contentTintColor=self.hovered?NSColor.selectedMenuItemTextColor:NSColor.labelColor;
-    if(self.item.state==NSControlStateValueOn)[@"✓" drawAtPoint:NSMakePoint(20,4) withAttributes:@{NSFontAttributeName:[NSFont menuFontOfSize:0],NSForegroundColorAttributeName:self.hovered?NSColor.selectedMenuItemTextColor:NSColor.labelColor}];
+    if(self.item.state==NSControlStateValueOn)[@"✓" drawAtPoint:NSMakePoint(12,4) withAttributes:@{NSFontAttributeName:[NSFont menuFontOfSize:0],NSForegroundColorAttributeName:self.hovered?NSColor.selectedMenuItemTextColor:NSColor.labelColor}];
 }
 - (void)perform:(SEL)action {
     [self.item.menu cancelTracking];[NSApp sendAction:action to:self.item.target from:self.item];

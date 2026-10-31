@@ -47,7 +47,7 @@
 - (void)drawRect:(NSRect)dirty {
     if(self.hovered){[NSColor.selectedContentBackgroundColor setFill];[[NSBezierPath bezierPathWithRoundedRect:NSInsetRect(self.bounds,5,1) xRadius:4 yRadius:4] fill];}
     self.mainButton.contentTintColor=self.hovered?NSColor.selectedMenuItemTextColor:NSColor.labelColor;
-    if(!self.originalView&&self.item.state==NSControlStateValueOn)[@"✓" drawAtPoint:NSMakePoint(20,4) withAttributes:@{NSFontAttributeName:[NSFont menuFontOfSize:0],NSForegroundColorAttributeName:self.hovered?NSColor.selectedMenuItemTextColor:NSColor.labelColor}];
+    if(!self.originalView&&self.item.state==NSControlStateValueOn)[@"✓" drawAtPoint:NSMakePoint(12,4) withAttributes:@{NSFontAttributeName:[NSFont menuFontOfSize:0],NSForegroundColorAttributeName:self.hovered?NSColor.selectedMenuItemTextColor:NSColor.labelColor}];
 }
 - (void)performMain:(id)sender {
     if(!self.item.enabled||!self.item.action)return;

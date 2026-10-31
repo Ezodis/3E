@@ -31,8 +31,8 @@
     NSDictionary *attributes=@{NSFontAttributeName:[NSFont menuFontOfSize:0],NSForegroundColorAttributeName:highlighted?NSColor.selectedMenuItemTextColor:NSColor.labelColor};
     // NSMenu's custom-view origin starts at the menu's left edge, while native
     // item titles start after the standard checkmark gutter. Match that gutter.
-    [self.menuItem.title drawAtPoint:NSMakePoint(38,3) withAttributes:attributes];
-    if(self.menuItem.state==NSControlStateValueOn)[@"✓" drawAtPoint:NSMakePoint(20,3) withAttributes:attributes];
+    [self.menuItem.title drawAtPoint:NSMakePoint(30,3) withAttributes:attributes];
+    if(self.menuItem.state==NSControlStateValueOn)[@"✓" drawAtPoint:NSMakePoint(12,3) withAttributes:attributes];
 }
 @end
 
