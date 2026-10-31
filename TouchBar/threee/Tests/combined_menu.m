@@ -53,6 +53,7 @@ int main(void) { @autoreleasepool {
     for(NSMenuItem *item in delegate.theItem.menu.itemArray)if([item.identifier isEqual:@"local.musicstrip.phone"])phone=item;
     NSCAssert(phone!=nil,@"Phone Bar control is present");
     NSCAssert([phone.view isKindOfClass:ThreeEModuleMenuRow.class]&&[[(ThreeEModuleMenuRow *)phone.view originalView] isKindOfClass:ThreeEPhoneBarMenuRow.class],@"Phone gear preserves the original hover/QR row");
+    NSCAssert([(ThreeEModuleMenuRow *)phone.view originalView].superview==phone.view,@"The original Phone Bar label and hover view remain mounted after NSMenuItem replaces its view");
     NSMenuItem *phoneModule=[(ThreeEModuleMenuRow *)phone.view settingsMenu].itemArray.firstObject;
     NSCAssert([phoneModule.representedObject isEqual:@"phone"]&&phoneModule.target==ThreeEModuleActions.class&&phoneModule.action==@selector(changeModule:),@"Phone gear retains the existing module-management route");
     for(NSMenuItem *row in delegate.theItem.menu.itemArray)NSCAssert(![row.identifier isEqual:@"local.musicstrip.modules"],@"There is no standalone bottom gear");

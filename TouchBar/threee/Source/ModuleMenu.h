@@ -72,9 +72,11 @@ static void StripAttachModuleGear(NSMenuItem *item,NSString *module,NSString *na
     if(!row) {
         NSView *original=item.view;
         row=[[ThreeEModuleMenuRow alloc] initWithFrame:NSMakeRect(0,0,230,26)];row.item=item;
+        // NSMenuItem detaches its previous view when replaced. Reattach that
+        // original row only after installing the wrapper, preserving QR hover.
+        item.view=row;
         if(original){row.originalView=original;[row addSubview:original positioned:NSWindowBelow relativeTo:row.gear];}
         else {row.mainButton=[NSButton buttonWithTitle:item.title target:row action:@selector(performMain:)];row.mainButton.bordered=NO;row.mainButton.alignment=NSTextAlignmentLeft;row.mainButton.font=[NSFont menuFontOfSize:0];[row addSubview:row.mainButton];}
-        item.view=row;
     }
     row.module=module;row.moduleName=name;row.installed=installed;[row update];
 }
