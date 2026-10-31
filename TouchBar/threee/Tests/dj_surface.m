@@ -311,6 +311,22 @@ int main(int argc,const char **argv) {
             @{@"role":@"AXStaticText",@"text":@"Library selection is not loaded",@"help":@""}];
         NSArray *metadata=DJParseDecks(fixture);
         NSCAssert(metadata.count==1 && [metadata[0][@"title"] isEqual:@"Actual track"] && fabs([metadata[0][@"duration"] doubleValue]-162.3)<.01,@"Only anchored deck metadata and real time fields may be displayed");
+        // Only the loaded deck image anchor can provide a cover region.
+        NSMutableArray *coverFixture=[fixture mutableCopy];NSMutableDictionary *coverNode=[coverFixture[1] mutableCopy];
+        coverNode[@"artworkRect"]=@[@100,@200,@40,@40];coverFixture[1]=coverNode;
+        NSCAssert([DJParseDecks(coverFixture)[0][@"artworkRect"] isEqual:coverNode[@"artworkRect"]],@"Cover coordinates must follow their exact loaded-deck anchor");
+        NSCAssert(NSIsEmptyRect(DJArtworkRect(@[@0,@0,@1000,@1000])) && NSIsEmptyRect(DJArtworkRect(@[@0,@0,@40,@100])) && NSIsEmptyRect(DJArtworkRect(@[@0,@0,@(NAN),@40])),@"Only finite small square cover regions can be captured");
+        NSRect source=DJArtworkSourceRect(NSMakeRect(-1800,120,40,40),NSMakeRect(-1920,0,1680,1050),NSMakeRect(-1920,0,1920,1080));
+        NSCAssert(NSEqualRects(source,NSMakeRect(120,120,40,40)),@"Artwork crops must retain top-left coordinates on secondary displays");
+        NSCAssert(NSIsEmptyRect(DJArtworkSourceRect(NSMakeRect(50,50,40,40),NSMakeRect(500,500,400,400),NSMakeRect(0,0,1920,1080))),@"An unrelated window must never supply artwork pixels");
+        ThreeEDJTelemetry *covers=[ThreeEDJTelemetry new];NSImage *cover=[[NSImage alloc] initWithSize:NSMakeSize(96,96)];double coverTime=NSProcessInfo.processInfo.systemUptime;
+        [covers updateDecks:metadata at:coverTime];NSString *coverKey=DJArtworkKey(metadata[0]);
+        [covers acceptArtwork:@{@0:cover} keys:@[coverKey] generation:0];
+        NSCAssert([covers artworkForDeck:0]==cover && ![covers artworkForDeck:1],@"Cover artwork stays isolated by deck and track identity");
+        NSDictionary *newTrack=@{@"title":@"Another track",@"duration":@100};[covers updateDecks:@[newTrack] at:coverTime];
+        [covers acceptArtwork:@{@0:cover} keys:@[coverKey] generation:0];NSCAssert(![covers artworkForDeck:0] && !covers.artworks.count,@"A late screenshot must never paint the previous track onto a newly loaded disc");
+        covers.artworkGeneration=2;[covers acceptArtwork:@{@0:cover} keys:@[DJArtworkKey(newTrack)] generation:1];NSCAssert(!covers.artworks.count,@"Timed-out capture generations cannot overwrite newer artwork");
+        [covers acceptArtwork:@{@0:cover} keys:@[DJArtworkKey(newTrack)] generation:2];[covers updateDecks:@[] at:coverTime];NSCAssert(!covers.artworks.count && ![covers artworkForDeck:0],@"Unload must clear cached cover artwork");
         NSArray *vitalPanels=@[
             @{@"text":@"140.00",@"help":@""}, // Original track BPM is not the playing BPM.
             @{@"text":@" 121.00",@"help":@"Deck BPM display:"},@{@"text":@" 0.0",@"help":@""},

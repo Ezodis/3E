@@ -81,13 +81,16 @@ static NSArray *DJParseDecks(NSArray<NSDictionary *> *nodes) {
         if(times.count!=2) return @[]; // Never infer a deck from the library's track list.
         double first=DJSeconds(times[0]),second=DJSeconds(times[1]);
         // rekordbox displays remaining first, elapsed second.
-        [decks addObject:@{@"title":title,@"elapsed":@(second),@"duration":@(first+second),@"time":[NSString stringWithFormat:@"%@ / %@",DJTime(second),DJTime(first+second)],@"sync":@([nodes[i][@"text"] isEqual:@"1"] || [nodes[i][@"text"] isEqual:@"On"])}];
+        NSMutableDictionary *deck=[@{@"title":title,@"elapsed":@(second),@"duration":@(first+second),@"time":[NSString stringWithFormat:@"%@ / %@",DJTime(second),DJTime(first+second)],@"sync":@([nodes[i][@"text"] isEqual:@"1"] || [nodes[i][@"text"] isEqual:@"On"])} mutableCopy];
+        if(nodes[image][@"artworkRect"]) deck[@"artworkRect"]=nodes[image][@"artworkRect"];
+        [decks addObject:deck];
     }
     return DJDeckVitals(decks,nodes);
 }
 static id DJAX(AXUIElementRef element,CFStringRef key) {
     CFTypeRef result=NULL; if(AXUIElementCopyAttributeValue(element,key,&result)!=kAXErrorSuccess) return nil; return CFBridgingRelease(result);
 }
+#import "DJArtwork.h"
 static NSDictionary *DJParseMixerValues(NSArray<NSDictionary *> *nodes) {
     NSMutableDictionary *values=[NSMutableDictionary new],*counts=[NSMutableDictionary new];
     NSArray *prefixes=@[@"EQ/ISO (High) knob:",@"EQ/ISO (Mid) knob:",@"EQ/ISO (Low) knob:",@"Channel Fader:",@"CROSSFADER:"];
@@ -127,6 +130,9 @@ static void DJCollectAX(AXUIElementRef element,NSMutableArray *nodes,NSInteger d
         if([role isEqual:@"AXPopUpButton"] && ![help hasPrefix:@"Change layout:"] && ![help hasPrefix:@"Tempo Range"]) return;
         if([role isEqual:@"AXTextArea"] && ![help hasPrefix:@"Deck BPM display:"] && ![help hasPrefix:@"Tempo Range"] && ![help hasPrefix:@"Playing speed display"]) return;
         NSMutableDictionary *node=[@{@"role":role,@"text":text,@"help":help} mutableCopy];
+#ifndef THREEE_DJ_STANDALONE_TEST
+        if([role isEqual:@"AXImage"]) { NSArray *frame=DJAXFrame(element);if(frame) node[@"artworkRect"]=frame; }
+#endif
         if([role isEqual:@"AXSlider"]) {
             id low=DJAX(element,kAXMinValueAttribute),high=DJAX(element,kAXMaxValueAttribute);
             if([low respondsToSelector:@selector(doubleValue)] && [high respondsToSelector:@selector(doubleValue)]) { node[@"min"]=low;node[@"max"]=high; }
@@ -142,15 +148,46 @@ static void DJCollectAX(AXUIElementRef element,NSMutableArray *nodes,NSInteger d
 @property double lastPoll;
 @property NSDictionary *controlValues;
 @property double controlsUpdated;
+@property NSMutableDictionary<NSNumber *,NSImage *> *artworks;
+@property NSMutableDictionary<NSNumber *,NSString *> *artworkKeys;
+@property BOOL artworkBusy;
+@property double artworkStarted;
+@property NSUInteger artworkGeneration;
 + (instancetype)shared;
 - (void)poll;
 - (NSDictionary *)deck:(NSInteger)deck;
 - (void)updateDecks:(NSArray *)decks at:(double)time;
+- (NSImage *)artworkForDeck:(NSInteger)deck;
+- (void)refreshArtwork:(pid_t)pid;
+- (void)acceptArtwork:(NSDictionary *)images keys:(NSArray *)keys generation:(NSUInteger)generation;
 @end
 @implementation ThreeEDJTelemetry
 + (instancetype)shared { static id instance; static dispatch_once_t once;dispatch_once(&once,^{instance=[self new];});return instance; }
 - (NSDictionary *)deck:(NSInteger)deck { return NSProcessInfo.processInfo.systemUptime-self.updated<2.5 && deck>=0 && (NSUInteger)deck<self.decks.count ? self.decks[deck] : nil; }
+- (NSImage *)artworkForDeck:(NSInteger)deck {
+    NSString *key=DJArtworkKey([self deck:deck]);
+    return key && [key isEqual:self.artworkKeys[@(deck)]] ? self.artworks[@(deck)] : nil;
+}
+- (void)refreshArtwork:(pid_t)pid {
+#ifndef THREEE_DJ_STANDALONE_TEST
+    double now=NSProcessInfo.processInfo.systemUptime;
+    if(self.artworkBusy && now-self.artworkStarted<5) return;
+    if(now-self.artworkStarted<3) return;
+    self.artworkBusy=YES;self.artworkStarted=now;NSUInteger generation=++self.artworkGeneration;
+    NSMutableArray *rects=[NSMutableArray new],*keys=[NSMutableArray new];
+    for(NSDictionary *deck in self.decks) { [rects addObject:deck[@"artworkRect"] ?: @[]];[keys addObject:DJArtworkKey(deck) ?: @""]; }
+    DJCaptureCovers(pid,rects,^(NSDictionary *images) { [self acceptArtwork:images keys:keys generation:generation]; });
+#endif
+}
+- (void)acceptArtwork:(NSDictionary *)images keys:(NSArray *)keys generation:(NSUInteger)generation {
+    if(generation!=self.artworkGeneration) return;
+    self.artworkBusy=NO;
+    for(NSNumber *index in images) if(index.unsignedIntegerValue<keys.count && [keys[index.unsignedIntegerValue] isEqual:DJArtworkKey([self deck:index.integerValue])]) {
+        self.artworks[index]=images[index];self.artworkKeys[index]=keys[index.unsignedIntegerValue];
+    }
+}
 - (void)updateDecks:(NSArray *)decks at:(double)time {
+    if(!self.artworks) self.artworks=[NSMutableDictionary new];if(!self.artworkKeys) self.artworkKeys=[NSMutableDictionary new];
     NSMutableArray *observed=[NSMutableArray new];double dt=time-self.updated;
     for(NSUInteger i=0;i<decks.count;i++) {
         NSMutableDictionary *deck=[decks[i] mutableCopy];
@@ -164,13 +201,14 @@ static void DJCollectAX(AXUIElementRef element,NSMutableArray *nodes,NSInteger d
         [observed addObject:deck];
     }
     self.decks=observed;self.updated=time;
+    for(NSNumber *index in self.artworkKeys.allKeys) if(![self.artworkKeys[index] isEqual:DJArtworkKey([self deck:index.integerValue])]) { [self.artworks removeObjectForKey:index];[self.artworkKeys removeObjectForKey:index]; }
 }
 - (void)poll {
 #ifndef THREEE_DJ_STANDALONE_TEST
     if(self.busy || !AXIsProcessTrusted() || NSProcessInfo.processInfo.systemUptime-self.lastPoll<.65) return;
     self.lastPoll=NSProcessInfo.processInfo.systemUptime;
     NSRunningApplication *app=[NSRunningApplication runningApplicationsWithBundleIdentifier:@"com.pioneerdj.rekordboxdj"].firstObject;
-    if(!app) { self.decks=nil;self.controlValues=nil;return; }
+    if(!app) { [self updateDecks:@[] at:NSProcessInfo.processInfo.systemUptime];self.controlValues=nil;self.artworkGeneration++;self.artworkBusy=NO;return; }
     self.busy=YES;
     dispatch_async(dispatch_get_global_queue(QOS_CLASS_UTILITY,0),^{
         AXUIElementRef root=AXUIElementCreateApplication(app.processIdentifier); AXUIElementSetMessagingTimeout(root,.08);
@@ -191,7 +229,7 @@ static void DJCollectAX(AXUIElementRef element,NSMutableArray *nodes,NSInteger d
             if(candidate.count==2 && mixer.count>=9 && vitals>=loaded*3) break;
         }
         CFRelease(root);
-        DJRunOnMain(^{self.controlValues=controls;self.controlsUpdated=sampled;[self updateDecks:decks at:NSProcessInfo.processInfo.systemUptime];self.busy=NO;});
+        DJRunOnMain(^{self.controlValues=controls;self.controlsUpdated=sampled;[self updateDecks:decks at:NSProcessInfo.processInfo.systemUptime];[self refreshArtwork:app.processIdentifier];self.busy=NO;});
     });
 #endif
 }
