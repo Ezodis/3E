@@ -416,8 +416,8 @@ static OSStatus SendSpotifyCommand(pid_t pid, int command) {
     self.carView=[ThreeECarView new];
     __weak AppDelegate *carSelf=self;
     self.carView.changed=^(BOOL enabled){
-        [carSelf sendMidi:[NSString stringWithFormat:@"CAR_VIEW_STATE %d",enabled]];
-        for(NSMenuItem *item in carSelf.baseStatusItem.menu.itemArray)if([item.identifier isEqual:@"local.musicstrip.carView"])item.state=enabled?NSControlStateValueOn:NSControlStateValueOff;
+        [carSelf sendCarViewState];
+        for(NSMenuItem *item in carSelf.baseStatusItem.menu.itemArray)if([item.identifier isEqual:@"local.musicstrip.carView"])ThreeECarMenuUpdate(item,enabled,carSelf.carView.mirrored,carSelf.carView.startingMirror,carSelf.carView.statusText);
     };
     if(NSProcessInfo.processInfo.arguments.count==1) [StripDownloadsAddon install];
     StripAutomaticUpdatesEnabled();
@@ -522,7 +522,13 @@ static OSStatus SendSpotifyCommand(pid_t pid, int command) {
     self.recoveryTimer = [NSTimer scheduledTimerWithTimeInterval:1 repeats:YES block:^(NSTimer *timer) { [weakSelf refresh]; }];
 }
 - (void)openPhone:(id)sender { if(!StripInstallMissingModule(@"phone")) [self.phoneController show]; }
-- (void)openCarView:(id)sender { [self.carView show:sender]; }
+- (void)toggleCarView:(id)sender { [self.carView toggle:sender]; }
+- (void)toggleCarMirror:(id)sender { [self.carView toggleMirror:sender]; }
+- (void)sendCarViewState {
+    NSDictionary *state=@{@"enabled":@(self.carView.enabled),@"mirrored":@(self.carView.mirrored),@"starting":@(self.carView.startingMirror),@"message":self.carView.statusText?:@""};
+    NSData *data=[NSJSONSerialization dataWithJSONObject:state options:0 error:nil];
+    [self sendMidi:[@"CAR_VIEW_STATE " stringByAppendingString:[[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding]]];
+}
 - (void)togglePhoneBar:(id)sender { if(!StripInstallMissingModule(@"phone")) [self.phoneController toggleReceiver]; }
 - (void)hoverPhoneBar:(id)sender { if(StripHasModule(@"phone")) [self.phoneController showQRForHover]; }
 - (void)hidePhoneBarQR:(id)sender { [self.phoneController hideQRForHover]; }
@@ -541,7 +547,7 @@ static OSStatus SendSpotifyCommand(pid_t pid, int command) {
 #endif
 }
 - (BOOL)validateMenuItem:(NSMenuItem *)item {
-    if(item.action==@selector(openCarView:)){item.state=self.carView.enabled?NSControlStateValueOn:NSControlStateValueOff;return YES;}
+    if(item.action==@selector(toggleCarView:)){ThreeECarMenuUpdate(item,self.carView.enabled,self.carView.mirrored,self.carView.startingMirror,self.carView.statusText);return YES;}
     if(item.action==@selector(togglePhoneBar:)) { item.state=self.phoneController.task.running?NSControlStateValueOn:NSControlStateValueOff; return YES; }
     if(item.action==NSSelectorFromString(@"toggleBaseAutomaticUpdates:")) { item.state=StripAutomaticUpdatesEnabled()?NSControlStateValueOn:NSControlStateValueOff; return YES; }
 #ifdef STRIP_COMBINED_TOUCHTAB
@@ -714,7 +720,7 @@ static OSStatus SendSpotifyCommand(pid_t pid, int command) {
                     self.midiReady = YES;
                     [self sendMidi:self.appsVisible ? @"APPS_STATE 1" : @"APPS_STATE 0"];
                     [self sendMidi:[NSString stringWithFormat:@"DOWNLOADS_STATE %d",[StripDownloadsAddon isEnabled]]];
-                    [self sendMidi:[NSString stringWithFormat:@"CAR_VIEW_STATE %d",self.carView.enabled]];
+                    [self sendCarViewState];
 #ifdef STRIP_COMBINED_TOUCHTAB
                     [self refreshTouchTab];
 #endif
@@ -725,8 +731,10 @@ static OSStatus SendSpotifyCommand(pid_t pid, int command) {
 #endif
                 } else if ([line isEqualToString:@"APPS_TOGGLE"]) {
                     [self appsLauncherCommand:2];
-                } else if ([line isEqualToString:@"CAR_VIEW_OPEN"]) {
-                    [self openCarView:nil];
+                } else if ([line isEqualToString:@"CAR_VIEW_TOGGLE"]) {
+                    [self toggleCarView:nil];
+                } else if ([line isEqualToString:@"CAR_MIRROR_TOGGLE"]) {
+                    [self toggleCarMirror:nil];
                 } else if ([line isEqualToString:@"PHONE_OPEN"]) {
                     [self openPhone:nil];
                 } else if ([line isEqualToString:@"PHONE_TOGGLE"]) {

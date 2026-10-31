@@ -57,7 +57,7 @@ int main(void) { @autoreleasepool {
     NSCAssert([base.itemArray[0].identifier isEqual:@"local.musicstrip.phone"] && [base.itemArray[1].identifier isEqual:@"local.musicstrip.carView"] && [base.itemArray[2].identifier isEqual:@"local.musicstrip.touchTabToggle"],@"Car View is available without Touch Bar interfaces");
     NSCAssert(!base.itemArray[4].enabled,@"Only the unavailable Touch Bar module is disabled");
     NSMenuItem *car=nil;for(NSMenuItem *item in delegate.theItem.menu.itemArray)if([item.identifier isEqual:@"local.musicstrip.carView"])car=item;
-    NSCAssert(car.target==ThreeEMidiBridge.class && car.action==NSSelectorFromString(@"openCarView:"),@"Car View uses the parent pipe");
+    NSCAssert(car.target==ThreeEMidiBridge.class && car.action==NSSelectorFromString(@"toggleCarView:") && [car.view isKindOfClass:ThreeECarMenuRow.class],@"Car View toggles in the menu through the parent pipe");
     carViewEnabled=YES;[ThreeEMidiBridge validateMenuItem:car];NSCAssert(car.state==NSControlStateValueOn,@"Car View check follows the host");carViewEnabled=NO;
     NSMenuItem *toggle=nil;
     for(NSMenuItem *item in delegate.theItem.menu.itemArray)if([item.identifier isEqual:@"local.musicstrip.touchTabToggle"])toggle=item;

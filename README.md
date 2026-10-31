@@ -21,7 +21,7 @@ Included does not mean automatically running: Phone Bar starts only when selecte
 
 ## Car View (Mac)
 
-Open **3£ → Car View…** for larger controls and a large neon-outlined pointer. Car View temporarily selects a lower logical resolution on the main display; turning it off restores the original mode. It also turns off on main-display changes, sleep or session locking. The display change is scoped to the app so macOS restores it if the process exits unexpectedly.
+Click **Car View** in the 3£ menu for larger controls and a large neon-outlined pointer. The small reverse-arrows button at the right of the same row toggles mirroring. There is no separate control panel. Car View temporarily selects a lower logical resolution on the main display; turning it off restores the original mode. It also turns off on main-display changes, sleep or session locking. The display change is scoped to the app so macOS restores it if the process exits unexpectedly.
 
 **Mirror for Window Reflection** flips the live main display horizontally, including the neon pointer. Look at the reflected image in glass: physical mouse, Mac trackpad and Phone Bar gestures retain their normal directions and click coordinates. Mirror requires macOS 12.3+ and Screen Recording access for 3£. Frames stay on the Mac; this view does not record or transmit the desktop. **⌃⌥⌘0** exits Car View and restores the display size. Car View starts off on every launch.
 

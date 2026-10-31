@@ -173,17 +173,12 @@ API_AVAILABLE(macos(12.3))
 @property NSTimer *pointerTimer;
 @property BOOL cursorHidden;
 @property id mirror;
-@property NSPanel *panel;
-@property NSButton *enableButton;
-@property NSButton *mirrorButton;
-@property NSTextField *statusLabel;
 @property NSString *statusText;
 @property EventHotKeyRef exitKey;
 @property EventHandlerRef keyHandler;
 @property id localKeyMonitor;
 @property (copy) void (^changed)(BOOL);
 - (void)stop;
-- (void)show:(id)sender;
 - (void)toggle:(id)sender;
 - (void)toggleMirror:(id)sender;
 @end
@@ -211,31 +206,12 @@ static OSStatus ThreeECarExitHotKey(EventHandlerCallRef next,EventRef event,void
             [NSWorkspace.sharedWorkspace.notificationCenter addObserverForName:name object:nil queue:NSOperationQueue.mainQueue usingBlock:^(NSNotification *note){[weakSelf stop];}];
     }return self;
 }
-- (void)refresh {
-    self.enableButton.title=self.enabled?@"Turn Car View Off":@"Turn Car View On";
-    self.enableButton.bezelColor=self.enabled?NSColor.systemGreenColor:NSColor.controlAccentColor;
-    self.mirrorButton.title=self.startingMirror?@"Starting Mirror…":self.mirrored?@"Mirror On — Turn Off":@"Mirror for Window Reflection";
-    self.mirrorButton.enabled=!self.startingMirror;self.mirrorButton.state=self.mirrored?NSControlStateValueOn:NSControlStateValueOff;
-    self.statusLabel.stringValue=self.statusText?:@"";
-    if(self.changed)self.changed(self.enabled);
-}
-- (void)show:(id)sender {
-    if(!self.panel) {
-        self.panel=[[NSPanel alloc] initWithContentRect:NSMakeRect(0,0,450,300) styleMask:NSWindowStyleMaskTitled|NSWindowStyleMaskClosable backing:NSBackingStoreBuffered defer:NO];
-        self.panel.title=@"3£ · Car View";self.panel.releasedWhenClosed=NO;self.panel.level=NSFloatingWindowLevel;self.panel.delegate=self;
-        self.panel.appearance=[NSAppearance appearanceNamed:NSAppearanceNameDarkAqua];
-        NSView *view=self.panel.contentView;
-        NSTextField *title=[NSTextField labelWithString:@"Car View"];title.font=[NSFont systemFontOfSize:29 weight:NSFontWeightSemibold];title.frame=NSMakeRect(26,244,390,38);[view addSubview:title];
-        self.statusLabel=[NSTextField wrappingLabelWithString:self.statusText];self.statusLabel.font=[NSFont systemFontOfSize:14];self.statusLabel.textColor=NSColor.secondaryLabelColor;self.statusLabel.frame=NSMakeRect(27,188,395,50);[view addSubview:self.statusLabel];
-        self.enableButton=[NSButton buttonWithTitle:@"Turn Car View On" target:self action:@selector(toggle:)];self.enableButton.bezelStyle=NSBezelStyleRounded;self.enableButton.font=[NSFont systemFontOfSize:18 weight:NSFontWeightSemibold];self.enableButton.frame=NSMakeRect(24,128,402,48);[view addSubview:self.enableButton];
-        self.mirrorButton=[NSButton buttonWithTitle:@"Mirror for Window Reflection" target:self action:@selector(toggleMirror:)];self.mirrorButton.bezelStyle=NSBezelStyleRounded;self.mirrorButton.font=[NSFont systemFontOfSize:16 weight:NSFontWeightMedium];self.mirrorButton.frame=NSMakeRect(24,74,402,44);[view addSubview:self.mirrorButton];
-        NSTextField *help=[NSTextField wrappingLabelWithString:@"View Mirror through the glass reflection.\nExit and restore size anytime: ⌃⌥⌘0"];help.font=[NSFont systemFontOfSize:12];help.textColor=NSColor.secondaryLabelColor;help.frame=NSMakeRect(28,16,392,45);[view addSubview:help];
-        [self.panel center];
-    }
-    [self refresh];[NSApp activateIgnoringOtherApps:YES];[self.panel makeKeyAndOrderFront:nil];
-}
+- (void)refresh { if(self.changed)self.changed(self.enabled); }
+- (void)toggleCarView:(id)sender { [self toggle:sender]; }
+- (void)toggleCarMirror:(id)sender { [self toggleMirror:sender]; }
 - (void)toggle:(id)sender {
     if(self.enabled){[self stop];return;}
+    [NSApp activateIgnoringOtherApps:YES];
     self.display=CGMainDisplayID();self.originalMode=CGDisplayCopyDisplayMode(self.display);
     if(!self.originalMode){self.statusText=@"The main display is unavailable.";[self refresh];return;}
     CGDisplayModeRef larger=ThreeECarLargerMode(self.display,self.originalMode);
@@ -248,6 +224,11 @@ static OSStatus ThreeECarExitHotKey(EventHandlerCallRef next,EventRef event,void
     self.pointerView=[[ThreeECarPointerView alloc] initWithFrame:NSMakeRect(0,0,88,88)];self.pointerView.pointerHeight=60;self.pointerWindow.contentView=self.pointerView;
     [self.pointerWindow orderFrontRegardless];
     self.cursorHidden=CGDisplayHideCursor(self.display)==kCGErrorSuccess;
+    // Menu actions may arrive from the separate MIDI helper. Apply the owned
+    // hide again after activation reaches the host, keeping its count balanced.
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW,100*NSEC_PER_MSEC),dispatch_get_main_queue(),^{
+        if(self.enabled&&self.cursorHidden){CGDisplayShowCursor(self.display);CGDisplayHideCursor(self.display);}
+    });
     __weak ThreeECarView *weakSelf=self;
     self.pointerTimer=[NSTimer timerWithTimeInterval:1./120 repeats:YES block:^(NSTimer *timer){[weakSelf updatePointer];}];
     [NSRunLoop.mainRunLoop addTimer:self.pointerTimer forMode:NSRunLoopCommonModes];
@@ -262,7 +243,6 @@ static OSStatus ThreeECarExitHotKey(EventHandlerCallRef next,EventRef event,void
         if(event.keyCode==kVK_ANSI_0&&(event.modifierFlags&flags)==flags){dispatch_async(dispatch_get_main_queue(),^{[weakSelf stop];});return nil;}return event;
     }];
     [self updatePointer];[self refresh];
-    if(self.panel){[self.panel center];[self.panel orderFront:nil];}
 }
 - (void)updatePointer {
     NSPoint point=NSEvent.mouseLocation;NSScreen *screen=ThreeECarScreen(self.display);
@@ -277,7 +257,7 @@ static OSStatus ThreeECarExitHotKey(EventHandlerCallRef next,EventRef event,void
     if(@available(macOS 12.3,*)) {
         if(!CGPreflightScreenCaptureAccess()) {
             BOOL granted=CGRequestScreenCaptureAccess();
-            if(!granted){self.statusText=@"Allow 3£ in System Settings → Privacy & Security → Screen Recording, then try Mirror again.";[self show:nil];return;}
+            if(!granted){self.statusText=@"Allow 3£ in System Settings → Privacy & Security → Screen Recording, then try Mirror again.";[self refresh];return;}
         }
         if(!self.enabled)[self toggle:nil];if(!self.enabled)return;
         self.startingMirror=YES;self.statusText=@"Starting the live reflection view…";[self refresh];
@@ -323,11 +303,15 @@ static void ThreeECarPrintStatus(ThreeECarView *car) {
 static int ThreeECarRunHarness(void) {
     [NSApplication sharedApplication];NSApp.activationPolicy=NSApplicationActivationPolicyAccessory;
     ThreeECarView *car=[ThreeECarView new];
+    NSStatusItem *status=[NSStatusBar.systemStatusBar statusItemWithLength:NSVariableStatusItemLength];status.button.title=@"3£";
+    NSMenu *menu=[NSMenu new];NSMenuItem *row=ThreeECarViewMenu(car,NO);[menu addItem:row];status.menu=menu;
+    __weak ThreeECarView *weakCar=car;
+    car.changed=^(BOOL enabled){ThreeECarView *car=weakCar;ThreeECarMenuUpdate(row,enabled,car.mirrored,car.startingMirror,car.statusText);};
     dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED,0),^{
         char *line=NULL;size_t capacity=0;
         while(getline(&line,&capacity,stdin)>0){NSString *command=[[NSString stringWithUTF8String:line] stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
             dispatch_async(dispatch_get_main_queue(),^{
-                if([command isEqual:@"SHOW"])[car show:nil];
+                if([command isEqual:@"SHOW"]){[NSApp activateIgnoringOtherApps:YES];[menu popUpMenuPositioningItem:nil atLocation:NSMakePoint(NSMidX(NSScreen.mainScreen.frame),NSMaxY(NSScreen.mainScreen.frame)-40) inView:nil];}
                 else if([command isEqual:@"ENABLE"]&&!car.enabled)[car toggle:nil];
                 else if([command isEqual:@"MIRROR"])[car toggleMirror:nil];
                 else if([command isEqual:@"STOP"])[car stop];

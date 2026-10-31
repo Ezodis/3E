@@ -662,6 +662,8 @@ static NSString *combinedGestureState=@"permission";
 static BOOL appsMenuVisible;
 static BOOL downloadsEnabled;
 static BOOL carViewEnabled;
+static BOOL carViewMirrored,carViewStarting;
+static NSString *carViewMessage;
 static NSMenuItem *MenuSeparator(void) { return [NSMenuItem separatorItem]; }
 static void CleanMenu(NSMenu *menu) {
     NSStatusItem *statusItem=[(id)NSApp.delegate valueForKey:@"theItem"];
@@ -766,7 +768,7 @@ static void CleanMenu(NSMenu *menu) {
         // This is owned by the main process, including when the MIDI helper
         // supplies the suite's single menu-bar icon.
         if(!car)car=ThreeECarViewMenu(NSClassFromString(@"ThreeEMidiBridge"),carViewEnabled);
-        car.state=carViewEnabled?NSControlStateValueOn:NSControlStateValueOff;[menu addItem:car];
+        ThreeECarMenuUpdate(car,carViewEnabled,carViewMirrored,carViewStarting,carViewMessage);[menu addItem:car];
         [menu addItem:MenuSeparator()];
         [menu addItem:apps];if(midi)[menu addItem:midi];if(surface)[menu addItem:surface];
         [menu addItem:MenuSeparator()];
@@ -1978,7 +1980,8 @@ static void Command(NSString *command) {
         } else if ([command hasPrefix:@"DOWNLOADS_STATE "]) {
             downloadsEnabled=[[command substringFromIndex:16] boolValue]; ApplyBranding();
         } else if ([command hasPrefix:@"CAR_VIEW_STATE "]) {
-            carViewEnabled=[[command substringFromIndex:15] boolValue];ApplyBranding();
+            NSDictionary *state=[NSJSONSerialization JSONObjectWithData:[[command substringFromIndex:15] dataUsingEncoding:NSUTF8StringEncoding] options:0 error:nil];
+            if([state isKindOfClass:NSDictionary.class]){carViewEnabled=[state[@"enabled"] boolValue];carViewMirrored=[state[@"mirrored"] boolValue];carViewStarting=[state[@"starting"] boolValue];carViewMessage=[state[@"message"] isKindOfClass:NSString.class]?state[@"message"]:nil;ApplyBranding();}
         } else if ([command hasPrefix:@"TOUCHTAB_STATE "]) {
             combinedGestureState=[command substringFromIndex:15];
             ApplyBranding();
@@ -2222,7 +2225,8 @@ static void Command(NSString *command) {
     } @catch (NSException *e) { Report("BRIDGE_ERROR\n"); NSLog(@"ThreeE MIDI bridge: %@", e); }
 }
 @implementation ThreeEMidiBridge
-+ (void)openCarView:(id)sender { Report("CAR_VIEW_OPEN\n"); }
++ (void)toggleCarView:(id)sender { Report("CAR_VIEW_TOGGLE\n"); }
++ (void)toggleCarMirror:(id)sender { Report("CAR_MIRROR_TOGGLE\n"); }
 + (void)toggleTouchTab:(id)sender { Report("TOUCHTAB_TOGGLE\n"); }
 + (void)toggleApps:(id)sender { Report("APPS_TOGGLE\n"); }
 + (void)openPhone:(id)sender { Report("PHONE_OPEN\n"); }
@@ -2239,7 +2243,7 @@ static void Command(NSString *command) {
 + (void)toggleAutomaticUpdates:(id)sender { StripToggleAutomaticUpdates(self,_cmd,sender); }
 + (void)toggleSurfaceMode:(id)sender { ChangeMode(NSApp.delegate,NSSelectorFromString(@"changeMode:"),sender); }
 + (BOOL)validateMenuItem:(NSMenuItem *)item {
-    if(item.action==@selector(openCarView:)){item.state=carViewEnabled?NSControlStateValueOn:NSControlStateValueOff;return YES;}
+    if(item.action==@selector(toggleCarView:)){ThreeECarMenuUpdate(item,carViewEnabled,carViewMirrored,carViewStarting,carViewMessage);return YES;}
     if(item.action==@selector(toggleApps:)) {
         item.state=appsMenuVisible&&!recordController.activeMenuBar ? NSControlStateValueOn : NSControlStateValueOff; return YES;
     }
