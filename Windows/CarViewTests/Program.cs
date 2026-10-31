@@ -1,5 +1,6 @@
 using ThreeE.CarView;
 if(args.Length==2&&args[0]=="--car-view-guard"){CarViewWindows.RunGuard(args[1]);return;}
+CarViewWindows.RecoverySelfTest();
 void Check(bool good,string text){if(!good)throw new Exception(text);}
 Check(CarViewWindows.ModeScore(1080,675,60,1440,900)<CarViewWindows.ModeScore(1280,800,60,1440,900),"Larger controls prefer useful workspace size");
 Check(CarViewWindows.ModeScore(800,500,60,1440,900)==double.MaxValue,"Workspace remains usable");
