@@ -148,7 +148,7 @@ public sealed class CarViewWindows : IDisposable {
         try{var bytes=new byte[88*4];for(int y=0;y<88;y++){Marshal.Copy(nint.Add(data.Scan0,y*data.Stride),bytes,0,bytes.Length);Marshal.Copy(bytes,0,nint.Add(surface.Bits,y*bytes.Length),bytes.Length);}}finally{image.UnlockBits(data);}return surface;
     }
     private static void Capture(Surface target,Rect area){nint screen=GetDC(0);try{if(!BitBlt(target.DC,0,0,target.Width,target.Height,screen,area.Left,area.Top,CapturePixels))throw Error("Capture desktop");}finally{ReleaseDC(0,screen);}}
-    private static void Flip(Surface source,Surface target){if(!StretchBlt(target.DC,target.Width,0,-target.Width,target.Height,source.DC,0,0,source.Width,source.Height,CopyPixels))throw Error("Reflect desktop");}
+    private static void Flip(Surface source,Surface target){if(!StretchBlt(target.DC,target.Width-1,0,-target.Width,target.Height,source.DC,0,0,source.Width,source.Height,CopyPixels))throw Error("Reflect desktop");}
     private sealed class Surface : IDisposable {
         public readonly nint DC,Bits;private readonly nint bitmap,old;public readonly int Width,Height;
         public Surface(int width,int height){Width=width;Height=height;DC=CreateCompatibleDC(0);var info=new BitmapInfo{Size=40,Width=width,Height=-height,Planes=1,BitCount=32};bitmap=CreateDIBSection(DC,ref info,0,out var bits,0,0);Bits=bits;
@@ -201,7 +201,7 @@ public sealed class CarViewWindows : IDisposable {
         }
         using var src=new Surface(16,8);using var dst=new Surface(16,8);
         for(int y=0;y<8;y++)for(int x=0;x<16;x++)SetPixel(src.DC,x,y,x<8?0x000000FFu:0x00FF0000u);
-        Flip(src,dst);if(GetPixel(dst.DC,0,4)!=0x00FF0000||GetPixel(dst.DC,15,4)!=0x000000FF)throw new Exception("Native reflection pixels are incorrect");
+        Flip(src,dst);for(int y=0;y<8;y++)for(int x=0;x<16;x++)if(GetPixel(dst.DC,x,y)!=GetPixel(src.DC,15-x,y))throw new Exception($"Native reflection pixel {x},{y} is {GetPixel(dst.DC,x,y):X}, expected {GetPixel(src.DC,15-x,y):X}.");
         using var owner=new CarViewWindows();owner.EnsureClass();nint window=owner.CreateOverlay("3£ Capture Exclusion Test",16,8);
         try{if(!SetWindowDisplayAffinity(window,0x11)||!GetWindowDisplayAffinity(window,out uint affinity)||affinity!=0x11)throw new Exception("Desktop capture exclusion unavailable");
             long style=GetWindowLongPtr(window,-20).ToInt64();if((style&0x08000020)!=0x08000020)throw new Exception("Overlay intercepts native input");}
