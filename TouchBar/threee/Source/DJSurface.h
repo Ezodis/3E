@@ -392,7 +392,7 @@ static void DJText(NSString *text,NSRect rect,CGFloat size,NSColor *color) {
         if(artwork) {
             NSSize size=artwork.size;CGFloat side=MIN(size.width,size.height);
             [artwork drawInRect:face fromRect:NSMakeRect((size.width-side)/2,(size.height-side)/2,side,side) operation:NSCompositingOperationSourceOver fraction:1 respectFlipped:NO hints:@{NSImageHintInterpolation:@(NSImageInterpolationHigh)}];
-            [[NSColor colorWithWhite:1 alpha:.08] setFill];NSRectFill(face);
+            [[NSColor colorWithWhite:1 alpha:.08] setFill];NSRectFillUsingOperation(face,NSCompositingOperationSourceOver);
         } else {
             NSGradient *label=[[NSGradient alloc] initWithStartingColor:[color blendedColorWithFraction:.42 ofColor:NSColor.blackColor] endingColor:[NSColor colorWithWhite:.14 alpha:1]];
             [label drawInBezierPath:[NSBezierPath bezierPathWithOvalInRect:NSMakeRect(-6,-6,12,12)] angle:45];
