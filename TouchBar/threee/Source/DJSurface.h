@@ -16,7 +16,7 @@ static NSInteger DJSharedPage=0;
 static NSString *const DJEnabledKey=@"ThreeEDJEnabled";
 static NSString *const DJBackupKey=@"ThreeEDJOriginalLayoutsV1";
 static NSColor *DJColor(NSInteger deck) {
-    return deck ? [NSColor colorWithSRGBRed:1 green:.63 blue:.28 alpha:1] : [NSColor colorWithSRGBRed:.23 green:.82 blue:.94 alpha:1];
+    return deck ? [NSColor colorWithSRGBRed:1 green:.82 blue:.42 alpha:1] : [NSColor colorWithSRGBRed:.40 green:.96 blue:1 alpha:1];
 }
 typedef struct { UInt8 status, pending; NSInteger count; BOOL sysex; } DJMIDIParser;
 static NSString *const DJTargetKey=@"ThreeEDJLiveTarget";
@@ -335,7 +335,7 @@ static double DJSeekSensitivity(double duration,double travel) {
 }
 static void DJText(NSString *text,NSRect rect,CGFloat size,NSColor *color) {
     NSMutableParagraphStyle *style=[NSMutableParagraphStyle new]; style.alignment=NSTextAlignmentCenter; style.lineBreakMode=NSLineBreakByTruncatingTail;
-    [text drawInRect:rect withAttributes:@{NSFontAttributeName:[NSFont monospacedDigitSystemFontOfSize:size weight:NSFontWeightMedium],NSForegroundColorAttributeName:color,NSParagraphStyleAttributeName:style}];
+    [text drawInRect:rect withAttributes:@{NSFontAttributeName:[NSFont monospacedDigitSystemFontOfSize:size weight:NSFontWeightSemibold],NSForegroundColorAttributeName:color,NSParagraphStyleAttributeName:style}];
 }
 @implementation ThreeEDJControl
 - (instancetype)initWithFrame:(NSRect)frame {
@@ -362,10 +362,12 @@ static void DJText(NSString *text,NSRect rect,CGFloat size,NSColor *color) {
 }
 - (void)drawRect:(NSRect)dirty {
     ThreeEDJMIDI *midi=[ThreeEDJMIDI shared];
-    NSColor *color=DJColor(self.channel==1), *dim=[NSColor colorWithWhite:.57 alpha:1];
+    NSColor *color=DJColor(self.channel==1), *dim=[NSColor colorWithWhite:.90 alpha:1];
     CGFloat w=NSWidth(self.bounds);
-    [[NSColor colorWithWhite:self.tracking ? .15 : .075 alpha:1] setFill];
+    [[NSColor colorWithWhite:self.tracking ? .25 : .16 alpha:1] setFill];
     [[NSBezierPath bezierPathWithRoundedRect:NSInsetRect(self.bounds,1,1) xRadius:5 yRadius:5] fill];
+    NSBezierPath *edge=[NSBezierPath bezierPathWithRoundedRect:NSInsetRect(self.bounds,1.5,1.5) xRadius:4.5 yRadius:4.5];
+    edge.lineWidth=.75;[[color colorWithAlphaComponent:self.tracking ? .95 : .45] setStroke];[edge stroke];
     NSInteger value=[midi value:self.channel number:self.number note:self.kind==DJPad];
     BOOL confirmed=[midi confirmed:self.channel number:self.number note:self.kind==DJPad];
     if(self.kind==DJDisc) {
@@ -380,7 +382,7 @@ static void DJText(NSString *text,NSRect rect,CGFloat size,NSColor *color) {
         for(NSInteger groove=0;groove<4;groove++) {
             CGFloat radius=6+groove*2;
             NSBezierPath *path=[NSBezierPath bezierPathWithOvalInRect:NSMakeRect(center.x-radius,center.y-radius,2*radius,2*radius)];
-            path.lineWidth=.35;[[NSColor colorWithWhite:.25 alpha:.7] setStroke];[path stroke];
+            path.lineWidth=.5;[[NSColor colorWithWhite:.5 alpha:.85] setStroke];[path stroke];
         }
         NSImage *artwork=midi.liveTarget ? nil : [[ThreeEDJTelemetry shared] artworkForDeck:self.channel];
         [NSGraphicsContext saveGraphicsState];
@@ -390,18 +392,19 @@ static void DJText(NSString *text,NSRect rect,CGFloat size,NSColor *color) {
         if(artwork) {
             NSSize size=artwork.size;CGFloat side=MIN(size.width,size.height);
             [artwork drawInRect:face fromRect:NSMakeRect((size.width-side)/2,(size.height-side)/2,side,side) operation:NSCompositingOperationSourceOver fraction:1 respectFlipped:NO hints:@{NSImageHintInterpolation:@(NSImageInterpolationHigh)}];
+            [[NSColor colorWithWhite:1 alpha:.08] setFill];NSRectFill(face);
         } else {
-            NSGradient *label=[[NSGradient alloc] initWithStartingColor:[color blendedColorWithFraction:.72 ofColor:NSColor.blackColor] endingColor:[NSColor colorWithWhite:.06 alpha:1]];
+            NSGradient *label=[[NSGradient alloc] initWithStartingColor:[color blendedColorWithFraction:.42 ofColor:NSColor.blackColor] endingColor:[NSColor colorWithWhite:.14 alpha:1]];
             [label drawInBezierPath:[NSBezierPath bezierPathWithOvalInRect:NSMakeRect(-6,-6,12,12)] angle:45];
         }
         // A fine white cue line makes slow rotations visible on plain covers.
-        NSBezierPath *cue=[NSBezierPath bezierPath];[cue moveToPoint:NSMakePoint(0,7.5)];[cue lineToPoint:NSMakePoint(0,10.2)];cue.lineWidth=.8;[[NSColor colorWithWhite:1 alpha:.8] setStroke];[cue stroke];
+        NSBezierPath *cue=[NSBezierPath bezierPath];[cue moveToPoint:NSMakePoint(0,7.5)];[cue lineToPoint:NSMakePoint(0,10.2)];cue.lineWidth=1.2;[NSColor.whiteColor setStroke];[cue stroke];
         [NSGraphicsContext restoreGraphicsState];
         NSBezierPath *ring=[NSBezierPath bezierPathWithOvalInRect:NSInsetRect(disc,1,1)];
-        ring.lineWidth=self.search ? 1.4 : .75;
-        [(self.search ? color : [NSColor colorWithWhite:.65 alpha:1]) setStroke];[ring stroke];
+        ring.lineWidth=self.search ? 2 : 1.3;
+        [(self.search ? color : [NSColor colorWithWhite:.95 alpha:1]) setStroke];[ring stroke];
         if(!self.search) {
-            NSBezierPath *arc=[NSBezierPath bezierPath];[arc appendBezierPathWithArcWithCenter:center radius:13 startAngle:35 endAngle:145 clockwise:NO];arc.lineWidth=1.7;[color setStroke];[arc stroke];
+            NSBezierPath *arc=[NSBezierPath bezierPath];[arc appendBezierPathWithArcWithCenter:center radius:13 startAngle:35 endAngle:145 clockwise:NO];arc.lineWidth=2.2;[color setStroke];[arc stroke];
         }
         // SEEK has a small square cue notch; BEND has a continuous accent arc.
         if(self.search) { [NSColor.whiteColor setFill];NSRectFill(NSMakeRect(center.x-1,27,2,2)); }
@@ -416,31 +419,34 @@ static void DJText(NSString *text,NSRect rect,CGFloat size,NSColor *color) {
             NSString *pitch=deck[@"tempo"] ? [NSString stringWithFormat:@"%+.1f%%",[deck[@"tempo"] doubleValue]] : @"—";
             NSString *vitals=[NSString stringWithFormat:@"%@ · %@ · %@",bpm,pitch,deck[@"tempoRange"] ?: @"—"];
             CGFloat size=MIN(5.5,textWidth/MAX(1,vitals.length)*1.62);
-            DJText(vitals,NSMakeRect(textX,1,textWidth,8),size,[NSColor colorWithWhite:.86 alpha:1]);
+            DJText(vitals,NSMakeRect(textX,1,textWidth,8),size,NSColor.whiteColor);
         }
     } else if(self.kind==DJPad) {
         BOOL lit=self.tracking || value>0;
-        if(lit) { [[color colorWithAlphaComponent:.25] setFill]; [[NSBezierPath bezierPathWithRoundedRect:NSInsetRect(self.bounds,1,1) xRadius:5 yRadius:5] fill]; }
-        [[color colorWithAlphaComponent:.5] setFill]; NSRectFill(NSMakeRect(3,27,w-6,1));
-        DJText(self.caption,NSMakeRect(1,8,w-2,15),self.caption.length>2 ? 9 : 12,lit ? color : [color colorWithAlphaComponent:.85]);
+        if(lit) { [color setFill]; [[NSBezierPath bezierPathWithRoundedRect:NSInsetRect(self.bounds,1,1) xRadius:5 yRadius:5] fill]; }
+        [color setFill]; NSRectFill(NSMakeRect(3,26,w-6,2));
+        DJText(self.caption,NSMakeRect(1,8,w-2,15),self.caption.length>2 ? 9 : 12,lit ? [NSColor colorWithWhite:.035 alpha:1] : color);
         if(confirmed) { [color setFill]; NSRectFill(NSMakeRect(w/2-2,3,4,2)); }
     } else if(self.kind==DJKnob) {
         NSPoint center=NSMakePoint(w/2-11,17); NSBezierPath *arc=[NSBezierPath bezierPath];
         [arc appendBezierPathWithArcWithCenter:center radius:7 startAngle:225 endAngle:-45 clockwise:YES];
-        arc.lineWidth=2; [[NSColor colorWithWhite:.25 alpha:1] setStroke]; [arc stroke];
+        arc.lineWidth=2.5; [[NSColor colorWithWhite:.5 alpha:1] setStroke]; [arc stroke];
         double shownValue=self.tracking ? self.knobPosition : value;
+        NSBezierPath *level=[NSBezierPath bezierPath];
+        [level appendBezierPathWithArcWithCenter:center radius:7 startAngle:225 endAngle:225-270*shownValue/127.0 clockwise:YES];
+        level.lineWidth=2.5;[color setStroke];[level stroke];
         CGFloat theta=(225-270*shownValue/127.0)*M_PI/180;
         NSBezierPath *needle=[NSBezierPath bezierPath]; [needle moveToPoint:center]; [needle lineToPoint:NSMakePoint(center.x+7*cos(theta),center.y+7*sin(theta))];
-        needle.lineWidth=2; [color setStroke]; [needle stroke];
+        needle.lineWidth=2.4; [NSColor.whiteColor setStroke]; [needle stroke];
         DJText([NSString stringWithFormat:@"%ld",(long)value],NSMakeRect(w/2,12,w/2-3,12),8,confirmed ? color : dim);
         DJText(self.tracking && fabs(self.knobRate)>0 ? [NSString stringWithFormat:self.knobRate>0 ? @"%@ ›" : @"‹ %@",self.caption] : self.caption,NSMakeRect(1,1,w-2,10),7,NSColor.whiteColor);
     } else {
         DJText(self.channel==15 ? ([NSString stringWithFormat:@"%@ · %@",midi.liveTarget ? @"LIVE" : @"RB",self.caption]) : self.caption,NSMakeRect(3,18,w-6,10),7,confirmed ? color : dim);
         CGFloat inset=7, length=MAX(1,w-2*inset),x=inset+length*value/127.0;
-        [[NSColor colorWithWhite:.25 alpha:1] setFill]; NSRectFill(NSMakeRect(inset,9,length,2));
-        [color setFill]; NSRectFill(NSMakeRect(inset,9,x-inset,2));
-        [[NSColor colorWithWhite:.9 alpha:1] setFill]; [[NSBezierPath bezierPathWithRoundedRect:NSMakeRect(x-2,5,4,10) xRadius:1 yRadius:1] fill];
-        if(self.channel==15) { [[NSColor colorWithWhite:.5 alpha:1] setFill]; NSRectFill(NSMakeRect(w/2,4,.5,3)); }
+        [[NSColor colorWithWhite:.5 alpha:1] setFill]; NSRectFill(NSMakeRect(inset,9,length,3));
+        [color setFill]; NSRectFill(NSMakeRect(inset,9,x-inset,3));
+        [NSColor.whiteColor setFill]; [[NSBezierPath bezierPathWithRoundedRect:NSMakeRect(x-3,5,6,11) xRadius:1 yRadius:1] fill];
+        if(self.channel==15) { [[NSColor colorWithWhite:.9 alpha:1] setFill]; NSRectFill(NSMakeRect(w/2-.5,3,1,3)); }
     }
 }
 - (void)begin:(NSPoint)point identity:(id)identity {
