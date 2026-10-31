@@ -366,8 +366,10 @@ static void DJText(NSString *text,NSRect rect,CGFloat size,NSColor *color) {
     CGFloat w=NSWidth(self.bounds);
     [[NSColor colorWithWhite:self.tracking ? .25 : .16 alpha:1] setFill];
     [[NSBezierPath bezierPathWithRoundedRect:NSInsetRect(self.bounds,1,1) xRadius:5 yRadius:5] fill];
-    NSBezierPath *edge=[NSBezierPath bezierPathWithRoundedRect:NSInsetRect(self.bounds,1.5,1.5) xRadius:4.5 yRadius:4.5];
-    edge.lineWidth=.75;[[color colorWithAlphaComponent:self.tracking ? .95 : .45] setStroke];[edge stroke];
+    if(self.kind!=DJKnob) {
+        NSBezierPath *edge=[NSBezierPath bezierPathWithRoundedRect:NSInsetRect(self.bounds,1.5,1.5) xRadius:4.5 yRadius:4.5];
+        edge.lineWidth=.75;[[color colorWithAlphaComponent:self.tracking ? .95 : .45] setStroke];[edge stroke];
+    }
     NSInteger value=[midi value:self.channel number:self.number note:self.kind==DJPad];
     BOOL confirmed=[midi confirmed:self.channel number:self.number note:self.kind==DJPad];
     if(self.kind==DJDisc) {
