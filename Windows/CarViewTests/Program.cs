@@ -1,5 +1,7 @@
 using ThreeE.CarView;
 if(args.Length==2&&args[0]=="--car-view-guard"){CarViewWindows.RunGuard(args[1]);return;}
+if(args.Length==1&&args[0]=="--crash-live"){CarViewWindows.CrashProbe();return;}
+if(args.Length==1&&args[0]=="--live"){CarViewWindows.LiveSelfTest();Console.WriteLine("PASS: Windows live Car View, independent mirror toggle, normal off and forced-exit recovery restore the original mode and pointer.");return;}
 CarViewWindows.RecoverySelfTest();
 void Check(bool good,string text){if(!good)throw new Exception(text);}
 Check(CarViewWindows.ModeScore(1080,675,60,1440,900)<CarViewWindows.ModeScore(1280,800,60,1440,900),"Larger controls prefer useful workspace size");

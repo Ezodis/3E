@@ -61,6 +61,17 @@ foreach ($arch in @('x64','arm64')) {
     $payloads[$arch] = [Convert]::ToBase64String([IO.File]::ReadAllBytes($archive))
 }
 
+# The hosted Windows test VM also exercises real on/off and crash recovery.
+# Local builds keep the non-mutating surface/geometry checks above.
+if ($env:GITHUB_ACTIONS -eq 'true') {
+    $carProbe = Join-Path $build 'car-live-probe'
+    dotnet build (Join-Path $PSScriptRoot 'CarViewTests') -c Release -o $carProbe
+    if ($LASTEXITCODE -ne 0) { throw 'Car View live probe build failed.' }
+    Get-ChildItem -LiteralPath (Join-Path $build 'framework-x64') -Filter 'ThreeE.KeyboardRecovery.*' | Copy-Item -Destination $carProbe -Force
+    & (Join-Path $carProbe 'CarViewTests.exe') --live
+    if ($LASTEXITCODE -ne 0) { throw 'Car View live on/off or crash recovery failed.' }
+}
+
 # Exercise the compiled release without starting input hooks or changing settings.
 dotnet run --project (Join-Path $PSScriptRoot 'KeyboardLayoutTests')
 if ($LASTEXITCODE -ne 0) { throw 'Mac keyboard layout restoration tests failed.' }

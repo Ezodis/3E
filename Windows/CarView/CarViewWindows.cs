@@ -91,7 +91,7 @@ public sealed class CarViewWindows : IDisposable {
             Enabled=false;StopMirror();
             if(pointerWindow!=0){KillTimer(pointerWindow,1);UnregisterHotKey(pointerWindow,0x3EC);WTSUnRegisterSessionNotification(pointerWindow);DestroyWindow(pointerWindow);pointerWindow=0;}
             pointer?.Dispose();pointer=null;reversePointer?.Dispose();reversePointer=null;
-            if(nonce!=null)using(var gate=LockState()){var state=ReadRecovery();if(state!=null&&state.Nonce==nonce){state.StopRequested=true;WriteRecovery(state);RestoreLocked(state);}}
+            if(nonce!=null)using(var gate=LockState()){var state=ReadRecovery();if(state!=null&&state.Nonce==nonce){state.StopRequested=true;WriteRecovery(state);RestoreLocked(state,magInitialized);}}
             if(magInitialized){MagUninitialize();magInitialized=false;}
             nonce=null;Status="Off — previous resolution and pointer restored.";Changed?.Invoke();
         }finally{stopping=false;}
@@ -168,11 +168,11 @@ public sealed class CarViewWindows : IDisposable {
     private static Recovery ReadRecovery()=>File.Exists(StatePath)?JsonSerializer.Deserialize<Recovery>(File.ReadAllText(StatePath)):null;
     private static void WriteRecovery(Recovery state){var temp=StatePath+".tmp";File.WriteAllText(temp,JsonSerializer.Serialize(state));File.Move(temp,StatePath,true);}
     private static bool OwnerAlive(Recovery recovery){try{using var p=Process.GetProcessById(recovery.Owner);return !p.HasExited&&p.StartTime.ToUniversalTime().Ticks==recovery.Started;}catch{return false;}}
-    private static void RestoreLocked(Recovery recovery){
+    private static void RestoreLocked(Recovery recovery,bool hasMagContext=false){
         var mode=Decode(recovery.Mode);int restored=recovery.DisplayChanged?ChangeDisplaySettingsEx(null,ref mode,0,4,0):0;
         if(restored!=0)restored=ResetDisplaySettingsEx(null,0,0,0,0); // saved monitor may have disconnected
         bool pointerRestored=!recovery.PointerChanged;
-        if(recovery.PointerChanged){bool mag=MagInitialize();pointerRestored=mag&&MagShowSystemCursor(recovery.CursorVisible);if(mag)MagUninitialize();}
+        if(recovery.PointerChanged){bool mag=hasMagContext||MagInitialize();pointerRestored=mag&&MagShowSystemCursor(recovery.CursorVisible);if(mag&&!hasMagContext)MagUninitialize();}
         if(restored!=0||!pointerRestored)throw new InvalidOperationException("Windows could not restore Car View's saved display or pointer.");
         File.Delete(StatePath);
     }
@@ -190,6 +190,22 @@ public sealed class CarViewWindows : IDisposable {
     private static Win32Exception Error(string action)=>new(Marshal.GetLastWin32Error(),action);
 
     public static void RecoverySelfTest(){foreach(ushort size in new ushort[]{188,220}){var mode=NewMode();mode.Size=size;mode.Width=1920;mode.Height=1080;mode.BitsPerPixel=32;mode.Frequency=60;if(Encode(Decode(Encode(mode)))!=Encode(mode))throw new Exception("Saved display mode round trip differs.");}}
+    public static void CrashProbe(){using var car=new CarViewWindows();car.SetEnabled(true);car.ToggleMirror();Console.WriteLine("CAR_VIEW_READY");Console.Out.Flush();Thread.Sleep(Timeout.Infinite);}
+    public static void LiveSelfTest(){
+        string before=Encode(CurrentMode());bool pointerBefore=CursorVisible();
+        using(var car=new CarViewWindows()){
+            try{car.SetEnabled(true);if(!car.Enabled)throw new Exception("Car View did not enable");car.ToggleMirror();if(!car.Mirrored)throw new Exception("Mirror did not enable");Thread.Sleep(100);car.Tick();car.ToggleMirror();if(car.Mirrored||!car.Enabled)throw new Exception("Mirror off changed Car View");}
+            finally{car.Stop();}
+        }
+        if(Encode(CurrentMode())!=before||CursorVisible()!=pointerBefore||File.Exists(StatePath))throw new Exception("Normal off did not restore original state");
+        using var child=Process.Start(new ProcessStartInfo(Environment.ProcessPath){UseShellExecute=false,CreateNoWindow=true,RedirectStandardOutput=true,RedirectStandardError=true,ArgumentList={"--crash-live"}});
+        try{
+            var ready=child.StandardOutput.ReadLineAsync();if(!ready.Wait(TimeSpan.FromSeconds(12))||ready.Result!="CAR_VIEW_READY")throw new Exception("Crash probe did not become ready: "+(child.HasExited?child.StandardError.ReadToEnd():"timeout"));
+            child.Kill();child.WaitForExit(5000);
+            var deadline=Environment.TickCount64+10000;while(File.Exists(StatePath)&&Environment.TickCount64<deadline)Thread.Sleep(100);
+            if(File.Exists(StatePath)||Encode(CurrentMode())!=before||CursorVisible()!=pointerBefore)throw new Exception("Crash recovery did not restore the original display and pointer");
+        }finally{if(!child.HasExited)child.Kill();}
+    }
     // Native pixel and exclusion checks use only small windows owned by this
     // probe. They never resize the desktop, hide the cursor or post input.
     public static void NativeSelfTest(){
