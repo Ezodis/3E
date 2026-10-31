@@ -27,7 +27,8 @@
 - (void)layout {
     [super layout];CGFloat width=self.bounds.size.width;
     self.originalView.frame=NSMakeRect(0,0,MAX(0,width-44),self.bounds.size.height);
-    self.mainButton.frame=NSMakeRect(38,0,MAX(0,width-84),self.bounds.size.height);
+    // Borderless button titles have a 1 pt inset; native menu titles start at 31.
+    self.mainButton.frame=NSMakeRect(30,0,MAX(0,width-76),self.bounds.size.height);
     self.gear.frame=NSMakeRect(width-39,2,30,self.bounds.size.height-4);
 }
 - (void)update {
