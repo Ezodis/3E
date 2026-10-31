@@ -123,6 +123,7 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="../../PhoneBar/PhoneBar.Windows.csproj" />
+    <Compile Include="../../CarView/CarViewWindows.cs" />
   </ItemGroup>
   <!--
       Defining the "Msix" ProjectCapability here allows the Single-project MSIX Packaging

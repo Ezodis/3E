@@ -1,4 +1,5 @@
 using ThreeE.PhoneBar.Windows;
+using ThreeE.CarView;
 using System;
 using System.Diagnostics;
 using System.IO;
@@ -26,6 +27,7 @@ public sealed class WindowsHub : IDisposable {
     private readonly DispatcherTimer timer = new() { Interval = TimeSpan.FromSeconds(20) };
     private readonly MenuFlyout menu;
     private readonly PhoneBarModule phoneBar = new();
+    private readonly CarViewWindows carView=new();
     private readonly MacKeyboardLayout macKeyboard = MacKeyboardLayout.Create();
     private HubSettings settings;
     private bool busy, disposed, keyboardRefreshRequested;
@@ -51,6 +53,8 @@ public sealed class WindowsHub : IDisposable {
     // A zero-width space at the end marks which icon a row gets.
     private const string IconSlot = "\t\u2003\u2003";
     private const string RotateSlot = IconSlot + "\u200B";
+    private const string MirrorSlot = IconSlot + "\u200C";
+    private const string MirrorGlyph = "\uE8AB"; // switch / opposing arrows
     private const string SettingsGlyph = "\uE9E9"; // Segoe Fluent Icons / MDL2 sliders
     private const string RotateGlyph = "\uE8EE"; // repeat
     private static readonly UIntPtr IconTimer = (UIntPtr)0x3E1;
@@ -75,6 +79,7 @@ public sealed class WindowsHub : IDisposable {
 
     public WindowsHub(MenuFlyout menu) {
         this.menu = menu;
+        carView.Changed+=RefreshMenu;
         Directory.CreateDirectory(data);
         try { settings = JsonSerializer.Deserialize<HubSettings>(File.ReadAllText(Path.Combine(data, "settings.json"))) ?? new(); }
         catch { settings = new(); }
@@ -371,7 +376,7 @@ public sealed class WindowsHub : IDisposable {
         return result;
     }
 
-    public static string MenuGlyph(string text) => text.EndsWith(RotateSlot, StringComparison.Ordinal) ? RotateGlyph : text.EndsWith(IconSlot, StringComparison.Ordinal) ? SettingsGlyph : null;
+    public static string MenuGlyph(string text) => text.EndsWith(MirrorSlot,StringComparison.Ordinal)?MirrorGlyph:text.EndsWith(RotateSlot, StringComparison.Ordinal) ? RotateGlyph : text.EndsWith(IconSlot, StringComparison.Ordinal) ? SettingsGlyph : null;
 
     private void DrawMenuIcons(IntPtr window) {
         try {
@@ -400,7 +405,7 @@ public sealed class WindowsHub : IDisposable {
                     DeleteObject(brush);
                     int luminance = (int)((background & 0xFF) * 299 + ((background >> 8) & 0xFF) * 587 + ((background >> 16) & 0xFF) * 114) / 1000;
                     SetBkMode(dc, 1);
-                    SetTextColor(dc, luminance > 128 ? 0x00303030u : 0x00F0F0F0u);
+                    SetTextColor(dc,glyph==MirrorGlyph&&carView.Mirrored?(luminance>128?0x00507800u:0x00C2FF00u):luminance>128?0x00303030u:0x00F0F0F0u);
                     var old = SelectObject(dc, font);
                     DrawTextW(dc, glyph, -1, ref box, 0x1 | 0x4 | 0x20 | 0x100); // centre, vcentre, single line, no clip
                     SelectObject(dc, old);
@@ -511,6 +516,7 @@ public sealed class WindowsHub : IDisposable {
             settings.PhoneBarAlwaysOn = enabled;
             if (enabled) phoneBar.EnsureRunning(); else phoneBar.Stop();
         }, NewPhoneLink);
+        Toggle("Car View",carView.Enabled,enabled=>carView.SetEnabled(enabled),()=>carView.ToggleMirror(),MirrorSlot);
         Toggle("Three-finger drag", App.SettingsData.ThreeFingerDrag, enabled => { App.SettingsData.ThreeFingerDrag = enabled; App.SettingsData.save(); },
             () => App.Instance.OpenSettingsWindow());
         // The check mark means the keyboard engine is running; clicking an unchecked row starts it.
@@ -732,6 +738,7 @@ public sealed class WindowsHub : IDisposable {
         if (menuPopupHook != IntPtr.Zero) { UnhookWinEvent(menuPopupHook); menuPopupHook = IntPtr.Zero; }
         if (menuFocusHook != IntPtr.Zero) { UnhookWinEvent(menuFocusHook); menuFocusHook = IntPtr.Zero; }
         phoneBar.Dispose();
+        carView.Changed-=RefreshMenu;carView.Dispose();
         Save();
         try { macKeyboard.DisableAsync().GetAwaiter().GetResult(); } catch (Exception ex) { Log(ex); }
         StopKeyboard(); Stop("WinDynamicDesktop");

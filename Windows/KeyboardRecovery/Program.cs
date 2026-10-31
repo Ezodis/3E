@@ -4,6 +4,8 @@ using System.IO;
 using ThreeFingerDragOnWindows;
 
 try {
+    if(args.Length==2&&args[0]=="--car-view-guard"){ThreeE.CarView.CarViewWindows.RunGuard(args[1]);return 0;}
+    ThreeE.CarView.CarViewWindows.RecoverAbandoned();
     string lease = null;
     if (args.Length == 2 && int.TryParse(args[0], out int owner)) {
         lease = args[1];

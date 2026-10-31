@@ -6,5 +6,7 @@
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="../DragEngine/ThreeFingerDragOnWindows/MacKeyboardLayout.cs" Link="MacKeyboardLayout.cs" />
+    <Compile Include="../CarView/CarViewWindows.cs" />
+    <PackageReference Include="System.Drawing.Common" Version="10.0.0" />
   </ItemGroup>
 </Project>

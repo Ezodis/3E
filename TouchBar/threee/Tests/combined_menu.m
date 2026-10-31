@@ -46,12 +46,16 @@ int main(void) { @autoreleasepool {
     }
     NSCAssert(StripCombinedRelease(),@"Build with -DSTRIP_TEST_EDITION_COMBINED=1");
     CleanMenu(delegate.theItem.menu);
-    NSCAssert(delegate.theItem.menu.numberOfItems==16,@"Add gesture, App, Phone Bar, Car View, DJ setup, downloads, automatic-update and Restart controls to the existing menu");
+    NSCAssert(delegate.theItem.menu.numberOfItems==15,@"Module gears are inline, with no bottom settings row");
     NSMenuItem *restart=delegate.theItem.menu.itemArray.lastObject;
     NSCAssert([restart.identifier isEqual:@"local.musicstrip.restart"] && [restart.title isEqual:@"Restart"] && restart.target==ThreeEMidiBridge.class && restart.action==@selector(restartAll:),@"Restart (update check + relaunch) is in the full menu, like Windows");
     NSMenuItem *phone=nil;
     for(NSMenuItem *item in delegate.theItem.menu.itemArray)if([item.identifier isEqual:@"local.musicstrip.phone"])phone=item;
     NSCAssert(phone!=nil,@"Phone Bar control is present");
+    NSCAssert([phone.view isKindOfClass:ThreeEModuleMenuRow.class]&&[[(ThreeEModuleMenuRow *)phone.view originalView] isKindOfClass:ThreeEPhoneBarMenuRow.class],@"Phone gear preserves the original hover/QR row");
+    NSMenuItem *phoneModule=[(ThreeEModuleMenuRow *)phone.view settingsMenu].itemArray.firstObject;
+    NSCAssert([phoneModule.representedObject isEqual:@"phone"]&&phoneModule.target==ThreeEModuleActions.class&&phoneModule.action==@selector(changeModule:),@"Phone gear retains the existing module-management route");
+    for(NSMenuItem *row in delegate.theItem.menu.itemArray)NSCAssert(![row.identifier isEqual:@"local.musicstrip.modules"],@"There is no standalone bottom gear");
     NSCAssert([phone.identifier isEqual:@"local.musicstrip.phone"] && [phone.title isEqual:@"Phone Bar"] && phone.view!=nil,@"Phone Bar is a bundled module in the existing menu");
     NSMenu *base=StripBaseMenu(delegate,YES);
     NSCAssert([base.itemArray[0].identifier isEqual:@"local.musicstrip.phone"] && [base.itemArray[1].identifier isEqual:@"local.musicstrip.carView"] && [base.itemArray[2].identifier isEqual:@"local.musicstrip.touchTabToggle"],@"Car View is available without Touch Bar interfaces");
@@ -63,9 +67,10 @@ int main(void) { @autoreleasepool {
     for(NSMenuItem *item in delegate.theItem.menu.itemArray)if([item.identifier isEqual:@"local.musicstrip.touchTabToggle"])toggle=item;
     NSCAssert(toggle.target==ThreeEMidiBridge.class && toggle.action==@selector(toggleTouchTab:),@"Use the existing parent/helper pipe action");
     combinedGestureState=@"on"; CleanMenu(delegate.theItem.menu);
+    NSCAssert([toggle.view isKindOfClass:ThreeEModuleMenuRow.class]&&[[(ThreeEModuleMenuRow *)toggle.view settingsMenu].itemArray.firstObject.representedObject isEqual:@"touchtab"],@"Touch Tab owns its module gear");
     NSCAssert(toggle.state==NSControlStateValueOn && [toggle.title isEqual:@"Touch Tab"],@"Reflect actual enabled runtime state without changing the label");
     combinedGestureState=@"off"; CleanMenu(delegate.theItem.menu);
-    NSCAssert(toggle.state==NSControlStateValueOff && delegate.theItem.menu.numberOfItems==16,@"Disabling never duplicates the menu items");
+    NSCAssert(toggle.state==NSControlStateValueOff && delegate.theItem.menu.numberOfItems==15,@"Disabling never duplicates the menu items");
     combinedGestureState=@"permission"; CleanMenu(delegate.theItem.menu);
     NSCAssert([toggle.title isEqual:@"Touch Tab"] && toggle.toolTip.length>0,@"Permission explanation belongs in tooltip, not the toggle label");
     NSMenuItem *hide=[[NSMenuItem alloc] initWithTitle:@"Hide 3£" action:nil keyEquivalent:@""];
@@ -106,5 +111,12 @@ int main(void) { @autoreleasepool {
         for(NSMenuItem *row in rows) if(row.target==ThreeEDJActions.class && row.action==NSSelectorFromString(action)) count++;
         NSCAssert(count==1,@"Each DJ action survives menu refresh exactly once");
     }
-    puts("Passed combined gesture toggle target, runtime feedback and duplicate-free menu refresh. No tray icon or keyboard events created.");
+    NSMenuItem *customize=[[NSMenuItem alloc] initWithTitle:@"Customize Touch Bar…" action:NSSelectorFromString(@"customizeTouchbar:") keyEquivalent:@""];customize.target=delegate;
+    [delegate.theItem.menu addItem:customize];CleanMenu(delegate.theItem.menu);NSView *wrapped=customize.view;CleanMenu(delegate.theItem.menu);
+    NSCAssert([wrapped isKindOfClass:ThreeEModuleMenuRow.class]&&customize.view==wrapped&&customize.target==delegate&&customize.action==NSSelectorFromString(@"customizeTouchbar:"),@"Customize Touch Bar keeps its original action and one inline wrapper");
+    ThreeEModuleMenuRow *moduleRow=(id)wrapped;
+    NSCAssert([[moduleRow settingsMenu].itemArray.firstObject.representedObject isEqual:@"touchbar"],@"Touch Bar uninstall belongs on Customize Touch Bar");
+    for(NSNumber *width in @[@230,@400]){moduleRow.frame=NSMakeRect(0,0,width.doubleValue,26);[moduleRow layout];NSCAssert(NSMaxX(moduleRow.mainButton.frame)<NSMinX(moduleRow.gear.frame)&&NSMaxX(moduleRow.gear.frame)==width.doubleValue-9,@"Gear stays aligned at the right without overlapping the primary action");}
+    for(NSMenuItem *item in delegate.theItem.menu.itemArray)NSCAssert(![item.identifier isEqual:@"local.musicstrip.modules"],@"Refreshing cannot resurrect the bottom gear");
+    puts("Passed combined gesture toggle target, runtime feedback, inline module gears and duplicate-free menu refresh. No tray icon or keyboard events created.");
 } return 0; }

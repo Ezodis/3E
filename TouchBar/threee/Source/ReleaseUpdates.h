@@ -307,19 +307,6 @@ static BOOL StripInstallMissingModule(NSString *module) {
     StripChangeModules(modules,NO);
 }
 @end
-static NSMenuItem *StripModuleSettingsMenu(void) {
-    NSMenuItem *settings=[[NSMenuItem alloc] initWithTitle:@"" action:nil keyEquivalent:@""];
-    settings.identifier=@"local.musicstrip.modules";
-    settings.image=[NSImage imageWithSystemSymbolName:@"gearshape" accessibilityDescription:@"Manage modules"];
-    settings.toolTip=@"Install or uninstall 3E modules";
-    NSMenu *menu=[NSMenu new];
-    for(NSArray *entry in @[@[@"phone",@"Phone Bar"],@[@"touchtab",@"Touch Tab"],@[@"touchbar",@"Touch Bar"]]) {
-        BOOL installed=StripHasModule(entry[0]);
-        NSMenuItem *item=[[NSMenuItem alloc] initWithTitle:[NSString stringWithFormat:@"%@ %@…",installed?@"Uninstall":@"Install",entry[1]] action:@selector(changeModule:) keyEquivalent:@""];
-        item.representedObject=entry[0]; item.target=ThreeEModuleActions.class; [menu addItem:item];
-    }
-    settings.submenu=menu; return settings;
-}
 static void StripCheckRelease(BOOL foreground) {
     if(stripUpdateChecking || stripUpdateInstalling) return;
     stripUpdateChecking=YES;

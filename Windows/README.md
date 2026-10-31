@@ -2,6 +2,10 @@
 
 One Windows tray app for three-finger dragging, Clicks keyboard mapping, PowerToys shortcuts/Workspaces, auto dark mode and dynamic wallpaper. The drag engine runs inside the app. Kanata and WinDynamicDesktop are managed background dependencies. PowerToys supplies Keyboard Manager; its existing preferences and tray visibility are preserved. Auto dark mode runs directly inside 3£, using light mode from noon until 8 PM and dark mode otherwise.
 
+## Car View
+
+Right-click the **3£** tray icon. Click **Car View** for larger controls and a large neon pointer; the reverse-arrows target at the right of the same row toggles the live mirror for a glass reflection. Mouse, Precision Touchpad and Phone Bar gestures keep normal directions through that reflection. Turning Car View off restores the previous resolution and native pointer. **Ctrl+Alt+Win+0** exits too. Car View starts off on launch and stops on lock/sleep. Its recovery helper restores the saved state after a crash, update or uninstall. Screen frames stay local and are not recorded.
+
 ## Mac keyboard layout
 
 Right-click the **3£** tray icon and turn on **Mac keyboard layout**. On a PC keyboard, left Alt becomes Command and left Ctrl becomes Option. Clicks uses its labeled Command key. Command+Tab switches apps, Command+Q closes the active app, Command+Space opens Windows search, and copy/paste, navigation, undo/redo and screenshot shortcuts use the bundled Mac-style mappings. Right Alt/AltGr is preserved.

@@ -60,6 +60,8 @@ foreach ($arch in @('x64','arm64')) {
 }
 
 # Exercise the compiled release without starting input hooks or changing settings.
+dotnet run --project (Join-Path $PSScriptRoot 'CarViewTests')
+if ($LASTEXITCODE -ne 0) { throw 'Car View native capture and reflection checks failed.' }
 dotnet run --project (Join-Path $PSScriptRoot 'KeyboardLayoutTests')
 if ($LASTEXITCODE -ne 0) { throw 'Mac keyboard layout restoration tests failed.' }
 # Compile the opt-in live probe, but never inject input on build/CI machines.

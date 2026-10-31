@@ -10,6 +10,7 @@
 #import "ReleaseUpdates.h"
 #import "DJSurface.h"
 #import "CarViewMenu.h"
+#import "ModuleMenu.h"
 
 // Change labels only on this engine's own streams. Do not recreate endpoints,
 // change their unique IDs, or touch another application's MIDI connections.
@@ -691,6 +692,7 @@ static void CleanMenu(NSMenu *menu) {
         toggle.toolTip=[combinedGestureState isEqual:@"permission"] ? @"Accessibility approval is required for the main 3E app" : [combinedGestureState isEqual:@"unavailable"] ? @"Trackpad gesture listener unavailable" : @"Toggle trackpad gestures";
     }
     for(NSMenuItem *item in menu.itemArray.copy) {
+        if([item.identifier isEqual:@"local.musicstrip.modules"]){[menu removeItem:item];continue;}
         NSString *title=item.title.lowercaseString;
         if([title containsString:@"check for update"]) { [menu removeItem:item]; continue; }
         if([title isEqual:@"control surface mode"]) {
@@ -714,6 +716,7 @@ static void CleanMenu(NSMenu *menu) {
         else if([item.title containsString:@"MIDI Touchbar"]) item.title=[item.title stringByReplacingOccurrencesOfString:@"MIDI Touchbar" withString:@"3E"];
         else if([item.title containsString:@"Strip3£"]) item.title=[item.title stringByReplacingOccurrencesOfString:@"Strip3£" withString:@"3E"];
         item.keyEquivalent=@""; item.keyEquivalentModifierMask=0;
+        if(item.action==NSSelectorFromString(@"customizeTouchbar:"))StripAttachModuleGear(item,@"touchbar",@"Touch Bar",StripHasModule(@"touchbar"));
         if(item.submenu) CleanMenu(item.submenu);
     }
     if(menu==statusItem.menu) {
@@ -764,7 +767,8 @@ static void CleanMenu(NSMenu *menu) {
 
         [menu removeAllItems];
         if(version)[menu addItem:version];
-        [menu addItem:phone];if(trackTab)[menu addItem:trackTab];
+        StripAttachModuleGear(phone,@"phone",@"Phone Bar",StripHasModule(@"phone"));[menu addItem:phone];
+        if(trackTab){StripAttachModuleGear(trackTab,@"touchtab",@"Touch Tab",StripHasModule(@"touchtab"));[menu addItem:trackTab];}
         // This is owned by the main process, including when the MIDI helper
         // supplies the suite's single menu-bar icon.
         if(!car)car=ThreeECarViewMenu(NSClassFromString(@"ThreeEMidiBridge"),carViewEnabled);
@@ -776,7 +780,6 @@ static void CleanMenu(NSMenu *menu) {
         [menu addItem:MenuSeparator()];
         [menu addItem:downloads];[menu addItem:automatic];
         [menu addItem:MenuSeparator()];
-        [menu addItem:StripModuleSettingsMenu()];
         if(reset)[menu addItem:reset];[menu addItem:restart];if(quit)[menu addItem:quit];
     }
 }

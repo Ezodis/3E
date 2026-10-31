@@ -96,6 +96,7 @@ public class Program {
     }
 
     private static void StartApp(){
+        ThreeE.CarView.CarViewWindows.RecoverAbandoned();
         AppInstance.FindOrRegisterForKey("ThreeFingerDragOnWindows-SingleInstance-" + (Utils.IsAppRunningAsAdministrator() ? "Admin" : "User"));
         AppInstance.GetCurrent().Activated += OnActivated;
 

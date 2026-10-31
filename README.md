@@ -1,6 +1,6 @@
 # 3£
 
-The **3£ base app includes all modules available for its platform**: install **3E Combined** on macOS or **3£** on Windows. Modules can be enabled or used independently from the same menu. Smaller downloads contain the same `3E.app` with only the selected modules installed. Click a missing feature in the menu to install it; the small gear menu can uninstall individual modules without deleting settings.
+The **3£ base app includes all modules available for its platform**: install **3E Combined** on macOS or **3£** on Windows. Modules can be enabled or used independently from the same menu. Smaller downloads contain the same `3E.app` with only the selected modules installed. Click a missing feature in the menu to install it; the gears beside Phone Bar and Touch Tab manage those modules, and the gear beside Customize Touch Bar manages Touch Bar. Uninstalling keeps settings.
 
 | App | Source | Purpose |
 | --- | --- | --- |
@@ -19,11 +19,13 @@ Windows always bundles the [Phone Bar module](Windows/PhoneBar/) and shared rece
 
 Included does not mean automatically running: Phone Bar starts only when selected and has its own stop/cleanup lifecycle. Windows' keyboard, shortcuts, themes and wallpaper retain their independent toggles. Platform-specific hardware and permissions still apply. There is no separate plugin download or duplicate copy of the phone web interface to keep updated.
 
-## Car View (Mac)
+## Car View (Mac and Windows)
 
 Click **Car View** in the 3£ menu for larger controls and a large neon-outlined pointer. The small reverse-arrows button at the right of the same row toggles mirroring. There is no separate control panel. Car View temporarily selects a lower logical resolution on the main display; turning it off restores the original mode. It also turns off on main-display changes, sleep or session locking. The display change is scoped to the app so macOS restores it if the process exits unexpectedly.
 
 **Mirror for Window Reflection** flips the live main display horizontally, including the neon pointer. Look at the reflected image in glass: physical mouse, Mac trackpad and Phone Bar gestures retain their normal directions and click coordinates. Mirror requires macOS 12.3+ and Screen Recording access for 3£. Frames stay on the Mac; this view does not record or transmit the desktop. **⌃⌥⌘0** exits Car View and restores the display size. Car View starts off on every launch.
+
+Windows includes the same **Car View** row and reverse-arrows target in the tray menu. Turning it off restores the saved resolution and native pointer visibility; **Ctrl+Alt+Win+0** also exits. Its click-through mirror keeps mouse, Precision Touchpad and Phone Bar input in their normal coordinates for viewing through the reflection. Frames stay on the PC. The existing recovery helper restores the saved state after a crash and before an update or uninstall replaces files. Car View starts off each launch and does not change registry display or cursor preferences.
 
 ## Downloads
 
@@ -40,7 +42,7 @@ Every current Mac download contains **3E.app**, with the same bundle identifier 
 - `touchtab-v…`: `TouchTab.zip` starts with Touch Tab only.
 - `phone-v…`: `3E-Phone-Mac.zip` starts with Phone Bar only.
 
-Click **Install…** beside an absent feature in the 3E menu. The gear menu installs or uninstalls modules; changing modules restarts 3E. Uninstalling removes the payload from the app, but preserves preferences. Module installation and automatic updates currently download the verified Combined archive, retain only the chosen modules in a staged app, verify its signature, then replace the existing app with rollback on failure. No second app is installed. Updates preserve the selected modules, even if all modules have been removed. A missing connection or incompatible release leaves the current app intact.
+Click **Install…** beside an absent feature in the 3E menu. The inline module gears install or uninstall their corresponding modules; changing modules restarts 3E. Uninstalling removes the payload from the app, but preserves preferences. Module installation and automatic updates currently download the verified Combined archive, retain only the chosen modules in a staged app, verify its signature, then replace the existing app with rollback on failure. No second app is installed. Updates preserve the selected modules, even if all modules have been removed. A missing connection or incompatible release leaves the current app intact.
 
 Older `Touch-Tab.app`, `3E Phone.app` and `bundle-v…` downloads are legacy applications. Quit those before migrating to `/Applications/3E.app`; their old standalone preferences are separate. Internal MIDI and Apps helper bundles remain inside 3E for compatibility with the recovered engine. The repository's `TouchBar/build/threee/3E.app` is a generated build artifact; install it at `/Applications/3E.app`. Normal launches prevent a second 3E instance from running.
 
