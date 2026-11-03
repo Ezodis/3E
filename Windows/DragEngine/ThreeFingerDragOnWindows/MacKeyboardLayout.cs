@@ -180,6 +180,8 @@ public sealed class MacKeyboardLayout {
 
     private sealed class NativeEngine : IEngine {
         [DllImport("user32.dll")] private static extern short GetAsyncKeyState(int key);
+        [StructLayout(LayoutKind.Sequential)] private struct PowerThrottling { public uint Version, ControlMask, StateMask; }
+        [DllImport("kernel32.dll")] private static extern bool SetProcessInformation(IntPtr process, int infoClass, ref PowerThrottling info, int size);
         private const string Name = "PowerToys.KeyboardManagerEngine";
         private static Process[] Processes() {
             int session = Process.GetCurrentProcess().SessionId;
@@ -210,6 +212,13 @@ public sealed class MacKeyboardLayout {
         public async Task StartAsync(bool owned) {
             Validate();
             using var p = Process.Start(new ProcessStartInfo(PathName, owned ? Environment.ProcessId.ToString() : "") { UseShellExecute = false, CreateNoWindow = true, WindowStyle = ProcessWindowStyle.Hidden });
+            // A hidden background process is throttled first, and a hook that
+            // answers late is removed by Windows. Keep the engine responsive.
+            try {
+                p.PriorityClass = ProcessPriorityClass.High;
+                var state = new PowerThrottling { Version = 1, ControlMask = 1 | 4, StateMask = 0 };
+                SetProcessInformation(p.Handle, 4, ref state, Marshal.SizeOf<PowerThrottling>());
+            } catch (Exception) { }
             await Task.Delay(700).ConfigureAwait(false);
             if (p.HasExited || !Running) throw new InvalidOperationException("Keyboard Manager could not start. Check PowerToys policy and permissions, then try again.");
         }

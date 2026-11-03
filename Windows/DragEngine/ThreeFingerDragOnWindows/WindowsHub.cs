@@ -38,6 +38,7 @@ public sealed class WindowsHub : IDisposable {
     // engine process keeps running without it. Reinstall periodically while idle.
     private const int KeyboardRefreshMinutes = 5, KeyboardRefreshIdleSeconds = 15;
     private DateTime lastKeyboardRefresh = DateTime.Now;
+    private KeyboardHookWatch hookWatch;
     private string updateTag;
     private int ssmsThemeProfiles;
     private string ssmsRotationPeriod;
@@ -91,6 +92,8 @@ public sealed class WindowsHub : IDisposable {
         RefreshMenu();
         timer.Tick += (_, _) => Tick();
         SystemEvents.SessionSwitch += OnSessionSwitch;
+        // Must hook before StartAsync launches the engine; see KeyboardHookWatch.
+        try { hookWatch = new KeyboardHookWatch(Path.Combine(root, "MacKeyboard.json"), OnKeyboardHookLost); } catch (Exception ex) { Log(ex); }
         timer.Start();
         _ = StartAsync();
     }
@@ -206,6 +209,14 @@ public sealed class WindowsHub : IDisposable {
             await InstallPendingUpdateAsync();
         } catch (Exception ex) { Log(ex); }
         finally { busy = false; WriteDiagnostics(); }
+    }
+
+    private void OnKeyboardHookLost() {
+        App.Instance.DispatcherQueue.TryEnqueue(() => {
+            if (disposed || !settings.MacKeyboard) return;
+            keyboardRefreshRequested = true;
+            Tick();
+        });
     }
 
     private void OnSessionSwitch(object sender, SessionSwitchEventArgs e) {
@@ -735,6 +746,7 @@ public sealed class WindowsHub : IDisposable {
         disposed = true;
         timer.Stop();
         SystemEvents.SessionSwitch -= OnSessionSwitch;
+        hookWatch?.Dispose();
         if (menuPopupHook != IntPtr.Zero) { UnhookWinEvent(menuPopupHook); menuPopupHook = IntPtr.Zero; }
         if (menuFocusHook != IntPtr.Zero) { UnhookWinEvent(menuFocusHook); menuFocusHook = IntPtr.Zero; }
         phoneBar.Dispose();
