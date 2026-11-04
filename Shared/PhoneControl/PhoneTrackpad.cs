@@ -3,6 +3,7 @@ using System;
 using System.IO;
 using System.Linq;
 using System.Net;
+using System.Net.Http;
 using System.Net.NetworkInformation;
 using System.Net.Sockets;
 using System.Net.WebSockets;
@@ -31,6 +32,11 @@ public sealed class PhoneTrackpad : IDisposable {
     private readonly ITrackpadInput input;
     private readonly ITrackpadFirewall firewall;
     private readonly int port;
+    private readonly Func<CancellationToken, Task<bool>> healthProbe;
+    private static readonly HttpClient healthClient = new(new SocketsHttpHandler {
+        UseProxy = false, AllowAutoRedirect = false, UseCookies = false,
+        PooledConnectionLifetime = TimeSpan.FromSeconds(30)
+    });
     private Session session;
     private string status = "Off";
     private bool disposed;
@@ -110,6 +116,7 @@ public sealed class PhoneTrackpad : IDisposable {
         // hold a request slot, or reloading the page could get 503s.
         public readonly SemaphoreSlim Sockets = new(4);
         public readonly HttpListener Listener = new();
+        public readonly string HealthId = Guid.NewGuid().ToString("N");
         public readonly string Token;
         public readonly string Origin, AliasOrigin;
         public readonly IPAddress Address;
@@ -173,8 +180,10 @@ public sealed class PhoneTrackpad : IDisposable {
     }
 
     // Injectable boundaries let tests exercise network loss without disabling Wi-Fi or moving the user's mouse.
-    public PhoneTrackpad(Func<IPAddress> addressProvider, ITrackpadInput input, ITrackpadFirewall firewall, int port) {
+    public PhoneTrackpad(Func<IPAddress> addressProvider, ITrackpadInput input, ITrackpadFirewall firewall, int port,
+        Func<CancellationToken, Task<bool>> healthProbe = null) {
         this.addressProvider = addressProvider; this.input = input; this.firewall = firewall; this.port = port;
+        this.healthProbe = healthProbe;
     }
 
     public static IPAddress GetLocalAddress() => PhoneNetwork.Refresh();
@@ -284,12 +293,23 @@ public sealed class PhoneTrackpad : IDisposable {
     }
 
     private async Task MonitorAsync(Session owner) {
+        int ticks = 0, failures = 0;
         try {
             while (!owner.Cancel.IsCancellationRequested) {
                 await Task.Delay(1500, owner.Cancel.Token);
                 // Adapter enumeration can block on a driver. It must never hold
                 // the lock used for incoming pointer/keyboard/MIDI commands.
                 var address = addressProvider();
+                // HTTP.sys can abandon its request queue without completing
+                // GetContextAsync or clearing IsListening. Exercise the local
+                // request path, without a proxy or traffic on the LAN. Two
+                // failed probes avoid restarting on a brief scheduling delay.
+                bool unhealthy = false;
+                if (++ticks % 6 == 0) {
+                    bool healthy = await ProbeAsync(owner);
+                    failures = healthy ? 0 : failures + 1;
+                    unhealthy = failures >= 2;
+                }
                 bool rebound = false, resume = false;
                 lock (gate) {
                     if (session != owner) return;
@@ -297,13 +317,13 @@ public sealed class PhoneTrackpad : IDisposable {
                         ReleaseHttpLocked(owner);
                         status = "Watch asleep — reconnects when its page returns.";
                     }
-                    if (!owner.Address.Equals(address)) {
+                    if (unhealthy || !owner.Address.Equals(address)) {
                         if (!FollowNetwork || !wanted) {
-                            StopLocked("Network changed or disconnected — reconnect to Wi-Fi, then start again.");
+                            StopLocked(unhealthy ? "Phone Bar stopped responding — start again to reconnect." : "Network changed or disconnected — reconnect to Wi-Fi, then start again.");
                             return;
                         }
                         // Same link, new address: rebind now, or pause until a network returns.
-                        StopLocked("Network changed — reconnecting automatically…");
+                        StopLocked(unhealthy ? "Phone Bar stopped responding — reconnecting automatically…" : "Network changed — reconnecting automatically…");
                         rebound = address != null && StartLocked();
                         resume = !rebound;
                     }
@@ -323,10 +343,40 @@ public sealed class PhoneTrackpad : IDisposable {
         }
     }
 
+    private async Task<bool> ProbeAsync(Session owner) {
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(owner.Cancel.Token);
+        timeout.CancelAfter(TimeSpan.FromSeconds(2));
+        try {
+            if (healthProbe != null) return await healthProbe(timeout.Token).WaitAsync(timeout.Token);
+            using var request = new HttpRequestMessage(HttpMethod.Get, $"http://127.0.0.1:{port}/alive");
+            request.Headers.Host = new Uri(owner.Origin).Authority;
+            using var reply = await healthClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, timeout.Token);
+            return reply.StatusCode == HttpStatusCode.NoContent &&
+                reply.Headers.TryGetValues("X-Phone-Bar-Receiver", out var values) && values.Contains(owner.HealthId);
+        } catch (OperationCanceledException) when (owner.Cancel.IsCancellationRequested) { throw; }
+        catch { return false; }
+    }
+
+    private static void ReplyAlive(Session owner, HttpListenerContext context) {
+        var response = context.Response;
+        var origin = context.Request.Headers["Origin"];
+        if (owner.IsOrigin(origin)) response.Headers["Access-Control-Allow-Origin"] = origin;
+        response.Headers["Cache-Control"] = "no-store";
+        // A per-listener marker distinguishes this queue from an HTTP.sys
+        // error page or another listener. It conveys no pairing authority.
+        response.Headers["X-Phone-Bar-Receiver"] = owner.HealthId;
+        response.StatusCode = 204; response.Close();
+    }
+
     private async Task ListenAsync(Session owner) {
         try {
             while (!owner.Cancel.IsCancellationRequested) {
                 var context = await owner.Listener.GetContextAsync();
+                // Health replies must not wait for page downloads or uploads.
+                if (context.Request.HttpMethod == "GET" && context.Request.Url.AbsolutePath == "/alive" && owner.IsHost(context.Request.Headers["Host"])) {
+                    try { ReplyAlive(owner, context); } catch { try { context.Response.Abort(); } catch { } }
+                    continue;
+                }
                 if (!owner.Slots.Wait(0)) { Refuse(context.Response, 503, "The computer is busy. Reload this page in a moment."); continue; }
                 _ = HandleAsync(owner, context);
             }
@@ -370,14 +420,6 @@ public sealed class PhoneTrackpad : IDisposable {
                     await ControlAsync(owner, ws, request.LocalEndPoint.Address);
                 } finally { owner.Sockets.Release(); }
                 return;
-            }
-            if (request.Url.AbsolutePath == "/alive") {
-                // Lets a page opened by IP check that the stable name reaches this
-                // receiver before switching to it. Reveals no pairing data.
-                var origin = request.Headers["Origin"];
-                if (owner.IsOrigin(origin)) context.Response.Headers["Access-Control-Allow-Origin"] = origin;
-                context.Response.Headers["Cache-Control"] = "no-store";
-                context.Response.StatusCode = 204; context.Response.Close(); return;
             }
             bool pairing = request.Url.AbsolutePath == "/pair";
             if (pairing && !CanShowPairing(request.RemoteEndPoint.Address, owner.Address)) {

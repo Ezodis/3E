@@ -1,5 +1,6 @@
 using ThreeE.PhoneBar.Windows;
 using ThreeE.CarView;
+using ThreeE.Brand;
 using System;
 using System.Diagnostics;
 using System.IO;
@@ -20,7 +21,7 @@ namespace ThreeFingerDragOnWindows;
 
 // The drag engine and the hub share this process and its single notification icon.
 public sealed class WindowsHub : IDisposable {
-    public const string Version = "3.0.13";
+    public const string Version = "3.0.167.1";
     private const string ReleasesUrl = "https://api.github.com/repos/Ezodis/3E/releases";
     private readonly string root = AppContext.BaseDirectory;
     private readonly string data = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "3EWindows");
@@ -55,9 +56,9 @@ public sealed class WindowsHub : IDisposable {
     private const string IconSlot = "\t\u2003\u2003";
     private const string RotateSlot = IconSlot + "\u200B";
     private const string MirrorSlot = IconSlot + "\u200C";
-    private const string MirrorGlyph = "\uE8AB"; // switch / opposing arrows
-    private const string SettingsGlyph = "\uE9E9"; // Segoe Fluent Icons / MDL2 sliders
-    private const string RotateGlyph = "\uE8EE"; // repeat
+    private const string MirrorGlyph = "mirror";
+    private const string SettingsGlyph = "settings";
+    private const string RotateGlyph = "rotate";
     private static readonly UIntPtr IconTimer = (UIntPtr)0x3E1;
     private readonly MenuWindowProc menuWindowProc;
     private IntPtr paintedMenu, previousMenuProc;
@@ -245,6 +246,7 @@ public sealed class WindowsHub : IDisposable {
                 powerToysRunning = IsRunning("PowerToys"), shortcutsRunning = IsRunning("PowerToys.KeyboardManagerEngine"),
                 wallpaperRunning = IsRunning("WinDynamicDesktop"), autoDark = settings.AutoDark,
                 phoneTrackpadRunning = phoneBar.Running, phoneTrackpadStatus = phoneBar.Status,
+                phoneBarNetworkAllowed = phoneBar.NetworkAllowed,
                 menu = menu.Items.Select(item => item switch {
                     ToggleMenuFlyoutItem toggle => toggle.Text,
                     MenuFlyoutItem command => command.Text,
@@ -397,8 +399,6 @@ public sealed class WindowsHub : IDisposable {
             int Px(int value) => (int)(value * dpi / 96);
             var dc = GetDC(window);
             if (dc == IntPtr.Zero) return;
-            var font = CreateFontW(-Px(15), 0, 0, 0, 400, 0, 0, 0, 1, 0, 0, 5, 0,
-                Environment.OSVersion.Version.Build >= 22000 ? "Segoe Fluent Icons" : "Segoe MDL2 Assets");
             try {
                 var text = new System.Text.StringBuilder(256);
                 for (int index = 0, count = GetMenuItemCount(menuHandle); index < count; index++) {
@@ -415,13 +415,12 @@ public sealed class WindowsHub : IDisposable {
                     FillRect(dc, ref box, brush);
                     DeleteObject(brush);
                     int luminance = (int)((background & 0xFF) * 299 + ((background >> 8) & 0xFF) * 587 + ((background >> 16) & 0xFF) * 114) / 1000;
-                    SetBkMode(dc, 1);
-                    SetTextColor(dc,glyph==MirrorGlyph&&carView.Mirrored?(luminance>128?0x00507800u:0x00C2FF00u):luminance>128?0x00303030u:0x00F0F0F0u);
-                    var old = SelectObject(dc, font);
-                    DrawTextW(dc, glyph, -1, ref box, 0x1 | 0x4 | 0x20 | 0x100); // centre, vcentre, single line, no clip
-                    SelectObject(dc, old);
+                    uint color = glyph == MirrorGlyph && carView.Mirrored ? (luminance > 128 ? 0x00507800u : 0x00C2FF00u) : luminance > 128 ? 0x00303030u : 0x00F0F0F0u;
+                    using var graphics = System.Drawing.Graphics.FromHdc(dc);
+                    MenuIcons.Draw(graphics, glyph, new System.Drawing.RectangleF(x - Px(8), y - Px(8), Px(16), Px(16)),
+                        System.Drawing.Color.FromArgb((int)(color & 255), (int)((color >> 8) & 255), (int)((color >> 16) & 255)));
                 }
-            } finally { DeleteObject(font); ReleaseDC(window, dc); }
+            } finally { ReleaseDC(window, dc); }
         } catch (Exception ex) { Log(ex); }
     }
 
@@ -458,6 +457,7 @@ public sealed class WindowsHub : IDisposable {
 
     // Restarts the receiver after sleep or a network change so the saved link works.
     private void KeepPhoneBar() {
+        if (!phoneBar.NetworkAllowed) { if (phoneBar.Running) phoneBar.Stop(); return; }
         if (!settings.PhoneBarAlwaysOn || disposed) return;
         try { phoneBar.EnsureRunning(); } catch (Exception ex) { Log(ex); }
     }
@@ -481,7 +481,7 @@ public sealed class WindowsHub : IDisposable {
         if (restarting || installingUpdate) return;
         restarting = true;
         try {
-            var check = CheckUpdatesAsync(false);
+            var check = phoneBar.NetworkAllowed ? CheckUpdatesAsync(false) : Task.FromResult<JsonElement?>(null);
             var newest = await Task.WhenAny(check, Task.Delay(RestartUpdateCheckLimit)) == check ? await check : null;
             if (newest != null) {
                 installingUpdate = true;
@@ -505,6 +505,7 @@ public sealed class WindowsHub : IDisposable {
     }
 
     private void NewPhoneLink() {
+        if (ShowPhoneNetworkRestriction()) return;
         if (MessageBox(IntPtr.Zero, "Make a new Track Phone link?\n\nThe current link stops working. Scan the new QR code on your iPhone (and email it to your Watch) afterwards.", "3£ Track Phone", 0x24 | ForegroundDialog) != 6) return;
         phoneBar.ResetLink();
         OpenPhoneTrackpad();
@@ -512,10 +513,18 @@ public sealed class WindowsHub : IDisposable {
 
     public void OpenPhoneTrackpad() {
         try {
+            if (ShowPhoneNetworkRestriction()) return;
             if (!settings.PhoneBarAlwaysOn) { settings.PhoneBarAlwaysOn = true; Save(); }
             phoneBar.Show();
             WriteDiagnostics();
         } catch (Exception ex) { Log(ex); }
+    }
+
+    private bool ShowPhoneNetworkRestriction() {
+        if (phoneBar.NetworkAllowed) return false;
+        phoneBar.Stop();
+        MessageBox(IntPtr.Zero, PhoneBarNetworkPolicy.RestrictedStatus + "\n\nPhone control requires an incoming connection to this computer. Ask IT to approve a connection method before enabling it. Other 3£ controls remain available.", "3£ Phone Bar", 0x40 | ForegroundDialog);
+        return true;
     }
 
     private void RefreshMenu() {
@@ -523,7 +532,8 @@ public sealed class WindowsHub : IDisposable {
         menu.Items.Add(new MenuFlyoutItem { Text = "3£ " + Version, IsEnabled = false });
         // One Track Phone row: click to turn it on or off; its icon makes a new link.
         // Left-clicking the tray icon shows the QR.
-        Toggle("Track Phone", phoneBar.Running, enabled => {
+        Toggle(phoneBar.NetworkAllowed ? "Track Phone" : "Track Phone — network restricted", phoneBar.Running, enabled => {
+            if (ShowPhoneNetworkRestriction()) return;
             settings.PhoneBarAlwaysOn = enabled;
             if (enabled) phoneBar.EnsureRunning(); else phoneBar.Stop();
         }, NewPhoneLink);
@@ -555,7 +565,9 @@ public sealed class WindowsHub : IDisposable {
         Item("Restart", Restart);
         // Automatic updates make a manual check redundant; it returns only when they are off.
         if (!settings.AutoUpdate) Item(updateTag == null ? "Check for updates…" : "Update available: " + updateTag + "…", () => _ = CheckUpdatesAsync(true));
-        Toggle("Install updates automatically", settings.AutoUpdate, enabled => { settings.AutoUpdate = enabled; if (!enabled) pendingUpdate = null; else settings.LastUpdateCheckUtc = default; });
+        if (phoneBar.NetworkAllowed)
+            Toggle("Install updates automatically", settings.AutoUpdate, enabled => { settings.AutoUpdate = enabled; if (!enabled) pendingUpdate = null; else settings.LastUpdateCheckUtc = default; });
+        else menu.Items.Add(new MenuFlyoutItem { Text = "Updates require IT review", IsEnabled = false });
         Item("Open portable installer", () => Process.Start(new ProcessStartInfo("explorer.exe", "/select,\"" + Path.Combine(root, "3£Windows.ps1") + "\"") { UseShellExecute = true }));
         Item("Quit 3£", () => App.Instance.Quit());
     }
@@ -597,6 +609,14 @@ public sealed class WindowsHub : IDisposable {
     private const uint ForegroundDialog = 0x10000 | 0x40000;
     // Returns the newest newer Windows release, or null when up to date or offline.
     public async Task<JsonElement?> CheckUpdatesAsync(bool interactive) {
+        // Older public installers recreate unrestricted firewall rules and
+        // logon tasks. A restricted deployment must be updated by its owner
+        // after the installer has been reviewed, including on Restart.
+        if (!phoneBar.NetworkAllowed) {
+            pendingUpdate = null;
+            if (interactive) MessageBox(IntPtr.Zero, "This computer uses a restricted 3£ installation. Ask IT to review an update before installing it; the public installer may enable incoming connections and startup tasks.", "3£ updates", 0x40 | ForegroundDialog);
+            return null;
+        }
         try {
             JsonElement? newest = null;
             var newestVersion = System.Version.Parse(Version);

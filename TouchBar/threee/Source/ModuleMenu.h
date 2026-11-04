@@ -2,6 +2,7 @@
 #pragma once
 #import <AppKit/AppKit.h>
 #import "../../../Shared/PhoneControl/MacHost/MenuRowHighlight.h"
+#import "../../../Shared/Brand/MenuIcons.h"
 
 @interface ThreeEModuleMenuRow : NSView
 @property (weak) NSMenuItem *item;
@@ -18,7 +19,7 @@
 - (instancetype)initWithFrame:(NSRect)frame {
     if((self=[super initWithFrame:frame])) {
         self.autoresizingMask=NSViewWidthSizable;
-        self.gear=[NSButton buttonWithImage:[NSImage imageWithSystemSymbolName:@"gearshape" accessibilityDescription:@"Module settings"] target:self action:@selector(openSettings:)];
+        self.gear=[NSButton buttonWithImage:ThreeEMenuIcon(@"settings") target:self action:@selector(openSettings:)];
         self.gear.bordered=NO;self.gear.imageScaling=NSImageScaleProportionallyDown;self.gear.contentTintColor=NSColor.secondaryLabelColor;[self addSubview:self.gear];
     }return self;
 }

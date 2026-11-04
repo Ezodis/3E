@@ -50,6 +50,7 @@ if [[ "$strip_combined" == YES ]]; then
   /usr/libexec/PlistBuddy -c 'Set LSMinimumSystemVersion 12.0' "$strip_app/Contents/Info.plist"
 fi
 ditto --norsrc --noextattr Resources "$strip_app/Contents/Resources"
+cp "$strip_repo/../Shared/Brand/menu-icons.json" "$strip_app/Contents/Resources/menu-icons.json"
 mkdir -p "$strip_app/Contents/Resources/Ableton/_3E"
 cp "$strip_repo/threee/Ableton/_3E/"*.py "$strip_app/Contents/Resources/Ableton/_3E/"
 xcrun clang -arch arm64 -arch x86_64 -fobjc-arc -Wall -Wextra -Wno-unused-parameter -O2 \

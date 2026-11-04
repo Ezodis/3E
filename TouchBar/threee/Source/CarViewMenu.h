@@ -2,6 +2,7 @@
 #pragma once
 #import <AppKit/AppKit.h>
 #import "../../../Shared/PhoneControl/MacHost/MenuRowHighlight.h"
+#import "../../../Shared/Brand/MenuIcons.h"
 
 @interface ThreeECarMenuRow : NSView
 @property (weak) NSMenuItem *item;
@@ -18,7 +19,7 @@
         self.toggle.bordered=NO;self.toggle.alignment=NSTextAlignmentLeft;self.toggle.font=[NSFont menuFontOfSize:0];
         self.toggle.toolTip=@"Toggle larger controls and the neon pointer. Turning off restores the previous display and pointer.";
         [self addSubview:self.toggle];
-        NSImage *image=[NSImage imageWithSystemSymbolName:@"arrow.left.arrow.right" accessibilityDescription:@"Mirror screen"];
+        NSImage *image=ThreeEMenuIcon(@"mirror");
         self.mirror=[NSButton buttonWithImage:image target:self action:@selector(toggleCarMirror:)];
         self.mirror.bordered=NO;self.mirror.imagePosition=NSImageOnly;self.mirror.imageScaling=NSImageScaleProportionallyDown;
         self.mirror.accessibilityLabel=@"Mirror screen";[self addSubview:self.mirror];[self layout];

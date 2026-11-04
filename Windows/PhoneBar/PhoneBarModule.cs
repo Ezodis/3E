@@ -14,7 +14,8 @@ public sealed class PhoneBarModule : IDisposable {
     private PhoneMediaState media;
     private OutputVolume volume;
     public bool Running => receiver?.Running ?? false;
-    public string Status => receiver?.Status ?? "Off";
+    public bool NetworkAllowed => PhoneBarNetworkPolicy.AllowsInbound();
+    public string Status => NetworkAllowed ? receiver?.Status ?? "Off" : PhoneBarNetworkPolicy.RestrictedStatus;
     public string NamedUrl => receiver?.NamedUrl;
     private static string LinkPath => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "3EWindows", "phone-link.txt");
 
@@ -50,6 +51,7 @@ public sealed class PhoneBarModule : IDisposable {
 
     // Starts (or restarts after a network change) without showing the popup.
     public bool EnsureRunning() {
+        if (!NetworkAllowed) { Stop(); return false; }
         EnsureReceiver();
         media ??= new();
         volume ??= new(WindowsOutputVolume.Read,WindowsOutputVolume.Write);
@@ -60,6 +62,7 @@ public sealed class PhoneBarModule : IDisposable {
     }
 
     private void OnAddressChanged() {
+        if (!NetworkAllowed) { Stop(); return; }
         var current = receiver;
         if (current == null || disposed) return;
         if (current.Running) PhonePowerTuning.Begin();
@@ -77,6 +80,7 @@ public sealed class PhoneBarModule : IDisposable {
     }
 
     public void Show() {
+        if (!NetworkAllowed) { Stop(); return; }
         EnsureRunning();
         popup ??= new(receiver);
         popup.Show();

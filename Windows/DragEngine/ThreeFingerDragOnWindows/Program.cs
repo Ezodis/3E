@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Diagnostics;
 using System.Linq;
 using System.Threading;
@@ -16,6 +16,20 @@ public class Program {
     [STAThread]
     static Task<int> Main(string[] args){
         openPhoneTrackpad = Array.Exists(args, arg => arg == "--phone-trackpad");
+        if (args.Length == 2 && args[0] == "--preview-menu-icons") {
+            System.IO.Directory.CreateDirectory(args[1]);
+            foreach (bool light in new[] { true, false }) {
+                using var preview = new System.Drawing.Bitmap(360, 96);
+                using var graphics = System.Drawing.Graphics.FromImage(preview);
+                graphics.Clear(light ? System.Drawing.Color.White : System.Drawing.Color.FromArgb(30, 30, 30));
+                var names = new[] { "settings", "mirror", "rotate" };
+                for (int index = 0; index < names.Length; index++)
+                    ThreeE.Brand.MenuIcons.Draw(graphics, names[index], new System.Drawing.RectangleF(24 + 112 * index, 16, 64, 64),
+                        light ? System.Drawing.Color.FromArgb(48, 48, 48) : System.Drawing.Color.White);
+                preview.Save(System.IO.Path.Combine(args[1], light ? "menu-light.png" : "menu-dark.png"));
+            }
+            return Task.FromResult(0);
+        }
         if (args.Length == 2 && args[0] == "--preview-tray-icons") {
             System.IO.Directory.CreateDirectory(args[1]);
             foreach (bool light in new[] { true, false }) {
@@ -48,9 +62,10 @@ public class Program {
                 WindowsHub.InGearZone(930, 50, 600, 0, 1000, 400, 144),
                 !WindowsHub.InGearZone(990, 450, 600, 0, 1000, 400, 96),
                 !WindowsHub.InGearZone(990, 50, 0, 0, 0, 0, 96),
-                WindowsHub.MenuGlyph("Rotate themes\t\u2003\u2003\u200B") == "\uE8EE",
-                WindowsHub.MenuGlyph("Dynamic wallpaper\t\u2003\u2003") == "\uE9E9",
+                WindowsHub.MenuGlyph("Rotate themes\t\u2003\u2003\u200B") == "rotate",
+                WindowsHub.MenuGlyph("Dynamic wallpaper\t\u2003\u2003") == "settings",
                 WindowsHub.MenuGlyph("Use dark theme") == null,
+                new[] { "settings", "mirror", "rotate" }.All(ThreeE.Brand.MenuIcons.Contains),
                 ElevationHandoffCases(),
                 WindowsHub.RestartUpdateCheckLimit > TimeSpan.Zero && WindowsHub.RestartUpdateCheckLimit <= TimeSpan.FromSeconds(10),
                 WindowsHub.UpdateAttemptsAllowed(false) == 1 && WindowsHub.UpdateAttemptsAllowed(true) >= 1,

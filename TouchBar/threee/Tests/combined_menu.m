@@ -1,3 +1,4 @@
+#define THREEE_MENU_ICON_TESTS 1
 #define STRIP3_RECORD_TESTING 1
 #import "../Source/MidiBridge.m"
 #import "../Source/BaseMenu.h"

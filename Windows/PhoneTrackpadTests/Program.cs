@@ -49,7 +49,7 @@ try {
     Check(File.GetLastWriteTimeUtc(entry)==stamp&&File.ReadAllText(Path.Combine(scriptPath,"custom.txt"))=="preserve","Ableton script installation is idempotent and preserves unrelated files");
 } finally {if(Directory.Exists(scriptLibrary))Directory.Delete(scriptLibrary,true);}
 int FreePort() { var socket = new TcpListener(IPAddress.Loopback, 0); socket.Start(); int port = ((IPEndPoint)socket.LocalEndpoint).Port; socket.Stop(); return port; }
-async Task Until(Func<bool> condition) { for (int i=0;i<100;i++) { if (condition()) return; await Task.Delay(50); } throw new Exception("Timed out waiting for state."); }
+async Task Until(Func<bool> condition, int milliseconds = 5000) { for (int i=0;i<milliseconds/50;i++) { if (condition()) return; await Task.Delay(50); } throw new Exception("Timed out waiting for state."); }
 async Task<ClientWebSocket> Connect(string url, string token = null, string origin = null, string controller = null, bool takeover = false) {
     var ws = new ClientWebSocket(); var uri = new Uri(url);
     ws.Options.SetRequestHeader("Origin", origin ?? uri.GetLeftPart(UriPartial.Authority));
@@ -324,6 +324,14 @@ Check(fake.Commands.Contains("history:-1") && fake.Commands.Contains("zoom:1"),"
     await Until(()=>!follow.Running);
     await Until(()=>follow.Running);
     Check(follow.NamedUrl==stableLink&&(await web.GetStringAsync(new Uri(stableLink).GetLeftPart(UriPartial.Authority)+"/")).Contains("Trackpad"),"Listener failure recovers automatically with the same saved link");
+    // Real health checks traverse the listener, even with every download slot busy.
+    liveSession=sessionField.GetValue(follow);
+    var slots=(SemaphoreSlim)liveSession.GetType().GetField("Slots").GetValue(liveSession);
+    for(int i=0;i<8;i++)slots.Wait();
+    try {
+        var probe=typeof(PhoneTrackpad).GetMethod("ProbeAsync",System.Reflection.BindingFlags.NonPublic|System.Reflection.BindingFlags.Instance);
+        Check(await (Task<bool>)probe.Invoke(follow,new[]{liveSession}),"Loopback health probe reaches the correct receiver even when downloads are busy");
+    } finally { slots.Release(8); }
     // Model the Mac SLEEP/WAKE commands and a later process restart.
     follow.Stop();Check(follow.Start()&&follow.NamedUrl==stableLink,"Sleep/wake rebind preserves the exact pairing URL");
     follow.Stop(); current = null; await Task.Delay(200); current = IPAddress.Loopback; await Task.Delay(3500);
@@ -334,6 +342,40 @@ Check(fake.Commands.Contains("history:-1") && fake.Commands.Contains("zoom:1"),"
     current = IPAddress.Loopback;
     await Until(() => offline.Running);
     Check(offline.Running, "A receiver started offline comes up when Wi-Fi connects");
+}
+{
+    // Model the observed HTTP.sys failure: GetContextAsync stays pending while
+    // requests reset. A single lost probe must not disconnect a healthy phone.
+    int probes=0, rebound=0;
+    var healthInput=new FakeInput();var healthFirewall=new FakeFirewall();
+    using var stalled=new PhoneTrackpad(()=>IPAddress.Loopback,healthInput,healthFirewall,FreePort(),_=>Task.FromResult(Interlocked.Increment(ref probes)==2)) {
+        FollowNetwork=true,TokenProvider=()=>new string('A',48)
+    };
+    stalled.AddressChanged+=()=>Interlocked.Increment(ref rebound);
+    Check(stalled.Start(),"Health recovery receiver starts");
+    var savedLink=stalled.PairingUrl;
+    await Until(()=>Volatile.Read(ref probes)>=2,23000);
+    Check(rebound==0&&stalled.Running,"A successful probe clears a single transient failure without disconnecting");
+    healthInput.Down();
+    await Until(()=>Volatile.Read(ref rebound)>0,23000);
+    Check(stalled.Running&&stalled.PairingUrl==savedLink&&!healthInput.Held,"A stalled request queue recovers with the same link and releases held input");
+    stalled.Stop();int stoppedAt=probes;
+    await Task.Delay(1800);
+    Check(!stalled.Running&&probes==stoppedAt&&!healthFirewall.IsOpen,"Stopping cancels health recovery and closes the session firewall");
+}
+{
+    var policy=Path.Combine(Path.GetTempPath(),"3e-network-policy-"+Guid.NewGuid()+".json");
+    try {
+        Check(ThreeE.PhoneBar.Windows.PhoneBarNetworkPolicy.AllowsInbound(policy),"An unconfigured host retains Phone Bar support");
+        File.WriteAllText(policy,"{\"mode\":\"local-only\"}");
+        Check(!ThreeE.PhoneBar.Windows.PhoneBarNetworkPolicy.AllowsInbound(policy),"Local-only deployment blocks inbound Phone Bar");
+        File.WriteAllText(policy,"{\"mode\":\"allow-inbound\"}");
+        Check(ThreeE.PhoneBar.Windows.PhoneBarNetworkPolicy.AllowsInbound(policy),"An explicitly permitted deployment supports Phone Bar");
+        foreach(var invalid in new[]{"{","{}","{\"mode\":\"typo\"}"}) {
+            File.WriteAllText(policy,invalid);
+            Check(!ThreeE.PhoneBar.Windows.PhoneBarNetworkPolicy.AllowsInbound(policy),"An invalid deployment policy never enables incoming access");
+        }
+    } finally { if(File.Exists(policy))File.Delete(policy); }
 }
 {
     static byte[] Query(string name, ushort type, ushort klass, ushort id = 0) {

@@ -123,6 +123,8 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="../../PhoneBar/PhoneBar.Windows.csproj" />
+    <Compile Include="../../../Shared/Brand/MenuIcons.cs" />
+    <EmbeddedResource Include="../../../Shared/Brand/menu-icons.json" LogicalName="ThreeE.Brand.menu-icons.json" />
     <Compile Include="../../CarView/CarViewWindows.cs" />
   </ItemGroup>
   <!--
