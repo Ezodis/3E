@@ -426,6 +426,7 @@ static NSArray<NSURL *> *DockFolderURLs(NSDictionary *dock) {
 @property NSArray<DockIconButton *> *appButtons;
 @property NSString *signature;
 @property NSTimer *timer;
+@property id activationObserver;
 @property BOOL visible;
 @property BOOL desktopsMode;
 @property NSArray<NSDictionary *> *spaces;
@@ -441,6 +442,7 @@ static NSArray<NSURL *> *DockFolderURLs(NSDictionary *dock) {
 - (void)show;
 - (void)close:(id)sender;
 - (void)refresh;
+- (void)refreshFrontmost;
 - (NSDictionary *)snapshot;
 - (void)restorePresentation;
 - (void)holdApp:(NSPressGestureRecognizer *)gesture;
@@ -498,6 +500,7 @@ static NSArray<NSURL *> *DockFolderURLs(NSDictionary *dock) {
     [self restorePresentation];
     __weak DockPanel *weakSelf=self;
     self.timer=[NSTimer scheduledTimerWithTimeInterval:1 repeats:YES block:^(NSTimer *timer){ [weakSelf refresh]; }];
+    self.activationObserver=[NSWorkspace.sharedWorkspace.notificationCenter addObserverForName:NSWorkspaceDidActivateApplicationNotification object:nil queue:NSOperationQueue.mainQueue usingBlock:^(NSNotification *note){ [weakSelf refreshFrontmost]; }];
     NSLog(@"Touch Bar %@ picker visible",self.desktopsMode ? @"desktop" : @"app");
 }
 - (void)close:(id)sender {
@@ -506,6 +509,7 @@ static NSArray<NSURL *> *DockFolderURLs(NSDictionary *dock) {
     NSLog(@"Apps picker closing; active=%d front=%@",NSApp.active,NSWorkspace.sharedWorkspace.frontmostApplication.bundleIdentifier);
     ((void(*)(id,SEL,id))objc_msgSend)(NSTouchBar.class,NSSelectorFromString(@"dismissSystemModalTouchBar:"),self.bar);
     self.visible=NO; [self.timer invalidate]; self.timer=nil;
+    if(self.activationObserver) [NSWorkspace.sharedWorkspace.notificationCenter removeObserver:self.activationObserver]; self.activationObserver=nil;
     self.bar=nil; self.appsItem=nil; self.foldersItem=nil; self.appsScroll=nil; self.appButtons=nil; self.signature=nil; self.browsingFolder=nil;
     self.folderBrowser=nil; self.folderStack=nil; self.trashButton=nil; self.appsScrubber=nil; self.runningApps=nil;
     self.previousFront=nil;
@@ -526,42 +530,60 @@ static NSArray<NSURL *> *DockFolderURLs(NSDictionary *dock) {
     if(self.desktopsMode) { [keys removeAllObjects]; for(NSDictionary *space in self.spaces) [keys addObject:[NSString stringWithFormat:@"%@:%@",space[@"id"],space[@"active"]]]; }
     NSString *signature=[keys componentsJoinedByString:@"|"];
     if(![signature isEqualToString:self.signature]) {
-        NSPoint offset=self.appsScroll.contentView.bounds.origin;
         self.signature=signature; NSMutableArray *buttons=[NSMutableArray array];
         for(DockAppEntry *app in apps) {
             DockIconButton *button=[self buttonFor:app label:app.localizedName image:app.icon action:@selector(activateApp:)];
             button.running=app.application && !app.application.terminated; [buttons addObject:button];
         }
         self.appButtons=buttons; self.runningApps=apps;
-        NSScrubber *scrubber=[[StripAppsScrubber alloc] initWithFrame:NSMakeRect(0,0,1004,30)];
-        scrubber.alphaValue=0;
-        [scrubber setContentHuggingPriority:1 forOrientation:NSLayoutConstraintOrientationHorizontal];
-        [scrubber setContentCompressionResistancePriority:1 forOrientation:NSLayoutConstraintOrientationHorizontal];
-        CenteredAppsLayout *layout=[CenteredAppsLayout new];
-        scrubber.scrubberLayout=layout; scrubber.mode=NSScrubberModeFree; scrubber.continuous=NO; scrubber.showsAdditionalContentIndicators=YES;
-        [scrubber registerClass:PockAppIconView.class forItemIdentifier:@"AppIcon"];
-        scrubber.dataSource=self; scrubber.delegate=self; self.appsScrubber=scrubber;
-        NSPressGestureRecognizer *hold=[[NSPressGestureRecognizer alloc] initWithTarget:self action:@selector(holdApp:)];
-        hold.minimumPressDuration=.65; hold.allowableMovement=8; hold.numberOfTouchesRequired=1;
-        hold.allowedTouchTypes=NSTouchTypeMaskDirect; hold.delegate=self;
-        [scrubber addGestureRecognizer:hold]; self.appHoldRecognizer=hold;
-        DockSwipeGesture *swipe=[[DockSwipeGesture alloc] initWithTarget:nil action:NULL];
-        __weak DockPanel *weakPanel=self;
-        swipe.onTouchBegin=^(DockSwipeGesture *gesture){ [weakPanel gestureRecognizerShouldBegin:gesture]; };
-        swipe.shouldStart=^BOOL(DockSwipeGesture *gesture){
-            DockPanel *panel=weakPanel;
-            return panel.visible && !panel.desktopsMode && !panel.swipeChooser && panel.swipeSource && panel.appHoldRecognizer.state!=NSGestureRecognizerStateBegan && panel.appHoldRecognizer.state!=NSGestureRecognizerStateChanged;
-        };
-        swipe.onUpdate=^(DockSwipeGesture *gesture){ [weakPanel swipeApp:gesture]; };
-        swipe.allowedTouchTypes=NSTouchTypeMaskDirect; [scrubber addGestureRecognizer:swipe]; self.appSwipeRecognizer=swipe;
-        self.appsItem.view=scrubber; [scrubber.heightAnchor constraintEqualToConstant:30].active=YES;
-        (void)offset;
+        if(!self.appsScrubber) {
+            NSScrubber *scrubber=[[StripAppsScrubber alloc] initWithFrame:NSMakeRect(0,0,1004,30)];
+            scrubber.alphaValue=0;
+            [scrubber setContentHuggingPriority:1 forOrientation:NSLayoutConstraintOrientationHorizontal];
+            [scrubber setContentCompressionResistancePriority:1 forOrientation:NSLayoutConstraintOrientationHorizontal];
+            CenteredAppsLayout *layout=[CenteredAppsLayout new];
+            scrubber.scrubberLayout=layout; scrubber.mode=NSScrubberModeFree; scrubber.continuous=NO; scrubber.showsAdditionalContentIndicators=YES;
+            [scrubber registerClass:PockAppIconView.class forItemIdentifier:@"AppIcon"];
+            scrubber.dataSource=self; scrubber.delegate=self; self.appsScrubber=scrubber;
+            NSPressGestureRecognizer *hold=[[NSPressGestureRecognizer alloc] initWithTarget:self action:@selector(holdApp:)];
+            hold.minimumPressDuration=.65; hold.allowableMovement=8; hold.numberOfTouchesRequired=1;
+            hold.allowedTouchTypes=NSTouchTypeMaskDirect; hold.delegate=self;
+            [scrubber addGestureRecognizer:hold]; self.appHoldRecognizer=hold;
+            DockSwipeGesture *swipe=[[DockSwipeGesture alloc] initWithTarget:nil action:NULL];
+            __weak DockPanel *weakPanel=self;
+            swipe.onTouchBegin=^(DockSwipeGesture *gesture){ [weakPanel gestureRecognizerShouldBegin:gesture]; };
+            swipe.shouldStart=^BOOL(DockSwipeGesture *gesture){
+                DockPanel *panel=weakPanel;
+                return panel.visible && !panel.desktopsMode && !panel.swipeChooser && panel.swipeSource && panel.appHoldRecognizer.state!=NSGestureRecognizerStateBegan && panel.appHoldRecognizer.state!=NSGestureRecognizerStateChanged;
+            };
+            swipe.onUpdate=^(DockSwipeGesture *gesture){ [weakPanel swipeApp:gesture]; };
+            swipe.allowedTouchTypes=NSTouchTypeMaskDirect; [scrubber addGestureRecognizer:swipe]; self.appSwipeRecognizer=swipe;
+            self.appsItem.view=scrubber; [scrubber.heightAnchor constraintEqualToConstant:30].active=YES;
+        }
+        [NSAnimationContext runAnimationGroup:^(NSAnimationContext *context) {
+            context.duration=0; context.allowsImplicitAnimation=NO;
+            [CATransaction begin]; [CATransaction setDisableActions:YES];
+            [self.appsScrubber.scrubberLayout invalidateLayout];
+            [self.appsScrubber reloadData];
+            [CATransaction commit];
+        } completionHandler:nil];
 
     }
+    [self refreshFrontmost];
+}
+- (void)refreshFrontmost {
+    if(!self.visible || self.desktopsMode) return;
     pid_t front=NSWorkspace.sharedWorkspace.frontmostApplication.processIdentifier;
-    for(DockIconButton *button in self.appButtons) { button.frontmost=[(DockAppEntry *)button.representedItem application].processIdentifier==front; button.needsDisplay=YES; }
-    [self.appsScrubber reloadData];
-
+    // Only change the highlight. Reloading cells resets the remote Touch Bar
+    // view and visibly flashes during activation even when the list is unchanged.
+    [CATransaction begin]; [CATransaction setDisableActions:YES];
+    for(NSInteger index=0;index<(NSInteger)self.runningApps.count;index++) {
+        PockAppIconView *view=(id)[self.appsScrubber itemViewForItemAtIndex:index];
+        DockAppEntry *entry=self.runningApps[index];
+        BOOL active=entry.application && entry.application.processIdentifier==front;
+        if(view && view.frontmost!=active) view.frontmost=active;
+    }
+    [CATransaction commit];
 }
 - (void)activateApp:(DockIconButton *)sender {
     DockAppEntry *app=sender.representedItem;
@@ -690,13 +712,8 @@ static NSArray<NSURL *> *DockFolderURLs(NSDictionary *dock) {
     DockSwipeChooser *chooser=self.swipeChooser; if(!chooser) return;
     NSInteger index=chooser.selectedIndex;
     DockSwipeChoice *choice=!cancelled && index>=0 && index<(NSInteger)chooser.choices.count ? chooser.choices[index] : nil;
-    if(!cancelled && chooser.windowChoices && !choice && (chooser.windowQueryPending || chooser.choices.count)) {
-        // A real finger can lift before AX replies. Keep the real chooser
-        // mounted for the late response; the next tap selects a real window.
-        chooser.awaitingSelection=YES; [chooser stopScrolling];
-        self.suppressAppSelectionUntil=NSProcessInfo.processInfo.systemUptime+.25;
-        return;
-    }
+    // A lift without a selection cancels, including while AX is still loading.
+    // Completion callbacks check chooser identity and cannot resurrect this view.
     [chooser stopScrolling]; [chooser removeFromSuperview]; self.swipeChooser=nil; self.swipeSource=nil;
     self.suppressAppSelectionUntil=NSProcessInfo.processInfo.systemUptime+.25;
     if(choice.entry) [self activateEntry:choice.entry];
