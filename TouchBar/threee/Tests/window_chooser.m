@@ -24,7 +24,10 @@ int main(void) { @autoreleasepool {
     panel.swipeChooser=chooser; [host addSubview:chooser];
     DockSwipeChoice *one=[DockSwipeChoice new],*two=[DockSwipeChoice new];
     one.title=@"Same window title"; two.title=one.title;
+    [panel completeWindowLoad:@[] chooser:chooser finished:NO];
+    NSCAssert(chooser.hidden,@"Pending window lookups keep the app row visible");
     [panel completeWindowLoad:@[one,two] chooser:chooser finished:YES];
+    NSCAssert(!chooser.hidden,@"Resolved windows become visible without a loading label");
     NSCAssert(chooser.choices.count==2,@"Distinct windows with identical titles must remain distinct");
     [chooser updateAt:NSMakePoint([chooser origin]+[chooser pitch]/2,15)];
     NSCAssert(chooser.selectedIndex==0,@"Late-arriving real choices remain selectable");

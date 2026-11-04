@@ -652,6 +652,7 @@ static NSArray<NSURL *> *DockFolderURLs(NSDictionary *dock) {
         DockSwipeChooser *chooser=[[DockSwipeChooser alloc] initWithFrame:self.appsScrubber.bounds];
         chooser.visualCenter=[(StripAppsScrubber *)self.appsScrubber visualCenterX];
         chooser.windowChoices=windowChoices;
+        chooser.hidden=windowChoices; // Keep the app row visible until the query resolves.
         chooser.allowedTouchTypes=NSTouchTypeMaskDirect;
         __weak DockPanel *selectionPanel=self;
         chooser.didSelect=^(DockSwipeChooser *selected){
@@ -664,10 +665,10 @@ static NSArray<NSURL *> *DockFolderURLs(NSDictionary *dock) {
             chooser.choices=self.installedChoices ?: @[]; [chooser updateAt:gesture.currentPoint];
             if(!self.installedChoices) [self prepareSwipeApps];
         } else {
-            if(!app || app.terminated) { chooser.message=@"No open windows"; chooser.needsDisplay=YES; return; }
+            if(!app || app.terminated) { chooser.message=@"No open windows"; [self completeWindowLoad:@[] chooser:chooser finished:YES]; return; }
             chooser.choices=@[];
             chooser.windowQueryPending=YES;
-            chooser.message=@"Loading windows…";
+            chooser.message=@"";
             [chooser updateAt:gesture.currentPoint];
             [self loadWindowsForApp:app chooser:chooser attempt:0];
         }
@@ -690,7 +691,7 @@ static NSArray<NSURL *> *DockFolderURLs(NSDictionary *dock) {
         dispatch_async(dispatch_get_main_queue(),^{
             DockPanel *panel=weakSelf;
             if(!panel || panel.swipeChooser!=chooser || !panel.visible) return;
-            chooser.message=windows.count ? @"" : (attempt>=2 ? @"No open windows" : @"Loading windows…");
+            chooser.message=windows.count ? @"" : (attempt>=2 ? @"No open windows" : @"");
             [panel completeWindowLoad:windows chooser:chooser finished:windows.count>0 || attempt>=2];
             if(!windows.count && attempt<2)
                 dispatch_after(dispatch_time(DISPATCH_TIME_NOW,(int64_t)(.2*NSEC_PER_SEC)),dispatch_get_main_queue(),^{
@@ -702,6 +703,7 @@ static NSArray<NSURL *> *DockFolderURLs(NSDictionary *dock) {
 - (void)completeWindowLoad:(NSArray<DockSwipeChoice *> *)windows chooser:(DockSwipeChooser *)chooser finished:(BOOL)finished {
     if(self.swipeChooser!=chooser || !self.visible) return;
     chooser.choices=windows; chooser.windowQueryPending=!finished;
+    chooser.hidden=!finished && !windows.count;
     [chooser updateAt:chooser.finger];
     // A lift during the query must not strand an empty overlay after its
     // final response. Real late-arriving windows remain available to tap.
