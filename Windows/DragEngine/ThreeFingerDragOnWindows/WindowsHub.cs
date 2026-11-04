@@ -21,7 +21,7 @@ namespace ThreeFingerDragOnWindows;
 
 // The drag engine and the hub share this process and its single notification icon.
 public sealed class WindowsHub : IDisposable {
-    public const string Version = "3.0.167.1";
+    public const string Version = "3.0.167.2";
     private const string ReleasesUrl = "https://api.github.com/repos/Ezodis/3E/releases";
     private readonly string root = AppContext.BaseDirectory;
     private readonly string data = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "3EWindows");
@@ -44,25 +44,15 @@ public sealed class WindowsHub : IDisposable {
     private int ssmsThemeProfiles;
     private string ssmsRotationPeriod;
     private static readonly HttpClient http = CreateHttpClient();
-    // Screen rectangle and DPI of the most recently opened native tray menu,
-    // used to tell a click on a row's ⚙ from a click on its label.
-    private NativeRect menuRect;
-    private uint menuDpi = 96;
-    private readonly WinEventProc menuPopupProc;
-    private IntPtr menuPopupHook, menuFocusHook;
-    // The native menu can only hold text, so rows with an icon reserve blank
-    // space after a tab and the icon is painted there while the menu is open.
-    // A zero-width space at the end marks which icon a row gets.
+    // The suffix identifies the shared accessory artwork; native menu rows
+    // reserve and paint that column as part of their normal draw operation.
+    private bool accessoryInvoked;
     private const string IconSlot = "\t\u2003\u2003";
     private const string RotateSlot = IconSlot + "\u200B";
     private const string MirrorSlot = IconSlot + "\u200C";
     private const string MirrorGlyph = "mirror";
     private const string SettingsGlyph = "settings";
     private const string RotateGlyph = "rotate";
-    private static readonly UIntPtr IconTimer = (UIntPtr)0x3E1;
-    private readonly MenuWindowProc menuWindowProc;
-    private IntPtr paintedMenu, previousMenuProc;
-
     public sealed class HubSettings {
         public bool Keyboard { get; set; } = true;
         public bool PowerToys { get; set; } = true;
@@ -86,10 +76,6 @@ public sealed class WindowsHub : IDisposable {
         try { settings = JsonSerializer.Deserialize<HubSettings>(File.ReadAllText(Path.Combine(data, "settings.json"))) ?? new(); }
         catch { settings = new(); }
         menu.Opening += (_, _) => RefreshMenu();
-        menuPopupProc = OnMenuPopup;
-        menuWindowProc = MenuWindowMessage;
-        menuPopupHook = SetWinEventHook(EventSystemMenuPopupStart, EventSystemMenuPopupStart, IntPtr.Zero, menuPopupProc, (uint)Environment.ProcessId, 0, 0);
-        menuFocusHook = SetWinEventHook(EventObjectFocus, EventObjectFocus, IntPtr.Zero, menuPopupProc, (uint)Environment.ProcessId, 0, 0);
         RefreshMenu();
         timer.Tick += (_, _) => Tick();
         SystemEvents.SessionSwitch += OnSessionSwitch;
@@ -257,39 +243,6 @@ public sealed class WindowsHub : IDisposable {
     }
 
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] private static extern int MessageBox(IntPtr window, string text, string caption, uint type);
-    private const uint EventSystemMenuPopupStart = 0x0006;
-    private delegate void WinEventProc(IntPtr hook, uint eventType, IntPtr window, int objectId, int childId, uint thread, uint time);
-    [StructLayout(LayoutKind.Sequential)] private struct NativeRect { public int Left, Top, Right, Bottom; }
-    [StructLayout(LayoutKind.Sequential)] private struct NativePoint { public int X, Y; }
-    [DllImport("user32.dll")] private static extern IntPtr SetWinEventHook(uint eventMin, uint eventMax, IntPtr module, WinEventProc proc, uint process, uint thread, uint flags);
-    [DllImport("user32.dll")] private static extern bool UnhookWinEvent(IntPtr hook);
-    [DllImport("user32.dll")] private static extern bool GetWindowRect(IntPtr window, out NativeRect rect);
-    [DllImport("user32.dll")] private static extern bool GetCursorPos(out NativePoint point);
-    [DllImport("user32.dll")] private static extern uint GetDpiForWindow(IntPtr window);
-    private const uint EventObjectFocus = 0x8005;
-    private delegate IntPtr MenuWindowProc(IntPtr window, uint message, IntPtr wParam, IntPtr lParam);
-    [DllImport("user32.dll", EntryPoint = "SetWindowLongPtrW")] private static extern IntPtr SetWindowProc(IntPtr window, int index, MenuWindowProc proc);
-    [DllImport("user32.dll", EntryPoint = "SetWindowLongPtrW")] private static extern IntPtr SetWindowProc(IntPtr window, int index, IntPtr proc);
-    [DllImport("user32.dll")] private static extern IntPtr CallWindowProcW(IntPtr previous, IntPtr window, uint message, IntPtr wParam, IntPtr lParam);
-    [DllImport("user32.dll")] private static extern IntPtr SendMessageW(IntPtr window, uint message, IntPtr wParam, IntPtr lParam);
-    [DllImport("user32.dll")] private static extern int GetMenuItemCount(IntPtr menu);
-    [DllImport("user32.dll", CharSet = CharSet.Unicode)] private static extern int GetMenuStringW(IntPtr menu, uint item, System.Text.StringBuilder text, int max, uint flags);
-    [DllImport("user32.dll")] private static extern bool GetMenuItemRect(IntPtr window, IntPtr menu, uint item, out NativeRect rect);
-    [DllImport("user32.dll")] private static extern int MapWindowPoints(IntPtr from, IntPtr to, ref NativeRect rect, int count);
-    [DllImport("user32.dll")] private static extern bool GetClientRect(IntPtr window, out NativeRect rect);
-    [DllImport("user32.dll")] private static extern IntPtr GetDC(IntPtr window);
-    [DllImport("user32.dll")] private static extern int ReleaseDC(IntPtr window, IntPtr dc);
-    [DllImport("user32.dll")] private static extern UIntPtr SetTimer(IntPtr window, UIntPtr id, uint milliseconds, IntPtr callback);
-    [DllImport("user32.dll")] private static extern bool KillTimer(IntPtr window, UIntPtr id);
-    [DllImport("user32.dll")] private static extern int FillRect(IntPtr dc, ref NativeRect rect, IntPtr brush);
-    [DllImport("user32.dll", CharSet = CharSet.Unicode)] private static extern int DrawTextW(IntPtr dc, string text, int length, ref NativeRect rect, uint format);
-    [DllImport("gdi32.dll")] private static extern uint GetPixel(IntPtr dc, int x, int y);
-    [DllImport("gdi32.dll")] private static extern IntPtr CreateSolidBrush(uint color);
-    [DllImport("gdi32.dll")] private static extern bool DeleteObject(IntPtr handle);
-    [DllImport("gdi32.dll")] private static extern IntPtr SelectObject(IntPtr dc, IntPtr handle);
-    [DllImport("gdi32.dll")] private static extern uint SetTextColor(IntPtr dc, uint color);
-    [DllImport("gdi32.dll")] private static extern int SetBkMode(IntPtr dc, int mode);
-    [DllImport("gdi32.dll", CharSet = CharSet.Unicode)] private static extern IntPtr CreateFontW(int height, int width, int escapement, int orientation, int weight, uint italic, uint underline, uint strikeOut, uint charSet, uint precision, uint clipPrecision, uint quality, uint pitchAndFamily, string face);
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] private static extern IntPtr SendMessageTimeout(IntPtr window, uint message, UIntPtr wParam, string lParam, uint flags, uint timeout, out UIntPtr result);
 
     public static int ScheduledTheme(DateTime localTime) => localTime.Hour >= 12 && localTime.Hour < 20 ? 1 : 0;
@@ -320,10 +273,8 @@ public sealed class WindowsHub : IDisposable {
         ssmsRotationPeriod = period;
     }
 
-    // The tray shows these flyouts in H.NotifyIcon's default PopupMenu mode,
-    // which runs each item's Command and never raises Click. Items therefore
-    // use commands; toggles flip their own state because the native popup
-    // does not update IsChecked.
+    // Native menu selections invoke commands after the popup has closed.
+    // Toggle commands own their checked state, including accessory actions.
     private sealed class MenuCommand : System.Windows.Input.ICommand {
         private readonly Action action;
         public MenuCommand(Action action) => this.action = action;
@@ -338,7 +289,7 @@ public sealed class WindowsHub : IDisposable {
     };
 
     private ToggleMenuFlyoutItem ToggleMenuItem(string label, bool value, Action<bool> change, Action openSettings = null, string slot = IconSlot) {
-        // "\t" puts the settings dots in the native menu's right-aligned column.
+        // Keep accessory metadata on the row; the native painter allocates its column.
         var item = new ToggleMenuFlyoutItem { Text = openSettings == null ? label : label + slot, IsChecked = value };
         item.Command = new MenuCommand(() => {
             if (openSettings != null && ClickedGear()) {
@@ -350,78 +301,35 @@ public sealed class WindowsHub : IDisposable {
         return item;
     }
 
-    // Native menus run one command per row, so the gear is a hit zone: a click
-    // released over the right-hand edge of the menu opens that row's settings.
-    public static bool InGearZone(int x, int y, int left, int top, int right, int bottom, uint dpi) =>
-        right > left && y >= top && y < bottom && x < right && x >= right - (int)(52 * Math.Max(dpi, 96u) / 96);
+    private bool ClickedGear() => accessoryInvoked;
 
-    private bool ClickedGear() => GetCursorPos(out var point) &&
-        InGearZone(point.X, point.Y, menuRect.Left, menuRect.Top, menuRect.Right, menuRect.Bottom, menuDpi);
+    public static string MenuGlyph(string text) => text.EndsWith(MirrorSlot, StringComparison.Ordinal) ? MirrorGlyph : text.EndsWith(RotateSlot, StringComparison.Ordinal) ? RotateGlyph : text.EndsWith(IconSlot, StringComparison.Ordinal) ? SettingsGlyph : null;
 
-    private void OnMenuPopup(IntPtr hook, uint eventType, IntPtr window, int objectId, int childId, uint thread, uint time) {
-        try {
-            // Hover highlights are drawn without WM_PAINT; repaint the icons after focus moves.
-            if (eventType == EventObjectFocus) { if (paintedMenu != IntPtr.Zero) DrawMenuIcons(paintedMenu); return; }
-            if (window == IntPtr.Zero || !GetWindowRect(window, out var rect)) return;
-            menuRect = rect;
-            var dpi = GetDpiForWindow(window);
-            menuDpi = dpi == 0 ? 96 : dpi;
-            if (paintedMenu != IntPtr.Zero) return;
-            previousMenuProc = SetWindowProc(window, -4, menuWindowProc);
-            if (previousMenuProc == IntPtr.Zero) return;
-            paintedMenu = window;
-            SetTimer(window, IconTimer, 40, IntPtr.Zero);
-            DrawMenuIcons(window);
-        } catch (Exception ex) { Log(ex); }
+    public void ShowControlsMenu(IntPtr owner, System.Drawing.Point point) {
+        try { ShowControlsMenuCore(owner, point); }
+        catch (Exception ex) { Log(ex); MessageBox(IntPtr.Zero, "Could not open the controls menu.\n\n" + ex.Message, "3£", 0x10 | ForegroundDialog); }
     }
 
-    private IntPtr MenuWindowMessage(IntPtr window, uint message, IntPtr wParam, IntPtr lParam) {
-        var previous = previousMenuProc;
-        if (message == 0x0113 && (ulong)wParam.ToInt64() == IconTimer.ToUInt64()) { DrawMenuIcons(window); return IntPtr.Zero; }
-        if (message == 0x0082) { // WM_NCDESTROY: hand the window back before it goes away.
-            KillTimer(window, IconTimer);
-            SetWindowProc(window, -4, previous);
-            paintedMenu = IntPtr.Zero; previousMenuProc = IntPtr.Zero;
-            return CallWindowProcW(previous, window, message, wParam, lParam);
-        }
-        var result = CallWindowProcW(previous, window, message, wParam, lParam);
-        if (message is 0x000F or 0x0085 or 0x01E5) DrawMenuIcons(window); // paint, frame, menu selection
-        return result;
-    }
-
-    public static string MenuGlyph(string text) => text.EndsWith(MirrorSlot,StringComparison.Ordinal)?MirrorGlyph:text.EndsWith(RotateSlot, StringComparison.Ordinal) ? RotateGlyph : text.EndsWith(IconSlot, StringComparison.Ordinal) ? SettingsGlyph : null;
-
-    private void DrawMenuIcons(IntPtr window) {
-        try {
-            var menuHandle = SendMessageW(window, 0x01E1, IntPtr.Zero, IntPtr.Zero); // MN_GETHMENU
-            if (menuHandle == IntPtr.Zero || !GetClientRect(window, out var client)) return;
-            uint dpi = GetDpiForWindow(window); if (dpi == 0) dpi = 96;
-            int Px(int value) => (int)(value * dpi / 96);
-            var dc = GetDC(window);
-            if (dc == IntPtr.Zero) return;
-            try {
-                var text = new System.Text.StringBuilder(256);
-                for (int index = 0, count = GetMenuItemCount(menuHandle); index < count; index++) {
-                    text.Clear();
-                    if (GetMenuStringW(menuHandle, (uint)index, text, text.Capacity, 0x400) <= 0) continue;
-                    string glyph = MenuGlyph(text.ToString());
-                    if (glyph == null || !GetMenuItemRect(IntPtr.Zero, menuHandle, (uint)index, out var row)) continue;
-                    MapWindowPoints(IntPtr.Zero, window, ref row, 2);
-                    int x = client.Right - Px(36), y = (row.Top + row.Bottom) / 2, half = Px(10);
-                    uint background = GetPixel(dc, x - Px(14), y);
-                    if (background == 0xFFFFFFFF) continue; // not readable mid-animation; the timer retries
-                    var box = new NativeRect { Left = x - half, Top = y - half, Right = x + half, Bottom = y + half };
-                    var brush = CreateSolidBrush(background);
-                    FillRect(dc, ref box, brush);
-                    DeleteObject(brush);
-                    int luminance = (int)((background & 0xFF) * 299 + ((background >> 8) & 0xFF) * 587 + ((background >> 16) & 0xFF) * 114) / 1000;
-                    uint color = glyph == MirrorGlyph && carView.Mirrored ? (luminance > 128 ? 0x00507800u : 0x00C2FF00u) : luminance > 128 ? 0x00303030u : 0x00F0F0F0u;
-                    using var graphics = System.Drawing.Graphics.FromHdc(dc);
-                    MenuIcons.Draw(graphics, glyph, new System.Drawing.RectangleF(x - Px(8), y - Px(8), Px(16), Px(16)),
-                        System.Drawing.Color.FromArgb((int)(color & 255), (int)((color >> 8) & 255), (int)((color >> 16) & 255)));
-                }
-            } finally { ReleaseDC(window, dc); }
-        } catch (Exception ex) { Log(ex); }
+    private void ShowControlsMenuCore(IntPtr owner, System.Drawing.Point point) {
+        RefreshMenu();
+        var items = menu.Items.ToArray();
+        var rows = items.Select(item => {
+            if (item is MenuFlyoutSeparator) return new NativeHubMenu.Row("", Separator: true);
+            var command = (MenuFlyoutItem)item;
+            string icon = MenuGlyph(command.Text);
+            return new NativeHubMenu.Row(command.Text.Split('\t')[0], command.IsEnabled,
+                command is ToggleMenuFlyoutItem toggle && toggle.IsChecked,
+                icon, icon == MirrorGlyph && carView.Mirrored);
+        }).ToArray();
+        using var preferences = Registry.CurrentUser.OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize");
+        bool dark = Convert.ToInt32(preferences?.GetValue("AppsUseLightTheme", 1)) == 0;
+        using var popup = new NativeHubMenu(rows, NativeHubMenu.DpiAt(point, owner), dark, NativeHubMenu.MaxWidthAt(point));
+        var choice = popup.Show(owner, point);
+        if (choice == null) return;
+        var selected = (MenuFlyoutItem)items[choice.Value.Index];
+        accessoryInvoked = choice.Value.Accessory;
+        try { if (selected.Command?.CanExecute(selected.CommandParameter) == true) selected.Command.Execute(selected.CommandParameter); }
+        finally { accessoryInvoked = false; }
     }
 
     private void Item(string label, Action click) => menu.Items.Add(ActionMenuItem(label, click));
@@ -767,8 +675,6 @@ public sealed class WindowsHub : IDisposable {
         timer.Stop();
         SystemEvents.SessionSwitch -= OnSessionSwitch;
         hookWatch?.Dispose();
-        if (menuPopupHook != IntPtr.Zero) { UnhookWinEvent(menuPopupHook); menuPopupHook = IntPtr.Zero; }
-        if (menuFocusHook != IntPtr.Zero) { UnhookWinEvent(menuFocusHook); menuFocusHook = IntPtr.Zero; }
         phoneBar.Dispose();
         carView.Changed-=RefreshMenu;carView.Dispose();
         Save();

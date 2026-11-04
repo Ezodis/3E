@@ -55,12 +55,6 @@ public sealed partial class HandlerWindow : Window {
     // TaskbarIcon Actions
     [DllImport("user32.dll")] private static extern bool GetCursorPos(out System.Drawing.Point point);
 
-    private void ShowMenu(Microsoft.UI.Xaml.Controls.MenuFlyout menu) {
-        TaskbarIcon.ContextFlyout = menu;
-        GetCursorPos(out var point);
-        TaskbarIcon.ShowContextMenu(point);
-    }
-
     private void OpenLauncher(object sender, ExecuteRequestedEventArgs e) {
         _app.Hub?.OpenPhoneTrackpad();
     }
@@ -68,8 +62,8 @@ public sealed partial class HandlerWindow : Window {
     private void OpenAllControls(object sender, ExecuteRequestedEventArgs e) => ShowAllControls();
 
     private void ShowAllControls() {
-        _app.Hub?.RefreshControls();
-        ShowMenu(HubMenu);
+        GetCursorPos(out var point);
+        _app.Hub?.ShowControlsMenu(WinRT.Interop.WindowNative.GetWindowHandle(this), point);
     }
 
     private void OnUserPreferenceChanged(object sender, Microsoft.Win32.UserPreferenceChangedEventArgs e) {

@@ -16,6 +16,8 @@ public class Program {
     [STAThread]
     static Task<int> Main(string[] args){
         openPhoneTrackpad = Array.Exists(args, arg => arg == "--phone-trackpad");
+        if (args.Length == 2 && args[0] == "--verify-menu-rendering")
+            return Task.FromResult(NativeHubMenu.CheckRendering(args[1]) ? 0 : 1);
         if (args.Length == 2 && args[0] == "--preview-menu-icons") {
             System.IO.Directory.CreateDirectory(args[1]);
             foreach (bool light in new[] { true, false }) {
@@ -57,11 +59,7 @@ public class Program {
                 SsmsTheme.FollowSystem("{/* UTF-8: £ */\"other\":true,}").Contains("\"environment.visualExperience.colorTheme\": \"system\""),
                 SsmsTheme.Choose(new[] { new SsmsTheme.Theme("a", "A", true), new SsmsTheme.Theme("b", "B", true), new SsmsTheme.Theme("c", "C", false) }, true, "a").Id == "b",
                 SsmsTheme.RotationPeriod(new DateTime(2026, 10, 12, 21, 0, 0), false) == SsmsTheme.RotationPeriod(new DateTime(2026, 10, 13, 1, 0, 0), false),
-                WindowsHub.InGearZone(990, 50, 600, 0, 1000, 400, 96),
-                !WindowsHub.InGearZone(900, 50, 600, 0, 1000, 400, 96),
-                WindowsHub.InGearZone(930, 50, 600, 0, 1000, 400, 144),
-                !WindowsHub.InGearZone(990, 450, 600, 0, 1000, 400, 96),
-                !WindowsHub.InGearZone(990, 50, 0, 0, 0, 0, 96),
+                NativeHubMenu.CheckRendering(null),
                 WindowsHub.MenuGlyph("Rotate themes\t\u2003\u2003\u200B") == "rotate",
                 WindowsHub.MenuGlyph("Dynamic wallpaper\t\u2003\u2003") == "settings",
                 WindowsHub.MenuGlyph("Use dark theme") == null,
