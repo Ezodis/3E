@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// macOS pasteboard for Phone Bar's clipboard transfer. Built into
+// macOS pasteboard for Track Phone's clipboard transfer. Built into
 // libThreeEPhoneNative.dylib; called from MacClipboard.cs with UTF-8 buffers.
 #import <AppKit/AppKit.h>
 #include <limits.h>

@@ -47,7 +47,7 @@ static void StripSetAutomaticUpdates(BOOL enabled) {
 // bridge dylib (always built WITHOUT that flag), and tests. The updater and
 // the menu run inside the bridge, so a compile-time or environment check made
 // the combined app's bridge think it was Touch Bar-only: it downloaded
-// TouchBar.zip and replaced the combined app, and Touch Tab vanished from the
+// TouchBar.zip and replaced the combined app, and Track Tab vanished from the
 // menu. Reading the bundle's own Info.plist gives the same answer in every
 // process, whatever flags it was built with.
 static NSString *const StripAppBundleID=@"local.musicstrip.app";
@@ -350,7 +350,7 @@ static void StripToggleAutomaticUpdates(id self,SEL selector,id sender) {
     if(enabled) StripCheckRelease(NO);
 }
 // Restart: quit and reopen the same app bundle. Settings live in user
-// defaults (Phone Bar and Touch Tab on/off, players, automatic updates), so
+// defaults (Track Phone and Track Tab on/off, players, automatic updates), so
 // the new instance comes back exactly as it was left.
 static void StripRelaunch(void) {
     NSString *bundlePath=NSBundle.mainBundle.bundlePath;

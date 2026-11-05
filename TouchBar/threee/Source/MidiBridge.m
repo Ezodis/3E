@@ -681,18 +681,18 @@ static NSString *carViewMessage;
 static NSMenuItem *MenuSeparator(void) { return [NSMenuItem separatorItem]; }
 static void CleanMenu(NSMenu *menu) {
     NSStatusItem *statusItem=[(id)NSApp.delegate valueForKey:@"theItem"];
-    // Touch Tab is shown whenever the installed bundle is the combined edition
+    // Track Tab is shown whenever the installed bundle is the combined edition
     // (Info.plist), never based on environment variables or build flags.
     if(menu==statusItem.menu) {
         DJAddMenu(menu);
         NSMenuItem *toggle=nil;
         for(NSMenuItem *item in menu.itemArray) if([item.identifier isEqual:@"local.musicstrip.touchTabToggle"]) toggle=item;
         if(!toggle) {
-            toggle=[[NSMenuItem alloc] initWithTitle:@"Touch Tab" action:NSSelectorFromString(@"toggleTouchTab:") keyEquivalent:@""];
+            toggle=[[NSMenuItem alloc] initWithTitle:@"Track Tab" action:NSSelectorFromString(@"toggleTouchTab:") keyEquivalent:@""];
             toggle.target=NSClassFromString(@"ThreeEMidiBridge"); toggle.identifier=@"local.musicstrip.touchTabToggle";
             [menu insertItem:toggle atIndex:0];
         }
-        // Place Touch Tab immediately after Phone Bar in the existing menu.
+        // Place Track Tab immediately after Track Phone in the existing menu.
         [menu removeItem:toggle];
         NSInteger position=menu.numberOfItems && [menu.itemArray.firstObject.title containsString:@"(v."] ? 1 : 0;
         for(NSInteger index=position;index<menu.numberOfItems;index++) {
@@ -701,7 +701,7 @@ static void CleanMenu(NSMenu *menu) {
         }
         [menu insertItem:toggle atIndex:position];
         toggle.state=[combinedGestureState isEqual:@"on"] ? NSControlStateValueOn : NSControlStateValueOff;
-        toggle.title=StripHasModule(@"touchtab")?@"Touch Tab":@"Touch Tab — Install…";
+        toggle.title=StripHasModule(@"touchtab")?@"Track Tab":@"Track Tab — Install…";
         toggle.toolTip=[combinedGestureState isEqual:@"permission"] ? @"Accessibility approval is required for the main 3E app" : [combinedGestureState isEqual:@"unavailable"] ? @"Trackpad gesture listener unavailable" : @"Toggle trackpad gestures";
     }
     for(NSMenuItem *item in menu.itemArray.copy) {
@@ -754,7 +754,7 @@ static void CleanMenu(NSMenu *menu) {
             else [remaining addObject:item];
         }
         if(!phone)phone=ThreeEPhoneBarMenu(NSClassFromString(@"ThreeEMidiBridge"));
-        if(!StripHasModule(@"phone")) { phone.title=@"Phone Bar — Install…"; phone.state=NSControlStateValueOff; }
+        if(!StripHasModule(@"phone")) { phone.title=@"Track Phone — Install…"; phone.state=NSControlStateValueOff; }
         if(!apps) {
             apps=[[NSMenuItem alloc] initWithTitle:@"Touch Bar App" action:NSSelectorFromString(@"toggleApps:") keyEquivalent:@""];
             apps.identifier=@"local.musicstrip.appsToggle";apps.target=NSClassFromString(@"ThreeEMidiBridge");
@@ -780,8 +780,8 @@ static void CleanMenu(NSMenu *menu) {
 
         [menu removeAllItems];
         if(version)[menu addItem:version];
-        StripAttachModuleGear(phone,@"phone",@"Phone Bar",StripHasModule(@"phone"));[menu addItem:phone];
-        if(trackTab){StripAttachModuleGear(trackTab,@"touchtab",@"Touch Tab",StripHasModule(@"touchtab"));[menu addItem:trackTab];}
+        StripAttachModuleGear(phone,@"phone",@"Track Phone",StripHasModule(@"phone"));[menu addItem:phone];
+        if(trackTab){StripAttachModuleGear(trackTab,@"touchtab",@"Track Tab",StripHasModule(@"touchtab"));[menu addItem:trackTab];}
         // This is owned by the main process, including when the MIDI helper
         // supplies the suite's single menu-bar icon.
         if(!car)car=ThreeECarViewMenu(NSClassFromString(@"ThreeEMidiBridge"),carViewEnabled);

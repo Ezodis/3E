@@ -48,7 +48,7 @@ class Mapping:
         track = self.track(number % 2)
         clip = self.clip(track) if track is not None else None
         if clip is None or clip.is_recording or not (clip.is_midi_clip or clip.warping):
-            self.show('3E Phone Bar: loop a MIDI or warped audio clip')
+            self.show('3£ Track Phone: loop a MIDI or warped audio clip')
             return
         bar = 4.0 * getattr(clip, 'signature_numerator', 4) / max(1, getattr(clip, 'signature_denominator', 4))
         length = clip.loop_end - clip.loop_start
@@ -124,7 +124,7 @@ class Mapping:
                 if slot is not None and slot.has_clip:
                     slot.fire()
                 else:
-                    self.show('3E Phone Bar: place a clip in the selected scene on deck %s' % ('B' if index else 'A'))
+                    self.show('3£ Track Phone: place a clip in the selected scene on deck %s' % ('B' if index else 'A'))
             elif number in (42, 43):
                 track.stop_all_clips()
             elif number in (38, 39):
@@ -166,5 +166,5 @@ class Mapping:
                 names = (('GainLo', 'Gain Low'), ('GainMid', 'Gain Mid'), ('GainHi', 'Gain High'))[(number - 50) // 2]
                 parameter = self.effect(track, 'FilterEQ3', names)
             if parameter is None:
-                self.show('3E Phone Bar: add %s to this deck to use its knob' % ('Auto Filter' if number < 50 else 'EQ Three'))
+                self.show('3£ Track Phone: add %s to this deck to use its knob' % ('Auto Filter' if number < 50 else 'EQ Three'))
             self.parameter(parameter, value)

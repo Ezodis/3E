@@ -43,7 +43,7 @@ var scriptLibrary=Path.Combine(Path.GetTempPath(),"threee-ableton-test-"+Guid.Ne
 try {
     AbletonIntegration.InstallTo(scriptLibrary);
     var scriptPath=Path.Combine(scriptLibrary,"Remote Scripts","_3E_Phone_Bar");
-    Check(File.ReadAllText(Path.Combine(scriptPath,"phone_bar.py")).Contains("class PhoneBar"),"Ableton Phone Bar script is embedded and installed");
+    Check(File.ReadAllText(Path.Combine(scriptPath,"phone_bar.py")).Contains("class PhoneBar"),"Ableton Track Phone script is embedded and installed");
     var entry=Path.Combine(scriptPath,"__init__.py");var stamp=File.GetLastWriteTimeUtc(entry);
     File.WriteAllText(Path.Combine(scriptPath,"custom.txt"),"preserve");AbletonIntegration.InstallTo(scriptLibrary);
     Check(File.GetLastWriteTimeUtc(entry)==stamp&&File.ReadAllText(Path.Combine(scriptPath,"custom.txt"))=="preserve","Ableton script installation is idempotent and preserves unrelated files");
@@ -228,7 +228,7 @@ Check(fake.Commands.Contains("history:-1") && fake.Commands.Contains("zoom:1"),"
     // explain its 403.
     Check(((int)hostRefused.StatusCode is 400 or 404 || (int)hostRefused.StatusCode == 403 && refusalPage.Contains("scan its QR code again")) && !refusalPage.Contains("Trackpad"), "A foreign hostname never gets the trackpad, and the receiver's refusal explains itself (got " + (int)hostRefused.StatusCode + ": " + refusalPage[..Math.Min(120, refusalPage.Length)] + ")");
     using var missing = await web.GetAsync(ipOrigin + "/nope");
-    Check((int)missing.StatusCode == 404 && (await missing.Content.ReadAsStringAsync()).Contains("Phone Bar"), "Unknown paths explain themselves too");
+    Check((int)missing.StatusCode == 404 && (await missing.Content.ReadAsStringAsync()).Contains("Track Phone"), "Unknown paths explain themselves too");
     using var badToken = new PhoneTrackpad(() => IPAddress.Loopback, new FakeInput(), new FakeFirewall(), FreePort()) { TokenProvider = () => "short" };
     Check(badToken.Start() && badToken.PairingUrl.Split('#')[1].Length == 48, "An invalid saved secret falls back to a fresh one");
 }
@@ -554,7 +554,7 @@ using var failing = new PhoneTrackpad(() => throw new NetworkInformationExceptio
 Check(!failing.Start(), "Network enumeration failure is contained");
 var failingFirewall = new FakeFirewall { FailOpen = true };
 using var blocked = new PhoneTrackpad(() => IPAddress.Loopback, fake, failingFirewall, FreePort());
-Check(blocked.Start() && blocked.Running && !failingFirewall.IsOpen, "Without administrator rights the per-session firewall rule is skipped; the installer's permanent rule keeps Phone Bar reachable");
+Check(blocked.Start() && blocked.Running && !failingFirewall.IsOpen, "Without administrator rights the per-session firewall rule is skipped; the installer's permanent rule keeps Track Phone reachable");
 blocked.Stop();
 Check(!PhoneTrackpad.IsPrivateAddress(IPAddress.Parse("8.8.8.8")) && !PhoneTrackpad.IsPrivateAddress(IPAddress.Parse("169.254.1.2")) && PhoneTrackpad.IsPrivateAddress(IPAddress.Parse("172.20.10.2")), "Public and self-assigned IPs are excluded; hotspot LAN is accepted");
 {

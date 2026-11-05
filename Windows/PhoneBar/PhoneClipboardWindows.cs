@@ -12,7 +12,7 @@ using ThreeE.PhoneControl;
 
 namespace ThreeE.PhoneBar.Windows;
 
-// Windows clipboard for Phone Bar: Unicode text, HTML (CF_HTML), pictures as
+// Windows clipboard for Track Phone: Unicode text, HTML (CF_HTML), pictures as
 // PNG + CF_DIB, and files as CF_HDROP. Clipboard calls run on a short-lived
 // thread that owns a message-only window, outside the pointer input lock.
 public sealed class WindowsPhoneClipboard : IPhoneClipboard {

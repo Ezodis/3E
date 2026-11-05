@@ -47,7 +47,7 @@ public sealed class PhoneTrackpadPopup : IDisposable {
             Background = new IntPtr(6), ClassName = ClassName
         };
         if (RegisterClassEx(ref wc) == 0) throw new Win32Exception(Marshal.GetLastWin32Error());
-        window = CreateWindowEx(0x00000080, ClassName, "3£ Phone Bar", 0x80000000,
+        window = CreateWindowEx(0x00000080, ClassName, "3£ Track Phone", 0x80000000,
             point.X, point.Y, 208, 240, IntPtr.Zero, IntPtr.Zero, wc.Instance, IntPtr.Zero);
         if (window == IntPtr.Zero) throw new Win32Exception(Marshal.GetLastWin32Error());
         int corners = 3; // Small native rounded corners on Windows 11; older Windows ignores this.
@@ -98,11 +98,11 @@ public sealed class PhoneTrackpadPopup : IDisposable {
             using var ink = new SolidBrush(Color.FromArgb(74, 84, 92));
             using var format = new StringFormat { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Center };
             // Label with the 3£ butterfly mark in front of it. The mark already
-            // says 3£, so the text is just "Phone Bar" (the name is spelled out
+            // says 3£, so the text is just "Track Phone" (the name is spelled out
             // only if the mark cannot be loaded).
             var labelTop = qr == null ? Px(10) : qr.Height + Px(10);
             using (var mark = LoadMark()) {
-                var label = mark == null ? "3£ Phone Bar" : "Phone Bar";
+                var label = mark == null ? "3£ Track Phone" : "Track Phone";
                 var textWidth = graphics.MeasureString(label, font).Width;
                 int markHeight = Px(12), markWidth = mark == null ? 0 : markHeight * mark.Width / mark.Height, spacing = mark == null ? 0 : Px(5);
                 float left = (width - (markWidth + spacing + textWidth)) / 2f;

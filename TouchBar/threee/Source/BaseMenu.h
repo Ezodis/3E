@@ -5,12 +5,12 @@
 static NSMenu *StripBaseMenu(id target,BOOL gestures) {
     NSMenu *menu=[NSMenu new];
     NSMenuItem *phone=ThreeEPhoneBarMenu(target);
-    if(!StripHasModule(@"phone")) { phone.title=@"Phone Bar — Install…"; phone.state=NSControlStateValueOff; }
-    StripAttachModuleGear(phone,@"phone",@"Phone Bar",StripHasModule(@"phone"));[menu addItem:phone];
+    if(!StripHasModule(@"phone")) { phone.title=@"Track Phone — Install…"; phone.state=NSControlStateValueOff; }
+    StripAttachModuleGear(phone,@"phone",@"Track Phone",StripHasModule(@"phone"));[menu addItem:phone];
     [menu addItem:ThreeECarViewMenu(target,NO)];
     if(YES) {
-        NSMenuItem *touchTab=[[NSMenuItem alloc] initWithTitle:StripHasModule(@"touchtab")?@"Touch Tab":@"Touch Tab — Install…" action:NSSelectorFromString(@"toggleBaseTouchTab:") keyEquivalent:@""];
-        touchTab.identifier=@"local.musicstrip.touchTabToggle";touchTab.target=target;StripAttachModuleGear(touchTab,@"touchtab",@"Touch Tab",StripHasModule(@"touchtab"));[menu addItem:touchTab];
+        NSMenuItem *touchTab=[[NSMenuItem alloc] initWithTitle:StripHasModule(@"touchtab")?@"Track Tab":@"Track Tab — Install…" action:NSSelectorFromString(@"toggleBaseTouchTab:") keyEquivalent:@""];
+        touchTab.identifier=@"local.musicstrip.touchTabToggle";touchTab.target=target;StripAttachModuleGear(touchTab,@"touchtab",@"Track Tab",StripHasModule(@"touchtab"));[menu addItem:touchTab];
     }
     [menu addItem:NSMenuItem.separatorItem];
     NSMenuItem *touchBar=[[NSMenuItem alloc] initWithTitle:StripHasModule(@"touchbar")?@"Touch Bar unavailable on this Mac":@"Touch Bar — Install…" action:StripHasModule(@"touchbar")?nil:NSSelectorFromString(@"installBaseTouchBar:") keyEquivalent:@""];

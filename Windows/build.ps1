@@ -51,7 +51,7 @@ foreach ($arch in @('x64','arm64')) {
     New-Item -ItemType Directory -Path $phoneSource -Force | Out-Null
     Get-ChildItem -LiteralPath (Join-Path $PSScriptRoot 'PhoneBar') -File | Copy-Item -Destination $phoneSource -Force
     foreach ($module in @('ThreeE.PhoneBar.Windows.dll','ThreeE.PhoneControl.dll','QRCoder.dll')) {
-        if (-not (Test-Path -LiteralPath (Join-Path $output $module))) { throw "Base app is missing bundled Phone Bar module: $module" }
+        if (-not (Test-Path -LiteralPath (Join-Path $output $module))) { throw "Base app is missing bundled Track Phone module: $module" }
     }
     $sharedPhoneSource = Join-Path $repository 'Shared\PhoneControl'
     Get-ChildItem -LiteralPath $sharedPhoneSource -File | Copy-Item -Destination $phoneSource -Force

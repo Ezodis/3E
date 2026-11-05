@@ -22,8 +22,8 @@ REPO = "Ezodis/3E"
 EDITIONS = {
     "combined": ("combined", "3E-Combined.zip", "3E Combined"),
     "touchbar": ("touchbar", "TouchBar.zip", "TouchBar only"),
-    "touchtab": ("touchtab", "TouchTab.zip", "3E with Touch Tab"),
-    "phone": ("phone", "3E-Phone-Mac.zip", "3E with Phone Bar"),
+    "touchtab": ("touchtab", "TouchTab.zip", "3£ with Track Tab"),
+    "phone": ("phone", "3E-Phone-Mac.zip", "3£ with Track Phone"),
 }
 
 def run(*args, **kwargs):

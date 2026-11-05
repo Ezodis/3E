@@ -1,6 +1,6 @@
-# 3E Phone Bar for Ableton Live
+# 3£ Track Phone for Ableton Live
 
-3E installs `_3E_Phone_Bar` into existing Ableton User Libraries when Phone Bar
+3E installs `_3E_Phone_Bar` into existing Ableton User Libraries when Track Phone
 starts (including libraries relocated through Live's Library settings).
 Restart Live after the first install, then select **3E Phone Bar** in a free
 Control Surface row. Choose **3E Phone Bar** as Input, leave Output **None**, and
@@ -8,11 +8,11 @@ enable **Track** and **Remote** for the input. Keep the existing **3E** Touch Ba
 surface in its own row.
 
 On macOS, 3E creates the **3E Phone Bar** virtual MIDI source. On Windows, create
-a loopMIDI port with that name and select it in both Phone Bar and Live.
+a loopMIDI port with that name and select it in both Track Phone and Live.
 
 Controls use MIDI channel 16. The piano defaults to channel 1 and may use
 channels 1–15, so its notes cannot invoke control-surface commands. Select the
-matching input/channel on an armed instrument track. Phone Bar does not insert
+matching input/channel on an armed instrument track. Track Phone does not insert
 instruments, change track arming, or modify an existing Set when connected.
 
 | Phone control | Live mapping |
@@ -32,7 +32,7 @@ instruments, change track arming, or modify an existing Set when connected.
 Mappings look up tracks/devices at gesture time, so they follow track reordering
 and device changes. No MIDI output port is required. The surface writes a small local feedback snapshot
 with current clip names, playback position, loop bounds and mixer parameters.
-Phone Bar reads it at most four times a second and clears stale data. Audio-file
+Track Phone reads it at most four times a second and clears stale data. Audio-file
 paths are never included. Restart Live once after updating the script.
 
 Loop size controls use channel-16 notes 80/81 (halve A/B), 82/83 (double),
@@ -41,3 +41,5 @@ jog keeps CC40/41. Unwarped audio and recording clips are protected from jog
 and loop-length edits.
 
 Run routing tests with `python3 Shared/PhoneControl/Ableton/test_mapping.py`.
+
+The module is named Track Phone. Its existing `3E Phone Bar` MIDI port and Control Surface identifiers remain stable so saved Live projects keep their connections.

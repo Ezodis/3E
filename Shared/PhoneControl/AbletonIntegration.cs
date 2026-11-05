@@ -29,7 +29,7 @@ public static class AbletonIntegration {
         var destination=Path.Combine(library,"Remote Scripts","_3E_Phone_Bar");
         Directory.CreateDirectory(destination);
         foreach(var name in new[]{"__init__.py","phone_bar.py","mapping.py"}) {
-            using var resource=typeof(AbletonIntegration).Assembly.GetManifestResourceStream("ThreeE.PhoneControl.Ableton."+name)??throw new InvalidOperationException("Missing Phone Bar script: "+name);
+            using var resource=typeof(AbletonIntegration).Assembly.GetManifestResourceStream("ThreeE.PhoneControl.Ableton."+name)??throw new InvalidOperationException("Missing Track Phone script: "+name);
             using var buffer=new MemoryStream();resource.CopyTo(buffer);var content=buffer.ToArray();
             var target=Path.Combine(destination,name);
             if(File.Exists(target)&&File.ReadAllBytes(target).SequenceEqual(content))continue;

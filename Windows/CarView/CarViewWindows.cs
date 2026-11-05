@@ -12,7 +12,7 @@ using System.Text.Json;
 
 namespace ThreeE.CarView;
 
-// Native click-through presentation only: neither hardware nor Phone Bar input
+// Native click-through presentation only: neither hardware nor Track Phone input
 // is intercepted or reversed. Glass reflects the picture and pointer together.
 public sealed class CarViewWindows : IDisposable {
     private readonly WndProc callback;

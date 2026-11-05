@@ -1,7 +1,7 @@
 #import <AppKit/AppKit.h>
 #import <objc/runtime.h>
 #import "../Source/ReleaseUpdates.h"
-// Regression for Touch Tab disappearing: the edition must come from the
+// Regression for Track Tab disappearing: the edition must come from the
 // installed bundle's Info.plist, identically in every process.
 static void TestEditionSourceOfTruth(void) {
     NSString *root=[NSTemporaryDirectory() stringByAppendingPathComponent:NSUUID.UUID.UUIDString];
@@ -13,7 +13,7 @@ static void TestEditionSourceOfTruth(void) {
     NSCAssert([StripAppBundlePathFrom(helper) isEqual:app],@"The MIDI helper finds its enclosing 3E.app");
     NSCAssert(StripBundleIncludesTouchTab(StripAppBundlePathFrom(helper)),@"Helper built without the combined flag still sees the combined edition");
     [@{@"CFBundleIdentifier":@"local.musicstrip.app"} writeToFile:[app stringByAppendingPathComponent:@"Contents/Info.plist"] atomically:YES];
-    NSCAssert(!StripBundleIncludesTouchTab(StripAppBundlePathFrom(helper)),@"Touch Bar-only bundle reports no Touch Tab");
+    NSCAssert(!StripBundleIncludesTouchTab(StripAppBundlePathFrom(helper)),@"Touch Bar-only bundle reports no Track Tab");
     for(NSArray *selection in @[@[],@[@"touchbar"],@[@"touchtab"],@[@"phone"],@[@"touchbar",@"phone",@"touchtab"]]) {
         [@{@"CFBundleIdentifier":@"local.musicstrip.app",@"ThreeEModuleSchema":@1,@"ThreeEModules":selection} writeToFile:[app stringByAppendingPathComponent:@"Contents/Info.plist"] atomically:YES];
         NSCAssert([StripModulesAtPath(StripAppBundlePathFrom(helper)) isEqual:selection],@"Helpers and host retain the exact module selection, including empty");

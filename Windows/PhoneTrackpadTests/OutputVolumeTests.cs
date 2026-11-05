@@ -25,6 +25,6 @@ static class OutputVolumeTests {
         using var missing=new OutputVolume(()=>null,_=>throw new Exception("No device"));
         check(!JsonSerializer.SerializeToElement(missing.State).GetProperty("available").GetBoolean(),"A missing output reports volume unavailable");
         volume.Dispose();int count=writes.Count;volume.Set(90);await Task.Delay(30);
-        check(writes.Count==count,"Stopping Phone Bar prevents later volume writes");
+        check(writes.Count==count,"Stopping Track Phone prevents later volume writes");
     }
 }

@@ -432,7 +432,7 @@ static OSStatus SendSpotifyCommand(pid_t pid, int command) {
     self.phoneController.systemAction=^(NSString *action,NSInteger direction){
         PostMacSystemAction(action,direction);
     };
-    // Phone Bar comes back in the state it was left in (on by default).
+    // Track Phone comes back in the state it was left in (on by default).
     id phoneBarSaved=[NSUserDefaults.standardUserDefaults objectForKey:ThreeEPhoneBarEnabledKey];
     if(StripHasModule(@"phone") && (!phoneBarSaved || [phoneBarSaved boolValue])) [self.phoneController startReceiver];
     BOOL touchBarAvailable=LoadInterfaces() && StripHasModule(@"touchbar");

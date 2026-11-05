@@ -268,7 +268,7 @@ if(require.main===module)(async()=>{
    const mediaCount=commands.filter(c=>c.type==='media').length;
    await drag(p,p.locator('#media'),0,0,900);
    assert.equal(await p.locator('#studio').isVisible(),true);
-   assert.equal(await p.locator('#studio h1').innerText(),'3£ Phone Bar');
+   assert.equal(await p.locator('#studio h1').innerText(),'3£ Track Phone');
    const returnTarget=async page=>{
     const back=await page.locator('#closeStudio').boundingBox(),nav=await page.locator('.studio-tabs').boundingBox(),viewport=page.viewportSize();
     assert.ok(back.width>=40&&back.height>=36&&back.x+back.width<=viewport.width&&back.y+back.height<=viewport.height,'compact return target stays reachable');

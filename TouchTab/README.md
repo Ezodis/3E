@@ -1,15 +1,15 @@
-# Touch-Tab
+# Track Tab
 
 ## 3E distribution
 
-Touch Tab is an optional module inside **3E.app**. Download `TouchTab.zip` for a small initial install, or `3E-Combined.zip` for all modules. Both use `/Applications/3E.app`. Click missing modules in its menu to install them; use the gear menu to uninstall modules. Quit the legacy standalone Touch-Tab app before migrating. Direct Touch Bar touches are excluded so piano playing cannot trigger trackpad gestures.
+Track Tab is an optional module inside **3E.app**. Download `TouchTab.zip` for a small initial install, or `3E-Combined.zip` for all modules. Both use `/Applications/3E.app`. Click missing modules in its menu to install them; use the gear menu to uninstall modules. Quit the legacy standalone Touch-Tab app before migrating. Direct Touch Bar touches are excluded so piano playing cannot trigger trackpad gestures.
 
 
 Source imported from Ezodis/Touch-Tab commit `747110641062ebf9933cc12e1c6ce1a06feecb29`. The original upstream README follows for attribution and gesture instructions; its upstream download links are not this fork's update feed.
 
 ### Build this version
 
-From the repository root, run `zsh TouchTab/build.sh`. The output is the universal `TouchBar/build/threee/3E.app` containing only Touch Tab, with the shared 3E host and module manager. Use `STRIP_SIGNING_IDENTITY=-` for an ad-hoc build. Requires macOS 12+ and Xcode command-line tools. The original Xcode project remains for provenance; public releases use the shared host.
+From the repository root, run `zsh TouchTab/build.sh`. The output is the universal `TouchBar/build/threee/3E.app` containing only Track Tab, with the shared 3E host and module manager. Use `STRIP_SIGNING_IDENTITY=-` for an ad-hoc build. Requires macOS 12+ and Xcode command-line tools. The original Xcode project remains for provenance; public releases use the shared host.
 
 Give this app Accessibility access in System Settings before testing gestures. Four-finger left/right switches apps; a force-click switches windows in the current app. macOS trackpad shortcuts can compete with these gestures; change them only if you encounter a conflict. Quit releases the gesture tap and any in-progress app-switching modifier.
 

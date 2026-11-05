@@ -167,8 +167,8 @@ enum AppReleaseUpdates {
             DispatchQueue.main.async {
                 let newer = release.map { $0.version.compare(BundleInfo.version(), options: .numeric) == .orderedDescending } ?? false
                 let alert = NSAlert()
-                alert.messageText = newer ? "A TouchTab update is available" : (release == nil ? "Could not check for updates" : "TouchTab is up to date")
-                alert.informativeText = "Installed version: \(BundleInfo.version()). TouchTab updates come from Ezodis/3E. Downloads do not replace your running app."
+                alert.messageText = newer ? "A Track Tab update is available" : (release == nil ? "Could not check for updates" : "Track Tab is up to date")
+                alert.informativeText = "Installed version: \(BundleInfo.version()). Track Tab updates come from Ezodis/3E. Downloads do not replace your running app."
                 alert.addButton(withTitle: newer ? "Download" : "OK")
                 if newer { alert.addButton(withTitle: "Later") }
                 NSApp.activate(ignoringOtherApps: true)

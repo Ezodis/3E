@@ -16,10 +16,10 @@
             if(e.CGEvent)CGEventPost(kCGHIDEventTap,e.CGEvent);
         }
     };
-    self.item=[NSStatusBar.systemStatusBar statusItemWithLength:NSVariableStatusItemLength];self.item.button.image=ThreeEBrandMenuImage();self.item.button.title=@"";self.item.button.toolTip=@"3£ Phone Bar";
+    self.item=[NSStatusBar.systemStatusBar statusItemWithLength:NSVariableStatusItemLength];self.item.button.image=ThreeEBrandMenuImage();self.item.button.title=@"";self.item.button.toolTip=@"3£ Track Phone";
     NSMenu *menu=[NSMenu new];
     [menu addItem:ThreeEPhoneBarMenu(self)];
-    for(NSArray *row in @[@[@"Quit Phone Bar",@"quit:"]]){
+    for(NSArray *row in @[@[@"Quit Track Phone",@"quit:"]]){
         NSMenuItem *item=[[NSMenuItem alloc] initWithTitle:row[0] action:NSSelectorFromString(row[1]) keyEquivalent:@""];item.target=self;[menu addItem:item];
     }
     self.item.menu=menu;

@@ -26,15 +26,15 @@ class PhoneBar(ControlSurface):
                 control = ButtonElement(True, MIDI_NOTE_TYPE, CONTROL_CHANNEL, number, name='Phone_Note_%d' % number)
                 control.add_value_listener(partial(self._handle, True, number))
                 self._phone_controls.append(control)
-        self.log_message('3E Phone Bar ready: controls on channel 16; piano on channels 1–15')
-        self.show_message('3E Phone Bar connected — mixer tracks 1–8, decks tracks 1–2')
+        self.log_message('3£ Track Phone ready: controls on channel 16; piano on channels 1–15')
+        self.show_message('3£ Track Phone connected — mixer tracks 1–8, decks tracks 1–2')
 
     def _handle(self, note, number, value):
         try:
             self._phone_mapping.receive(note, number, value)
         except (RuntimeError, AttributeError, IndexError) as error:
             # A track/device may disappear during a gesture or Set change.
-            self.log_message('3E Phone Bar: %s' % error)
+            self.log_message('3£ Track Phone: %s' % error)
 
     def update_display(self):
         super(PhoneBar, self).update_display()

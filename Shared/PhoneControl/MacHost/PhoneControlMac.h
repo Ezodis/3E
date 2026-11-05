@@ -109,7 +109,7 @@ static NSString *const ThreeEPhoneBarEnabledKey=@"ThreeEPhoneBarEnabled";
 - (void)show {
     self.qrRequested=YES;
     [NSUserDefaults.standardUserDefaults setBool:YES forKey:ThreeEPhoneBarEnabledKey];
-    if (@available(macOS 14.0,*)) {} else { [self message:@"Phone Bar requires macOS 14 or later. Other 3£ modules remain available."]; return; }
+    if (@available(macOS 14.0,*)) {} else { [self message:@"Track Phone requires macOS 14 or later. Other 3£ modules remain available."]; return; }
     [self startReceiver];
     if(self.url)[self showQR];
 }
@@ -173,7 +173,7 @@ static NSString *const ThreeEPhoneBarEnabledKey=@"ThreeEPhoneBarEnabled";
     // Only the user's own toggle changes the remembered state; quitting does not.
     if(self.receiverWanted){[NSUserDefaults.standardUserDefaults setBool:NO forKey:ThreeEPhoneBarEnabledKey];[self stop];return;}
     [NSUserDefaults.standardUserDefaults setBool:YES forKey:ThreeEPhoneBarEnabledKey];
-    if (@available(macOS 14.0,*)) {} else { [self message:@"Phone Bar requires macOS 14 or later. Other 3£ features remain available."]; return; }
+    if (@available(macOS 14.0,*)) {} else { [self message:@"Track Phone requires macOS 14 or later. Other 3£ features remain available."]; return; }
     self.qrRequested=self.qrHovering;[self startReceiver];if(self.url&&self.qrRequested)[self showQR];
 }
 - (void)showQRForHover { self.qrHovering=YES;if(!self.task.running)return;self.qrRequested=YES;if(self.url)[self showQR]; }

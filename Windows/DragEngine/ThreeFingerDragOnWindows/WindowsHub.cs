@@ -70,7 +70,7 @@ public sealed class WindowsHub : IDisposable {
         public bool SsmsTheme { get; set; } = true;
         public bool Wallpaper { get; set; } = true;
         public DateTime LastUpdateCheckUtc { get; set; }
-        // Phone Bar keeps one saved link and stays reachable unless stopped from the menu.
+        // Track Phone keeps one saved link and stays reachable unless stopped from the menu.
         public bool PhoneBarAlwaysOn { get; set; } = true;
         // New releases install by themselves when the computer is idle.
         public bool AutoUpdate { get; set; } = true;
@@ -236,7 +236,7 @@ public sealed class WindowsHub : IDisposable {
             File.WriteAllText(Path.Combine(data, "status.json"), JsonSerializer.Serialize(new {
                 version = Version, timestampUtc = DateTime.UtcNow,
                 trayIconForeground = handler.TrayIconForeground,
-                trayLeftClick = "Phone Bar QR popup", trayRightClick = "all controls and Phone Bar QR",
+                trayLeftClick = "Track Phone QR popup", trayRightClick = "all controls and Track Phone QR",
                 ssmsThemeSync = settings.SsmsTheme, ssmsThemeProfiles,
                 ssmsThemes = SsmsTheme.CurrentThemeNames,
                 touchpadDetected = handler.TouchpadExists, inputReceiverInstalled = handler.InputReceiverInstalled,
@@ -505,7 +505,7 @@ public sealed class WindowsHub : IDisposable {
     }
 
     private void NewPhoneLink() {
-        if (MessageBox(IntPtr.Zero, "Make a new Phone Bar link?\n\nThe current link stops working. Scan the new QR code on your iPhone (and email it to your Watch) afterwards.", "3£ Phone Bar", 0x24 | ForegroundDialog) != 6) return;
+        if (MessageBox(IntPtr.Zero, "Make a new Track Phone link?\n\nThe current link stops working. Scan the new QR code on your iPhone (and email it to your Watch) afterwards.", "3£ Track Phone", 0x24 | ForegroundDialog) != 6) return;
         phoneBar.ResetLink();
         OpenPhoneTrackpad();
     }
@@ -521,9 +521,9 @@ public sealed class WindowsHub : IDisposable {
     private void RefreshMenu() {
         menu.Items.Clear();
         menu.Items.Add(new MenuFlyoutItem { Text = "3£ " + Version, IsEnabled = false });
-        // One Phone Bar row: click to turn it on or off; its icon makes a new link.
+        // One Track Phone row: click to turn it on or off; its icon makes a new link.
         // Left-clicking the tray icon shows the QR.
-        Toggle("Phone Bar", phoneBar.Running, enabled => {
+        Toggle("Track Phone", phoneBar.Running, enabled => {
             settings.PhoneBarAlwaysOn = enabled;
             if (enabled) phoneBar.EnsureRunning(); else phoneBar.Stop();
         }, NewPhoneLink);
@@ -567,7 +567,7 @@ public sealed class WindowsHub : IDisposable {
         ToggleMenuFlyoutItem Switch(string text, bool value, Action<bool> change) => ToggleMenuItem(text, value, change);
         void OpenPowerToys() => OpenPowerToysSettings();
         launcher.Items.Add(ActionItem("Drag settings…", () => App.Instance.OpenSettingsWindow()));
-        launcher.Items.Add(ActionItem("Phone Bar…", OpenPhoneTrackpad));
+        launcher.Items.Add(ActionItem("Track Phone…", OpenPhoneTrackpad));
         launcher.Items.Add(ActionItem("PowerToys settings…", OpenPowerToys));
         var keyboard = new MenuFlyoutSubItem { Text = "Keyboard controls" };
         keyboard.Items.Add(MacKeyboardToggle());

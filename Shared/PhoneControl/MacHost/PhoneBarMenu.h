@@ -41,7 +41,7 @@
 @end
 
 static NSMenuItem *ThreeEPhoneBarMenu(id target) {
-    NSMenuItem *item=[[NSMenuItem alloc] initWithTitle:@"Phone Bar" action:NSSelectorFromString(@"togglePhoneBar:") keyEquivalent:@""];
+    NSMenuItem *item=[[NSMenuItem alloc] initWithTitle:@"Track Phone" action:NSSelectorFromString(@"togglePhoneBar:") keyEquivalent:@""];
     item.identifier=@"local.musicstrip.phone";item.target=target;item.state=NSControlStateValueOn;
     ThreeEPhoneBarMenuRow *row=[[ThreeEPhoneBarMenuRow alloc] initWithFrame:NSMakeRect(0,0,210,24)];
     row.menuItem=item;row.actionTarget=target;row.hoverAction=NSSelectorFromString(@"hoverPhoneBar:");row.leaveAction=NSSelectorFromString(@"hidePhoneBarQR:");

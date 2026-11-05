@@ -160,9 +160,9 @@ public sealed class PhoneTrackpad : IDisposable {
     // response as a blank white page, which hides what went wrong.
     public static void Refuse(HttpListenerResponse response, int code, string message) {
         try {
-            var page = Encoding.UTF8.GetBytes("<!doctype html><meta charset=utf-8><meta name=viewport content=\"width=device-width,initial-scale=1\"><title>Phone Bar</title>" +
+            var page = Encoding.UTF8.GetBytes("<!doctype html><meta charset=utf-8><meta name=viewport content=\"width=device-width,initial-scale=1\"><title>Track Phone</title>" +
                 "<body style=\"margin:0;min-height:100vh;display:grid;place-items:center;background:#141b21;color:#d6dee5;font:17px -apple-system,system-ui,sans-serif;text-align:center;padding:24px;box-sizing:border-box\">" +
-                "<div><p style=\"font-size:20px;font-weight:600\">Phone Bar</p><p>" + WebUtility.HtmlEncode(message) + "</p><p style=\"opacity:.6;font-size:14px\">Code " + code + "</p></div>");
+                "<div><p style=\"font-size:20px;font-weight:600\">Track Phone</p><p>" + WebUtility.HtmlEncode(message) + "</p><p style=\"opacity:.6;font-size:14px\">Code " + code + "</p></div>");
             response.StatusCode = code;
             response.ContentType = "text/html; charset=utf-8";
             response.Headers["Cache-Control"] = "no-store";
@@ -347,7 +347,7 @@ public sealed class PhoneTrackpad : IDisposable {
             var request = context.Request;
             // Literal bound host and same-origin WebSockets prevent DNS rebinding / cross-site control.
             if (!owner.IsHost(request.Headers["Host"])) {
-                Refuse(context.Response, 403, "This link points to an address this computer no longer uses. Open Phone Bar on the computer and scan its QR code again."); return;
+                Refuse(context.Response, 403, "This link points to an address this computer no longer uses. Open Track Phone on the computer and scan its QR code again."); return;
             }
             if (request.Url.AbsolutePath == "/control" && request.HttpMethod == "POST") {
                 await HttpControlAsync(owner, context); return;
@@ -363,7 +363,7 @@ public sealed class PhoneTrackpad : IDisposable {
                 if (!owner.IsOrigin(request.Headers["Origin"]) || request.Url.Query.Length != 0) {
                     context.Response.StatusCode = 403; context.Response.Close(); return;
                 }
-                if (!owner.Sockets.Wait(0)) { Refuse(context.Response, 503, "Too many open Phone Bar pages. Close the extra ones."); return; }
+                if (!owner.Sockets.Wait(0)) { Refuse(context.Response, 503, "Too many open Track Phone pages. Close the extra ones."); return; }
                 slotReleased = true; owner.Slots.Release();
                 try {
                     using var ws = (await context.AcceptWebSocketAsync(null)).WebSocket;
@@ -384,7 +384,7 @@ public sealed class PhoneTrackpad : IDisposable {
                 context.Response.StatusCode = 403; context.Response.Close(); return;
             }
             var resource = request.Url.AbsolutePath switch { "/" => "PhoneTrackpad.html", "/pad.js" => "PhoneTrackpad.js", "/surface.js" => "surface.js", "/dj.js" => "dj.js", "/dj.css" => "dj.css", "/dock.js" => "dock.js", "/clip.js" => "clip.js", "/surface.css" => "surface.css", "/host.js" => "host.js", "/pair" => "pair", "/icon.png" => "icon.png", _ => null };
-            if (resource == null) { Refuse(context.Response, 404, "Nothing here. Open the Phone Bar link from the computer's QR code."); return; }
+            if (resource == null) { Refuse(context.Response, 404, "Nothing here. Open the Track Phone link from the computer's QR code."); return; }
             var response = context.Response;
             response.ContentType = resource.EndsWith(".png") ? "image/png" : resource.EndsWith(".js") ? "text/javascript; charset=utf-8" : resource.EndsWith(".css") ? "text/css; charset=utf-8" : "text/html; charset=utf-8";
             response.Headers["Cache-Control"] = "no-store";
@@ -588,8 +588,8 @@ public sealed class PhoneTrackpad : IDisposable {
         using var reader = new StreamReader(stream, Encoding.UTF8);
         var title = PageTitle(platform);
         return reader.ReadToEnd()
-            .Replace("<title>3£ Phone Bar</title>", "<title>" + title + "</title>\n<meta name=\"apple-mobile-web-app-title\" content=\"" + title + "\">")
-            .Replace("<meta property=\"og:title\" content=\"3£ Phone Bar\">", "<meta property=\"og:title\" content=\"" + title + "\">");
+            .Replace("<title>3£ Track Phone</title>", "<title>" + title + "</title>\n<meta name=\"apple-mobile-web-app-title\" content=\"" + title + "\">")
+            .Replace("<meta property=\"og:title\" content=\"3£ Track Phone\">", "<meta property=\"og:title\" content=\"" + title + "\">");
     }
 
     // Clipboard transfer uses authenticated same-origin POSTs: photos and PDFs

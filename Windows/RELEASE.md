@@ -1,4 +1,4 @@
-3£ fixes reversed Phone Bar pinch zoom on Windows and Mac.
+3£ fixes reversed Track Phone pinch zoom on Windows and Mac.
 
 - Spreading two fingers zooms in; pinching them together zooms out, including diagonal and one-finger-moving pinches.
 - Removes the old reversal toggle and clears its saved value on the phone and computer, including cached pages reconnecting after an update.
@@ -32,14 +32,14 @@ Validation includes isolated keyboard snapshot/restore/failure/recovery tests, C
 
 Previous releases:
 
-3£Windows now updates the Phone Bar page on your phone by itself.
+3£Windows now updates the Track Phone page on your phone by itself.
 
-- **No manual reload after an update:** when the PC or Mac installs an update and restarts, the open Phone Bar page (Safari tab or Home Screen web app, iPhone or Apple Watch) reloads itself once as soon as it reconnects, so new features appear right away. It waits until you lift your finger, finish a drag or the app switcher, and close the keyboard or clipboard sheet, and shows "Updating…" for a moment. If the page on your phone is from before this update, reload it once by hand; every update after that is automatic.
-- **Reliable reloads:** reloading the Phone Bar page while the phone is connected no longer occasionally comes up blank or with an error page.
+- **No manual reload after an update:** when the PC or Mac installs an update and restarts, the open Track Phone page (Safari tab or Home Screen web app, iPhone or Apple Watch) reloads itself once as soon as it reconnects, so new features appear right away. It waits until you lift your finger, finish a drag or the app switcher, and close the keyboard or clipboard sheet, and shows "Updating…" for a moment. If the page on your phone is from before this update, reload it once by hand; every update after that is automatic.
+- **Reliable reloads:** reloading the Track Phone page while the phone is connected no longer occasionally comes up blank or with an error page.
 
 Includes everything from 1.0.44:
 
-3£Windows 1.0.44 adds a phone keyboard and two-way clipboard to Phone Bar (Windows and Mac).
+3£Windows 1.0.44 adds a phone keyboard and two-way clipboard to Track Phone (Windows and Mac).
 
 - **Keyboard:** the new bottom row of the ⌘ palette opens your phone keyboard and types on the computer, including autocorrect, dictation, accents and emoji. A key bar adds Esc, Tab, arrows, ⌫, Delete and Enter.
 - **Paste to PC / Mac:** send text, formatted text, photos, PDFs or other files you copied on the phone; they are pasted where the cursor is.
@@ -55,7 +55,7 @@ Includes everything from 1.0.42:
 
 3£Windows 1.0.42 puts the butterfly logo in the last few places.
 
-- **Phone Bar:** the QR popup shows the logo next to "3£ Phone Bar", and the phone page has it as its tab and Home Screen icon (iPhone "Add to Home Screen" now shows the butterfly).
+- **Track Phone:** the QR popup shows the logo next to "3£ Track Phone", and the phone page has it as its tab and Home Screen icon (iPhone "Add to Home Screen" now shows the butterfly).
 - The Mac menu bar and the standalone TouchTab app (app icon and menu bar icon) use it too.
 
 Includes everything from 1.0.41:
@@ -86,17 +86,17 @@ Includes everything from 1.0.38:
 
 Includes everything from 1.0.37:
 
-3£Windows 1.0.37 keeps the Phone Bar link the same on every network.
+3£Windows 1.0.37 keeps the Track Phone link the same on every network.
 
 - **One permanent link:** the QR now always shows `http://3e-win.local:17833/#…` instead of the PC's IP address. The saved secret and the `3e-win.local` name stay the same, so the link on your iPhone, Home Screen or Apple Watch keeps working when the IP changes.
-- **Follows IP changes by itself:** when DHCP, a different Wi-Fi or a hotspot gives the PC a new address, Phone Bar rebinds to it and re-announces `3e-win.local` with the new IP. If Wi-Fi drops, it pauses and comes back on its own when a network returns. No need to turn it off and on or rescan.
+- **Follows IP changes by itself:** when DHCP, a different Wi-Fi or a hotspot gives the PC a new address, Track Phone rebinds to it and re-announces `3e-win.local` with the new IP. If Wi-Fi drops, it pauses and comes back on its own when a network returns. No need to turn it off and on or rescan.
 - The Mac receiver (`3e-mac.local`) gets the same automatic rebinding.
 
 Includes everything from 1.0.36:
 
 3£Windows 1.0.36 adds a full restart.
 
-- **Restart** (was "Restart input engines") quits and relaunches the whole suite: the tray app, three-finger drag, the Clicks keyboard engine, PowerToys, the wallpaper app and Phone Bar all start fresh. No administrator prompt; the Phone Bar link is kept.
+- **Restart** (was "Restart input engines") quits and relaunches the whole suite: the tray app, three-finger drag, the Clicks keyboard engine, PowerToys, the wallpaper app and Track Phone all start fresh. No administrator prompt; the Track Phone link is kept.
 
 Includes everything from 1.0.35:
 
@@ -109,7 +109,7 @@ Includes everything from 1.0.34:
 3£Windows 1.0.34 gives the tray menu real icons and one row per feature.
 
 - **Real icons:** rows with settings show a Windows sliders icon at the right edge (Segoe Fluent Icons). Click the row to toggle; click the icon for settings.
-- **Phone Bar is one row, at the top:** click to turn it on or off; its icon makes a new link (after confirming, since the old link stops working). Left-clicking the tray icon still shows the QR.
+- **Track Phone is one row, at the top:** click to turn it on or off; its icon makes a new link (after confirming, since the old link stops working). Left-clicking the tray icon still shows the QR.
 - **Rotate themes:** one row replaces "Rotate SSMS themes" and "Rotate SSMS theme now". Click to switch rotation on or off; the repeat icon rotates now. Rotation now covers SSMS and every installed VS Code–style editor (Kiro, VS Code, Cursor, Windsurf, VSCodium), choosing from each one's installed light or dark themes. The old separate Kiro theme task is removed.
 
 Includes everything from 1.0.33:
@@ -124,13 +124,13 @@ Includes everything from 1.0.32:
 3£Windows 1.0.32 tidies the tray menu.
 
 - **Gear icons:** Three-finger drag, PowerToys shortcuts and Dynamic wallpaper each have a ⚙ at the right edge. Click the row to switch it on or off; click the ⚙ to open its settings. The separate "Drag settings…", "PowerToys settings…" and "Show wallpaper controls…" items are gone.
-- **Phone Bar is one checkbox:** "Phone Bar" is checked while it runs; click it to start or stop. "Show QR…" is removed because left-clicking the tray icon already shows the QR.
+- **Track Phone is one checkbox:** "Track Phone" is checked while it runs; click it to start or stop. "Show QR…" is removed because left-clicking the tray icon already shows the QR.
 - **Dynamic wallpaper** now heads the theme section.
-- **Browser title:** the Phone Bar tab and home-screen name is "3£ -win" on Windows ("3£ -mac" on the Mac receiver), so the two are easy to tell apart.
+- **Browser title:** the Track Phone tab and home-screen name is "3£ -win" on Windows ("3£ -mac" on the Mac receiver), so the two are easy to tell apart.
 
 Includes everything from 1.0.31:
 
-3£Windows 1.0.31 gives the Windows Phone Bar a unique local-network address.
+3£Windows 1.0.31 gives the Windows Track Phone a unique local-network address.
 
 - **Windows phone link:** scan or open `http://3e-win.local:17833`. The Mac receiver uses `3e-mac.local`, so both receivers can run on the same network without sending a QR link to the other computer.
 
@@ -173,7 +173,7 @@ Includes everything from 1.0.25:
 
 Includes everything from 1.0.24:
 
-- **One link that keeps working:** the pairing link is saved, so it is the same after restarts, updates and network changes. Phone Bar now stays on and restarts itself after sleep or a network change. The tray has "Phone Bar — new link" to revoke the old link; "Stop Phone Bar" turns it off until you open the QR again.
+- **One link that keeps working:** the pairing link is saved, so it is the same after restarts, updates and network changes. Track Phone now stays on and restarts itself after sleep or a network change. The tray has "Track Phone — new link" to revoke the old link; "Stop Track Phone" turns it off until you open the QR again.
 - **phonebar.local:** the receiver answered http://phonebar.local:17833. The QR still opened the IP address; the page switched to phonebar.local automatically when the network supported it, so a bookmark or home-screen icon kept working when the laptop's IP changed. Networks that blocked .local names kept using the IP link.
 - **Double-tap-hold-drag fixed:** holding still now measures how far the finger actually moved, not the sum of tiny jitters, which made the drag almost impossible to arm on a real phone. The drag starts once the finger moves 6 px from where it rested.
 - **Volume:** the slider follows your finger directly (iPhone handled the old hidden vertical slider badly), and new ▲/▼ buttons press the laptop's own volume keys, with Windows' volume flyout.
@@ -192,19 +192,19 @@ Includes everything from 1.0.22:
 
 Includes everything from 1.0.21:
 
-- **Tray menu items work again:** the right-click menu is shown as a native popup, which runs each item's command and never its click handler. Every hub item (Check for updates, Stop Phone Bar, theme and keyboard toggles, Restart input engines, Quit…) was wired to the click handler, so clicking did nothing. Items now use commands, and toggles update their own check state.
+- **Tray menu items work again:** the right-click menu is shown as a native popup, which runs each item's command and never its click handler. Every hub item (Check for updates, Stop Track Phone, theme and keyboard toggles, Restart input engines, Quit…) was wired to the click handler, so clicking did nothing. Items now use commands, and toggles update their own check state.
 - **Update dialogs come to the front:** "Check for updates" results and the install prompt open in the foreground instead of behind other windows.
 
 Includes everything from 1.0.20:
 
 - **No more stutter:** heartbeat replies are a few bytes and carry laptop state only when it changes, so the phone no longer rebuilds dock artwork every second during use.
 - **Responsive first touch:** a touch made while the page is waking or reconnecting is kept and delivered once connected instead of being dropped, and a touch after a pause sends an immediate wake packet.
-- **Laptop side:** while Phone Bar runs, the app opts out of Windows background power throttling and sets the active power plan's Wi-Fi adapter power saving to Maximum Performance. The previous values are saved and restored when Phone Bar stops, or on the next start after a crash.
+- **Laptop side:** while Track Phone runs, the app opts out of Windows background power throttling and sets the active power plan's Wi-Fi adapter power saving to Maximum Performance. The previous values are saved and restored when Track Phone stops, or on the next start after a crash.
 - **Tap-then-drag fixed:** tap, then touch and move (or hold) now drags instead of double-clicking. Windows previously read the second press as a double-click, so files opened, title bars maximised and text selected whole words. The press now starts just outside Windows' double-click area (a few pixels), and a quick double tap sends a true double-click. macOS starts the drag with a fresh click count.
 - **New dock layout:** ⌘ Shortcuts in the left corner, Apps centred, Media on the right; the phone's scroll button is removed. Press ⌘ and slide onto a shortcut, then release to send it, or tap ⌘ to pick from the palette. Apple Watch keeps its compact row.
 - **One-contact controls always on:** the Settings toggle is gone; hold still to right-click, longer second-tap window and generous tap tolerance now always apply.
 - **⌘ Shortcuts:** ⌘C/V/X/A, ⌘Z, ⇧⌘Z (Ctrl+Y), ⌘T, ⇧⌘T, ⌘W, ⌘N, ⌘F, ⌘S, ⌘R (F5), ⌘Space (Win+S), ⌘Q (Alt+F4), ⇧⌘3 (Win+PrtSc), ⇧⌘4 (Win+Shift+S) and ⇧⌘5 (Win+Shift+R). macOS hosts send the real ⌘ shortcuts. The protocol carries only a fixed palette id, never arbitrary keys.
-- Includes the Phone Bar work from 1.0.10–1.0.19: MIDI surface, media source tracking, Apps/Media swipes, output volume swipe and the borderless layout.
+- Includes the Track Phone work from 1.0.10–1.0.19: MIDI surface, media source tracking, Apps/Media swipes, output volume swipe and the borderless layout.
 
 Download **3EWindows.zip** and extract **3£Windows.ps1**. Run it to install or update; existing keyboard, touchpad and PowerToys preferences are preserved.
 

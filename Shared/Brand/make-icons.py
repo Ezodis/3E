@@ -89,7 +89,7 @@ def main():
     # Mac menu bar template image: black mark cropped to its bounds (22x14 pt @4x).
     m = mark(512, frac=1.0); m = m.crop(m.getbbox()).resize((88, 56), Image.LANCZOS)
     embed("Shared/Brand/ThreeEBrand.h", "menu", png64(m))
-    # Windows Phone Bar QR popup label: the mark in the label's grey, cropped.
+    # Windows Track Phone QR popup label: the mark in the label's grey, cropped.
     g = mark(512, fg=(74, 84, 92, 255), frac=1.0); g = g.crop(g.getbbox()).resize((96, 62), Image.LANCZOS)
     embed("Windows/PhoneBar/PhoneTrackpadPopup.cs", "popup", png64(g))
 
