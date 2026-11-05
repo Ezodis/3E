@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 #pragma once
 #import <AppKit/AppKit.h>
+#import "../../../Shared/PhoneControl/MacHost/MenuRowHighlight.h"
 
 @interface ThreeEModuleMenuRow : NSView
 @property (weak) NSMenuItem *item;
@@ -10,7 +11,6 @@
 @property NSString *module;
 @property NSString *moduleName;
 @property BOOL installed;
-@property BOOL hovered;
 - (NSMenu *)settingsMenu;
 - (void)update;
 @end
@@ -39,15 +39,16 @@
     self.needsDisplay=YES;self.originalView.needsDisplay=YES;[self layout];
 }
 - (void)updateTrackingAreas {
-    [super updateTrackingAreas];for(NSTrackingArea *area in self.trackingAreas)[self removeTrackingArea:area];
+    [super updateTrackingAreas];ThreeEMenuRowObserve(self.item.menu);for(NSTrackingArea *area in self.trackingAreas)[self removeTrackingArea:area];
     [self addTrackingArea:[[NSTrackingArea alloc] initWithRect:self.bounds options:NSTrackingMouseEnteredAndExited|NSTrackingActiveAlways|NSTrackingInVisibleRect owner:self userInfo:nil]];
 }
-- (void)mouseEntered:(NSEvent *)event{self.hovered=YES;self.needsDisplay=YES;}
-- (void)mouseExited:(NSEvent *)event{self.hovered=NO;self.needsDisplay=YES;}
+- (void)mouseEntered:(NSEvent *)event{ThreeEMenuRowRefresh(self.item);}
+- (void)mouseExited:(NSEvent *)event{ThreeEMenuRowRefresh(self.item);}
 - (void)drawRect:(NSRect)dirty {
-    if(self.hovered){[NSColor.selectedContentBackgroundColor setFill];[[NSBezierPath bezierPathWithRoundedRect:NSInsetRect(self.bounds,5,1) xRadius:4 yRadius:4] fill];}
-    self.mainButton.contentTintColor=self.hovered?NSColor.selectedMenuItemTextColor:NSColor.labelColor;
-    if(!self.originalView&&self.item.state==NSControlStateValueOn)[@"✓" drawAtPoint:NSMakePoint(12,4) withAttributes:@{NSFontAttributeName:[NSFont menuFontOfSize:0],NSForegroundColorAttributeName:self.hovered?NSColor.selectedMenuItemTextColor:NSColor.labelColor}];
+    BOOL highlighted=ThreeEMenuRowHighlighted(self.item);
+    if(highlighted){[NSColor.selectedContentBackgroundColor setFill];[[NSBezierPath bezierPathWithRoundedRect:NSInsetRect(self.bounds,5,1) xRadius:4 yRadius:4] fill];}
+    self.mainButton.contentTintColor=highlighted?NSColor.selectedMenuItemTextColor:NSColor.labelColor;
+    if(!self.originalView&&self.item.state==NSControlStateValueOn)[@"✓" drawAtPoint:NSMakePoint(12,4) withAttributes:@{NSFontAttributeName:[NSFont menuFontOfSize:0],NSForegroundColorAttributeName:highlighted?NSColor.selectedMenuItemTextColor:NSColor.labelColor}];
 }
 - (void)performMain:(id)sender {
     if(!self.item.enabled||!self.item.action)return;
@@ -76,7 +77,11 @@ static void StripAttachModuleGear(NSMenuItem *item,NSString *module,NSString *na
         // NSMenuItem detaches its previous view when replaced. Reattach that
         // original row only after installing the wrapper, preserving QR hover.
         item.view=row;
-        if(original){row.originalView=original;[row addSubview:original positioned:NSWindowBelow relativeTo:row.gear];}
+        if(original){
+            row.originalView=original;
+            if([original respondsToSelector:NSSelectorFromString(@"setSelectionBackgroundProvidedByParent:")]) [original setValue:@YES forKey:@"selectionBackgroundProvidedByParent"];
+            [row addSubview:original positioned:NSWindowBelow relativeTo:row.gear];
+        }
         else {row.mainButton=[NSButton buttonWithTitle:item.title target:row action:@selector(performMain:)];row.mainButton.bordered=NO;row.mainButton.alignment=NSTextAlignmentLeft;row.mainButton.font=[NSFont menuFontOfSize:0];[row addSubview:row.mainButton];}
     }
     row.module=module;row.moduleName=name;row.installed=installed;[row update];

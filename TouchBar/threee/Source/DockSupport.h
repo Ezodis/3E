@@ -419,6 +419,7 @@ static NSArray<NSURL *> *DockFolderURLs(NSDictionary *dock) {
 @property BOOL cycleWindowsReverse;
 @property BOOL scanningApps;
 @property NSRunningApplication *heldApplication;
+@property BOOL appQuitArmed;
 @property NSTimeInterval suppressAppSelectionUntil;
 @property NSPopoverTouchBarItem *overlay;
 
@@ -504,6 +505,7 @@ static NSArray<NSURL *> *DockFolderURLs(NSDictionary *dock) {
     NSLog(@"Touch Bar %@ picker visible",self.desktopsMode ? @"desktop" : @"app");
 }
 - (void)close:(id)sender {
+    self.appQuitArmed=NO;self.heldApplication=nil;
     if(!self.visible) return;
     [self finishSwipeCancelled:YES];
     NSLog(@"Apps picker closing; active=%d front=%@",NSApp.active,NSWorkspace.sharedWorkspace.frontmostApplication.bundleIdentifier);
@@ -623,7 +625,7 @@ static NSArray<NSURL *> *DockFolderURLs(NSDictionary *dock) {
         view.application=nil; view.dot.hidden=YES; view.frontmost=NO;
         [view setAccessibilityLabel:@"Apps: open Applications in Finder"]; view.needsDisplay=YES; return view;
     }
-    [view setAccessibilityLabel:[app.localizedName stringByAppendingString:app.application ? @": tap to switch; hold to quit" : @": tap to open"]]; view.needsDisplay=YES; return view;
+    [view setAccessibilityLabel:[app.localizedName stringByAppendingString:app.application ? @": tap to switch; hold then release to quit" : @": tap to open"]]; view.needsDisplay=YES; return view;
 }
 - (void)prepareSwipeApps {
     if(self.scanningApps) return;
@@ -747,7 +749,7 @@ static NSArray<NSURL *> *DockFolderURLs(NSDictionary *dock) {
         return self.swipeSource!=nil;
     }
     if(gesture!=self.appHoldRecognizer) return NO;
-    self.heldApplication=nil;
+    self.appQuitArmed=NO;self.heldApplication=nil;
     NSPoint point=[gesture locationInView:self.appsScrubber];
     for(NSInteger index=0;index<(NSInteger)self.runningApps.count;index++) {
         PockAppIconView *view=(id)[self.appsScrubber itemViewForItemAtIndex:index];
@@ -756,18 +758,20 @@ static NSArray<NSURL *> *DockFolderURLs(NSDictionary *dock) {
     return self.heldApplication && !self.heldApplication.terminated;
 }
 - (void)holdApp:(NSPressGestureRecognizer *)gesture {
+    if(gesture!=self.appHoldRecognizer) return;
     if(gesture.state==NSGestureRecognizerStateBegan) {
+        self.appQuitArmed=self.heldApplication && !self.heldApplication.terminated;
         self.suppressAppSelectionUntil=NSProcessInfo.processInfo.systemUptime+1;
+    } else if(gesture.state==NSGestureRecognizerStateEnded || gesture.state==NSGestureRecognizerStateCancelled || gesture.state==NSGestureRecognizerStateFailed) {
         NSRunningApplication *app=self.heldApplication;
-        self.heldApplication=nil; // Exactly one normal Quit request per hold.
-        if(app && !app.terminated) [app terminate];
-    } else if(gesture.state==NSGestureRecognizerStateEnded || gesture.state==NSGestureRecognizerStateCancelled) {
-        self.heldApplication=nil;
+        BOOL quit=self.appQuitArmed && gesture.state==NSGestureRecognizerStateEnded;
+        self.appQuitArmed=NO;self.heldApplication=nil; // Consume before dispatch.
         self.suppressAppSelectionUntil=NSProcessInfo.processInfo.systemUptime+.15;
+        if(quit && app && !app.terminated) [app terminate];
     }
 }
 - (void)scrubber:(NSScrubber *)scrubber didSelectItemAtIndex:(NSInteger)index {
-    if(!self.desktopsMode && (self.swipeChooser || NSProcessInfo.processInfo.systemUptime<self.suppressAppSelectionUntil || self.appHoldRecognizer.state==NSGestureRecognizerStateBegan || self.appHoldRecognizer.state==NSGestureRecognizerStateChanged)) {
+    if(!self.desktopsMode && (self.appQuitArmed || self.swipeChooser || NSProcessInfo.processInfo.systemUptime<self.suppressAppSelectionUntil || self.appHoldRecognizer.state==NSGestureRecognizerStateBegan || self.appHoldRecognizer.state==NSGestureRecognizerStateChanged)) {
         scrubber.selectedIndex=-1; return;
     }
     if(self.desktopsMode) {

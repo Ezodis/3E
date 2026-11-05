@@ -19,6 +19,26 @@
 @end
 @implementation TestDelegate
 @end
+@interface HighlightTestMenu : NSMenu
+@property NSMenuItem *fixtureHighlight;
+@end
+@implementation HighlightTestMenu
+- (NSMenuItem *)highlightedItem { return self.fixtureHighlight; }
+@end
+@interface HighlightTestDelegate : NSObject<NSMenuDelegate>
+@property NSUInteger highlights;
+@property NSUInteger updates;
+@end
+@implementation HighlightTestDelegate
+- (void)menu:(NSMenu *)menu willHighlightItem:(NSMenuItem *)item { self.highlights++; }
+- (void)menuNeedsUpdate:(NSMenu *)menu { self.updates++; }
+@end
+@interface HighlightRedrawView : NSView
+@property NSUInteger requests;
+@end
+@implementation HighlightRedrawView
+- (void)setNeedsDisplay:(BOOL)value { if(value)self.requests++;[super setNeedsDisplay:value]; }
+@end
 int main(void) { @autoreleasepool {
     [NSApplication sharedApplication]; NSApp.activationPolicy=NSApplicationActivationPolicyProhibited;
     TestStatusBrand();
@@ -119,5 +139,24 @@ int main(void) { @autoreleasepool {
     NSCAssert([[moduleRow settingsMenu].itemArray.firstObject.representedObject isEqual:@"touchbar"],@"Touch Bar uninstall belongs on Customize Touch Bar");
     for(NSNumber *width in @[@230,@400]){moduleRow.frame=NSMakeRect(0,0,width.doubleValue,26);[moduleRow layout];NSCAssert(NSMaxX(moduleRow.mainButton.frame)<NSMinX(moduleRow.gear.frame)&&NSMaxX(moduleRow.gear.frame)==width.doubleValue-9,@"Gear stays aligned at the right without overlapping the primary action");}
     for(NSMenuItem *item in delegate.theItem.menu.itemArray)NSCAssert(![item.identifier isEqual:@"local.musicstrip.modules"],@"Refreshing cannot resurrect the bottom gear");
+    HighlightTestMenu *hoverMenu=[HighlightTestMenu new];HighlightTestDelegate *original=[HighlightTestDelegate new];hoverMenu.delegate=original;
+    NSMenuItem *hoverPhone=ThreeEPhoneBarMenu(nil);[hoverMenu addItem:hoverPhone];StripAttachModuleGear(hoverPhone,@"phone",@"Phone Bar",YES);
+    NSMenuItem *hoverTab=[[NSMenuItem alloc]initWithTitle:@"Touch Tab" action:NULL keyEquivalent:@""];[hoverMenu addItem:hoverTab];StripAttachModuleGear(hoverTab,@"touchtab",@"Touch Tab",YES);
+    NSMenuItem *hoverCar=ThreeECarViewMenu(nil,NO);[hoverMenu addItem:hoverCar];NSMenuItem *native=[hoverMenu addItemWithTitle:@"Native row" action:NULL keyEquivalent:@""];
+    ThreeEMenuRowObserve(hoverMenu);id observer=hoverMenu.delegate;ThreeEMenuRowObserve(hoverMenu);
+    NSCAssert(hoverMenu.delegate==observer,@"Menu observers are installed once");
+    NSMutableArray<HighlightRedrawView *> *markers=[NSMutableArray new];
+    for(NSMenuItem *item in @[hoverPhone,hoverTab,hoverCar]){HighlightRedrawView *marker=[HighlightRedrawView new];[item.view addSubview:marker];[markers addObject:marker];}
+    for(NSMenuItem *next in @[hoverPhone,hoverTab,hoverCar,native,hoverPhone]) {
+        for(HighlightRedrawView *marker in markers)marker.requests=0;
+        hoverMenu.fixtureHighlight=next;[hoverMenu.delegate menu:hoverMenu willHighlightItem:next];
+        for(NSMenuItem *item in @[hoverPhone,hoverTab,hoverCar]) {
+            NSCAssert(ThreeEMenuRowHighlighted(item)==(item==next),@"Only the native menu's current item can draw selected, including movement onto ordinary rows");
+        }
+        for(HighlightRedrawView *marker in markers)NSCAssert(marker.requests>0,@"Every previous row and nested label is invalidated on selection changes");
+    }
+    [hoverMenu.delegate menuNeedsUpdate:hoverMenu];
+    NSCAssert(original.highlights==5 && original.updates==1,@"Selection observation preserves existing menu delegate callbacks");
+    NSCAssert([(ThreeEPhoneBarMenuRow *)[(ThreeEModuleMenuRow *)hoverPhone.view originalView] selectionBackgroundProvidedByParent],@"The nested phone label never paints a second selection background");
     puts("Passed combined gesture toggle target, runtime feedback, inline module gears and duplicate-free menu refresh. No tray icon or keyboard events created.");
 } return 0; }

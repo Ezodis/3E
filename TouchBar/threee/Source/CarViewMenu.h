@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: MIT
 #pragma once
 #import <AppKit/AppKit.h>
+#import "../../../Shared/PhoneControl/MacHost/MenuRowHighlight.h"
 
 @interface ThreeECarMenuRow : NSView
 @property (weak) NSMenuItem *item;
 @property NSButton *toggle;
 @property NSButton *mirror;
-@property BOOL hovered;
 - (void)toggleCarView:(id)sender;
 - (void)toggleCarMirror:(id)sender;
 @end
@@ -31,15 +31,16 @@
     self.mirror.frame=NSMakeRect(self.bounds.size.width-39,2,30,self.bounds.size.height-4);
 }
 - (void)updateTrackingAreas {
-    [super updateTrackingAreas];for(NSTrackingArea *area in self.trackingAreas)[self removeTrackingArea:area];
+    [super updateTrackingAreas];ThreeEMenuRowObserve(self.item.menu);for(NSTrackingArea *area in self.trackingAreas)[self removeTrackingArea:area];
     [self addTrackingArea:[[NSTrackingArea alloc] initWithRect:self.bounds options:NSTrackingMouseEnteredAndExited|NSTrackingActiveAlways|NSTrackingInVisibleRect owner:self userInfo:nil]];
 }
-- (void)mouseEntered:(NSEvent *)event{self.hovered=YES;self.needsDisplay=YES;}
-- (void)mouseExited:(NSEvent *)event{self.hovered=NO;self.needsDisplay=YES;}
+- (void)mouseEntered:(NSEvent *)event{ThreeEMenuRowRefresh(self.item);}
+- (void)mouseExited:(NSEvent *)event{ThreeEMenuRowRefresh(self.item);}
 - (void)drawRect:(NSRect)dirty {
-    if(self.hovered){[NSColor.selectedContentBackgroundColor setFill];[[NSBezierPath bezierPathWithRoundedRect:NSInsetRect(self.bounds,5,1) xRadius:4 yRadius:4] fill];}
-    self.toggle.contentTintColor=self.hovered?NSColor.selectedMenuItemTextColor:NSColor.labelColor;
-    if(self.item.state==NSControlStateValueOn)[@"✓" drawAtPoint:NSMakePoint(12,4) withAttributes:@{NSFontAttributeName:[NSFont menuFontOfSize:0],NSForegroundColorAttributeName:self.hovered?NSColor.selectedMenuItemTextColor:NSColor.labelColor}];
+    BOOL highlighted=ThreeEMenuRowHighlighted(self.item);
+    if(highlighted){[NSColor.selectedContentBackgroundColor setFill];[[NSBezierPath bezierPathWithRoundedRect:NSInsetRect(self.bounds,5,1) xRadius:4 yRadius:4] fill];}
+    self.toggle.contentTintColor=highlighted?NSColor.selectedMenuItemTextColor:NSColor.labelColor;
+    if(self.item.state==NSControlStateValueOn)[@"✓" drawAtPoint:NSMakePoint(12,4) withAttributes:@{NSFontAttributeName:[NSFont menuFontOfSize:0],NSForegroundColorAttributeName:highlighted?NSColor.selectedMenuItemTextColor:NSColor.labelColor}];
 }
 - (void)perform:(SEL)action {
     [self.item.menu cancelTracking];[NSApp sendAction:action to:self.item.target from:self.item];
