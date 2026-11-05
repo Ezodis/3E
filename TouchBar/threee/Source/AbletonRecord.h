@@ -25,6 +25,7 @@ static NSString *const RecordID = @"local.musicstrip.midi.ableton-record";
 @property NSTimer *pollTimer;
 @property NSDictionary *state;
 @property NSMutableDictionary<NSString *,NSButton *> *options;
+@property NSHashTable<StripPerformanceButton *> *allPerformanceButtons;
 @property NSMutableDictionary<NSString *,NSPopoverTouchBarItem *> *performanceMenus;
 @property NSMutableArray<NSTouchBar *> *menuStack;
 @property NSTouchBar *menuReturnBar;
@@ -134,7 +135,7 @@ static void ApplyRecordLight(StripRecordButton *button,BOOL connected,NSDictiona
     if((self=[super initWithFrame:frame])) {
         self.image=[NSImage imageWithSystemSymbolName:@"record.circle" accessibilityDescription:@"Ableton Record"];
         self.contentTintColor=NSColor.whiteColor;
-        [self setAccessibilityLabel:@"Ableton Record: tap for Arrangement Record; swipe right to arm selected tracks and left to disarm them; in Control Surface Mode swipe right to arm only selected tracks and disarm the rest, or left to toggle all tracks; hold without swiping for recording options"];
+        [self setAccessibilityLabel:@"Ableton Record: tap for Arrangement Record; swipe right to arm selected tracks and left to disarm them; in Control Surface Mode swipe right to arm only selected tracks and disarm the rest, or left to toggle all tracks; hold and slide to choose a production workspace"];
     }
     return self;
 }
@@ -148,6 +149,7 @@ static void ApplyRecordLight(StripRecordButton *button,BOOL connected,NSDictiona
 }
 - (void)finishAt:(NSPoint)point {
     if(!self.tracking) return;
+    if(FinishMidiChooser(self,point,NO)) { self.tracking=NO; self.touchIdentity=nil; self.pendingSwipeDirection=0; [self highlight:NO]; return; }
     [self moveAt:point];
     [self.holdTimer invalidate]; self.holdTimer=nil;
     if(!self.cancelled && !self.didStep && self.pendingSwipeDirection) {
@@ -174,12 +176,8 @@ static void ApplyRecordLight(StripRecordButton *button,BOOL connected,NSDictiona
     if(!self.tracking || self.cancelled || self.held || self.didStep ||
        fabs(self.endX-self.startX)>=8 || fabs(self.endY-self.startY)>=3) return;
     self.held=YES;
-    __weak StripRecordController *controller=self.recordController;
-    __weak StripRecordButton *weakSelf=self;
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW,(int64_t)(.24*NSEC_PER_SEC)),dispatch_get_main_queue(),^{
-        StripRecordButton *button=weakSelf;
-        if(button.tracking && button.held) [controller showOptions];
-    });
+    self.pendingSwipeDirection=0;
+    BeginMidiChooser(self,YES);
 }
 - (BOOL)accessibilityPerformPress { [self.recordController send:@"record"]; return YES; }
 @end
@@ -265,7 +263,7 @@ static void ApplyRecordLight(StripRecordButton *button,BOOL connected,NSDictiona
     CGFloat width=[action isEqual:@"loop"] ? 76 : [action isEqual:@"tempo"] ? 86 : [action hasPrefix:@"punch"] ? 64 : symbol ? 54 : MAX(54,[label sizeWithAttributes:@{NSFontAttributeName:button.font}].width+20);
     [button.widthAnchor constraintEqualToConstant:width].active=YES;
     [button setAccessibilityLabel:label]; button.toolTip=label;
-    self.options[action]=button; return button;
+    self.options[action]=button; [self.allPerformanceButtons addObject:button]; return button;
 }
 - (NSTouchBar *)performanceBar:(NSArray<NSArray *> *)specs {
     NSMutableArray *items=[NSMutableArray new], *ids=[NSMutableArray new];
@@ -312,6 +310,7 @@ static void ApplyRecordLight(StripRecordButton *button,BOOL connected,NSDictiona
         [self.button.widthAnchor constraintEqualToConstant:32].active=YES;
         self.item.view=self.button;
         self.options=[NSMutableDictionary dictionary];
+        self.allPerformanceButtons=[NSHashTable weakObjectsHashTable];
         self.performanceMenus=[NSMutableDictionary dictionary];
         self.menuStack=[NSMutableArray new];
         self.menuRecordButtons=[NSHashTable weakObjectsHashTable];
@@ -418,7 +417,8 @@ static void ApplyRecordLight(StripRecordButton *button,BOOL connected,NSDictiona
 }
 - (void)option:(NSButton *)sender { [self send:sender.identifier]; }
 - (void)perform:(NSString *)action {
-    if([action isEqual:@"tempo"]) [self send:@"tap-tempo"];
+    if([action isEqual:@"arm-exclusive"]) [self send:action payload:@{@"track_indices":[self selectedTrackIndicesForSwipe]}];
+    else if([action isEqual:@"tempo"]) [self send:@"tap-tempo"];
     else if([action isEqual:@"more"]) [self showMenu:action];
     else [self send:action];
 }
@@ -455,6 +455,12 @@ static void ApplyRecordLight(StripRecordButton *button,BOOL connected,NSDictiona
         [ids addObjectsFromArray:@[NSTouchBarItemIdentifierFlexibleSpace,record.identifier]];
         bar.defaultItemIdentifiers=ids;
     }
+    NSCustomTouchBarItem *close=[[NSCustomTouchBarItem alloc] initWithIdentifier:CloseID];
+    NSButton *back=[NSButton buttonWithImage:[NSImage imageWithSystemSymbolName:@"xmark.circle.fill" accessibilityDescription:@"Back to MIDI"] target:self action:@selector(backMenu:)];
+    back.bordered=NO; [back.widthAnchor constraintEqualToConstant:32].active=YES;
+    close.view=back; close.visibilityPriority=NSTouchBarItemPriorityHigh;
+    NSMutableSet *withClose=bar.templateItems.mutableCopy; [withClose addObject:close]; bar.templateItems=withClose;
+    NSMutableArray *withCloseIDs=bar.defaultItemIdentifiers.mutableCopy; [withCloseIDs removeObject:CloseID]; [withCloseIDs insertObject:CloseID atIndex:0]; bar.defaultItemIdentifiers=withCloseIDs;
     ((void(*)(id,SEL,id))originalClose)(NSApp.delegate,NSSelectorFromString(@"closeTouchbar:"),self.activeMenuBar ?: presentation);
     self.activeMenuBar=bar; [self.menuStack addObject:bar];
     ((void(*)(id,SEL,id,id))originalOpen)(NSApp.delegate,NSSelectorFromString(@"openTouchbar:fromIdentifier:"),bar,normalIdentifier);
@@ -498,7 +504,7 @@ static void ApplyRecordLight(StripRecordButton *button,BOOL connected,NSDictiona
             // delegate and parameter state instead of rebuilding the controls.
             [self.nativeSurfaceView removeFromSuperview];
             CGFloat host=lastMidiHostWidth>200 ? lastMidiHostWidth : 1004;
-            CGFloat width=MAX(320,host-32-76-86-54-48);
+            CGFloat width=MAX(320,host-32-32-76-86-54-60);
             for(NSLayoutConstraint *constraint in self.nativeSurfaceView.constraints)
                 if(constraint.firstAttribute==NSLayoutAttributeWidth && !constraint.secondItem && constraint.relation==NSLayoutRelationEqual) constraint.active=NO;
             NSView *hostView=[[NSView alloc] initWithFrame:NSMakeRect(0,0,width,30)];
@@ -599,8 +605,8 @@ static void ApplyRecordLight(StripRecordButton *button,BOOL connected,NSDictiona
     [self refreshButtonsConnected:connected];
 }
 - (void)refreshButtonsConnected:(BOOL)connected {
-    for(NSString *action in self.options) {
-        NSButton *button=self.options[action];
+    for(StripPerformanceButton *button in self.allPerformanceButtons.allObjects) {
+        NSString *action=button.identifier;
         BOOL menu=[action isEqual:@"more"];
         BOOL legacy=[@[@"record",@"session",@"punch-in",@"punch-out",@"overdub",@"loop",@"click",@"quantization"] containsObject:action];
         BOOL performance=connected && [self.state[@"performance"] integerValue]==1;

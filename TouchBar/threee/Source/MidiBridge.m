@@ -312,6 +312,10 @@ static void MovePianoHalf(NSView *piano,NSInteger direction) {
 #import "PianoScale.h"
 static NSString *const OctavesID = @"local.musicstrip.midi.octaves";
 static NSString *const NavigationID = @"local.musicstrip.midi.navigation";
+@class MidiNavigationButton;
+static void BeginMidiChooser(MidiNavigationButton *button,BOOL workspaces);
+static BOOL MoveMidiChooser(MidiNavigationButton *button,NSPoint point);
+static BOOL FinishMidiChooser(MidiNavigationButton *button,NSPoint point,BOOL cancelled);
 @interface MidiNavigationButton : NSButton
 @property BOOL tracking;
 @property BOOL cancelled;
@@ -359,7 +363,7 @@ static NSView *pianoConfigurationGroup;
             return YES;
         }];
         self.image.template=YES; self.imageScaling=NSImageScaleProportionallyDown;
-        [self setAccessibilityLabel:@"MIDI presets: tap left for previous or right for next; swipe left for previous or right for next; hold to switch control-surface mode"];
+        [self setAccessibilityLabel:@"MIDI presets: tap left for previous or right for next; swipe left for previous or right for next; hold and slide to choose any MIDI preset"];
     }
     return self;
 }
@@ -497,6 +501,7 @@ static NSView *pianoConfigurationGroup;
 }
 - (void)moveAt:(NSPoint)point {
     if (!self.tracking) return;
+    if(MoveMidiChooser(self,point)) return;
     self.endX=point.x; self.endY=point.y;
     CGFloat dx=self.endX-self.startX, dy=self.endY-self.startY;
     // Commit horizontal movement once, even if the finger leaves the button.
@@ -507,12 +512,12 @@ static NSView *pianoConfigurationGroup;
     [self.holdTimer invalidate]; self.holdTimer=nil;
     if (self.octaveControl || !self.tracking || self.cancelled || self.held || self.didStep || fabs(self.endY-self.startY)>=3 || fabs(self.endX-self.startX)>=8) return;
     self.held=YES;
-    // A held preset switch is inert. Arrangement/control-surface access now
-    // belongs exclusively to the Record hold gesture.
+    BeginMidiChooser(self,NO);
 }
 - (void)finishAt:(NSPoint)point {
     [self.holdTimer invalidate]; self.holdTimer=nil;
     if (!self.tracking) return;
+    if(FinishMidiChooser(self,point,NO)) { self.tracking=NO; self.touchIdentity=nil; [self highlight:NO]; return; }
     [self moveAt:point];
     CGFloat dx=point.x-self.startX, dy=point.y-self.startY;
     if(!self.didStep && !self.held && !self.cancelled && NSPointInRect(point,self.bounds) && hypot(dx,dy)<8) {
@@ -522,6 +527,7 @@ static NSView *pianoConfigurationGroup;
     self.tracking=NO; self.touchIdentity=nil; [self highlight:NO];
 }
 - (void)cancelGesture {
+    FinishMidiChooser(self,NSZeroPoint,YES);
     self.cancelled=YES; self.tracking=NO; self.touchIdentity=nil;
     [self.holdTimer invalidate]; self.holdTimer=nil; [self highlight:NO];
 }
@@ -601,6 +607,7 @@ static void UpdatePianoConfigControls(void) {
     [pianoChannelButton setAccessibilityLabel:[NSString stringWithFormat:@"MIDI channel %@. Tap or swipe to change this piano only.",[expandedPianoView valueForKey:@"channelNumber"]]];
 }
 #import "AbletonRecord.h"
+#import "MidiWorkspaceChooser.h"
 @interface StripJoinedMidiControl : NSView
 @property(weak) MidiNavigationButton *navigation;
 @property CGFloat presetHue;
@@ -1228,6 +1235,7 @@ static void ShowPreset(id self,SEL selector,NSTouchBar *bar) {
     Open(self,NSSelectorFromString(@"openTouchbar:fromIdentifier:"),bar,nil);
 }
 static void Close(id self, SEL sel, id bar) {
+    if(midiWorkspaceChooser) FinishMidiChooser(midiWorkspaceChooser.owner,NSZeroPoint,YES);
     if(recordController.activeMenuBar) [self setValue:@(recordController.returnSurfaceMode) forKey:@"controlSurfadeMode"];
     ((void (*)(id, SEL, id))originalClose)(self, sel, recordController.activeMenuBar ?: presentation ?: bar);
     RemoveCycleKey(self);
@@ -1443,13 +1451,14 @@ static void TestArrangementLayout(BOOL viaMenu,BOOL fromHidden) {
         Report([[NSString stringWithFormat:@"NORMAL_RECORD %@ host=%g\n",NSStringFromRect([controller.button convertRect:controller.button.bounds toView:nil]),controller.button.window.contentView.bounds.size.width] UTF8String]);
         NSCAssert(!controller.activeMenuBar,@"Start on a normal MIDI preset");
         [controller.button beginAt:NSMakePoint(16,15) identity:NSUUID.UUID]; [controller.button fireHold];
-        dispatch_after(dispatch_time(DISPATCH_TIME_NOW,270*NSEC_PER_MSEC),dispatch_get_main_queue(),^{[controller.button finishAt:NSMakePoint(16,15)];});
+        NSPoint choice=[controller.button convertPoint:NSMakePoint(56,15) fromView:midiWorkspaceChooser];
+        [controller.button moveAt:choice]; [controller.button finishAt:choice];
     }
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW,400*NSEC_PER_MSEC),dispatch_get_main_queue(),^{
         NSTouchBar *arrangement=controller.activeMenuBar;
         NSCAssert([[(id)NSApp.delegate valueForKey:@"controlSurfadeMode"] boolValue],@"The native surface engine must actually enter Control Surface Mode, not just display its view");
-        NSCAssert(arrangement && ![arrangement.itemIdentifiers containsObject:CloseID],@"Record hold opens Arrangement without a close or preset-switch item");
-        NSArray *expectedArrangement=@[[RecordID stringByAppendingString:@".performance.loop"],[RecordID stringByAppendingString:@".performance.tempo"],[RecordID stringByAppendingString:@".performance.more"],NSTouchBarItemIdentifierFlexibleSpace,@"local.musicstrip.performance.native-surface",@"local.musicstrip.performance.record"];
+        NSCAssert(arrangement && [arrangement.itemIdentifiers.firstObject isEqual:CloseID],@"Control Surface starts with the standard close slot");
+        NSArray *expectedArrangement=@[CloseID,[RecordID stringByAppendingString:@".performance.loop"],[RecordID stringByAppendingString:@".performance.tempo"],[RecordID stringByAppendingString:@".performance.more"],NSTouchBarItemIdentifierFlexibleSpace,@"local.musicstrip.performance.native-surface",@"local.musicstrip.performance.record"];
         NSCAssert([arrangement.defaultItemIdentifiers isEqualToArray:expectedArrangement],@"Loop, BPM, More and the native surface precede the consistent far-right Record control");
         for(NSString *identifier in arrangement.itemIdentifiers) {
             if([identifier isEqual:NSTouchBarItemIdentifierFlexibleSpace]) continue;
@@ -1493,11 +1502,10 @@ static void TestArrangementLayout(BOOL viaMenu,BOOL fromHidden) {
         dispatch_after(dispatch_time(DISPATCH_TIME_NOW,300*NSEC_PER_MSEC),dispatch_get_main_queue(),^{
             NSTouchBar *active=controller.activeMenuBar;
             NSCustomTouchBarItem *deviceItem=(id)[active itemForIdentifier:@"local.musicstrip.performance.native-device"];
-            NSCAssert(deviceItem.view==controller.nativeDeviceView && deviceItem.view.window && [active.itemIdentifiers.lastObject isEqual:@"local.musicstrip.performance.record"] && ![active.itemIdentifiers containsObject:CloseID],@"Native device faders retain the real view and a far-right Record slot without the vendor close button");
+            NSCAssert(deviceItem.view==controller.nativeDeviceView && deviceItem.view.window && [active.itemIdentifiers.lastObject isEqual:@"local.musicstrip.performance.record"] && [active.itemIdentifiers.firstObject isEqual:CloseID],@"Native device faders retain the real view, standard close slot and far-right Record");
             StripRecordButton *back=(id)((NSCustomTouchBarItem *)[active itemForIdentifier:@"local.musicstrip.performance.record"]).view;
             NSCAssert(fabs(NSMinX([back convertRect:back.bounds toView:nil])-NSMinX(frame))<1,@"Nested device controls must keep Record in the same right slot: nested %@ root %@ host=%g",NSStringFromRect([back convertRect:back.bounds toView:nil]),NSStringFromRect(frame),back.window.contentView.bounds.size.width);
-            [back beginAt:NSMakePoint(16,15) identity:NSUUID.UUID]; [back fireHold];
-            dispatch_after(dispatch_time(DISPATCH_TIME_NOW,270*NSEC_PER_MSEC),dispatch_get_main_queue(),^{[back finishAt:NSMakePoint(16,15)];});
+            [controller returnToMidi];
             dispatch_after(dispatch_time(DISPATCH_TIME_NOW,500*NSEC_PER_MSEC),dispatch_get_main_queue(),^{
                 NSCAssert(!controller.activeMenuBar && controller.menuStack.count==0 && recordController==controller,@"Holding Record returns directly to the original MIDI bar even from nested device controls");
                 NSRect returnedRecord=[controller.button convertRect:controller.button.bounds toView:nil];

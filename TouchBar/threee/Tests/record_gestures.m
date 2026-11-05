@@ -15,9 +15,22 @@
 - (void)send:(NSString *)action payload:(NSDictionary *)payload { [self.commands addObject:action]; [self.payloads addObject:payload]; }
 - (NSArray<NSNumber *> *)selectedTrackIndicesForSwipe { return @[@0,@1]; }
 - (void)showOptions { self.holds++; }
+- (void)showWorkspace:(NSInteger)index { [self.menus addObject:@(index)]; }
 - (void)showMenu:(NSString *)name { [self.menus addObject:name]; }
 - (BOOL)isControlSurfaceMode { return self.surfaceMode; }
 @end
+@interface WorkspaceTestDelegate : NSObject
+@property NSArray *allUserTouchbars;
+@property BOOL controlSurfadeMode;
+@property NSTouchBar *controlStripGroup;
+@property NSNumber *chosenPreset;
+@property NSInteger userTouchbarNumber;
+@end
+@implementation WorkspaceTestDelegate
+- (void)receivedGlobalKeyFrom:(id)sender key:(NSNumber *)key { self.chosenPreset=key; }
+@end
+static void TestWorkspaceClose(id target,SEL selector,id bar) {}
+static void TestWorkspaceOpen(id target,SEL selector,id bar,id identifier) {}
 int main(void) {
     @autoreleasepool {
         [NSApplication sharedApplication];
@@ -124,7 +137,7 @@ int main(void) {
         [button touchesBeganWithEvent:(NSEvent *)event]; [button fireHold]; [button fireHold];
         [NSRunLoop.mainRunLoop runUntilDate:[NSDate dateWithTimeIntervalSinceNow:.30]];
         event.phase=NSTouchPhaseEnded; [button touchesEndedWithEvent:(NSEvent *)event];
-        NSCAssert(controller.holds==1 && controller.commands.count==0,@"Hold opens options once, release never starts recording");
+        NSCAssert(controller.holds==0 && controller.commands.count==0,@"A hold without a chooser selection never opens a workspace or starts recording");
         event.phase=NSTouchPhaseBegan; [button touchesBeganWithEvent:(NSEvent *)event];
         [button touchesCancelledWithEvent:(NSEvent *)event]; [button fireHold];
         event.phase=NSTouchPhaseEnded; [button touchesEndedWithEvent:(NSEvent *)event];
@@ -151,6 +164,49 @@ int main(void) {
         [button beginAt:NSMakePoint(22,15) identity:nil]; [button moveAt:NSMakePoint(23,25)];
         [button fireHold]; [button finishAt:NSMakePoint(23,25)];
         NSCAssert(controller.commands.count==0,@"Vertical motion is not a tap or horizontal swipe");
+        // Exercise the actual overlay in a window, with the original button
+        // retaining the gesture while the finger slides beyond its bounds.
+        button.frame=NSMakeRect(560,0,32,30); [host.contentView addSubview:button];
+        [controller.menus removeAllObjects]; [controller.commands removeAllObjects];
+        [button beginAt:NSMakePoint(16,15) identity:nil]; [button fireHold];
+        NSCAssert(midiWorkspaceChooser && midiWorkspaceChooser.choices.count==9 && midiWorkspaceChooser.selected==-1,@"Hold immediately exposes all production spaces without executing one");
+        NSPoint vocal=[button convertPoint:NSMakePoint(150,15) fromView:midiWorkspaceChooser];
+        [button moveAt:vocal];
+        NSCAssert(midiWorkspaceChooser.selected==1 && !button.pendingSwipeDirection,@"Sliding a held Record highlights Vocals without arming tracks");
+        [button finishAt:vocal];
+        [NSRunLoop.mainRunLoop runUntilDate:[NSDate dateWithTimeIntervalSinceNow:.02]];
+        NSCAssert(!midiWorkspaceChooser && [controller.menus isEqual:@[@1]] && !controller.commands.count,@"Release opens exactly the highlighted workspace without a Record command");
+        [button beginAt:NSMakePoint(16,15) identity:nil]; [button fireHold];
+        [button cancelGesture];
+        NSCAssert(!midiWorkspaceChooser && controller.menus.count==1,@"Cancellation tears down the picker without opening a space");
+        [button beginAt:NSMakePoint(16,15) identity:nil]; [button fireHold];
+        [button finishAt:NSMakePoint(16,15)];
+        NSCAssert(!midiWorkspaceChooser && controller.menus.count==1,@"Stationary release returns to the original bar");
+        for(NSArray *space in MidiWorkspaceCatalog()) {
+            NSTouchBar *bar=[controller performanceBar:space[2]];
+            NSCAssert(bar.itemIdentifiers.count==[space[2] count],@"Every workspace builds real command controls");
+        }
+        WorkspaceTestDelegate *delegate=[WorkspaceTestDelegate new];
+        delegate.allUserTouchbars=@[[NSTouchBar new],[NSTouchBar new],[NSTouchBar new]];
+        NSApp.delegate=(id)delegate;
+        [navigation beginAt:NSMakePoint(22,15) identity:nil]; [navigation fireHold];
+        NSCAssert(midiWorkspaceChooser.choices.count==3,@"Arrow hold lists every actual MIDI preset");
+        NSPoint preset=[navigation convertPoint:NSMakePoint(250,15) fromView:midiWorkspaceChooser];
+        [navigation moveAt:preset]; [navigation finishAt:preset];
+        [NSRunLoop.mainRunLoop runUntilDate:[NSDate dateWithTimeIntervalSinceNow:.02]];
+        NSCAssert([delegate.chosenPreset isEqual:@2] && !midiWorkspaceChooser,@"Arrow release invokes the real preset selector with the highlighted index");
+        originalOpen=(IMP)TestWorkspaceOpen; originalClose=(IMP)TestWorkspaceClose;
+        presentation=[NSTouchBar new];
+        StripRecordController *spaces=[StripRecordController new];
+        for(NSInteger i=0;i<(NSInteger)MidiWorkspaceCatalog().count;i++) {
+            [spaces showWorkspace:i];
+            NSCAssert([spaces.activeMenuBar.itemIdentifiers.firstObject isEqual:CloseID],@"Every space starts with X");
+            NSCustomTouchBarItem *close=(id)[spaces.activeMenuBar itemForIdentifier:CloseID];
+            NSCAssert([(NSButton *)close.view action]==@selector(backMenu:),@"X returns to MIDI instead of closing the app");
+            [spaces backMenu:nil];
+            NSCAssert(!spaces.activeMenuBar && !delegate.controlSurfadeMode,@"Closing a space restores MIDI mode");
+        }
+        NSApp.delegate=nil; presentation=nil;
         puts("Passed performance menu structure/state/capability gating, Loop hold without release toggle, BPM tap/swipe, fixed joined layout, recording-only red, and normal/Control Surface Record swipe directions; no Live commands sent.");
     }
     return 0;
