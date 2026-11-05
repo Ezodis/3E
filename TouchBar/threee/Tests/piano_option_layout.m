@@ -11,7 +11,7 @@ int main(void) { @autoreleasepool {
         mode.optionSegment=1;
         mode.image=[NSImage imageWithSystemSymbolName:@[@"pianokeys",@"hand.raised.fill",@"waveform"][i] accessibilityDescription:nil];
         MidiNavigationButton *octave=[[MidiNavigationButton alloc] initWithFrame:NSMakeRect(44,0,44,30)];
-        octave.joinedEdge=2; octave.stackedCaption=@""; octave.octaveSpanSymbol=YES; octave.title=@[@"2",@"5",@"10"][i]; octave.image=nil;
+        octave.octaveControl=YES; octave.joinedEdge=2; octave.stackedCaption=@""; octave.octaveSpanSymbol=YES; octave.title=@[@"2",@"5",@"10"][i]; octave.image=nil;
         octave.optionSegment=2;
         PianoDegreeButton *degree=[[PianoDegreeButton alloc] initWithFrame:NSMakeRect(88,0,44,30)];
         degree.optionSegment=3; degree.title=@""; degree.stackedCaption=@"";

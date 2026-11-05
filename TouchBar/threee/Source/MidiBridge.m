@@ -407,6 +407,19 @@ static NSView *pianoConfigurationGroup;
             NSDictionary *top=@{NSFontAttributeName:[NSFont monospacedDigitSystemFontOfSize:14 weight:NSFontWeightSemibold],NSForegroundColorAttributeName:NSColor.whiteColor};
             NSSize size=[self.title sizeWithAttributes:top];
             [self.title drawAtPoint:NSMakePoint((NSWidth(self.bounds)-size.width)/2,11) withAttributes:top];
+            if(self.octaveControl && self.octaveSpanSymbol) {
+                // Keep the count centered; side chevrons advertise its swipe.
+                NSBezierPath *arrows=[NSBezierPath bezierPath];
+                CGFloat width=NSWidth(self.bounds),y=19;
+                [arrows moveToPoint:NSMakePoint(6,y-3)];
+                [arrows lineToPoint:NSMakePoint(3,y)];
+                [arrows lineToPoint:NSMakePoint(6,y+3)];
+                [arrows moveToPoint:NSMakePoint(width-6,y-3)];
+                [arrows lineToPoint:NSMakePoint(width-3,y)];
+                [arrows lineToPoint:NSMakePoint(width-6,y+3)];
+                arrows.lineWidth=1; arrows.lineCapStyle=NSLineCapStyleRound;
+                [NSColor.whiteColor setStroke]; [arrows stroke];
+            }
         }
         NSDictionary *bottom=@{NSFontAttributeName:[NSFont systemFontOfSize:8 weight:NSFontWeightSemibold],NSForegroundColorAttributeName:[NSColor colorWithWhite:.90 alpha:1]};
         if(self.octaveSpanSymbol) {
