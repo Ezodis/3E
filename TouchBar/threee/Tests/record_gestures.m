@@ -170,6 +170,12 @@ int main(void) {
         [controller.menus removeAllObjects]; [controller.commands removeAllObjects];
         [button beginAt:NSMakePoint(16,15) identity:nil]; [button fireHold];
         NSCAssert(midiWorkspaceChooser && midiWorkspaceChooser.choices.count==9 && midiWorkspaceChooser.selected==-1,@"Hold immediately exposes all production spaces without executing one");
+        MidiWorkspaceChooser *previewPicker=[[MidiWorkspaceChooser alloc] initWithFrame:NSMakeRect(0,0,1004,30)];
+        previewPicker.choices=MidiWorkspaceCatalog(); previewPicker.selected=1;
+        NSImage *pickerImage=[[NSImage alloc] initWithSize:previewPicker.bounds.size];
+        [pickerImage lockFocus]; [previewPicker drawRect:previewPicker.bounds]; [pickerImage unlockFocus];
+        NSBitmapImageRep *pickerRep=[NSBitmapImageRep imageRepWithData:pickerImage.TIFFRepresentation];
+        [[pickerRep representationUsingType:NSBitmapImageFileTypePNG properties:@{}] writeToFile:@"/tmp/3e-workspace-picker.png" atomically:YES];
         NSPoint vocal=[button convertPoint:NSMakePoint(150,15) fromView:midiWorkspaceChooser];
         [button moveAt:vocal];
         NSCAssert(midiWorkspaceChooser.selected==1 && !button.pendingSwipeDirection,@"Sliding a held Record highlights Vocals without arming tracks");

@@ -69,7 +69,11 @@ static MidiWorkspaceChooser *midiWorkspaceChooser;
         [(i==self.selected ? NSColor.selectedControlColor : [NSColor colorWithWhite:.18 alpha:1]) setFill];
         [[NSBezierPath bezierPathWithRoundedRect:tile xRadius:5 yRadius:5] fill];
         NSImage *icon=[NSImage imageWithSystemSymbolName:self.choices[i][1] accessibilityDescription:nil] ?: [NSImage imageWithSystemSymbolName:@"music.note" accessibilityDescription:nil];
-        [icon drawInRect:NSMakeRect(NSMidX(tile)-8,NSMaxY(tile)-17,16,14)];
+        NSImage *glyph=[NSImage imageWithSize:NSMakeSize(16,14) flipped:NO drawingHandler:^BOOL(NSRect rect) {
+            [icon drawInRect:rect]; [NSColor.whiteColor setFill];
+            NSRectFillUsingOperation(rect,NSCompositingOperationSourceIn); return YES;
+        }];
+        [glyph drawInRect:NSMakeRect(NSMidX(tile)-8,NSMaxY(tile)-17,16,14)];
         NSMutableParagraphStyle *style=[NSMutableParagraphStyle new]; style.alignment=NSTextAlignmentCenter; style.lineBreakMode=NSLineBreakByTruncatingTail;
         [self.choices[i][0] drawInRect:NSMakeRect(tile.origin.x+3,2,tile.size.width-6,12) withAttributes:@{NSFontAttributeName:[NSFont systemFontOfSize:10],NSForegroundColorAttributeName:NSColor.whiteColor,NSParagraphStyleAttributeName:style}];
     }
