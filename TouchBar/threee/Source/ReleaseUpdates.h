@@ -228,6 +228,14 @@ static void StripInstallArchive(NSString *downloadedArchive,NSDictionary *releas
                 dispatch_async(dispatch_get_main_queue(),^{ StripFinishUpdateFailure(launchError.localizedDescription ?: @"The update installer could not start.",foreground); }); return;
             }
             dispatch_async(dispatch_get_main_queue(),^{
+                // A click to install means enable the newly added module too.
+                if(stripRequestedModules) {
+                    for(NSString *module in stripRequestedModules) if(!StripHasModule(module)) {
+                        NSString *key=@{@"phone":@"ThreeEPhoneBarEnabled",@"touchtab":@"TouchTabGesturesEnabled"}[module];
+                        if(key) CFPreferencesSetAppValue((__bridge CFStringRef)key,kCFBooleanTrue,(__bridge CFStringRef)StripAppBundleID);
+                    }
+                    CFPreferencesAppSynchronize((__bridge CFStringRef)StripAppBundleID);
+                }
                 StripNotify(@"Installing 3E update",[NSString stringWithFormat:@"Version %@ will install now. 3E will restart when installation finishes.",release[@"version"]]);
                 for(NSRunningApplication *app in [NSRunningApplication runningApplicationsWithBundleIdentifier:StripAppBundleID]) if(app.processIdentifier==mainPID && mainPID!=getpid()) [app terminate];
                 [NSApp terminate:nil];
@@ -293,16 +301,28 @@ static BOOL StripInstallMissingModule(NSString *module) {
     NSMutableArray *modules=[StripInstalledModules() mutableCopy]; [modules addObject:module];
     StripChangeModules(modules,YES); return YES;
 }
+static NSAlert *StripModuleUninstallAlert(NSString *module) {
+    NSString *name=@{@"phone":@"Track Phone",@"touchtab":@"Track Tab",@"touchbar":@"Touch Bar"}[module];
+    NSAlert *alert=[NSAlert new];
+    alert.messageText=[NSString stringWithFormat:@"Uninstall %@?",name ?: module];
+    alert.informativeText=@"Your settings will be kept. 3£ will restart after uninstalling. Click the module in the menu to install it again.";
+    [alert addButtonWithTitle:@"Cancel"];
+    [alert addButtonWithTitle:@"Uninstall"];
+    return alert;
+}
 @interface ThreeEModuleActions : NSObject
 + (void)changeModule:(NSMenuItem *)sender;
 @end
 @implementation ThreeEModuleActions
 + (void)changeModule:(NSMenuItem *)sender {
     NSString *module=sender.representedObject;
+    if(![@[@"phone",@"touchtab",@"touchbar"] containsObject:module]) return;
     if(![NSBundle.mainBundle.bundleIdentifier isEqual:StripAppBundleID] && NSClassFromString(@"ThreeEMidiBridge")) {
         fprintf(stdout,"MODULE_CHANGE %s\n",module.UTF8String); fflush(stdout); return;
     }
     if(StripInstallMissingModule(module)) return;
+    [NSApp activateIgnoringOtherApps:YES];
+    if([StripModuleUninstallAlert(module) runModal]!=NSAlertSecondButtonReturn) return;
     NSMutableArray *modules=[StripInstalledModules() mutableCopy]; [modules removeObject:module];
     StripChangeModules(modules,NO);
 }

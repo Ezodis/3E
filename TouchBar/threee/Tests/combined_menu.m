@@ -2,6 +2,19 @@
 #import "../Source/MidiBridge.m"
 #import "../Source/BaseMenu.h"
 #import "status_brand.m"
+@interface GearActionProbe : NSObject
+@property NSUInteger calls;
+- (void)receive:(id)sender;
+@end
+@implementation GearActionProbe
+- (void)receive:(id)sender { self.calls++; }
+@end
+@interface GearRowProbe : ThreeEModuleMenuRow
+@property NSMenu *fixtureMenu;
+@end
+@implementation GearRowProbe
+- (NSMenu *)settingsMenu { return self.fixtureMenu; }
+@end
 @interface TestStatus : NSObject
 @property NSMenu *menu;
 @end
@@ -124,7 +137,7 @@ int main(void) { @autoreleasepool {
     NSMenuItem *quit=[[NSMenuItem alloc] initWithTitle:@"Quit" action:nil keyEquivalent:@""];
     [delegate.theItem.menu addItem:quit]; [delegate.theItem.menu addItem:reset]; CleanMenu(delegate.theItem.menu); CleanMenu(delegate.theItem.menu);
     NSArray<NSMenuItem *> *rows=delegate.theItem.menu.itemArray; NSUInteger n=rows.count;
-    NSCAssert(rows[n-3]==reset && [rows[n-2].identifier isEqual:@"local.musicstrip.restart"] && rows[n-1]==quit,@"Restart sits between Reset Touch Bar and Quit");
+    NSCAssert(![rows containsObject:reset] && [rows[n-2].identifier isEqual:@"local.musicstrip.restart"] && rows[n-1]==quit,@"Only Restart and Quit remain; redundant Reset Touch Bar is removed");
     NSUInteger restarts=0; for(NSMenuItem *row in rows) if([row.identifier isEqual:@"local.musicstrip.restart"]) restarts++;
     NSCAssert(restarts==1,@"Restart is never duplicated");
     for(NSString *action in @[@"install:",@"setup:",@"restore:"]) {
@@ -158,5 +171,16 @@ int main(void) { @autoreleasepool {
     [hoverMenu.delegate menuNeedsUpdate:hoverMenu];
     NSCAssert(original.highlights==5 && original.updates==1,@"Selection observation preserves existing menu delegate callbacks");
     NSCAssert([(ThreeEPhoneBarMenuRow *)[(ThreeEModuleMenuRow *)hoverPhone.view originalView] selectionBackgroundProvidedByParent],@"The nested phone label never paints a second selection background");
+    GearActionProbe *probe=[GearActionProbe new];
+    GearRowProbe *gearRow=[[GearRowProbe alloc] initWithFrame:NSMakeRect(0,0,230,26)];
+    gearRow.fixtureMenu=[NSMenu new];
+    NSMenuItem *gearAction=[[NSMenuItem alloc] initWithTitle:@"Uninstall" action:@selector(receive:) keyEquivalent:@""];gearAction.target=probe;[gearRow.fixtureMenu addItem:gearAction];
+    [gearRow openSettings:nil];
+    NSCAssert(probe.calls==0,@"Gear action waits for menu tracking to finish");
+    NSDate *deadline=[NSDate dateWithTimeIntervalSinceNow:1];
+    while(!probe.calls && deadline.timeIntervalSinceNow>0) [NSRunLoop.mainRunLoop runUntilDate:[NSDate dateWithTimeIntervalSinceNow:.01]];
+    NSCAssert(probe.calls==1,@"One gear click dispatches exactly one module action without a second popup");
+    NSAlert *confirmation=StripModuleUninstallAlert(@"touchtab");
+    NSCAssert([confirmation.messageText isEqual:@"Uninstall Track Tab?"] && [confirmation.buttons[0].title isEqual:@"Cancel"] && [confirmation.buttons[1].title isEqual:@"Uninstall"],@"Uninstall asks explicitly and defaults to Cancel");
     puts("Passed combined gesture toggle target, runtime feedback, inline module gears and duplicate-free menu refresh. No tray icon or keyboard events created.");
 } return 0; }

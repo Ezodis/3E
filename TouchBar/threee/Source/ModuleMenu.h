@@ -59,9 +59,13 @@
     action.representedObject=self.module;action.target=NSClassFromString(@"ThreeEModuleActions");[menu addItem:action];return menu;
 }
 - (void)openSettings:(id)sender {
-    NSPoint anchor=[self.window convertPointToScreen:[self convertPoint:NSMakePoint(NSMinX(self.gear.frame),NSMaxY(self.gear.frame)) toView:nil]];
-    NSMenu *settings=[self settingsMenu];[self.item.menu cancelTracking];
-    [settings popUpMenuPositioningItem:nil atLocation:anchor inView:nil];
+    // A second popup opened while the parent menu is cancelling can disappear
+    // before its action fires. Dispatch the module action after tracking ends.
+    NSMenuItem *action=[self settingsMenu].itemArray.firstObject;
+    [self.item.menu cancelTracking];
+    dispatch_async(dispatch_get_main_queue(),^{
+        [NSApp sendAction:action.action to:action.target from:action];
+    });
 }
 - (void)mouseDown:(NSEvent *)event {
     NSPoint point=[self convertPoint:event.locationInWindow fromView:nil];

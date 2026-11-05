@@ -707,7 +707,7 @@ static void CleanMenu(NSMenu *menu) {
     for(NSMenuItem *item in menu.itemArray.copy) {
         if([item.identifier isEqual:@"local.musicstrip.modules"]){[menu removeItem:item];continue;}
         NSString *title=item.title.lowercaseString;
-        if([title containsString:@"check for update"]) { [menu removeItem:item]; continue; }
+        if([title containsString:@"check for update"] || [title isEqual:@"reset touch bar"]) { [menu removeItem:item]; continue; }
         if([title isEqual:@"control surface mode"]) {
             item.target=NSClassFromString(@"ThreeEMidiBridge");
             item.action=NSSelectorFromString(@"toggleSurfaceMode:");
