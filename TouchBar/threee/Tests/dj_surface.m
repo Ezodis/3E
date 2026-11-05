@@ -104,7 +104,7 @@ int main(int argc,const char **argv) {
         midi.values[DJKey(0,16,NO)]=@64;midi.values[DJKey(0,17,NO)]=@64;
         [hi begin:NSMakePoint(21,15) identity:@1];[mid begin:NSMakePoint(21,15) identity:@2];
         [hi move:NSMakePoint(23,15)];[mid move:NSMakePoint(19,15)];
-        NSCAssert(hi.knobRate>0 && hi.knobRate<8 && mid.knobRate<0 && mid.knobRate>-8,@"Small opposite swipes must select gentle independent hold rates");
+        NSCAssert(hi.knobRate>0 && hi.knobRate<10 && mid.knobRate<0 && mid.knobRate>-10,@"Small opposite swipes must select gentle independent hold rates");
         double steady=MAX(hi.knobMotionTime,mid.knobMotionTime)+.7;
         [hi advanceKnobToTime:steady];[mid advanceKnobToTime:steady];
         double hiStart=hi.knobPosition,midStart=mid.knobPosition;
@@ -165,6 +165,24 @@ int main(int argc,const char **argv) {
         NSCAssert(previousSweepValue==127,@"A full-width stroke still covers the complete range");
         [smooth move:NSMakePoint(36,15)];NSCAssert([midi value:0 number:18 note:NO]<127,@"A reversal responds immediately without crossing the original anchor");
         [smooth move:NSMakePoint(50,15)];[smooth move:NSMakePoint(49,15)];NSCAssert([midi value:0 number:18 note:NO]<127,@"Reversals also respond after overshooting a saturated endpoint");[smooth end];
+        // Fine reversal sensitivity must not inherit the gain of a long or
+        // overshot stroke. Exercise both ends and split touch-event packets.
+        for(NSNumber *direction in @[@1,@-1]) {
+            double sign=direction.doubleValue;
+            for(NSNumber *travel in @[@34,@140,@1000]) {
+                midi.values[DJKey(0,18,NO)]=sign>0 ? @0 : @127;
+                [smooth begin:NSMakePoint(sign>0 ? 4 : 38,15) identity:@1];
+                double end=smooth.origin.x+sign*travel.doubleValue;
+                [smooth move:NSMakePoint(end,15)];double limit=smooth.knobPosition;
+                [smooth move:NSMakePoint(end-sign,15)];double change=fabs(smooth.knobPosition-limit);
+                NSCAssert(change>0 && change<=2,@"A one-point reversal stays fine after any travel beyond either limit");
+                [smooth move:NSMakePoint(end-2*sign,15)];double split=smooth.knobPosition;[smooth end];
+                midi.values[DJKey(0,18,NO)]=sign>0 ? @127 : @0;
+                [smooth begin:NSMakePoint(21,15) identity:@1];[smooth move:NSMakePoint(21-2*sign,15)];
+                NSCAssert(fabs(split-smooth.knobPosition)<.001,@"The same reverse travel has the same response as a fresh fine stroke, independent of packet count");[smooth end];
+            }
+        }
+        NSCAssert(fabs(DJKnobHoldRate(17,42)-30)<.001,@"A full hold is 25 percent faster while remaining steady");
         ThreeEDJRow *mixer=[[ThreeEDJRow alloc] initWithPads:NO];mixer.frame=NSMakeRect(0,0,756,30);[mixer layout];NSUInteger covered=0;
         for(ThreeEDJControl *c in mixer.controls) if(c.kind==DJKnob && !c.hidden) {
             midi.values[DJKey(c.channel,c.number,NO)]=@0;[c begin:NSMakePoint(4,15) identity:@(covered)];

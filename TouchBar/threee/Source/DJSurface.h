@@ -279,7 +279,7 @@ typedef NS_ENUM(NSInteger,DJControlKind) { DJKnob,DJFader,DJDisc,DJPad };
 @property double knobRate;
 @property double knobTickTime;
 @property double knobMotionTime;
-@property double knobPreviousDrag;
+@property double knobDragTravel;
 @property double knobAcceptedX;
 @property double knobHoldTravel;
 @property double knobReverseTravel;
@@ -325,8 +325,8 @@ static double DJKnobHoldRate(double distance,double width) {
     if(fabs(distance)<=.6) return 0;
     double strength=MAX(0,MIN(1,(fabs(distance)-.6)/MAX(8,(width-8)*.5-.6)));
     // The low end remains usable: a tiny settled displacement creeps steadily,
-    // while a large hold tops out at 24 values/second. Direct swipes stay fast.
-    return copysign(6+18*pow(strength,1.5),distance);
+    // while a large hold tops out at 30 values/second. Direct swipes stay fast.
+    return copysign(7.5+22.5*pow(strength,1.5),distance);
 }
 static double DJSeekSensitivity(double duration,double travel) {
     // A physical movement has the same meaning on both pages. Keep even short
@@ -462,7 +462,7 @@ static void DJText(NSString *text,NSRect rect,CGFloat size,NSColor *color) {
     self.originValue=[[ThreeEDJMIDI shared] value:self.channel number:self.number note:NO];
     if(self.kind==DJKnob) {
         self.knobPosition=self.originValue;self.knobRate=0;self.knobTickTime=self.knobMotionTime=self.touchStartTime;
-        self.knobPreviousDrag=0;self.knobAcceptedX=point.x;self.knobHoldTravel=0;self.knobReverseTravel=0;
+        self.knobDragTravel=0;self.knobAcceptedX=point.x;self.knobHoldTravel=0;self.knobReverseTravel=0;
         self.knobSettleX=point.x;
         __weak ThreeEDJControl *weakSelf=self;
         self.knobTimer=[NSTimer timerWithTimeInterval:.03 repeats:YES block:^(NSTimer *timer) { [weakSelf advanceKnobToTime:NSProcessInfo.processInfo.systemUptime]; }];
@@ -527,9 +527,14 @@ static void DJText(NSString *text,NSRect rect,CGFloat size,NSColor *color) {
         [self advanceKnobToTime:NSProcessInfo.processInfo.systemUptime];
         double motion=point.x-self.knobAcceptedX;
         if(fabs(motion)>=.45) {
-            double drag=DJKnobDrag(dx,NSWidth(self.bounds));
-            self.knobPosition+=drag-self.knobPreviousDrag;
-            self.knobPreviousDrag=drag;self.knobAcceptedX=point.x;
+            // Each new direction starts with fine control. Neither a long
+            // previous stroke nor travel beyond a limit may amplify a tiny
+            // reversal; a continuous full-width stroke still spans the range.
+            if(motion*self.knobDragTravel<0 || self.knobPosition<=0 || self.knobPosition>=127) self.knobDragTravel=0;
+            double previous=DJKnobDrag(self.knobDragTravel,NSWidth(self.bounds));
+            self.knobDragTravel+=motion;
+            self.knobPosition+=DJKnobDrag(self.knobDragTravel,NSWidth(self.bounds))-previous;
+            self.knobAcceptedX=point.x;
             BOOL deliberate=YES;
             if(motion*self.knobHoldTravel<0) {
                 self.knobReverseTravel+=motion;
