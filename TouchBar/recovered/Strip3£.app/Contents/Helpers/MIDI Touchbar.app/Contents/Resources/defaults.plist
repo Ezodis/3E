@@ -865,67 +865,112 @@
 		<key>pad1</key>
 		<dict>
 			<key>value</key>
-			<integer>36</integer>
+			<integer>1</integer>
 			<key>kind</key>
-			<string>note</string>
+			<string>ctrl</string>
 			<key>channel</key>
 			<integer>1</integer>
 			<key>type</key>
 			<string>momentary</string>
 			<key>label</key>
-			<string>1</string>
+			<string>Kick Drum</string>
+			<key>color</key>
+			<data>
+			BAtzdHJlYW10eXBlZIHoA4QBQISEhAdOU0NvbG9yAISECE5TT2JqZWN0AIWEAWMBhARm
+			ZmZmgxre8T2D4JJmP4O6AEY+AYY=
+			</data>
+			<key>scaleFrom</key>
+			<real>0.0</real>
+			<key>scaleTo</key>
+			<real>127.0</real>
 		</dict>
 		<key>pad2</key>
 		<dict>
 			<key>value</key>
-			<integer>37</integer>
+			<integer>2</integer>
 			<key>kind</key>
-			<string>note</string>
+			<string>ctrl</string>
 			<key>channel</key>
 			<integer>1</integer>
 			<key>type</key>
 			<string>momentary</string>
 			<key>label</key>
-			<string>2</string>
+			<string>Snare</string>
+			<key>color</key>
+			<data>
+			BAtzdHJlYW10eXBlZIHoA4QBQISEhAdOU0NvbG9yAISECE5TT2JqZWN0AIWEAWMBhARm
+			ZmZmgwOBfD+D7qGbPYMzGlg+AYY=
+			</data>
+			<key>scaleFrom</key>
+			<real>0.0</real>
+			<key>scaleTo</key>
+			<real>127.0</real>
 		</dict>
 		<key>pad3</key>
 		<dict>
 			<key>value</key>
-			<integer>38</integer>
+			<integer>3</integer>
 			<key>kind</key>
-			<string>note</string>
+			<string>ctrl</string>
 			<key>channel</key>
 			<integer>1</integer>
 			<key>type</key>
 			<string>momentary</string>
 			<key>label</key>
-			<string>3</string>
+			<string>Toms</string>
+			<key>color</key>
+			<data>
+			BAtzdHJlYW10eXBlZIHoA4QBQISEhAdOU0NvbG9yAISECE5TT2JqZWN0AIWEAWMBhARm
+			ZmZmgwp7fz+DKrxjP4OfsR89AYY=
+			</data>
+			<key>scaleFrom</key>
+			<real>0.0</real>
+			<key>scaleTo</key>
+			<real>127.0</real>
 		</dict>
 		<key>pad4</key>
 		<dict>
 			<key>value</key>
-			<integer>39</integer>
+			<integer>4</integer>
 			<key>kind</key>
-			<string>note</string>
+			<string>ctrl</string>
 			<key>channel</key>
 			<integer>1</integer>
 			<key>type</key>
 			<string>momentary</string>
 			<key>label</key>
-			<string>4</string>
+			<string>Hi-hat</string>
+			<key>color</key>
+			<data>
+			BAtzdHJlYW10eXBlZIHoA4QBQISEhAdOU0NvbG9yAISECE5TT2JqZWN0AIWEAWMBhARm
+			ZmZmg1RiAT6DlEfpPoMdmn8/AYY=
+			</data>
+			<key>scaleFrom</key>
+			<real>0.0</real>
+			<key>scaleTo</key>
+			<real>127.0</real>
 		</dict>
 		<key>pad5</key>
 		<dict>
 			<key>value</key>
-			<integer>40</integer>
+			<integer>5</integer>
 			<key>kind</key>
-			<string>note</string>
+			<string>ctrl</string>
 			<key>channel</key>
 			<integer>1</integer>
 			<key>type</key>
 			<string>momentary</string>
 			<key>label</key>
-			<string>5</string>
+			<string>Cymbals</string>
+			<key>color</key>
+			<data>
+			BAtzdHJlYW10eXBlZIHoA4QBQISEhAdOU0NvbG9yAISECE5TT2JqZWN0AIWEAWMBhARm
+			ZmZmg1FlfT+DWkLrPoOUdAQ9AYY=
+			</data>
+			<key>scaleFrom</key>
+			<real>0.0</real>
+			<key>scaleTo</key>
+			<real>127.0</real>
 		</dict>
 		<key>pad6</key>
 		<dict>
@@ -2614,77 +2659,122 @@
 		<key>pad1</key>
 		<dict>
 			<key>value</key>
-			<integer>36</integer>
+			<integer>1</integer>
 			<key>kind</key>
-			<string>note</string>
+			<string>ctrl</string>
 			<key>channel</key>
 			<integer>1</integer>
 			<key>type</key>
 			<string>momentary</string>
 			<key>label</key>
-			<string>1</string>
+			<string>Kick Drum</string>
 			<key>oscAddress</key>
 			<string>/button1</string>
+			<key>color</key>
+			<data>
+			BAtzdHJlYW10eXBlZIHoA4QBQISEhAdOU0NvbG9yAISECE5TT2JqZWN0AIWEAWMBhARm
+			ZmZmgxre8T2D4JJmP4O6AEY+AYY=
+			</data>
+			<key>scaleFrom</key>
+			<real>0.0</real>
+			<key>scaleTo</key>
+			<real>127.0</real>
 		</dict>
 		<key>pad2</key>
 		<dict>
 			<key>value</key>
-			<integer>37</integer>
+			<integer>2</integer>
 			<key>kind</key>
-			<string>note</string>
+			<string>ctrl</string>
 			<key>channel</key>
 			<integer>1</integer>
 			<key>type</key>
 			<string>momentary</string>
 			<key>label</key>
-			<string>2</string>
+			<string>Snare</string>
 			<key>oscAddress</key>
 			<string>/button2</string>
+			<key>color</key>
+			<data>
+			BAtzdHJlYW10eXBlZIHoA4QBQISEhAdOU0NvbG9yAISECE5TT2JqZWN0AIWEAWMBhARm
+			ZmZmgwOBfD+D7qGbPYMzGlg+AYY=
+			</data>
+			<key>scaleFrom</key>
+			<real>0.0</real>
+			<key>scaleTo</key>
+			<real>127.0</real>
 		</dict>
 		<key>pad3</key>
 		<dict>
 			<key>value</key>
-			<integer>38</integer>
+			<integer>3</integer>
 			<key>kind</key>
-			<string>note</string>
+			<string>ctrl</string>
 			<key>channel</key>
 			<integer>1</integer>
 			<key>type</key>
 			<string>momentary</string>
 			<key>label</key>
-			<string>3</string>
+			<string>Toms</string>
 			<key>oscAddress</key>
 			<string>/button3</string>
+			<key>color</key>
+			<data>
+			BAtzdHJlYW10eXBlZIHoA4QBQISEhAdOU0NvbG9yAISECE5TT2JqZWN0AIWEAWMBhARm
+			ZmZmgwp7fz+DKrxjP4OfsR89AYY=
+			</data>
+			<key>scaleFrom</key>
+			<real>0.0</real>
+			<key>scaleTo</key>
+			<real>127.0</real>
 		</dict>
 		<key>pad4</key>
 		<dict>
 			<key>value</key>
-			<integer>39</integer>
+			<integer>4</integer>
 			<key>kind</key>
-			<string>note</string>
+			<string>ctrl</string>
 			<key>channel</key>
 			<integer>1</integer>
 			<key>type</key>
 			<string>momentary</string>
 			<key>label</key>
-			<string>4</string>
+			<string>Hi-hat</string>
 			<key>oscAddress</key>
 			<string>/button4</string>
+			<key>color</key>
+			<data>
+			BAtzdHJlYW10eXBlZIHoA4QBQISEhAdOU0NvbG9yAISECE5TT2JqZWN0AIWEAWMBhARm
+			ZmZmg1RiAT6DlEfpPoMdmn8/AYY=
+			</data>
+			<key>scaleFrom</key>
+			<real>0.0</real>
+			<key>scaleTo</key>
+			<real>127.0</real>
 		</dict>
 		<key>pad5</key>
 		<dict>
 			<key>value</key>
-			<integer>40</integer>
+			<integer>5</integer>
 			<key>kind</key>
-			<string>note</string>
+			<string>ctrl</string>
 			<key>channel</key>
 			<integer>1</integer>
 			<key>type</key>
 			<string>momentary</string>
 			<key>label</key>
-			<string>5</string>
+			<string>Cymbals</string>
 			<key>oscAddress</key>
 			<string>/button5</string>
+			<key>color</key>
+			<data>
+			BAtzdHJlYW10eXBlZIHoA4QBQISEhAdOU0NvbG9yAISECE5TT2JqZWN0AIWEAWMBhARm
+			ZmZmg1FlfT+DWkLrPoOUdAQ9AYY=
+			</data>
+			<key>scaleFrom</key>
+			<real>0.0</real>
+			<key>scaleTo</key>
+			<real>127.0</real>
 		</dict>
 		<key>pad6</key>
 		<dict>
@@ -16647,6 +16737,27 @@
             <key>kind</key>
             <string>note</string>
 		</dict>
+	</dict>
+	<key>NSTouchBarConfig: ch·uebe·midi-touchbar·customization·id</key>
+	<dict>
+		<key>CurrentItems</key>
+		<array>
+			<string>ch.uebe.midi-touchbar.piano</string>
+			<string>ch.uebe.midi-touchbar.pad1</string>
+			<string>ch.uebe.midi-touchbar.pad2</string>
+			<string>ch.uebe.midi-touchbar.pad3</string>
+			<string>ch.uebe.midi-touchbar.pad4</string>
+			<string>ch.uebe.midi-touchbar.pad5</string>
+		</array>
+		<key>DefaultItems</key>
+		<array>
+			<string>ch.uebe.midi-touchbar.piano</string>
+			<string>ch.uebe.midi-touchbar.pad1</string>
+			<string>ch.uebe.midi-touchbar.pad2</string>
+			<string>ch.uebe.midi-touchbar.pad3</string>
+			<string>ch.uebe.midi-touchbar.pad4</string>
+			<string>ch.uebe.midi-touchbar.pad5</string>
+		</array>
 	</dict>
 </dict>
 </plist>
