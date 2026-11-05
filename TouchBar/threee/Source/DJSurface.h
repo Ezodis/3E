@@ -364,9 +364,11 @@ static void DJText(NSString *text,NSRect rect,CGFloat size,NSColor *color) {
     ThreeEDJMIDI *midi=[ThreeEDJMIDI shared];
     NSColor *color=DJColor(self.channel==1), *dim=[NSColor colorWithWhite:.90 alpha:1];
     CGFloat w=NSWidth(self.bounds);
-    [[NSColor colorWithWhite:self.tracking ? .25 : .16 alpha:1] setFill];
-    [[NSBezierPath bezierPathWithRoundedRect:NSInsetRect(self.bounds,1,1) xRadius:5 yRadius:5] fill];
-    if(self.kind!=DJKnob) {
+    // Mixer controls and platters sit directly on the Touch Bar's black surface.
+    // Only performance pads need a tile to communicate their button targets.
+    if(self.kind==DJPad) {
+        [[NSColor colorWithWhite:self.tracking ? .25 : .16 alpha:1] setFill];
+        [[NSBezierPath bezierPathWithRoundedRect:NSInsetRect(self.bounds,1,1) xRadius:5 yRadius:5] fill];
         NSBezierPath *edge=[NSBezierPath bezierPathWithRoundedRect:NSInsetRect(self.bounds,1.5,1.5) xRadius:4.5 yRadius:4.5];
         edge.lineWidth=.75;[[color colorWithAlphaComponent:self.tracking ? .95 : .45] setStroke];[edge stroke];
     }
