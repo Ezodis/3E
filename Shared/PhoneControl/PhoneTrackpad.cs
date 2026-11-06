@@ -324,11 +324,11 @@ public sealed class PhoneTrackpad : IDisposable {
                     }
                     if (unhealthy || !owner.Address.Equals(address)) {
                         if (!FollowNetwork || !wanted) {
-                            StopLocked(unhealthy ? "Phone Bar stopped responding — start again to reconnect." : "Network changed or disconnected — reconnect to Wi-Fi, then start again.");
+                            StopLocked(unhealthy ? "Track Phone stopped responding — start again to reconnect." : "Network changed or disconnected — reconnect to Wi-Fi, then start again.");
                             return;
                         }
                         // Same link, new address: rebind now, or pause until a network returns.
-                        StopLocked(unhealthy ? "Phone Bar stopped responding — reconnecting automatically…" : "Network changed — reconnecting automatically…");
+                        StopLocked(unhealthy ? "Track Phone stopped responding — reconnecting automatically…" : "Network changed — reconnecting automatically…");
                         rebound = address != null && StartLocked();
                         resume = !rebound;
                     }

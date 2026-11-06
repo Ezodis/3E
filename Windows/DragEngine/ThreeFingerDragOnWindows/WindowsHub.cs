@@ -431,7 +431,7 @@ public sealed class WindowsHub : IDisposable {
     private bool ShowPhoneNetworkRestriction() {
         if (phoneBar.Available) return false;
         phoneBar.Stop();
-        MessageBox(IntPtr.Zero, PhoneBarNetworkPolicy.RestrictedStatus + "\n\nPhone control requires an incoming connection to this computer. Ask IT to approve a connection method before enabling it. Other 3£ controls remain available.", "3£ Phone Bar", 0x40 | ForegroundDialog);
+        MessageBox(IntPtr.Zero, PhoneBarNetworkPolicy.RestrictedStatus + "\n\nPhone control requires an incoming connection to this computer. Ask IT to approve a connection method before enabling it. Other 3£ controls remain available.", "3£ Track Phone", 0x40 | ForegroundDialog);
         return true;
     }
 

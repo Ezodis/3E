@@ -330,11 +330,19 @@ if ((Test-Path -LiteralPath $oldPrefs) -and -not (Test-Path -LiteralPath $newPre
 $phonePort = 17833
 & netsh.exe http delete urlacl url="http://+:$phonePort/" 2>&1 | Out-Null
 & netsh.exe http add urlacl url="http://+:$phonePort/" sddl="D:(A;;GX;;;WD)" 2>&1 | Out-Null
+# A local-only/none network policy (or an unreadable one) must never get the
+# permanent local-network rules back; the app then opens only a USB-scoped rule.
+$phonePolicy = Join-Path $env:LOCALAPPDATA '3EWindows\network-policy.json'
+$phoneNetworkWide = $true
+if (Test-Path -LiteralPath $phonePolicy) {
+    try { $phoneNetworkWide = (Get-Content -LiteralPath $phonePolicy -Raw | ConvertFrom-Json).mode -eq 'allow-inbound' } catch { $phoneNetworkWide = $false }
+}
 $phoneRules = $null
 try {
     $phoneRules = New-Object -ComObject HNetCfg.FwPolicy2
     foreach ($spec in @(@('3EWindows Phone Bar (installed)', 6, "$phonePort"), @('3EWindows Phone Bar name (installed)', 17, '5353'))) {
         try { $phoneRules.Rules.Remove($spec[0]) } catch { }
+        if (-not $phoneNetworkWide) { continue }
         $rule = New-Object -ComObject HNetCfg.FWRule
         $rule.Name = $spec[0]; $rule.Description = 'Lets your iPhone reach 3£ Track Phone on this local network.'
         $rule.Protocol = $spec[1]; $rule.LocalPorts = $spec[2]; $rule.RemoteAddresses = 'LocalSubnet'

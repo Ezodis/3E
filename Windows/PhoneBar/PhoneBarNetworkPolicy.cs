@@ -11,7 +11,7 @@ public enum PhoneBarAccess { Blocked, UsbOnly, Full }
 // listener, firewall rule and accepted adapter are then limited to that USB link.
 public static class PhoneBarNetworkPolicy {
     public static string PolicyPath => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "3EWindows", "network-policy.json");
-    public const string RestrictedStatus = "Phone Bar is disabled by this computer's network policy.";
+    public const string RestrictedStatus = "Track Phone is disabled by this computer's network policy.";
     public const string UsbOnlyStatus = "Wired only on this computer — plug in your iPhone with Personal Hotspot on.";
     // "allow-inbound" (or no file): any local network. "local-only"/"usb-only":
     // USB cable only. "none", anything else or an unreadable file: off.

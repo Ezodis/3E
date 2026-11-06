@@ -150,7 +150,7 @@ internal sealed class NativeHubMenu : IDisposable {
         foreach (uint scale in new uint[] { 96, 120, 144, 192 }) foreach (bool dark in new[] { false, true }) {
             var rows = new[] {
                 new Row("3£ 3.0.167.2", Enabled: false),
-                new Row("Phone Bar — network restricted", Icon: "settings"),
+                new Row("Track Phone — USB cable only", Icon: "settings"),
                 new Row("Car View", Icon: "mirror", Accent: true),
                 new Row("Three-finger drag", Checked: true, Icon: "settings"),
                 new Row("PowerToys", Checked: true, Icon: "settings"),

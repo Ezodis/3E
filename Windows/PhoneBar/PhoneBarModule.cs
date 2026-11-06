@@ -16,7 +16,7 @@ public sealed class PhoneBarModule : IDisposable {
     public bool Running => receiver?.Running ?? false;
     // Full network access (also gates public updates, whose installer opens LAN rules).
     public bool NetworkAllowed => PhoneBarNetworkPolicy.AllowsInbound();
-    // Wired-only hosts still run Phone Bar, restricted to the iPhone USB link.
+    // Wired-only hosts still run Track Phone, restricted to the iPhone USB link.
     public bool UsbOnly => PhoneBarNetworkPolicy.Access() == PhoneBarAccess.UsbOnly;
     public bool Available => PhoneBarNetworkPolicy.Access() != PhoneBarAccess.Blocked;
     public string Status => Available ? receiver?.Status ?? (UsbOnly ? PhoneBarNetworkPolicy.UsbOnlyStatus : "Off") : PhoneBarNetworkPolicy.RestrictedStatus;
