@@ -394,6 +394,7 @@ static OSStatus SendSpotifyCommand(pid_t pid, int command) {
 @property BOOL commandPending;
 @property PlaybackBook *playbackBook;
 @property BOOL playbackPollPending;
+@property NSMutableDictionary<NSString *, NSDate *> *audioSince;
 @property BOOL didPollProviders;
 @property NSTask *midiTask;
 @property NSPipe *midiInput;
@@ -911,7 +912,9 @@ static OSStatus SendSpotifyCommand(pid_t pid, int command) {
         NSInteger spotifyState=spotify && !spotify.terminated ? ReadSpotifyState(spotify.processIdentifier) : -1;
         NSInteger liveState=live && !live.terminated ? ReadAbletonState(live.processIdentifier) : -1;
         NSInteger safariState=safari && !safari.terminated ? ReadSafariState(safari.processIdentifier) : -1;
+        NSDictionary<NSString *, NSNumber *> *audio=AudioOutputPlayers();
         dispatch_async(dispatch_get_main_queue(), ^{
+            [weakSelf reportAudioPlayers:audio except:safariState>=0 ? @"com.apple.Safari" : nil];
             NSString *current=CurrentPlayerBundle();
             NSInteger snapshot=CurrentMediaState();
             [weakSelf.playbackBook report:@"com.spotify.client" state:ResolvedPlaybackState(spotifyState,snapshot,[current isEqualToString:@"com.spotify.client"])];
@@ -926,6 +929,17 @@ static OSStatus SendSpotifyCommand(pid_t pid, int command) {
             weakSelf.playbackPollPending=NO;
         });
     });
+}
+- (void)reportAudioPlayers:(NSDictionary<NSString *, NSNumber *> *)audio except:(NSString *)direct {
+    if(!self.audioSince) self.audioSince=[NSMutableDictionary dictionary];
+    for(NSString *bundle in self.audioSince.allKeys) if(!audio[bundle].boolValue) [self.audioSince removeObjectForKey:bundle];
+    [audio enumerateKeysAndObjectsUsingBlock:^(NSString *bundle, NSNumber *output, BOOL *stop) {
+        if([bundle isEqualToString:direct]) return;
+        if(!output.boolValue) { [self.playbackBook report:bundle state:0]; return; }
+        if(!self.audioSince[bundle]) self.audioSince[bundle]=NSDate.date;
+        // Sustained audio only: a notification sound must not take over the bar.
+        if(-self.audioSince[bundle].timeIntervalSinceNow>=1.5) [self.playbackBook report:bundle state:1];
+    }];
 }
 - (void)suppressNativeMediaTray {
     if(!self.item)return; // A menu-only Mac must not manage Touch Bar providers.
@@ -1191,6 +1205,8 @@ int main(int argc, const char *argv[]) {
             NSCAssert([[recentBook target:players fallback:@"com.apple.Safari"] isEqualToString:@"com.spotify.client"],@"When all are paused, the last one played stays displayed");
             [recentBook report:@"com.ableton.live" state:0];
             NSCAssert([[recentBook target:dawPlayers fallback:@"com.ableton.live"] isEqualToString:@"com.spotify.client"],@"A focused but never-played app must not replace the last played media");
+            NSCAssert([AudioOwnerForPath(@"/System/Library/Frameworks/WebKit.framework/XPCServices/com.apple.WebKit.GPU.xpc/Contents/MacOS/com.apple.WebKit.GPU",@"com.apple.WebKit.GPU") isEqual:@"com.apple.Safari"],@"Safari audio comes from WebKit's GPU process");
+            NSCAssert(!IsAudioMediaPlayer(@"com.ableton.live") && !IsAudioMediaPlayer(@"com.apple.PowerChime") && IsAudioMediaPlayer(@"com.apple.Safari") && IsAudioMediaPlayer(@"com.moises.app"),@"Only media apps are tracked by audio output");
             NSCAssert([[book target:[NSSet setWithObject:@"com.spotify.client"] fallback:@"com.spotify.client"] isEqualToString:@"com.spotify.client"],@"Closed sources must never win");
             NSCAssert([book state:@"com.apple.Safari"]==-1,@"Exited sessions must lose their stale playback state");
             MusicView *view = [[MusicView alloc] initWithFrame:NSMakeRect(0, 0, 118, 30)];

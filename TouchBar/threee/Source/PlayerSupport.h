@@ -1,5 +1,7 @@
 #import <AppKit/AppKit.h>
 #import <ApplicationServices/ApplicationServices.h>
+#import <CoreAudio/CoreAudio.h>
+#import <libproc.h>
 static NSString *ServiceForURL(NSString *url) {
     if(![url isKindOfClass:NSString.class] || !url.length) return nil;
     NSString *host = [NSURLComponents componentsWithString:url].host.lowercaseString;
@@ -317,4 +319,47 @@ static NSImage *IconWithAction(NSImage *source, NSInteger action, BOOL stopActio
         }
         return YES;
     }];
+}
+
+// macOS no longer gives third-party apps MediaRemote's Now Playing client, so
+// browsers and apps such as Moises are identified by which process is actually
+// sending audio. Helper processes are credited to the .app that contains them.
+static NSString *AudioOwnerForPath(NSString *path, NSString *bundle) {
+    if ([bundle hasPrefix:@"com.apple.WebKit."]) return @"com.apple.Safari";
+    NSRange app = [path rangeOfString:@".app/"];
+    if (app.location == NSNotFound) return nil;
+    NSString *outer = [path substringToIndex:app.location + 4];
+    return [NSBundle bundleWithPath:outer].bundleIdentifier;
+}
+static BOOL IsAudioMediaPlayer(NSString *bundle) {
+    // Ableton's engine outputs continuously; its transport is read separately.
+    return IsAllowedPlayer(bundle) && ![bundle isEqualToString:@"com.ableton.live"] &&
+        (![bundle hasPrefix:@"com.apple."] || [bundle isEqualToString:@"com.apple.Safari"]) &&
+        ![bundle isEqualToString:NSBundle.mainBundle.bundleIdentifier];
+}
+// bundle -> @1 while sending audio, @0 when its audio stream is idle.
+static NSDictionary<NSString *, NSNumber *> *AudioOutputPlayers(void) {
+    NSMutableDictionary *result = [NSMutableDictionary dictionary];
+    AudioObjectPropertyAddress list = {'prs#', kAudioObjectPropertyScopeGlobal, kAudioObjectPropertyElementMain};
+    UInt32 size = 0;
+    if (AudioObjectGetPropertyDataSize(kAudioObjectSystemObject, &list, 0, NULL, &size) || !size) return result;
+    NSMutableData *data = [NSMutableData dataWithLength:size];
+    if (AudioObjectGetPropertyData(kAudioObjectSystemObject, &list, 0, NULL, &size, data.mutableBytes)) return result;
+    const AudioObjectID *objects = data.bytes;
+    for (UInt32 i = 0; i < size / sizeof(AudioObjectID); i++) {
+        pid_t pid = 0; UInt32 output = 0, length = sizeof(pid); CFStringRef bundleRef = NULL;
+        AudioObjectPropertyAddress property = {'ppid', kAudioObjectPropertyScopeGlobal, kAudioObjectPropertyElementMain};
+        if (AudioObjectGetPropertyData(objects[i], &property, 0, NULL, &length, &pid) || pid <= 0) continue;
+        property.mSelector = 'piro'; length = sizeof(output);
+        AudioObjectGetPropertyData(objects[i], &property, 0, NULL, &length, &output);
+        property.mSelector = 'pbid'; length = sizeof(bundleRef);
+        AudioObjectGetPropertyData(objects[i], &property, 0, NULL, &length, &bundleRef);
+        NSString *bundle = bundleRef ? CFBridgingRelease(bundleRef) : nil;
+        char path[PROC_PIDPATHINFO_MAXSIZE] = {0};
+        NSString *executable = proc_pidpath(pid, path, sizeof(path)) > 0 ? @(path) : @"";
+        NSString *owner = AudioOwnerForPath(executable, bundle) ?: bundle;
+        if (!IsAudioMediaPlayer(owner) || ![NSRunningApplication runningApplicationsWithBundleIdentifier:owner].count) continue;
+        if (output || !result[owner]) result[owner] = @(output ? 1 : 0);
+    }
+    return result;
 }
