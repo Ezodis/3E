@@ -36,6 +36,24 @@ class RecordTests(unittest.TestCase):
         command = dict(action=action, session=self.server.session, time=100, track_index=0)
         command.update(changes)
         return command
+    def test_piano_mode_changes_only_matching_rack(self):
+        selector = SimpleNamespace(name="Chain Selector", original_name="Chain Selector", value=2)
+        self.track.name = "P2 CHORDS - Ch 2"
+        self.track.devices = [SimpleNamespace(name="MODE: 0 Plain | 1 Arp | 2 Bounce", parameters=[selector])]
+        self.assertEqual(self.server.state()["piano_modes"], {"2": 2})
+        for mode in (0, 1, 2):
+            self.server.execute(self.command("piano-mode-set", channel="2", mode=mode))
+            self.assertEqual(selector.value, mode)
+        self.assertEqual(self.song.scale_name, "Major")
+        for payload in ({"channel": "1", "mode": 1}, {"channel": "2", "mode": 3}, {"channel": "2", "mode": True}):
+            with self.assertRaises(ValueError):
+                self.server.execute(self.command("piano-mode-set", **payload))
+        self.other.name = self.track.name
+        self.other.devices = self.track.devices
+        self.assertEqual(self.server.state()["piano_modes"], {})
+        with self.assertRaises(ValueError):
+            self.server.execute(self.command("piano-mode-set", channel="2", mode=0))
+
     def test_arm_is_explicit_and_selected_only(self):
         for _ in range(2): self.server.execute(self.command("arm-on"))
         self.assertTrue(self.track.arm)

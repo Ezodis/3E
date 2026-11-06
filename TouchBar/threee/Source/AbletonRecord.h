@@ -593,6 +593,7 @@ static void ApplyRecordLight(StripRecordButton *button,BOOL connected,NSDictiona
         }
     }
     UpdateLiveScale(self.state,connected);
+    UpdatePianoRhythmButton();
     BOOL armed=connected && [self.state[@"armed"] boolValue];
     ApplyRecordLight(self.button,connected,self.state);
     for(StripRecordButton *button in self.menuRecordButtons.allObjects) ApplyRecordLight(button,connected,self.state);

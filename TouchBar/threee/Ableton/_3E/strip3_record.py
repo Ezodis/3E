@@ -98,6 +98,27 @@ class RecordServer:
                         pass
         return "selected_track"
 
+    def piano_modes(self):
+        """Only expose the explicit three-mode racks on named piano tracks."""
+        found = {}
+        for track in self.song.tracks:
+            prefix = str(track.name).split(" ", 1)[0]
+            if prefix not in ("P1", "P2", "P3"):
+                continue
+            for device in getattr(track, "devices", ()):
+                if not str(device.name).startswith("MODE: 0 Plain | 1 Arp | 2 Bounce"):
+                    continue
+                parameter = next((p for p in device.parameters
+                                  if getattr(p, "original_name", p.name) == "Chain Selector"), None)
+                if parameter is not None:
+                    channel = prefix[1:]
+                    if channel in found:
+                        # Ambiguous duplicated tracks must not control an arbitrary rack.
+                        found[channel] = None
+                    else:
+                        found[channel] = parameter
+        return {channel: parameter for channel, parameter in found.items() if parameter is not None}
+
     def state(self):
         track = self.song.view.selected_track
         result = {"protocol": 1, "pid": os.getpid(), "session_id": self.session,
@@ -125,6 +146,8 @@ class RecordServer:
                       root_note=int(getattr(self.song, "root_note", 0)),
                       scale_name=str(getattr(self.song, "scale_name", "")),
                       scale_intervals=intervals)
+        result["piano_modes"] = {channel: int(parameter.value)
+                                 for channel, parameter in self.piano_modes().items()}
         return result
 
     def atomic_json(self, path, payload):
@@ -141,7 +164,16 @@ class RecordServer:
         if command.get("session") != self.session or age < -1 or age > 2:
             raise ValueError("Expired Live command; try again")
         action = command.get("action")
-        if action in TOGGLES:
+        if action == "piano-mode-set":
+            mode = command.get("mode")
+            channel = str(command.get("channel", ""))
+            if type(mode) is not int or mode not in (0, 1, 2):
+                raise ValueError("Invalid piano mode")
+            parameter = self.piano_modes().get(channel)
+            if parameter is None:
+                raise ValueError("No unique three-mode rack for this piano")
+            parameter.value = mode
+        elif action in TOGGLES:
             prop = TOGGLES[action]
             setattr(self.song, prop, not getattr(self.song, prop))
         elif action == "play":
