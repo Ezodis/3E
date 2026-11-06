@@ -7,13 +7,31 @@ static NSImage *ThreeEMenuIcon(NSString *name) {
     static NSDictionary *artwork;
     static dispatch_once_t once;
     dispatch_once(&once, ^{
-        NSString *path=[NSBundle.mainBundle pathForResource:@"menu-icons" ofType:@"json"];
+        NSMutableArray<NSString *> *paths=[NSMutableArray array];
 #ifdef THREEE_MENU_ICON_TESTS
-        path=[[[NSString stringWithUTF8String:__FILE__] stringByDeletingLastPathComponent] stringByAppendingPathComponent:@"menu-icons.json"];
+        [paths addObject:[[[NSString stringWithUTF8String:__FILE__] stringByDeletingLastPathComponent] stringByAppendingPathComponent:@"menu-icons.json"]];
 #endif
-        NSData *data=path?[NSData dataWithContentsOfFile:path]:nil;
-        artwork=data?[NSJSONSerialization JSONObjectWithData:data options:0 error:nil]:nil;
+        NSString *own=[NSBundle.mainBundle pathForResource:@"menu-icons" ofType:@"json"];
+        if(own)[paths addObject:own];
+        // Helpers such as MIDI Touchbar.app live in 3E.app/Contents/Helpers and
+        // share the host app's packaged copy.
+        NSString *bundle=NSBundle.mainBundle.bundlePath;
+        NSRange helpers=[bundle rangeOfString:@"/Contents/Helpers/"];
+        if(helpers.location!=NSNotFound)[paths addObject:[[bundle substringToIndex:helpers.location] stringByAppendingPathComponent:@"Contents/Resources/menu-icons.json"]];
+        // Source checkouts (tests run from the repository root).
+        [paths addObject:[[[NSString stringWithUTF8String:__FILE__] stringByDeletingLastPathComponent] stringByAppendingPathComponent:@"menu-icons.json"]];
+        for(NSString *path in paths) {
+            NSData *data=[NSData dataWithContentsOfFile:path];
+            artwork=data?[NSJSONSerialization JSONObjectWithData:data options:0 error:nil]:nil;
+            if([artwork isKindOfClass:NSDictionary.class])break;
+            artwork=nil;
+        }
+#ifdef THREEE_MENU_ICON_TESTS
         NSCAssert(artwork,@"Shared menu icons were not packaged");
+#endif
+        // Missing artwork leaves menu rows without icons; it must never stop
+        // the MIDI engine or the menu bar item from starting.
+        if(!artwork) { NSLog(@"3E menu icons were not packaged; menu rows will show without icons."); artwork=@{}; }
     });
     NSDictionary *icon=artwork[@"icons"][name];
     if(!icon)return nil;

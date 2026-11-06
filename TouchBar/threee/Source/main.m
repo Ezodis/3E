@@ -98,8 +98,17 @@ static NSString *MediaKey(const char *symbol) {
     return key ? *key : nil;
 }
 
+// Any running app can be the player. Commands are addressed to its process,
+// so a closed player (including Apple Music) is never launched.
 static BOOL IsAllowedPlayer(NSString *bundle) {
-    return bundle.length && ![bundle isEqualToString:@"com.apple.Music"] && ![bundle isEqualToString:@"com.apple.iTunes"];
+    return bundle.length > 0;
+}
+// Players with the iTunes-style scripting suite (play state, play/pause,
+// next/previous track): Spotify and Apple Music.
+static AEEventClass ScriptablePlayerClass(NSString *bundle) {
+    if ([bundle isEqualToString:@"com.spotify.client"]) return 'spfy';
+    if ([bundle isEqualToString:@"com.apple.Music"]) return 'hook';
+    return 0;
 }
 
 static id RequestValue(NSString *selector) {
@@ -169,11 +178,11 @@ static NSDictionary *NoLaunchOptions(void) {
 }
 
 // A process-addressed Apple Event cannot launch a default music app or a
-// closed Spotify instance. Spotify documents these command IDs in its sdef.
-static OSStatus SendSpotifyCommand(pid_t pid, int command) {
+// closed player. Spotify and Music document these command IDs in their sdefs.
+static OSStatus SendScriptablePlayerCommand(pid_t pid, AEEventClass eventClass, int command) {
     NSAppleEventDescriptor *target = [NSAppleEventDescriptor descriptorWithDescriptorType:typeKernelProcessID bytes:&pid length:sizeof(pid)];
     AEEventID eventID = command == 5 ? 'Prev' : command == 4 ? 'Next' : command == 1 ? 'Paus' : command == 0 ? 'Play' : 'PlPs';
-    NSAppleEventDescriptor *event = [NSAppleEventDescriptor appleEventWithEventClass:'spfy' eventID:eventID targetDescriptor:target returnID:kAutoGenerateReturnID transactionID:kAnyTransactionID];
+    NSAppleEventDescriptor *event = [NSAppleEventDescriptor appleEventWithEventClass:eventClass eventID:eventID targetDescriptor:target returnID:kAutoGenerateReturnID transactionID:kAnyTransactionID];
     AppleEvent reply = {typeNull, NULL};
     OSStatus error = AESendMessage(event.aeDesc, &reply, kAEWaitReply | kAECanInteract, 60 * 30);
     if (!error) {
@@ -395,6 +404,8 @@ static OSStatus SendSpotifyCommand(pid_t pid, int command) {
 @property PlaybackBook *playbackBook;
 @property BOOL playbackPollPending;
 @property NSMutableDictionary<NSString *, NSDate *> *audioSince;
+@property NSMutableDictionary<NSString *, NSDate *> *audioHold;
+@property NSMutableSet<NSString *> *audioPausedOpen;
 @property BOOL didPollProviders;
 @property NSTask *midiTask;
 @property NSPipe *midiInput;
@@ -794,7 +805,6 @@ static OSStatus SendSpotifyCommand(pid_t pid, int command) {
     if (self.commandPending) return;
     NSString *bundle = self.displayedPlayer ?: [self selectedPlayer];
     if (!IsAllowedPlayer(bundle)) { NSLog(@"No running media player; no command sent."); return; }
-    if (!SendCommandToApp && ![bundle isEqualToString:@"com.spotify.client"] && ![bundle isEqualToString:@"com.ableton.live"]) return;
     NSRunningApplication *app = [NSRunningApplication runningApplicationsWithBundleIdentifier:bundle].firstObject;
     if (!app || app.terminated) return;
     if (command==2) {
@@ -805,7 +815,7 @@ static OSStatus SendSpotifyCommand(pid_t pid, int command) {
     self.commandPending = YES;
     __weak AppDelegate *weakSelf = self;
     if ([bundle isEqualToString:@"com.ableton.live"]) {
-        if (command != 2 && command != 0 && command != 1) { self.commandPending = NO; return; }
+        if (command != 2 && command != 0 && command != 1 && command != 4 && command != 5) { self.commandPending = NO; return; }
         if (!AXIsProcessTrusted()) {
             self.commandPending = NO;
             if (!self.abletonPermissionPrompted) {
@@ -816,46 +826,57 @@ static OSStatus SendSpotifyCommand(pid_t pid, int command) {
             return;
         }
         pid_t pid = app.processIdentifier;
+        if (command == 4 || command == 5) {
+            // Swipes jump between arrangement locators (Live's Next/Previous Locator).
+            dispatch_async(ProviderQueue(), ^{
+                BOOL sent = PressLabeledTransport(pid, command==4 ? ThreeETransportNext : ThreeETransportPrevious);
+                NSLog(@"Ableton %@ locator: %@", command==4 ? @"next" : @"previous", sent ? @"sent" : @"not available");
+                dispatch_async(dispatch_get_main_queue(), ^{ weakSelf.commandPending = NO; [weakSelf refresh]; });
+            });
+            return;
+        }
         dispatch_async(ProviderQueue(), ^{
             BOOL sent = SendAbletonState(pid, command==0 ? 1 : command==1 ? 0 : -1);
             NSLog(@"Ableton play/stop: %@", sent ? @"sent to Live" : @"not sent");
             dispatch_async(dispatch_get_main_queue(), ^{ if(sent && command<2) [weakSelf.playbackBook commit:bundle playing:command==0]; weakSelf.commandPending = NO; [weakSelf refresh]; });
         });
-    } else if ([bundle isEqualToString:@"com.spotify.client"]) {
-        pid_t pid = app.processIdentifier;
+    } else if (ScriptablePlayerClass(bundle)) {
+        pid_t pid = app.processIdentifier; AEEventClass eventClass = ScriptablePlayerClass(bundle);
         dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
-            OSStatus error = SendSpotifyCommand(pid, command);
-            NSLog(@"Spotify command %d completed with status %d", command, (int)error);
+            OSStatus error = SendScriptablePlayerCommand(pid, eventClass, command);
+            NSLog(@"%@ command %d completed with status %d", bundle, command, (int)error);
             dispatch_async(dispatch_get_main_queue(), ^{ if(!error && command<2) [weakSelf.playbackBook commit:bundle playing:command==0]; weakSelf.commandPending = NO; [weakSelf refresh]; });
         });
-    } else if(command==5 && [bundle isEqualToString:@"com.apple.Safari"] && [self.browserService isEqualToString:@"youtube"]) {
-        pid_t pid=app.processIdentifier; pid_t mediaPID=SafariMediaPID();
+    } else {
+        // Any other running player: its on-screen controls, else Space.
+        // Its state is known, so play/pause is not blind.
+        NSInteger state=[self.playbackBook state:bundle];
+        ThreeETransport action=TransportForCommand(command,state);
+        if(action==ThreeETransportNone) { self.commandPending=NO; [self refresh]; return; }
+        if(!AXIsProcessTrusted()) { self.commandPending=NO; NSLog(@"Enable 3E in macOS Accessibility to control %@.",bundle); return; }
+        pid_t pid=app.processIdentifier;
         dispatch_async(ProviderQueue(), ^{
-            BOOL youtube=[ServiceForURL(ReadSafariURL(mediaPID)) isEqualToString:@"youtube"];
-            NSInteger restart=youtube ? SafariYouTubePreviousAction(pid) : -1;
+            BOOL sent=SendPlayerTransport(bundle,pid,action);
+            NSLog(@"Transport %d for %@ (command %d): %@",action,bundle,command,sent ? @"sent" : @"not available");
             dispatch_async(dispatch_get_main_queue(), ^{
-                NSMutableDictionary *options=[NoLaunchOptions() mutableCopy];
-                if(restart==1) options[MediaKey("kMRMediaRemoteOptionPlaybackPosition") ?: @"kMRMediaRemoteOptionPlaybackPosition"]=@0;
-                BOOL queued=SendCommandToApp(restart==1 ? 24 : 5,(__bridge CFDictionaryRef)options,NULL,(__bridge CFStringRef)bundle,0,dispatch_get_main_queue(),^(uint32_t error,CFArrayRef statuses) {
-                    NSLog(@"YouTube Previous: %@ status %u",restart==1 ? @"restart" : @"previous video",error);
-                    weakSelf.commandPending=NO; [weakSelf refresh];
-                });
-                if(!queued) weakSelf.commandPending=NO;
+                AppDelegate *self=weakSelf;
+                if (sent && action==ThreeETransportToggle) {
+                    BOOL playing=command==0 || (command==2 && state!=1);
+                    [self.playbackBook commit:bundle playing:playing];
+                    if(!self.audioPausedOpen) self.audioPausedOpen=[NSMutableSet set];
+                    if(playing) [self.audioPausedOpen removeObject:bundle]; else [self.audioPausedOpen addObject:bundle];
+                    // Players keep their audio stream open briefly after pausing and
+                    // need a moment to start; trust the command until that settles.
+                    if(!self.audioHold) self.audioHold=[NSMutableDictionary dictionary];
+                    self.audioHold[bundle]=[NSDate dateWithTimeIntervalSinceNow:3];
+                    [self.audioSince removeObjectForKey:bundle];
+                }
+                self.commandPending=NO; [self refresh];
             });
         });
-        dispatch_after(dispatch_time(DISPATCH_TIME_NOW,5*NSEC_PER_SEC),dispatch_get_main_queue(),^{ weakSelf.commandPending=NO; });
-    } else {
-        // No blind command or implicit app launch: the current player must be
-        // identified and already running. Apple Music is excluded above.
-        BOOL queued = SendCommandToApp(command, (__bridge CFDictionaryRef)NoLaunchOptions(), NULL, (__bridge CFStringRef)bundle, 0, dispatch_get_main_queue(), ^(uint32_t error, CFArrayRef statuses) {
-            NSLog(@"Targeted media command completed with status %u", error);
-            if (!error && command<2) [weakSelf.playbackBook commit:bundle playing:command==0];
-            weakSelf.commandPending = NO;
-            [weakSelf refresh];
-        });
-        if (!queued) self.commandPending = NO;
-        // Recover if this private API omits its callback.
-        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 3 * NSEC_PER_SEC), dispatch_get_main_queue(), ^{ weakSelf.commandPending = NO; });
+        return;
+        self.commandPending = NO;
+        [self refresh];
     }
 }
 - (void)updateBrowserService:(BOOL)force {
@@ -906,15 +927,32 @@ static OSStatus SendSpotifyCommand(pid_t pid, int command) {
     self.playbackPollPending=YES;
     NSRunningApplication *spotify=[NSRunningApplication runningApplicationsWithBundleIdentifier:@"com.spotify.client"].firstObject;
     NSRunningApplication *live=[NSRunningApplication runningApplicationsWithBundleIdentifier:@"com.ableton.live"].firstObject;
+    NSRunningApplication *music=[NSRunningApplication runningApplicationsWithBundleIdentifier:@"com.apple.Music"].firstObject;
     NSRunningApplication *safari=[CurrentPlayerBundle() isEqualToString:@"com.apple.Safari"] ? [NSRunningApplication runningApplicationsWithBundleIdentifier:@"com.apple.Safari"].firstObject : nil;
     __weak AppDelegate *weakSelf=self;
+    NSString *shown=self.displayedPlayer;
     dispatch_async(ProviderQueue(), ^{
         NSInteger spotifyState=spotify && !spotify.terminated ? ReadSpotifyState(spotify.processIdentifier) : -1;
         NSInteger liveState=live && !live.terminated ? ReadAbletonState(live.processIdentifier) : -1;
+        NSInteger musicState=music && !music.terminated ? ReadSpotifyState(music.processIdentifier) : -1; // same play-state property
         NSInteger safariState=safari && !safari.terminated ? ReadSafariState(safari.processIdentifier) : -1;
         NSDictionary<NSString *, NSNumber *> *audio=AudioOutputPlayers();
+        // Players with an on-screen transport report their real state.
+        NSMutableDictionary<NSString *, NSNumber *> *buttons=[NSMutableDictionary dictionary];
+        for(NSString *bundle in audio) {
+            // Only inspect apps that are sounding or displayed: asking a web-view
+            // app for accessibility makes it build a tree, which has a cost.
+            if(ScriptablePlayerClass(bundle) || (!audio[bundle].boolValue && ![bundle isEqualToString:shown])) continue;
+            NSRunningApplication *player=[NSRunningApplication runningApplicationsWithBundleIdentifier:bundle].firstObject;
+            NSInteger state=player && !player.terminated ? ReadAppTransportState(player.processIdentifier) : -1;
+            if(state>=0) buttons[bundle]=@(state);
+        }
         dispatch_async(dispatch_get_main_queue(), ^{
-            [weakSelf reportAudioPlayers:audio except:safariState>=0 ? @"com.apple.Safari" : nil];
+            NSMutableSet *direct=[NSMutableSet setWithArray:buttons.allKeys];
+            if(safariState>=0) [direct addObject:@"com.apple.Safari"];
+            if(musicState>=0) { [direct addObject:@"com.apple.Music"]; [weakSelf.playbackBook report:@"com.apple.Music" state:musicState]; }
+            [buttons enumerateKeysAndObjectsUsingBlock:^(NSString *bundle, NSNumber *state, BOOL *stop) { [weakSelf.playbackBook report:bundle state:state.integerValue]; }];
+            [weakSelf reportAudioPlayers:audio except:direct];
             NSString *current=CurrentPlayerBundle();
             NSInteger snapshot=CurrentMediaState();
             [weakSelf.playbackBook report:@"com.spotify.client" state:ResolvedPlaybackState(spotifyState,snapshot,[current isEqualToString:@"com.spotify.client"])];
@@ -930,11 +968,19 @@ static OSStatus SendSpotifyCommand(pid_t pid, int command) {
         });
     });
 }
-- (void)reportAudioPlayers:(NSDictionary<NSString *, NSNumber *> *)audio except:(NSString *)direct {
+- (void)reportAudioPlayers:(NSDictionary<NSString *, NSNumber *> *)audio except:(NSSet<NSString *> *)direct {
     if(!self.audioSince) self.audioSince=[NSMutableDictionary dictionary];
     for(NSString *bundle in self.audioSince.allKeys) if(!audio[bundle].boolValue) [self.audioSince removeObjectForKey:bundle];
     [audio enumerateKeysAndObjectsUsingBlock:^(NSString *bundle, NSNumber *output, BOOL *stop) {
-        if([bundle isEqualToString:direct]) return;
+        if([direct containsObject:bundle]) return;
+        // Some players (Moises) keep their audio stream open while paused. After
+        // a pause sent from here, an open stream is not evidence of playback;
+        // only a fresh start after the stream closes is.
+        if([self.audioPausedOpen containsObject:bundle]) {
+            if(output.boolValue) return;
+            [self.audioPausedOpen removeObject:bundle];
+        }
+        if([self.audioHold[bundle] timeIntervalSinceNow]>0) return;
         if(!output.boolValue) { [self.playbackBook report:bundle state:0]; return; }
         if(!self.audioSince[bundle]) self.audioSince[bundle]=NSDate.date;
         // Sustained audio only: a notification sound must not take over the bar.
@@ -1144,7 +1190,8 @@ int main(int argc, const char *argv[]) {
             NSCAssert([ChoosePlayer(@"com.apple.Safari", @"com.apple.Safari", nil, players) isEqualToString:@"com.apple.Safari"], @"A newly observed browser must be selected");
             NSCAssert([ChoosePlayer(nil, @"com.spotify.client", nil, players) isEqualToString:@"com.spotify.client"], @"Reopened Spotify must be resumed");
             NSCAssert([ChoosePlayer(nil, @"com.spotify.client", @"com.spotify.client", players) isEqualToString:@"com.spotify.client"], @"Freshly opened Spotify must beat a stale browser session");
-            NSCAssert(ChoosePlayer(@"com.apple.Music", @"com.apple.Music", nil, [NSSet setWithObject:@"com.apple.Music"]) == nil, @"Apple Music must never be selected");
+            NSCAssert([ChoosePlayer(@"com.apple.Music", @"com.apple.Music", nil, [NSSet setWithObject:@"com.apple.Music"]) isEqualToString:@"com.apple.Music"] && ChoosePlayer(nil, @"com.apple.Music", nil, [NSSet set]) == nil, @"Running Apple Music can be controlled; a closed one is never launched");
+            NSCAssert(ScriptablePlayerClass(@"com.apple.Music")=='hook' && ScriptablePlayerClass(@"com.spotify.client")=='spfy' && !ScriptablePlayerClass(@"com.todesktop.220410vabqjud82"),@"Spotify and Music use their scripting suites; other apps use on-screen controls");
             NSCAssert(ChoosePlayer(nil, @"com.spotify.client", nil, [NSSet set]) == nil, @"A closed player must not be launched");
             NSCAssert([NoLaunchOptions().allValues.firstObject boolValue], @"App launch fallback must be disabled");
             NSSet *dawPlayers = [players setByAddingObject:@"com.ableton.live"];
@@ -1206,6 +1253,14 @@ int main(int argc, const char *argv[]) {
             [recentBook report:@"com.ableton.live" state:0];
             NSCAssert([[recentBook target:dawPlayers fallback:@"com.ableton.live"] isEqualToString:@"com.spotify.client"],@"A focused but never-played app must not replace the last played media");
             NSCAssert([AudioOwnerForPath(@"/System/Library/Frameworks/WebKit.framework/XPCServices/com.apple.WebKit.GPU.xpc/Contents/MacOS/com.apple.WebKit.GPU",@"com.apple.WebKit.GPU") isEqual:@"com.apple.Safari"],@"Safari audio comes from WebKit's GPU process");
+            NSCAssert(TransportForCommand(2,1)==ThreeETransportToggle && TransportForCommand(0,1)==ThreeETransportNone && TransportForCommand(1,0)==ThreeETransportNone && TransportForCommand(0,0)==ThreeETransportToggle && TransportForCommand(4,1)==ThreeETransportNext && TransportForCommand(5,0)==ThreeETransportPrevious,@"Transport follows the known state and never toggles the wrong way");
+            NSCAssert(TransportLabelIs(@"Next Locator",ThreeETransportNext) && TransportLabelIs(@"Previous Locator",ThreeETransportPrevious) && TransportLabelIs(@"Next (SHIFT+n)",ThreeETransportNext) && !TransportLabelIs(@"Browse Forward",ThreeETransportNext) && !TransportLabelIs(@"Browse Back",ThreeETransportPrevious) && !TransportLabelIs(@"Next Locator",ThreeETransportPrevious),@"Next/previous labels are exact, never browser navigation");
+            NSCAssert(TransportNeighbor(@[@"Previous (SHIFT+p)",@"Pause (k)",@"Next (SHIFT+n)",@"Mute (m)"],ThreeETransportNext)==2 && TransportNeighbor(@[@"Previous (SHIFT+p)",@"Pause (k)",@"Next (SHIFT+n)"],ThreeETransportPrevious)==0,@"Labelled next/previous buttons win inside a group");
+            NSCAssert(SafariTransportLabelState(@"Pause keyboard shortcut k")==1 && SafariTransportLabelState(@"Play keyboard shortcut k")==0 && SafariTransportLabelState(@"Pausa (k)")==1 && TransportLabelIs(@"Next keyboard shortcut shift+n",ThreeETransportNext),@"YouTube labels with any shortcut hint are recognised");
+            NSCAssert(IsSkipAdLabel(@"Skip") && IsSkipAdLabel(@"Skip Ads") && IsSkipAdLabel(@"Omitir anuncio") && !IsSkipAdLabel(@"Skip navigation"),@"Swipe forward skips ads, never page navigation");
+            NSArray *moises=@[@"",@"Stop",@"Play",@""];
+            NSCAssert(TransportNeighbor(moises,ThreeETransportToggle)==2 && TransportNeighbor(moises,ThreeETransportNext)==3 && TransportNeighbor(moises,ThreeETransportPrevious)==0,@"Moises-style transport: rewind, stop, play, forward");
+            NSCAssert(TransportNeighbor(@[@"",@"Pause",@""],ThreeETransportPrevious)==0 && TransportNeighbor(@[@"Stop",@"Play"],ThreeETransportNext)==-1 && TransportNeighbor(@[@"Volume",@"Loop"],ThreeETransportToggle)==-1,@"Transport neighbours stay inside the group");
             NSCAssert(!IsAudioMediaPlayer(@"com.ableton.live") && !IsAudioMediaPlayer(@"com.apple.PowerChime") && IsAudioMediaPlayer(@"com.apple.Safari") && IsAudioMediaPlayer(@"com.moises.app"),@"Only media apps are tracked by audio output");
             NSCAssert([[book target:[NSSet setWithObject:@"com.spotify.client"] fallback:@"com.spotify.client"] isEqualToString:@"com.spotify.client"],@"Closed sources must never win");
             NSCAssert([book state:@"com.apple.Safari"]==-1,@"Exited sessions must lose their stale playback state");
@@ -1236,7 +1291,7 @@ int main(int argc, const char *argv[]) {
             NSCAssert(holds == 1 && sent == -1, @"Cancelled hold must neither open MIDI nor affect playback");
             [view beginAt:NSMakePoint(30, 10) identity:nil]; [view finishAt:NSMakePoint(30, 10)]; [view fireHold];
             NSCAssert(holds == 1 && sent == 2, @"Short tap must not leave a pending MIDI action");
-            puts("Passed: multi-source pause/handoff/resume; stale-state protection; hold-once, swipe/cancel/release handling; player routing and Apple Music exclusion. No media or MIDI actions sent.");
+            puts("Passed: multi-source pause/handoff/resume; stale-state protection; hold-once, swipe/cancel/release handling; player routing and closed-player protection. No media or MIDI actions sent.");
             return 0;
         }
         NSApplication *app = StripApplication.sharedApplication;

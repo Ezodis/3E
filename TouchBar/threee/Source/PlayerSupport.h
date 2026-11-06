@@ -91,10 +91,21 @@ static dispatch_queue_t ProviderQueue(void) {
     return queue;
 }
 static id AXValue(AXUIElementRef element, CFStringRef name);
+// "Pause (k)", "Pause keyboard shortcut k", "Next (SHIFT+n)" -> "pause"/"next":
+// players append shortcut hints that change between versions and languages.
+static NSString *TransportLabelText(NSString *label) {
+    if(![label isKindOfClass:NSString.class]) return @"";
+    NSString *text=[[label lowercaseString] stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
+    for(NSString *hint in @[@" keyboard shortcut",@" atajo de teclado",@" combinación de teclas",@" atalho do teclado",@" atalho de teclado"]) {
+        NSRange range=[text rangeOfString:hint]; if(range.location!=NSNotFound) text=[text substringToIndex:range.location];
+    }
+    NSRange paren=[text rangeOfString:@" (" options:NSBackwardsSearch];
+    if(paren.location!=NSNotFound && [text hasSuffix:@")"]) text=[text substringToIndex:paren.location];
+    return [text stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
+}
 static NSInteger SafariTransportLabelState(NSString *label) {
     if(![label isKindOfClass:NSString.class]) return -1;
-    NSString *text=[[label lowercaseString] stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
-    if([text hasSuffix:@" (k)"]) text=[text substringToIndex:text.length-4];
+    NSString *text=TransportLabelText(label);
     if([@[@"pause",@"pausa",@"pausar"] containsObject:text]) return 1;
     if([@[@"play",@"reproducir",@"reproduzir"] containsObject:text]) return 0;
     return -1;
@@ -335,7 +346,7 @@ static NSString *AudioOwnerForPath(NSString *path, NSString *bundle) {
 static BOOL IsAudioMediaPlayer(NSString *bundle) {
     // Ableton's engine outputs continuously; its transport is read separately.
     return IsAllowedPlayer(bundle) && ![bundle isEqualToString:@"com.ableton.live"] &&
-        (![bundle hasPrefix:@"com.apple."] || [bundle isEqualToString:@"com.apple.Safari"]) &&
+        (![bundle hasPrefix:@"com.apple."] || [bundle isEqualToString:@"com.apple.Safari"] || [bundle isEqualToString:@"com.apple.Music"]) &&
         ![bundle isEqualToString:NSBundle.mainBundle.bundleIdentifier];
 }
 // bundle -> @1 while sending audio, @0 when its audio stream is idle.
@@ -374,4 +385,146 @@ static NSDictionary<NSString *, NSNumber *> *AudioOutputPlayers(void) {
         if (output || !result[owner]) result[owner] = @(output ? 1 : 0);
     }
     return result;
+}
+
+// MediaRemote no longer accepts commands from third-party apps on recent
+// macOS, and media keys go to Apple Music when the player (e.g. Moises) never
+// registers with Now Playing. Commands are therefore delivered to the chosen
+// app itself: its on-screen buttons via Accessibility, otherwise Space.
+typedef NS_ENUM(int, ThreeETransport) { ThreeETransportNone, ThreeETransportToggle, ThreeETransportNext, ThreeETransportPrevious };
+// 0 play, 1 pause, 2 toggle, 4 next, 5 previous. Known state prevents a
+// toggle from going the wrong way.
+static ThreeETransport TransportForCommand(int command, NSInteger state) {
+    if (command == 4) return ThreeETransportNext;
+    if (command == 5) return ThreeETransportPrevious;
+    if ((command == 0 && state == 1) || (command == 1 && state == 0)) return ThreeETransportNone;
+    return command <= 2 ? ThreeETransportToggle : ThreeETransportNone;
+}
+// Desktop players built on web views (Moises and other Electron apps) expose
+// their on-screen transport once asked for accessibility. The Play/Pause button
+// is the one inside a group of transport buttons; its label gives the state.
+static NSMutableDictionary<NSNumber *, id> *TransportButtons;
+static NSMutableDictionary<NSNumber *, NSDate *> *TransportSearches;
+static NSString *AXLabel(id element) {
+    NSString *label = AXValue((__bridge AXUIElementRef)element, kAXDescriptionAttribute);
+    if (![label isKindOfClass:NSString.class] || !label.length) label = AXValue((__bridge AXUIElementRef)element, kAXTitleAttribute);
+    return [label isKindOfClass:NSString.class] ? label : nil;
+}
+static NSArray *TransportGroup(id button) {
+    id parent = AXValue((__bridge AXUIElementRef)button, kAXParentAttribute);
+    NSArray *children = parent ? AXValue((__bridge AXUIElementRef)parent, kAXChildrenAttribute) : nil;
+    NSMutableArray *buttons = [NSMutableArray array];
+    for (id child in [children isKindOfClass:NSArray.class] ? children : @[])
+        if ([AXValue((__bridge AXUIElementRef)child, kAXRoleAttribute) isEqual:(__bridge NSString *)kAXButtonRole]) [buttons addObject:child];
+    [buttons sortUsingComparator:^NSComparisonResult(id a, id b) {
+        CGPoint pa = {0}, pb = {0}; id va = AXValue((__bridge AXUIElementRef)a, kAXPositionAttribute), vb = AXValue((__bridge AXUIElementRef)b, kAXPositionAttribute);
+        if (va) AXValueGetValue((__bridge AXValueRef)va, kAXValueCGPointType, &pa);
+        if (vb) AXValueGetValue((__bridge AXValueRef)vb, kAXValueCGPointType, &pb);
+        return pa.x < pb.x ? NSOrderedAscending : pa.x > pb.x ? NSOrderedDescending : NSOrderedSame;
+    }];
+    return buttons;
+}
+static id AppPlayButton(pid_t pid) {
+    if (pid <= 0 || !AXIsProcessTrusted()) return nil;
+    if (!TransportButtons) { TransportButtons = [NSMutableDictionary dictionary]; TransportSearches = [NSMutableDictionary dictionary]; }
+    id cached = TransportButtons[@(pid)];
+    if (cached && SafariTransportLabelState(AXLabel(cached)) >= 0) return cached;
+    [TransportButtons removeObjectForKey:@(pid)];
+    NSDate *searched = TransportSearches[@(pid)];
+    if (searched && searched.timeIntervalSinceNow > -2) return nil; // the tree builds lazily
+    TransportSearches[@(pid)] = NSDate.date;
+    AXUIElementRef app = AXUIElementCreateApplication(pid); AXUIElementSetMessagingTimeout(app, .2);
+    // Electron apps and Chromium browsers build their web tree on request.
+    AXUIElementSetAttributeValue(app, CFSTR("AXManualAccessibility"), kCFBooleanTrue);
+    NSRunningApplication *running = [NSRunningApplication runningApplicationWithProcessIdentifier:pid];
+    if ([@[@"com.google.Chrome",@"com.brave.Browser",@"com.microsoft.edgemac",@"company.thebrowser.Browser",@"com.vivaldi.Vivaldi",@"com.operasoftware.Opera"] containsObject:running.bundleIdentifier ?: @""])
+        AXUIElementSetAttributeValue(app, CFSTR("AXEnhancedUserInterface"), kCFBooleanTrue);
+    NSMutableArray *queue = [NSMutableArray arrayWithArray:AXValue(app, kAXWindowsAttribute) ?: @[]];
+    CFAbsoluteTime start = CFAbsoluteTimeGetCurrent(); id found = nil;
+    for (NSUInteger i = 0; i < queue.count && i < 8000 && CFAbsoluteTimeGetCurrent() - start < 2; i++) {
+        id element = queue[i];
+        if ([AXValue((__bridge AXUIElementRef)element, kAXRoleAttribute) isEqual:(__bridge NSString *)kAXButtonRole] &&
+            SafariTransportLabelState(AXLabel(element)) >= 0 &&
+            TransportGroup(element).count >= 3) { found = element; break; }
+        NSArray *children = AXValue((__bridge AXUIElementRef)element, kAXChildrenAttribute);
+        if ([children isKindOfClass:NSArray.class]) [queue addObjectsFromArray:children];
+    }
+    CFRelease(app);
+    if (found) TransportButtons[@(pid)] = found;
+    return found;
+}
+// 1 playing (button offers Pause), 0 paused (offers Play), -1 not available.
+static NSInteger ReadAppTransportState(pid_t pid) {
+    id button = AppPlayButton(pid);
+    return button ? SafariTransportLabelState(AXLabel(button)) : -1;
+}
+static NSString *TransportWord(NSString *label) { return TransportLabelText(label); }
+// A video ad's skip control. Exact labels only ("Skip navigation" is not one).
+static BOOL IsSkipAdLabel(NSString *label) {
+    return [@[@"skip",@"skip ad",@"skip ads",@"skip this ad",@"omitir",@"omitir anuncio",@"omitir anuncios",@"saltar anuncio",@"saltar anuncios",@"pular",@"pular anúncio",@"pular anúncios"] containsObject:TransportWord(label)];
+}
+static BOOL TransportLabelIs(NSString *label, ThreeETransport action) {
+    NSString *word = TransportWord(label);
+    if (action == ThreeETransportNext) return [@[@"next",@"next track",@"next locator",@"next song",@"skip forward",@"fast forward",@"forward",@"siguiente",@"siguiente canción",@"próximo",@"avanzar"] containsObject:word];
+    if (action == ThreeETransportPrevious) return [@[@"previous",@"previous track",@"previous locator",@"previous song",@"skip back",@"skip backward",@"rewind",@"anterior",@"canción anterior",@"retroceder"] containsObject:word];
+    return NO;
+}
+// In a transport group: a labelled next/previous button wins; otherwise
+// rewind is left of Stop (or of Play when there is no Stop) and forward is
+// right of Play (Moises' unlabelled buttons).
+static NSInteger TransportNeighbor(NSArray<NSString *> *labels, ThreeETransport action) {
+    if (action == ThreeETransportNext || action == ThreeETransportPrevious)
+        for (NSUInteger i = 0; i < labels.count; i++) if (TransportLabelIs(labels[i], action)) return i;
+    NSInteger play = -1, stop = -1;
+    for (NSUInteger i = 0; i < labels.count; i++) {
+        if (SafariTransportLabelState(labels[i]) >= 0) play = i;
+        if ([@[@"stop", @"detener", @"parar"] containsObject:labels[i].lowercaseString]) stop = i;
+    }
+    if (play < 0) return -1;
+    NSInteger index = action == ThreeETransportNext ? play + 1 : action == ThreeETransportPrevious ? (stop >= 0 && stop < play ? stop : play) - 1 : play;
+    return index >= 0 && index < (NSInteger)labels.count ? index : -1;
+}
+// Anywhere in the app's windows: a button whose label names the action
+// (Ableton's Next/Previous Locator, a player's Next track, ...).
+static BOOL PressButtonWhere(pid_t pid, BOOL (^matches)(NSString *label));
+static BOOL PressLabeledTransport(pid_t pid, ThreeETransport action) {
+    if (action != ThreeETransportNext && action != ThreeETransportPrevious) return NO;
+    return PressButtonWhere(pid, ^BOOL(NSString *label) { return TransportLabelIs(label, action); });
+}
+static BOOL PressButtonWhere(pid_t pid, BOOL (^matches)(NSString *label)) {
+    if (pid <= 0 || !AXIsProcessTrusted()) return NO;
+    AXUIElementRef app = AXUIElementCreateApplication(pid); AXUIElementSetMessagingTimeout(app, .2);
+    NSMutableArray *queue = [NSMutableArray arrayWithArray:AXValue(app, kAXWindowsAttribute) ?: @[]];
+    CFAbsoluteTime start = CFAbsoluteTimeGetCurrent(); BOOL pressed = NO;
+    for (NSUInteger i = 0; i < queue.count && i < 8000 && CFAbsoluteTimeGetCurrent() - start < 2; i++) {
+        id element = queue[i];
+        if ([AXValue((__bridge AXUIElementRef)element, kAXRoleAttribute) isEqual:(__bridge NSString *)kAXButtonRole] && matches(AXLabel(element))) {
+            pressed = AXUIElementPerformAction((__bridge AXUIElementRef)element, kAXPressAction) == kAXErrorSuccess; break;
+        }
+        NSArray *children = AXValue((__bridge AXUIElementRef)element, kAXChildrenAttribute);
+        if ([children isKindOfClass:NSArray.class]) [queue addObjectsFromArray:children];
+    }
+    CFRelease(app); return pressed;
+}
+static BOOL PressAppTransport(pid_t pid, ThreeETransport action) {
+    if (action == ThreeETransportNone) return NO;
+    // Swiping forward during a video ad skips it (once the Skip button shows).
+    if (action == ThreeETransportNext && PressButtonWhere(pid, ^BOOL(NSString *label) { return IsSkipAdLabel(label); })) return YES;
+    id button = AppPlayButton(pid);
+    if (!button) return PressLabeledTransport(pid, action);
+    NSArray *group = TransportGroup(button);
+    NSMutableArray<NSString *> *labels = [NSMutableArray array];
+    for (id element in group) [labels addObject:AXLabel(element) ?: @""];
+    NSInteger index = TransportNeighbor(labels, action);
+    return index >= 0 && AXUIElementPerformAction((__bridge AXUIElementRef)group[index], kAXPressAction) == kAXErrorSuccess;
+}
+// Space goes only to the player's process (never the frontmost app) and is
+// skipped while a text field there has focus. It toggles play in Moises and
+// most desktop players; next/previous have no universal key.
+static BOOL SendPlayerTransport(NSString *bundle, pid_t pid, ThreeETransport action) {
+    // Safari's players (YouTube in any window, including Private Browsing)
+    // use the same on-screen controls as every other app.
+    if (PressAppTransport(pid, action)) return YES;
+    if ([bundle isEqualToString:@"com.apple.Safari"]) return NO; // Space would scroll the page
+    return action == ThreeETransportToggle && SendAbletonToggle(pid);
 }
