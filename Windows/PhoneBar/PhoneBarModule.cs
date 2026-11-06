@@ -74,12 +74,14 @@ public sealed class PhoneBarModule : IDisposable {
         var current = receiver;
         if (current == null || disposed) return;
         if (current.Running) PhonePowerTuning.Begin();
-        UpdateName(current.Running ? current.Address : null);
+        // A replugged cable is a new adapter even with the same address, and
+        // the old multicast membership died with the old one: always rebuild.
+        UpdateName(current.Running ? current.Address : null, force: true);
     }
 
-    private void UpdateName(System.Net.IPAddress address) {
+    private void UpdateName(System.Net.IPAddress address, bool force = false) {
         lock (nameGate) {
-            if (address != null && name?.Address?.Equals(address) == true) return;
+            if (!force && address != null && name?.Address?.Equals(address) == true) return;
             name?.Dispose(); name = null;
             if (address == null) return;
             try { new TrackpadFirewall(() => UsbOnly).OpenName(); } catch { }

@@ -168,7 +168,7 @@
   function connected() {
     clearTimeout(connectTimeout); connecting = false; retryDelay = 250; lastReply = performance.now(); takeover = false;
     ready = true; buttons.forEach(b => b.disabled = false); pad.classList.add('live');
-    status.textContent = window.ThreeEControl?.info?.inputPermission===false ? 'Allow Accessibility on your Mac for pointer control.' : 'Connected'; connectButton.textContent = 'Pause connection';
+    connectedStatus(); connectButton.textContent = 'Pause connection';
     window.ThreeESurface?.state(true);
     Prefs.sync();
     // Motion and a tap made while the link was waking are delivered now
@@ -715,7 +715,14 @@
       settings(false);
     } catch { $('fullscreenHelp').textContent = 'This browser manages its own bars. On iPhone, use Share → Add to Home Screen → Open as Web App. The pad already fills the available screen.'; }
   });
-  function describe(info) { if(window.ThreeEControl) window.ThreeEControl.info=info; window.ThreeESurface?.describe(info); }
+  // Says which link carries this page: the iPhone cable, Wi-Fi or Ethernet.
+  function linkLabel(info) { const kind=info?.connection?.kind; return kind==='usb'?'USB cable · wired':kind==='wifi'?'Wi-Fi':kind==='ethernet'?'Ethernet':''; }
+  function connectedStatus() {
+    const info=window.ThreeEControl?.info, link=linkLabel(info);
+    status.textContent = info?.inputPermission===false ? 'Allow Accessibility on your Mac for pointer control.' : link ? 'Connected · '+link : 'Connected';
+    status.dataset.link = info?.connection?.kind || '';
+  }
+  function describe(info) { if(window.ThreeEControl) window.ThreeEControl.info=info; window.ThreeESurface?.describe(info); if(ready) connectedStatus(); }
   window.ThreeEControl={send,release:releaseControls,connected:()=>ready,info:null};
   connect();
   // The QR opens the IP address (always reachable). If the stable name also
