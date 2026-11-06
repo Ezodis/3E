@@ -45,7 +45,7 @@ public sealed class PhoneBarModule : IDisposable {
         volume ??= new(WindowsOutputVolume.Read,WindowsOutputVolume.Write);
         // Wired first: the USB link wins whenever the cable is in; unplugging
         // falls back to Wi-Fi with the same link (on hosts that allow Wi-Fi).
-        receiver ??= new(() => PhoneNetwork.Refresh(UsbOnly),
+        receiver ??= new(() => { var address = PhoneNetwork.Refresh(UsbOnly); UsbRoutePriority.Ensure(); return address; },
             new NativeTrackpadInput(()=>new {media=media?.State},action=>media?.Send(action),()=>volume?.State,level=>volume?.Set(level),()=>volume?.CancelPending(),()=>volume?.Refresh()),
             new TrackpadFirewall(() => UsbOnly), PhoneTrackpad.Port) { TokenProvider = StoredToken, AliasHost = PhoneNameResponder.Name, FollowNetwork = true,
               AcceptLocal = local => !UsbOnly || PhoneNetwork.Paths.Any(p => p.Kind == "usb" && p.Address.Equals(local)),
