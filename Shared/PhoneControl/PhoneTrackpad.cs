@@ -44,7 +44,14 @@ public sealed class PhoneTrackpad : IDisposable {
     public bool Running { get { lock (gate) return session != null; } }
     public string PairingUrl { get { lock (gate) return session == null ? null : session.Origin + "/#" + session.Token; } }
     // Stable name link (for example http://3e-win.local:17833/#token) when an alias is served.
-    public string NamedUrl { get { lock (gate) return session?.AliasOrigin == null ? null : session.AliasOrigin + "/#" + session.Token; } }
+    // While it waits for a network (for example a USB-only host before the
+    // cable connects) the saved link is already known, so its QR can be shown.
+    public string NamedUrl { get { lock (gate) {
+        if (session != null) return session.AliasOrigin == null ? null : session.AliasOrigin + "/#" + session.Token;
+        if (!wanted || string.IsNullOrEmpty(AliasHost)) return null;
+        string stored; try { stored = TokenProvider?.Invoke(); } catch { stored = null; }
+        return stored != null && stored.Length == 48 && stored.All(Uri.IsHexDigit) ? $"http://{AliasHost}:{port}/#{stored.ToUpperInvariant()}" : null;
+    } } }
     public IPAddress Address { get { lock (gate) return session?.Address; } }
     // Optional: a persisted pairing secret keeps the phone's link valid across
     // restarts and updates. It must return 48 hex characters; anything else
