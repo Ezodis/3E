@@ -1183,6 +1183,14 @@ int main(int argc, const char *argv[]) {
             NSCAssert([[book target:players fallback:@"com.spotify.client"] isEqualToString:@"com.spotify.client"] && [book state:@"com.spotify.client"]==0,@"After both pause, the next action must be play");
             [book commit:@"com.apple.Safari" playing:YES];
             NSCAssert([[book target:players fallback:@"com.spotify.client"] isEqualToString:@"com.apple.Safari"],@"Resuming a source must move it to the front");
+            PlaybackBook *recentBook=[PlaybackBook new];
+            [recentBook report:@"com.spotify.client" state:1]; [recentBook report:@"com.apple.Safari" state:1];
+            [recentBook report:@"com.apple.Safari" state:0];
+            NSCAssert([[recentBook target:players fallback:@"com.apple.Safari"] isEqualToString:@"com.spotify.client"],@"A still-playing source beats a paused one");
+            [recentBook report:@"com.spotify.client" state:0];
+            NSCAssert([[recentBook target:players fallback:@"com.apple.Safari"] isEqualToString:@"com.spotify.client"],@"When all are paused, the last one played stays displayed");
+            [recentBook report:@"com.ableton.live" state:0];
+            NSCAssert([[recentBook target:dawPlayers fallback:@"com.ableton.live"] isEqualToString:@"com.spotify.client"],@"A focused but never-played app must not replace the last played media");
             NSCAssert([[book target:[NSSet setWithObject:@"com.spotify.client"] fallback:@"com.spotify.client"] isEqualToString:@"com.spotify.client"],@"Closed sources must never win");
             NSCAssert([book state:@"com.apple.Safari"]==-1,@"Exited sessions must lose their stale playback state");
             MusicView *view = [[MusicView alloc] initWithFrame:NSMakeRect(0, 0, 118, 30)];
