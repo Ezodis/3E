@@ -82,7 +82,7 @@ public sealed class PhoneBarModule : IDisposable {
             if (address != null && name?.Address?.Equals(address) == true) return;
             name?.Dispose(); name = null;
             if (address == null) return;
-            try { new TrackpadFirewall().OpenName(); } catch { }
+            try { new TrackpadFirewall(() => UsbOnly).OpenName(); } catch { }
             try { name = new PhoneNameResponder(address); } catch { /* The IP link keeps working without the name. */ }
         }
     }
