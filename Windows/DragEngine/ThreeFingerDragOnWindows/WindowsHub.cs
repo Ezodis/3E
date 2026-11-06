@@ -365,7 +365,7 @@ public sealed class WindowsHub : IDisposable {
 
     // Restarts the receiver after sleep or a network change so the saved link works.
     private void KeepPhoneBar() {
-        if (!phoneBar.NetworkAllowed) { if (phoneBar.Running) phoneBar.Stop(); return; }
+        if (!phoneBar.Available) { if (phoneBar.Running) phoneBar.Stop(); return; }
         if (!settings.PhoneBarAlwaysOn || disposed) return;
         try { phoneBar.EnsureRunning(); } catch (Exception ex) { Log(ex); }
     }
@@ -429,7 +429,7 @@ public sealed class WindowsHub : IDisposable {
     }
 
     private bool ShowPhoneNetworkRestriction() {
-        if (phoneBar.NetworkAllowed) return false;
+        if (phoneBar.Available) return false;
         phoneBar.Stop();
         MessageBox(IntPtr.Zero, PhoneBarNetworkPolicy.RestrictedStatus + "\n\nPhone control requires an incoming connection to this computer. Ask IT to approve a connection method before enabling it. Other 3£ controls remain available.", "3£ Phone Bar", 0x40 | ForegroundDialog);
         return true;
@@ -440,7 +440,7 @@ public sealed class WindowsHub : IDisposable {
         menu.Items.Add(new MenuFlyoutItem { Text = "3£ " + Version, IsEnabled = false });
         // One Track Phone row: click to turn it on or off; its icon makes a new link.
         // Left-clicking the tray icon shows the QR.
-        Toggle(phoneBar.NetworkAllowed ? "Track Phone" : "Track Phone — network restricted", phoneBar.Running, enabled => {
+        Toggle(phoneBar.NetworkAllowed ? "Track Phone" : phoneBar.UsbOnly ? "Track Phone — USB cable only" : "Track Phone — network restricted", phoneBar.Running, enabled => {
             if (ShowPhoneNetworkRestriction()) return;
             settings.PhoneBarAlwaysOn = enabled;
             if (enabled) phoneBar.EnsureRunning(); else phoneBar.Stop();

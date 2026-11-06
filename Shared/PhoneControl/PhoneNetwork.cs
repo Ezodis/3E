@@ -19,7 +19,9 @@ public static class PhoneNetwork {
     }
     public static IPAddress Choose(IEnumerable<PathInfo> candidates)=>candidates
         .OrderBy(p=>p.Kind=="usb"?0:p.Kind=="wifi"?1:2).ThenBy(p=>p.Gateway?0:1).Select(p=>p.Address).FirstOrDefault();
-    public static IPAddress Refresh() {
+    // usbOnly: a restricted host offers only a cabled phone link; Wi-Fi and
+    // Ethernet paths are left out of the snapshot, the QR routes and the firewall rule.
+    public static IPAddress Refresh(bool usbOnly=false) {
         try {
             var names=OperatingSystem.IsMacOS()?MacNames():new Dictionary<string,string>();
             var interfaces=NetworkInterface.GetAllNetworkInterfaces();
@@ -35,8 +37,9 @@ public static class PhoneNetwork {
                 foreach(var a in properties.UnicastAddresses.Where(a=>PhoneTrackpad.IsPrivateAddress(a.Address)))
                     found.Add(new(a.Address,kind,label,gateway));
             }
+            if(usbOnly)found.RemoveAll(p=>p.Kind!="usb");
             Volatile.Write(ref paths,found.ToArray());return Choose(found);
-        }catch{return Choose(Paths);}
+        }catch{return Choose(usbOnly?Paths.Where(p=>p.Kind=="usb"):Paths);}
     }
     public static object Describe(IPAddress local,int port) {
         var snapshot=Paths;var current=snapshot.FirstOrDefault(p=>p.Address.Equals(local));

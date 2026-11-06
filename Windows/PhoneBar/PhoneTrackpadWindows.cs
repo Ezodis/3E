@@ -18,6 +18,33 @@ using ThreeE.PhoneControl;
 namespace ThreeE.PhoneBar.Windows;
 
 public sealed class TrackpadFirewall : ITrackpadFirewall {
+    // USB-only hosts scope both rules to the cabled iPhone link: its local
+    // address, wired adapters, and the phone itself (the link's gateway).
+    private readonly Func<bool> usbOnly;
+    public TrackpadFirewall(Func<bool> usbOnly = null) { this.usbOnly = usbOnly ?? (() => false); }
+    private static IPAddress[] UsbAddresses() => PhoneNetwork.Paths.Where(p => p.Kind == "usb").Select(p => p.Address).ToArray();
+    public static string UsbPhones(IPAddress[] usb) {
+        try {
+            var phones = NetworkInterface.GetAllNetworkInterfaces().Where(n => n.OperationalStatus == OperationalStatus.Up)
+                .Select(n => n.GetIPProperties()).Where(p => p.UnicastAddresses.Any(a => usb.Contains(a.Address)))
+                .SelectMany(p => p.GatewayAddresses.Select(g => g.Address))
+                .Where(a => a.AddressFamily == AddressFamily.InterNetwork && !a.Equals(IPAddress.Any)).Select(a => a.ToString()).Distinct().ToArray();
+            return phones.Length > 0 ? string.Join(",", phones) : "LocalSubnet";
+        } catch { return "LocalSubnet"; }
+    }
+    private void Scope(dynamic rule, IPAddress address) {
+        if (usbOnly()) {
+            var usb = UsbAddresses();
+            if (address != null && !usb.Contains(address)) usb = usb.Append(address).ToArray();
+            if (usb.Length == 0) throw new InvalidOperationException("No iPhone USB link to allow.");
+            rule.LocalAddresses = string.Join(",", usb.Select(a => a.ToString()));
+            rule.RemoteAddresses = UsbPhones(usb);
+            rule.InterfaceTypes = "LAN";
+        } else {
+            if (address != null) rule.LocalAddresses = string.Join(",",PhoneNetwork.Paths.Select(p=>p.Address.ToString()).Append(address.ToString()).Distinct());
+            rule.RemoteAddresses = "LocalSubnet";
+        }
+    }
     public void Open(IPAddress address, int port) {
         dynamic policy = Activator.CreateInstance(Type.GetTypeFromProgID("HNetCfg.FwPolicy2"));
         dynamic rule = Activator.CreateInstance(Type.GetTypeFromProgID("HNetCfg.FWRule"));
@@ -26,7 +53,7 @@ public sealed class TrackpadFirewall : ITrackpadFirewall {
             rule.Name = PhoneTrackpad.FirewallName;
             rule.Description = "Optional local iPhone trackpad. Open only during a manually started session.";
             rule.Protocol = 6; rule.LocalPorts = port.ToString();
-            rule.LocalAddresses = string.Join(",",PhoneNetwork.Paths.Select(p=>p.Address.ToString()).Append(address.ToString()).Distinct()); rule.RemoteAddresses = "LocalSubnet";
+            Scope(rule, address);
             rule.Direction = 1; rule.Action = 1; rule.Profiles = int.MaxValue;
             rule.EdgeTraversal = false; rule.Enabled = true;
             policy.Rules.Add(rule);
@@ -40,7 +67,8 @@ public sealed class TrackpadFirewall : ITrackpadFirewall {
             policy.Rules.Remove(NameRule);
             rule.Name = NameRule;
             rule.Description = "Answers 3e-win.local for the Track Phone receiver while it runs.";
-            rule.Protocol = 17; rule.LocalPorts = "5353"; rule.RemoteAddresses = "LocalSubnet";
+            rule.Protocol = 17; rule.LocalPorts = "5353";
+            if (usbOnly()) Scope(rule, null); else rule.RemoteAddresses = "LocalSubnet";
             rule.Direction = 1; rule.Action = 1; rule.Profiles = int.MaxValue; rule.EdgeTraversal = false; rule.Enabled = true;
             policy.Rules.Add(rule);
         } finally { Marshal.FinalReleaseComObject(rule); Marshal.FinalReleaseComObject(policy); }

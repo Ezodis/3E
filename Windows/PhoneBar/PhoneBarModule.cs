@@ -14,8 +14,12 @@ public sealed class PhoneBarModule : IDisposable {
     private PhoneMediaState media;
     private OutputVolume volume;
     public bool Running => receiver?.Running ?? false;
+    // Full network access (also gates public updates, whose installer opens LAN rules).
     public bool NetworkAllowed => PhoneBarNetworkPolicy.AllowsInbound();
-    public string Status => NetworkAllowed ? receiver?.Status ?? "Off" : PhoneBarNetworkPolicy.RestrictedStatus;
+    // Wired-only hosts still run Phone Bar, restricted to the iPhone USB link.
+    public bool UsbOnly => PhoneBarNetworkPolicy.Access() == PhoneBarAccess.UsbOnly;
+    public bool Available => PhoneBarNetworkPolicy.Access() != PhoneBarAccess.Blocked;
+    public string Status => Available ? receiver?.Status ?? (UsbOnly ? PhoneBarNetworkPolicy.UsbOnlyStatus : "Off") : PhoneBarNetworkPolicy.RestrictedStatus;
     public string NamedUrl => receiver?.NamedUrl;
     private static string LinkPath => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "3EWindows", "phone-link.txt");
 
@@ -39,9 +43,13 @@ public sealed class PhoneBarModule : IDisposable {
         if(receiver==null)AbletonIntegration.Install();
         media ??= new();
         volume ??= new(WindowsOutputVolume.Read,WindowsOutputVolume.Write);
-        receiver ??= new(PhoneTrackpad.GetLocalAddress,
+        // Wired first: the USB link wins whenever the cable is in; unplugging
+        // falls back to Wi-Fi with the same link (on hosts that allow Wi-Fi).
+        receiver ??= new(() => PhoneNetwork.Refresh(UsbOnly),
             new NativeTrackpadInput(()=>new {media=media?.State},action=>media?.Send(action),()=>volume?.State,level=>volume?.Set(level),()=>volume?.CancelPending(),()=>volume?.Refresh()),
-            new TrackpadFirewall(), PhoneTrackpad.Port) { TokenProvider = StoredToken, AliasHost = PhoneNameResponder.Name, FollowNetwork = true,
+            new TrackpadFirewall(() => UsbOnly), PhoneTrackpad.Port) { TokenProvider = StoredToken, AliasHost = PhoneNameResponder.Name, FollowNetwork = true,
+              AcceptLocal = local => !UsbOnly || PhoneNetwork.Paths.Any(p => p.Kind == "usb" && p.Address.Equals(local)),
+              NoNetworkStatus = UsbOnly ? PhoneBarNetworkPolicy.UsbOnlyStatus : null,
               PreferencesPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "3EWindows", "phone-settings.json") };
         // The link stays http://3e-win.local:17833/#secret; when DHCP or a new
         // Wi-Fi changes the IP, the receiver rebinds and the name follows it.
@@ -51,7 +59,7 @@ public sealed class PhoneBarModule : IDisposable {
 
     // Starts (or restarts after a network change) without showing the popup.
     public bool EnsureRunning() {
-        if (!NetworkAllowed) { Stop(); return false; }
+        if (!Available) { Stop(); return false; }
         EnsureReceiver();
         media ??= new();
         volume ??= new(WindowsOutputVolume.Read,WindowsOutputVolume.Write);
@@ -62,7 +70,7 @@ public sealed class PhoneBarModule : IDisposable {
     }
 
     private void OnAddressChanged() {
-        if (!NetworkAllowed) { Stop(); return; }
+        if (!Available) { Stop(); return; }
         var current = receiver;
         if (current == null || disposed) return;
         if (current.Running) PhonePowerTuning.Begin();
@@ -80,7 +88,7 @@ public sealed class PhoneBarModule : IDisposable {
     }
 
     public void Show() {
-        if (!NetworkAllowed) { Stop(); return; }
+        if (!Available) { Stop(); return; }
         EnsureRunning();
         popup ??= new(receiver);
         popup.Show();

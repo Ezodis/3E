@@ -68,6 +68,11 @@ public sealed class PhoneTrackpad : IDisposable {
     // network returns. Explicit Stop() always ends it. Combined with a
     // persisted TokenProvider and an mDNS AliasHost, the NamedUrl never changes.
     public bool FollowNetwork { get; init; }
+    // Optional: only requests received on a local address this returns true
+    // for are served (loopback health probes always are). Null serves every adapter.
+    public Func<IPAddress, bool> AcceptLocal { get; init; }
+    // Optional text shown while no permitted network is connected.
+    public string NoNetworkStatus { get; init; }
     // Identifies the phone page this receiver serves. A phone page that
     // reconnects to a receiver reporting a different build reloads itself
     // once, so an update to the computer reaches the phone without a manual
@@ -210,7 +215,7 @@ public sealed class PhoneTrackpad : IDisposable {
         Session candidate = null;
         try {
             var address = addressProvider();
-            if (address == null) { status = FollowNetwork ? "No local network — starts automatically when Wi-Fi or USB tethering connects." : "No local network — connect to Wi-Fi or USB tethering, then try again."; return false; }
+            if (address == null) { status = NoNetworkStatus ?? (FollowNetwork ?"No local network — starts automatically when Wi-Fi or USB tethering connects." : "No local network — connect to Wi-Fi or USB tethering, then try again."); return false; }
             var token = SessionToken();
             candidate = new Session(address, port, token, AliasHost);
             if (OperatingSystem.IsWindows()) {
@@ -372,6 +377,13 @@ public sealed class PhoneTrackpad : IDisposable {
         try {
             while (!owner.Cancel.IsCancellationRequested) {
                 var context = await owner.Listener.GetContextAsync();
+                // A restricted host (USB-only) drops anything that reached the
+                // wildcard listener through another adapter, whatever its Host header.
+                var local = context.Request.LocalEndPoint?.Address;
+                if (AcceptLocal != null && (local == null || !IPAddress.IsLoopback(local) && !AcceptLocal(local))) {
+                    try { context.Response.Abort(); } catch { }
+                    continue;
+                }
                 // Health replies must not wait for page downloads or uploads.
                 if (context.Request.HttpMethod == "GET" && context.Request.Url.AbsolutePath == "/alive" && owner.IsHost(context.Request.Headers["Host"])) {
                     try { ReplyAlive(owner, context); } catch { try { context.Response.Abort(); } catch { } }

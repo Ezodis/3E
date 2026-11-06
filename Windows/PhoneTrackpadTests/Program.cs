@@ -369,11 +369,15 @@ Check(fake.Commands.Contains("history:-1") && fake.Commands.Contains("zoom:1"),"
         Check(ThreeE.PhoneBar.Windows.PhoneBarNetworkPolicy.AllowsInbound(policy),"An unconfigured host retains Phone Bar support");
         File.WriteAllText(policy,"{\"mode\":\"local-only\"}");
         Check(!ThreeE.PhoneBar.Windows.PhoneBarNetworkPolicy.AllowsInbound(policy),"Local-only deployment blocks inbound Phone Bar");
+        Check(ThreeE.PhoneBar.Windows.PhoneBarNetworkPolicy.Access(policy)==ThreeE.PhoneBar.Windows.PhoneBarAccess.UsbOnly,"Local-only deployment still allows a cabled iPhone");
+        File.WriteAllText(policy,"{\"mode\":\"none\"}");
+        Check(ThreeE.PhoneBar.Windows.PhoneBarNetworkPolicy.Access(policy)==ThreeE.PhoneBar.Windows.PhoneBarAccess.Blocked,"A 'none' deployment turns Phone Bar off, even by cable");
         File.WriteAllText(policy,"{\"mode\":\"allow-inbound\"}");
         Check(ThreeE.PhoneBar.Windows.PhoneBarNetworkPolicy.AllowsInbound(policy),"An explicitly permitted deployment supports Phone Bar");
         foreach(var invalid in new[]{"{","{}","{\"mode\":\"typo\"}"}) {
             File.WriteAllText(policy,invalid);
             Check(!ThreeE.PhoneBar.Windows.PhoneBarNetworkPolicy.AllowsInbound(policy),"An invalid deployment policy never enables incoming access");
+            Check(ThreeE.PhoneBar.Windows.PhoneBarNetworkPolicy.Access(policy)==ThreeE.PhoneBar.Windows.PhoneBarAccess.Blocked,"An invalid deployment policy never enables a USB listener");
         }
     } finally { if(File.Exists(policy))File.Delete(policy); }
 }
