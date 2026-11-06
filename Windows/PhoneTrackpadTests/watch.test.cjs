@@ -7,7 +7,7 @@ const elements = new Map(), requests = [], timers = new Map();
 let frame, time=1000, timerId=0, failNext=false, replaceNext=false, waitCommands=false, finishCommand;
 const idle = () => new Promise(resolve => setImmediate(resolve));
 function element(id) {
-  if (!elements.has(id)) elements.set(id,{value:'3',handlers:{},disabled:true,
+  if (!elements.has(id)) elements.set(id,{value:'3',handlers:{},dataset:{},disabled:true,
     classList:{add(){},remove(){},toggle(){}},setAttribute(){},addEventListener(type,fn){this.handlers[type]=fn;}});
   return elements.get(id);
 }

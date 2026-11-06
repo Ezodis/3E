@@ -5,7 +5,7 @@ function phone(local = {}, remote = {}) {
   const elements = new Map(), sent = [], saved = new Map(), timers = new Map();
   let time = 1000, socket, nextTimer = 0;
   function element(id) {
-    if (!elements.has(id)) elements.set(id, { value:'3', handlers:{}, classList:{add(){},remove(){},toggle(){}},
+    if (!elements.has(id)) elements.set(id, { value:'3', handlers:{}, dataset:{}, classList:{add(){},remove(){},toggle(){}},
       addEventListener(type, fn){this.handlers[type]=fn;}, setAttribute(){} });
     return elements.get(id);
   }

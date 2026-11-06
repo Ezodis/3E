@@ -4,7 +4,7 @@
 const assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm'),path=require('node:path');
 const source=fs.readFileSync(path.join(__dirname,'../../Shared/PhoneControl/Web/PhoneTrackpad.js'),'utf8');
 const elements=new Map(),sockets=[],timers=new Map();let time=1000,nextTimer=0;
-function element(id){if(!elements.has(id))elements.set(id,{value:'3',handlers:{},disabled:true,hidden:true,textContent:'',classList:{add(){},remove(){},toggle(){}},addEventListener(type,fn){this.handlers[type]=fn;},setAttribute(){}});return elements.get(id);}
+function element(id){if(!elements.has(id))elements.set(id,{value:'3',handlers:{},dataset:{},disabled:true,hidden:true,textContent:'',classList:{add(){},remove(){},toggle(){}},addEventListener(type,fn){this.handlers[type]=fn;},setAttribute(){}});return elements.get(id);}
 const doc={hidden:false,handlers:{},documentElement:element('html'),getElementById:element,addEventListener(type,fn){this.handlers[type]=fn;}};
 const win={innerWidth:390,handlers:{},matchMedia(){return{matches:false};},addEventListener(type,fn){this.handlers[type]=fn;}};
 class Socket{static OPEN=1;constructor(){sockets.push(this);this.readyState=1;this.bufferedAmount=0;this.sent=[];}send(text){this.sent.push(JSON.parse(text));}close(){this.readyState=3;}}

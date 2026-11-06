@@ -7,7 +7,7 @@ let checks=0;const check=(value,label)=>{assert.ok(value,label);checks++;};
 
 function page({watch=false,build='aaaa',storage=new Map()}={}){
   const elements=new Map(),timers=new Map(),sent=[],pages=[];let pageDown=0;let time=1000,clock=1_000_000,nextTimer=0,ws=null,reloads=0,hostBuild=build;
-  const element=id=>{if(!elements.has(id))elements.set(id,{id,value:'3',handlers:{},disabled:true,hidden:true,textContent:'',classList:{add(){},remove(){},toggle(){}},addEventListener(type,fn){this.handlers[type]=fn;},setAttribute(){}});return elements.get(id);};
+  const element=id=>{if(!elements.has(id))elements.set(id,{id,value:'3',handlers:{},dataset:{},disabled:true,hidden:true,textContent:'',classList:{add(){},remove(){},toggle(){}},addEventListener(type,fn){this.handlers[type]=fn;},setAttribute(){}});return elements.get(id);};
   const doc={hidden:false,handlers:{},activeElement:null,documentElement:element('html'),getElementById:element,addEventListener(type,fn){this.handlers[type]=fn;}};
   const dock={held:false},surface={held:false};
   const win={innerWidth:390,handlers:{},ThreeEHost:{platform:'windows',build},matchMedia(){return{matches:watch};},addEventListener(type,fn){this.handlers[type]=fn;},
