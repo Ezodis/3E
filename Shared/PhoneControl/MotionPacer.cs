@@ -11,7 +11,10 @@ namespace ThreeE.PhoneControl;
 //
 // The replay delay adapts to the network: on a steady link it is zero (moves
 // apply on arrival), and it only grows (up to MaxPlayout) by as much jitter as
-// is actually measured. A new gesture after a pause always starts immediately.
+// is actually measured. A new gesture after a pause always starts immediately,
+// and it keeps what earlier gestures learned about the link: forgetting it at
+// every pause made the start of each gesture jumpy until the jitter was
+// measured again. Only a new connection starts over.
 // Clicks, presses and every other command first apply all pending motion, so
 // a click never lands before the motion that preceded it.
 public sealed class MotionPacer : IDisposable {
@@ -25,15 +28,26 @@ public sealed class MotionPacer : IDisposable {
         // Host time at which a move stamped phoneTime should be applied.
         public double Due(double phoneTime, double hostNow) {
             double sample = hostNow - phoneTime; // one-way delay + clock offset
-            if (double.IsNaN(offset) || hostNow - lastArrival > ResetGap) { offset = sample; jitter = 0; }
-            else if (sample < offset) offset = sample;            // fastest delivery seen
-            else offset += (sample - offset) * 0.005;             // follow slow clock drift
+            bool resumed = double.IsNaN(offset) || hostNow - lastArrival > ResetGap;
             lastArrival = hostNow;
-            // Peak lateness, fading about 1% per packet (~1-2 s): covers a whole
-            // clump with one steady delay, then shrinks again on a calm link.
+            if (resumed) {
+                // First move after a pause applies now. It is often late (the
+                // radios were dozing), so the moves bunched up behind it are
+                // replayed from it at the finger's pace. The learned jitter is
+                // kept, so the gesture is smooth from its first clump.
+                offset = sample;
+                return hostNow;
+            }
+            if (sample < offset) offset = sample;                 // fastest delivery seen
+            else offset += (sample - offset) * 0.005;             // follow slow clock drift
+            // Peak lateness, fading about 1% per packet (~1-2 s of motion):
+            // covers a whole clump with one steady delay, then shrinks again
+            // on a calm link. Pauses keep it, so the next gesture starts smooth.
             jitter = Math.Max(Math.Max(0, sample - offset), jitter * 0.99);
             return phoneTime + offset + Playout;
         }
+        // A new connection: its clock and link may differ from the last one.
+        public void Reset() { offset = double.NaN; jitter = 0; lastArrival = double.NegativeInfinity; }
     }
 
     private readonly object gate;
@@ -77,6 +91,9 @@ public sealed class MotionPacer : IDisposable {
 
     // Drops pending motion (the phone disconnected or released).
     public void Clear() { lock (queue) queue.Clear(); }
+
+    // A different connection: forget the previous link's timing as well.
+    public void Restart() { lock (queue) { queue.Clear(); schedule.Reset(); } }
 
     private void DrainLocked() {
         while (queue.Count > 0) { var (_, x, y) = queue.Dequeue(); try { apply(x, y); } catch { } }

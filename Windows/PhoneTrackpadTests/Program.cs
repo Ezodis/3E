@@ -58,7 +58,9 @@ async Task<ClientWebSocket> Connect(string url, string token = null, string orig
     return ws;
 }
 async Task Send(ClientWebSocket ws, string text) => await ws.SendAsync(Encoding.UTF8.GetBytes(text), WebSocketMessageType.Text, true, CancellationToken.None);
-async Task<string> Receive(ClientWebSocket ws) { using var timeout = new CancellationTokenSource(3000); var buffer = new byte[2048]; var result = await ws.ReceiveAsync(buffer, timeout.Token); return Encoding.UTF8.GetString(buffer, 0, result.Count); }
+async Task<string> ReceiveFrame(ClientWebSocket ws) { using var timeout = new CancellationTokenSource(3000); var buffer = new byte[2048]; var result = await ws.ReceiveAsync(buffer, timeout.Token); return Encoding.UTF8.GetString(buffer, 0, result.Count); }
+// Skips the receiver's empty keep-awake frames.
+async Task<string> Receive(ClientWebSocket ws) { string text; do text = await ReceiveFrame(ws); while (text == "{}"); return text; }
 
 // Preview mode exercises the real server and resource delivery, but never injects input or opens the firewall.
 // The receiver runs in a child process so an "update" is simulated faithfully:
@@ -262,11 +264,35 @@ Check(fake.Commands.Contains("history:-1") && fake.Commands.Contains("zoom:1"),"
     var gaps = clump.Zip(clump.Skip(1), (a, b) => b - a).ToArray();
     Check(bursty.Playout > 0 && bursty.Playout <= MotionPacer.MaxPlayout && gaps.All(g => Math.Abs(g - 8) < 1), "Clumped Wi-Fi packets are spread back out to the finger's 8 ms pace (playout " + bursty.Playout.ToString("0.0") + " ms)");
     Check(bursty.Due(5000, 10000) == 10000, "After a pause a new gesture starts immediately again");
+    // The next gesture keeps the jitter learned before the pause, so its first
+    // clump is already spread out instead of jumping while it is re-measured.
+    double learned = bursty.Playout;
+    Check(learned > 0, "The learned Wi-Fi jitter survives a pause between gestures (" + learned.ToString("0.0") + " ms)");
+    var resumed = Enumerable.Range(1, 4).Select(i => bursty.Due(5000 + i * 8, 10000 + 32)).ToArray();
+    var resumedGaps = resumed.Zip(resumed.Skip(1), (a, b) => b - a).ToArray();
+    Check(resumedGaps.All(g => Math.Abs(g - 8) < 1), "The first clump of the next gesture is replayed at the finger's pace");
+    bursty.Reset();
+    Check(bursty.Playout == 0 && bursty.Due(0, 20000) == 20000, "A new connection starts with no inherited delay");
     var order = new List<string>(); var lockObject = new object();
     using (var pacer = new MotionPacer(lockObject, (x, y) => { lock (order) order.Add("move " + x); })) {
         lock (lockObject) { pacer.Move(1, 0, 0); pacer.Move(2, 0, 100); pacer.Move(3, 0, 200); pacer.Flush(); order.Add("click"); }
     }
     Check(string.Join(",", order) == "move 1,move 2,move 3,click", "A click waits for the motion before it, so it lands where the pointer went (" + string.Join(",", order) + ")");
+}
+{
+    // While the phone is in use the receiver sends tiny keep-awake frames so
+    // dozing Wi-Fi radios do not clump the next moves; an idle page gets none.
+    using var awake = new PhoneTrackpad(() => IPAddress.Loopback, new FakeInput(), new FakeFirewall(), FreePort());
+    Check(awake.Start(), "Keep-awake receiver starts");
+    using var phone = await Connect(awake.PairingUrl, controller: "0123456789abcdef0123456789abcdef");
+    Check((await Receive(phone)).Contains("ready"), "Keep-awake phone connects");
+    await Send(phone, "{\"type\":\"move\",\"x\":1,\"y\":0,\"t\":1}");
+    var frames = new List<string>(); var awakeClock = System.Diagnostics.Stopwatch.StartNew();
+    while (awakeClock.ElapsedMilliseconds < 400) frames.Add(await ReceiveFrame(phone));
+    Check(frames.Count(f => f == "{}") >= 4, "In use, the receiver keeps the Wi-Fi link awake (" + frames.Count + " frames in 400 ms)");
+    await Send(phone, "{\"type\":\"ping\"}");
+    Check((await Receive(phone)).Contains("pong"), "Heartbeat replies still arrive between keep-awake frames");
+    awake.Stop();
 }
 {
     // Phone settings are stored on the computer, survive a restart, and need the pairing secret.

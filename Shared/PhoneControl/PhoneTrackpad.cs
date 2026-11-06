@@ -27,6 +27,8 @@ public sealed class PhoneTrackpad : IDisposable {
     private readonly object gate = new();
     // Replays pointer motion at the phone's pace (see MotionPacer).
     private MotionPacer pacer;
+    // Keep-awake tick while the phone is in use (see ControlAsync).
+    public const int KeepAwake = 50, KeepAwakeIdle = 30000;
     private MotionPacer Pacer => pacer ??= new MotionPacer(gate, (x, y) => input.Move(x, y));
     private readonly Func<IPAddress> addressProvider;
     private readonly ITrackpadInput input;
@@ -815,6 +817,7 @@ input{width:100%;padding:13px;border:1px solid #415260;border-radius:10px;backgr
                     bool switched = owner.LastClient != null && owner.LastClient != client && (owner.Controller != null || owner.HttpController != null);
                     TakeOverLocked(owner, client);
                     owner.Controller = ws; owner.ControllerClient = client; acquired = true;
+                    pacer?.Restart(); // a new link: learn its timing afresh
                     status = switched ? "Switched to the newest phone" : "Connected to your phone";
                 }
             }
@@ -822,7 +825,31 @@ input{width:100%;padding:13px;border:1px solid #415260;border-radius:10px;backgr
             // Connecting the trackpad must not wait on native MIDI driver discovery.
             // The MIDI surface requests the full description when it opens.
             string lastHost = HostInfo(local, false);
-            await ws.SendAsync(Encoding.UTF8.GetBytes("{\"ready\":true,\"build\":" + JsonSerializer.Serialize(Build) + ",\"host\":" + lastHost + "}"), WebSocketMessageType.Text, true, owner.Cancel.Token);
+            // One send at a time on this socket: replies and the keep-awake tick share it.
+            using var sending = new SemaphoreSlim(1);
+            async Task Send(string text) {
+                await sending.WaitAsync(owner.Cancel.Token);
+                try { await ws.SendAsync(Encoding.UTF8.GetBytes(text), WebSocketMessageType.Text, true, owner.Cancel.Token); }
+                finally { sending.Release(); }
+            }
+            await Send("{\"ready\":true,\"build\":" + JsonSerializer.Serialize(Build) + ",\"host\":" + lastHost + "}");
+            // Wi-Fi radios doze between packets (the computer's especially, on
+            // battery); the access point then holds the phone's moves and hands
+            // them over in clumps, which makes the start of a gesture laggy and
+            // uneven. While the phone is in use, a tiny frame every KeepAwake ms
+            // keeps both radios listening. It stops after KeepAwakeIdle without
+            // input, so an idle open page costs nothing extra.
+            long lastInput = Environment.TickCount64;
+            using var keeping = CancellationTokenSource.CreateLinkedTokenSource(owner.Cancel.Token);
+            var keepAwake = Task.Run(async () => {
+                try {
+                    while (ws.State == WebSocketState.Open) {
+                        await Task.Delay(KeepAwake, keeping.Token);
+                        if (Environment.TickCount64 - Interlocked.Read(ref lastInput) < KeepAwakeIdle) await Send("{}");
+                    }
+                } catch { /* closing */ }
+            });
+            try {
             var rateStart = Environment.TickCount64;
             var count = 0;
             while (ws.State == WebSocketState.Open) {
@@ -830,6 +857,7 @@ input{width:100%;padding:13px;border:1px solid #415260;border-radius:10px;backgr
                 var now = Environment.TickCount64;
                 if (now - rateStart >= 1000) { rateStart = now; count = 0; }
                 if (++count > 600) throw new InvalidDataException("Too many commands.");
+                Interlocked.Exchange(ref lastInput, now);
                 lock (gate) {
                     if (session != owner || owner.Controller != ws) return;
                     var root = message.RootElement;
@@ -847,11 +875,12 @@ input{width:100%;padding:13px;border:1px solid #415260;border-radius:10px;backgr
                     var host = HostInfo(local, false);
                     var reply = host == lastHost ? "{\"pong\":true}" : "{\"pong\":true,\"host\":" + host + "}";
                     lastHost = host;
-                    await ws.SendAsync(Encoding.UTF8.GetBytes(reply), WebSocketMessageType.Text, true, owner.Cancel.Token);
+                    await Send(reply);
                 }
                 if (message.RootElement.GetProperty("type").GetString() is "midiPort" or "info")
-                    await ws.SendAsync(Encoding.UTF8.GetBytes("{\"host\":"+HostInfo(local, true)+"}"), WebSocketMessageType.Text, true, owner.Cancel.Token);
+                    await Send("{\"host\":"+HostInfo(local, true)+"}");
             }
+            } finally { keeping.Cancel(); try { await keepAwake; } catch { } }
         } catch { /* Disconnects, sleep and malformed packets affect only this controller. */ }
         finally {
             lock (gate) {

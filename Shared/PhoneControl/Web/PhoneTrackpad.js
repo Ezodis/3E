@@ -307,7 +307,8 @@
         else if (message.error === 'replaced') recover(REPLACED,true);
         else if (message.error === 'busy') recover('Another device is connected — waiting…');
         else if (message.ready && !ready) connected();
-        else if (message.pong) lastReply = performance.now();
+        // Pongs and the receiver's keep-awake frames both prove the link is alive.
+        else if (ready) lastReply = performance.now();
       } catch { recover('Connection interrupted — reconnecting…'); }
     };
     next.onclose = () => { if (socket === next) recover('Connection interrupted — reconnecting…'); };
