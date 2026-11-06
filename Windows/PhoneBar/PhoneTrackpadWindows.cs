@@ -32,12 +32,14 @@ public sealed class TrackpadFirewall : ITrackpadFirewall {
             return phones.Length > 0 ? string.Join(",", phones) : "LocalSubnet";
         } catch { return "LocalSubnet"; }
     }
-    private void Scope(dynamic rule, IPAddress address) {
+    // mDNS questions are addressed to the multicast group, not to this
+    // computer, so the name rule must also accept 224.0.0.251 as local.
+    private void Scope(dynamic rule, IPAddress address, bool multicast = false) {
         if (usbOnly()) {
             var usb = UsbAddresses();
             if (address != null && !usb.Contains(address)) usb = usb.Append(address).ToArray();
             if (usb.Length == 0) throw new InvalidOperationException("No iPhone USB link to allow.");
-            rule.LocalAddresses = string.Join(",", usb.Select(a => a.ToString()));
+            rule.LocalAddresses = string.Join(",", usb.Select(a => a.ToString()).Concat(multicast ? new[] { "224.0.0.251" } : Array.Empty<string>()));
             rule.RemoteAddresses = UsbPhones(usb);
             rule.InterfaceTypes = "LAN";
         } else {
@@ -68,7 +70,7 @@ public sealed class TrackpadFirewall : ITrackpadFirewall {
             rule.Name = NameRule;
             rule.Description = "Answers 3e-win.local for the Track Phone receiver while it runs.";
             rule.Protocol = 17; rule.LocalPorts = "5353";
-            if (usbOnly()) Scope(rule, null); else rule.RemoteAddresses = "LocalSubnet";
+            if (usbOnly()) Scope(rule, null, multicast: true); else rule.RemoteAddresses = "LocalSubnet";
             rule.Direction = 1; rule.Action = 1; rule.Profiles = int.MaxValue; rule.EdgeTraversal = false; rule.Enabled = true;
             policy.Rules.Add(rule);
         } finally { Marshal.FinalReleaseComObject(rule); Marshal.FinalReleaseComObject(policy); }
