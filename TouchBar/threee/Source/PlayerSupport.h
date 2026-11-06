@@ -2,6 +2,7 @@
 #import <ApplicationServices/ApplicationServices.h>
 #import <CoreAudio/CoreAudio.h>
 #import <libproc.h>
+#import <dlfcn.h>
 static NSString *ServiceForURL(NSString *url) {
     if(![url isKindOfClass:NSString.class] || !url.length) return nil;
     NSString *host = [NSURLComponents componentsWithString:url].host.lowercaseString;
@@ -340,6 +341,17 @@ static BOOL IsAudioMediaPlayer(NSString *bundle) {
 // bundle -> @1 while sending audio, @0 when its audio stream is idle.
 static NSDictionary<NSString *, NSNumber *> *AudioOutputPlayers(void) {
     NSMutableDictionary *result = [NSMutableDictionary dictionary];
+    // Resolved at runtime so every target that includes this header links
+    // without adding CoreAudio to its build line.
+    typedef OSStatus (*SizeFn)(AudioObjectID, const AudioObjectPropertyAddress *, UInt32, const void *, UInt32 *);
+    typedef OSStatus (*DataFn)(AudioObjectID, const AudioObjectPropertyAddress *, UInt32, const void *, UInt32 *, void *);
+    static SizeFn AudioObjectGetPropertyDataSize; static DataFn AudioObjectGetPropertyData; static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        void *coreAudio = dlopen("/System/Library/Frameworks/CoreAudio.framework/CoreAudio", RTLD_LAZY);
+        AudioObjectGetPropertyDataSize = coreAudio ? (SizeFn)dlsym(coreAudio, "AudioObjectGetPropertyDataSize") : NULL;
+        AudioObjectGetPropertyData = coreAudio ? (DataFn)dlsym(coreAudio, "AudioObjectGetPropertyData") : NULL;
+    });
+    if (!AudioObjectGetPropertyDataSize || !AudioObjectGetPropertyData) return result;
     AudioObjectPropertyAddress list = {'prs#', kAudioObjectPropertyScopeGlobal, kAudioObjectPropertyElementMain};
     UInt32 size = 0;
     if (AudioObjectGetPropertyDataSize(kAudioObjectSystemObject, &list, 0, NULL, &size) || !size) return result;
