@@ -88,6 +88,8 @@ node (Join-Path $PSScriptRoot 'PhoneTrackpadTests\trackpad.test.cjs')
 if ($LASTEXITCODE -ne 0) { throw 'Phone trackpad gesture tests failed.' }
 node (Join-Path $PSScriptRoot 'PhoneTrackpadTests\pinch.test.cjs')
 if ($LASTEXITCODE -ne 0) { throw 'Phone pinch direction regression tests failed.' }
+node (Join-Path $PSScriptRoot 'PhoneTrackpadTests\pairing.test.cjs')
+if ($LASTEXITCODE -ne 0) { throw 'USB pairing route checks failed.' }
 node (Join-Path $PSScriptRoot 'PhoneTrackpadTests\dock.test.cjs')
 if ($LASTEXITCODE) { throw 'Phone dock tests failed.' }
 node (Join-Path $PSScriptRoot 'PhoneTrackpadTests\watch.test.cjs')

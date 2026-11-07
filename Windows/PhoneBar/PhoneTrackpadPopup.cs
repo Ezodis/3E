@@ -13,6 +13,7 @@ namespace ThreeE.PhoneBar.Windows;
 public sealed class PhoneTrackpadPopup : IDisposable {
     private const string ClassName = "3EWindows.PhoneTrackpadPopup";
     private readonly PhoneTrackpad receiver;
+    private readonly Func<bool> usbOnly;
     private readonly WindowProc callback;
     private IntPtr window;
     private Bitmap card;
@@ -20,7 +21,7 @@ public sealed class PhoneTrackpadPopup : IDisposable {
     private float scale = 1;
     private int width, height;
     private bool visible;
-    public PhoneTrackpadPopup(PhoneTrackpad receiver) { this.receiver = receiver; callback = HandleMessage; }
+    public PhoneTrackpadPopup(PhoneTrackpad receiver, Func<bool> usbOnly = null) { this.receiver = receiver; this.usbOnly = usbOnly ?? (() => false); callback = HandleMessage; }
     private int Px(int value) => (int)Math.Round(value * scale);
 
     public void Show() {
@@ -54,9 +55,7 @@ public sealed class PhoneTrackpadPopup : IDisposable {
         DwmSetWindowAttribute(window, 33, ref corners, sizeof(int));
     }
 
-    // Prefer the stable name link (same QR on every network/IP); fall back to
-    // the direct IP link only when no name is served.
-    private string Link => receiver.NamedUrl ?? receiver.PairingUrl;
+    private string Link => PhonePairingLink.ForQr(receiver.PairingUrl, receiver.NamedUrl, usbOnly());
 
     private void Refresh() {
         displayedLink = Link;

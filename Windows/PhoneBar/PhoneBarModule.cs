@@ -92,7 +92,7 @@ public sealed class PhoneBarModule : IDisposable {
     public void Show() {
         if (!Available) { Stop(); return; }
         EnsureRunning();
-        popup ??= new(receiver);
+        popup ??= new(receiver, () => UsbOnly);
         popup.Show();
     }
 

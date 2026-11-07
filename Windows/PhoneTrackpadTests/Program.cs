@@ -11,6 +11,19 @@ using ThreeE.PhoneBar.Windows;
 var results = new List<string>();
 // The ::error:: line becomes a CI annotation, so a failure is visible without the raw log.
 void Check(bool value, string name) { if (!value) { Console.WriteLine("::error::FAIL: " + name); throw new Exception("FAIL: " + name); } results.Add(name); Console.WriteLine("PASS: " + name); }
+{
+    var secret = new string('A', 48);
+    var direct = "http://172.20.10.5:17833/#" + secret;
+    var named = "http://3e-win.local:17833/#" + secret;
+    var wired = new Uri(ThreeE.PhoneBar.Windows.PhonePairingLink.ForQr(direct, named, true));
+    Check(wired.Host == "172.20.10.5" && wired.Port == 17833, "USB QR uses the active cable address instead of multicast DNS");
+    Check(wired.Query == "?usb=1" && wired.Fragment == "#" + secret, "USB QR pins the wired route and preserves the complete pairing secret");
+    Check(ThreeE.PhoneBar.Windows.PhonePairingLink.ForQr(null, named, true) == null, "A disconnected USB receiver shows its status instead of an unusable saved-name QR");
+    var replugged = new Uri(ThreeE.PhoneBar.Windows.PhonePairingLink.ForQr(direct.Replace("10.5", "10.7"), named, true));
+    Check(replugged.Host == "172.20.10.7" && replugged.Fragment == wired.Fragment, "Replugging updates the QR address without replacing the paired identity");
+    Check(ThreeE.PhoneBar.Windows.PhonePairingLink.ForQr(direct, named, false) == named, "Permitted LAN hosts retain the stable-name pairing link");
+    Check(ThreeE.PhoneBar.Windows.PhonePairingLink.ForQr(direct, null, false) == direct, "Hosts without a name retain direct-IP pairing");
+}
 Check(PhoneNetwork.ParseBridgeMembers("bridge100: flags\n\tmember: en9 flags=3<LEARNING,DISCOVER>\n\tmember: en3 flags=3<LEARNING,DISCOVER>\n").SequenceEqual(new[]{"en9","en3"}),"USB bridge membership uses explicit member names");
 Check(PhoneNetwork.ParseBridgeMembers("inet 192.168.234.1\nmember: bad;name flags=3\n").Length==0,"IP ranges and malformed bridge member names cannot identify USB");
 Check(PhoneNetwork.Kind("iPhone USB",NetworkInterfaceType.Ethernet)=="usb" && PhoneNetwork.Kind("Remote NDIS based Internet Sharing Device",NetworkInterfaceType.Ethernet)=="usb", "USB tether adapters are recognized on Mac and Windows");

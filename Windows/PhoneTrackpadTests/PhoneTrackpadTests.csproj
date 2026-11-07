@@ -4,6 +4,7 @@
     <ProjectReference Include="../../Shared/PhoneControl/PhoneControlCore.csproj" />
     <Compile Include="../PhoneBar/PhoneTrackpadWindows.cs" />
     <Compile Include="../PhoneBar/PhoneBarNetworkPolicy.cs" />
+    <Compile Include="../PhoneBar/PhonePairingLink.cs" />
     <Compile Include="../../Shared/PhoneControl/MacHost/MacPointerMotion.cs" />
     <Compile Include="../PhoneBar/PhoneMidiWindows.cs" />
     <Compile Include="../PhoneBar/PhoneNameResponder.cs" />
