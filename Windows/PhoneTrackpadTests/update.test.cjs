@@ -62,6 +62,7 @@ function page({watch=false,build='aaaa',storage=new Map()}={}){
       ['a three-finger drag',p=>{p.touch('touchstart',3);p.advance(150);p.touch('touchmove',3);},p=>p.touch('touchend',0)],
       ['the keyboard',p=>{p.doc.activeElement=p.element('typeSink');},p=>{p.doc.activeElement=null;}],
       ['the clipboard sheet',p=>{p.element('clipSheet').hidden=false;},p=>{p.element('clipSheet').hidden=true;}],
+      ['the keyboard panel with a blurred field',p=>{p.element('keyBar').hidden=false;},p=>{p.element('keyBar').hidden=true;}],
       ['the app switcher or volume slider',p=>{p.dock.held=true;},p=>{p.dock.held=false;}],
       ['a MIDI note or the studio',p=>{p.surface.held=true;},p=>{p.surface.held=false;}],
     ]){

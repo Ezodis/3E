@@ -45,9 +45,36 @@
 #commandsPane button.sent,#commandsPane button.picking{background:#a8e5cd;color:#0e2420}#commandsPane button.sent small,#commandsPane button.picking small{color:#0e2420}
 #commandsPane .pane-rule{grid-column:1/-1;height:1px;background:#405462;margin:2px 6px}
 #commandsPane button.tool{background:#1d3936;border-color:#4f7d72}#commandsPane button.tool kbd{display:flex;align-items:center;justify-content:center;height:22px}#commandsPane button.tool svg{width:24px;height:24px}
-#typeSink{position:fixed;top:0;left:0;width:1px;height:1px;padding:0;border:0;margin:0;opacity:.01;color:transparent;background:transparent;caret-color:transparent;resize:none;font-size:16px;pointer-events:none;z-index:0}
-#keyBar{position:fixed;left:0;right:0;top:0;z-index:4;display:flex;gap:4px;padding:6px max(8px,env(safe-area-inset-right)) 6px max(8px,env(safe-area-inset-left));background:#17222cf7;border-top:1px solid #405462;overflow-x:auto;scrollbar-width:none;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
-#keyBar::-webkit-scrollbar{display:none}#keyBar button{flex:1 1 0;min-width:0;min-height:42px;padding:4px 1px;font-size:14px;border-radius:10px;touch-action:none;white-space:nowrap}#keyBar button.done{flex:1.7 1 0}#keyBar button.held{background:#a8e5cd;color:#0e2420}#keyBar .done{background:#a8e5cd;color:#0e2420}
+/* One keyboard surface, anchored above the phone's native keyboard. */
+#commandsPane button.tool{grid-column:1/-1;flex-direction:row;gap:10px;min-height:48px}
+#commandsPane button.tool small{font-size:14px;color:#c5e7db}
+#keyBar{position:fixed;left:0;right:0;top:0;z-index:4;display:grid;gap:7px;padding:9px max(9px,env(safe-area-inset-right)) 7px max(9px,env(safe-area-inset-left));background:#17222cf7;border-top:1px solid #405462;box-shadow:0 -8px 30px #0003;overflow-y:auto;overscroll-behavior:contain;-webkit-user-select:none;user-select:none}
+#keyBar button{min-width:0;min-height:36px;margin:0;padding:5px;font-size:12px;border-radius:9px;white-space:nowrap}
+.key-navigation{display:grid;grid-template-columns:.8fr .8fr 2.5fr .85fr .85fr .85fr 1.15fr;gap:4px;align-items:stretch}
+.key-navigation>button{min-height:54px!important}.key-arrows{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:3px}.key-arrows>div{display:grid;grid-template-rows:1fr 1fr;gap:3px}
+#keyBar .key-navigation>[data-key="0"],#keyBar .key-navigation>[data-key="1"]{font-size:20px}
+#keyBar .key-arrows button{font-size:11px;padding:0;min-height:25px}.key-modifiers{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:5px}
+#keyBar [data-key],#keyBar [data-modifier]{touch-action:none;-webkit-touch-callout:none}
+#keyBar button.held,#keyBar button[aria-pressed=true],#keyBar .done{background:#a8e5cd;color:#0e2420;border-color:#a8e5cd}
+.function-keys{display:flex;gap:4px;overflow-x:auto;scrollbar-width:none}.function-keys button{flex:0 0 40px}
+.keyboard-transfer{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:8px;align-items:stretch}
+.keyboard-entry,#keyboardClipboard{min-width:0;border:1px solid #405e5b;border-radius:12px;background:#101c23;overflow:hidden}
+.keyboard-entry{display:flex;flex-direction:column}
+#typeSink{display:block;position:static;width:100%;min-height:64px;flex:1;padding:10px;border:0;margin:0;opacity:1;color:#edf6f2;background:transparent;caret-color:#a8e5cd;resize:none;font:16px/1.35 system-ui,-apple-system,sans-serif;pointer-events:auto;-webkit-user-select:text;user-select:text;-webkit-touch-callout:default;outline:none}
+#typeSink::placeholder{color:#8fa7ad}#typeSink:focus{box-shadow:inset 0 0 0 1px #a8e5cd;border-radius:11px 11px 0 0}
+#keyBar #keyboardAttach{border:0;border-top:1px solid #304643;background:transparent;border-radius:0;text-align:left;color:#a8e5cd;min-height:31px;padding:4px 8px;font-size:16px}#keyboardAttach span{font-size:11px;margin-left:4px}
+#keyboardClipboard{display:flex;flex-direction:column;padding:6px;gap:5px}.clipboard-heading{display:flex;align-items:center;justify-content:space-between;color:#9fb7bd;font-size:11px}
+#keyBar #keyboardRefresh{min-height:24px;min-width:30px;padding:0;border:0;background:transparent;font-size:19px;color:#a8e5cd}
+#keyboardPreview{min-height:24px;flex:1;display:flex;align-items:center;gap:6px;min-width:0;cursor:pointer;color:#dceae8;font-size:12px;overflow:hidden}
+#keyboardPreview .clipboard-snippet{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;overflow-wrap:anywhere;line-height:1.3}
+#keyboardPreview img,#keyboardPreview video{width:42px;height:38px;object-fit:cover;border-radius:5px;flex:none}#keyboardPreview audio{width:100%;height:32px}
+.clipboard-actions{display:flex;gap:4px}.clipboard-actions>*{flex:1;min-width:0!important}
+#keyBar .clipboard-actions button{background:#a8e5cd;color:#0e2420;border-color:#a8e5cd;font-size:11px;white-space:normal;min-height:34px;padding:4px 3px;line-height:1.15}
+#keyboardNote{font-size:10px;line-height:1.4;min-height:14px;color:#9eb8b1;margin:0;text-align:center}#keyboardNote.error{color:#ffb4a8}
+#keyBar .clipboard-copy-source{position:fixed;left:-10000px;top:0;width:300px;-webkit-user-select:text;user-select:text}
+@media(min-width:600px){#keyBar{left:50%;right:auto;width:min(680px,100vw);transform:translateX(-50%);border-radius:18px 18px 0 0}.keyboard-transfer{grid-template-columns:1.2fr 1fr}}
+@media(max-width:360px){#keyBar{gap:5px;padding:6px}#keyBar .key-modifiers button{font-size:10px;padding:3px}.key-navigation{gap:3px}#keyBar .key-navigation>button{font-size:11px}}
+
 #clipSheet h2{font-size:15px;margin:18px 0 6px;color:#eef5fa}#clipSheet .row button{flex:1}#clipSheet button.primary{background:#a8e5cd;color:#0e2420;border-color:#a8e5cd}
 #clipSheet .clip-paste{margin-top:12px;min-height:24px;padding:14px;border:1px solid #56736e;border-radius:14px;background:#111820;color:#eef5fa;font-size:16px;-webkit-user-select:text;user-select:text;outline:none}
 #clipSheet .clip-paste:focus{border-color:#a8e5cd}#clipSheet .clip-paste:empty::before{content:attr(data-placeholder);color:#8da69f}

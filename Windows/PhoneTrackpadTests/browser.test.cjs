@@ -54,7 +54,7 @@ async function updateFlow(browser,name,url,urlFile,errors){
   assert.equal(await loads(),2,'no reload while the keyboard is open');
   await u.locator('#keyBar .done').dispatchEvent('pointerdown');await reloaded(3);}
  {// The clipboard sheet is open.
-  await backdate(u);await u.locator('#commands').tap();await u.locator('#commandsPane button[data-tool="sendClip"]').tap();
+  await backdate(u);await u.evaluate(()=>{window.ThreeEDock.commands(false);window.ThreeEClip.sendClip();});
   assert.equal(await u.locator('#clipSheet').isVisible(),true);
   await resetSockets();await restart('3333333333333333');await reconnected();
   assert.equal(await loads(),3,'no reload while the clipboard sheet is open');
@@ -93,13 +93,13 @@ async function directClipFlow(browser,name,url){
    }}});
   });
   await p.goto(url);await p.waitForFunction(()=>document.getElementById('status').textContent==='Connected');
-  await p.locator('#commands').tap();await p.locator('[data-tool="sendClip"]').tap();
+  await p.evaluate(()=>{window.ThreeEDock.commands(false);window.ThreeEClip.sendClip();});
   for(let i=0;i<40&&!commands.some(c=>c.type==='shortcut'&&c.id===1);i++)await p.waitForTimeout(100);
   assert.equal(writes,1,'one tap uploads once');assert.equal(await p.evaluate(()=>window.clipReadCount),1);
   assert.ok(commands.some(c=>c.type==='shortcut'&&c.id===1),'one tap also pastes on the computer');
   await p.waitForFunction(()=>document.getElementById('clipSheet').hidden);
   await p.evaluate(()=>window.rejectClip=true);
-  await p.locator('#commands').tap();await p.locator('[data-tool="sendClip"]').tap();
+  await p.evaluate(()=>{window.ThreeEDock.commands(false);window.ThreeEClip.sendClip();});
   await p.waitForSelector('.clip-paste:visible');assert.equal(writes,1,'denied access never uploads stale content');
   await p.evaluate(()=>{const d=new DataTransfer();d.setData('text/plain','Fallback paste');document.querySelector('.clip-paste').dispatchEvent(new ClipboardEvent('paste',{clipboardData:d,bubbles:true,cancelable:true}));});
   for(let i=0;i<40&&writes<2;i++)await p.waitForTimeout(100);
@@ -175,7 +175,7 @@ if(require.main===module)(async()=>{
    assert.ok(Math.abs(appsBox.x+appsBox.width/2-195)<=1,'Apps is centred in the dock');
    assert.ok(commandsBox.x<=16&&mediaBox.x+mediaBox.width>=374,'Shortcuts sit in the left corner and Media on the right');
    await p.locator('#commands').tap();assert.equal(await p.locator('#commandsPane button[data-shortcut]').count(),18);
-   assert.equal(await p.locator('#commandsPane button[data-tool]:visible').count(),3,'Keyboard, Paste to and Copy from appear for a host that supports them');
+   assert.equal(await p.locator('#commandsPane button[data-tool]:visible').count(),1,'One Keyboard & clipboard entry appears for a supported host');
    await p.locator('#commandsPane button[aria-label^="Copy ("]').tap();await p.waitForTimeout(250);
    assert.ok(commands.some(c=>c.type==='shortcut'&&c.id===0),'Copy sends its fixed shortcut id');assert.equal(await p.locator('#commandsPane').isVisible(),false);
    {const c=await p.locator('#commands').boundingBox();await p.mouse.move(c.x+c.width/2,c.y+c.height/2);await p.mouse.down();
@@ -199,7 +199,7 @@ if(require.main===module)(async()=>{
     await p.locator('#keyBar .done').dispatchEvent('pointerdown');await p.waitForTimeout(100);
     assert.equal(await p.locator('#keyBar').isVisible(),false,'Done closes the keyboard');}
    {// Paste to: text, formatting, a photo and a PDF arrive and Ctrl/⌘+V follows.
-    await p.locator('#commands').tap();await p.locator('#commandsPane button[data-tool="sendClip"]').tap();
+    await p.evaluate(()=>{window.ThreeEDock.commands(false);window.ThreeEClip.sendClip();});
     assert.equal(await p.locator('#clipSheet').isVisible(),true);
     const before=commands.length;
     await p.evaluate(async()=>{
@@ -214,7 +214,7 @@ if(require.main===module)(async()=>{
     assert.ok(sentClip[2].head.startsWith('89504E47')&&sentClip[4].name==='Invoice März.pdf','the photo arrives as PNG and files keep their names');
     await p.waitForTimeout(200);assert.ok(commands.slice(before).some(c=>c.type==='shortcut'&&c.id===1),'then paste is pressed on the computer');}
    {// Copy from: formatted text (sanitized), text, picture and a file download.
-    await p.waitForTimeout(1000);await p.locator('#commands').tap();await p.locator('#commandsPane button[data-tool="getClip"]').tap();
+    await p.waitForTimeout(1000);await p.evaluate(()=>{window.ThreeEDock.commands(false);window.ThreeEClip.getClip();});
     await p.waitForSelector('#clipSheet .clip-image img');
     const rich=p.locator('#clipSheet .clip-rich');
     assert.equal((await rich.innerText()).trim(),'Hello from the computer');assert.equal(await rich.locator('script,style').count(),0,'copied scripts and styles are stripped');

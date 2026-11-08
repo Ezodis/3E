@@ -122,7 +122,9 @@ if (args.Length == 4 && args[0] == "--preview-receiver") {
     PhoneTrackpad preview = null;
     // The previous receiver process has just exited; its port can take a moment to free.
     for (int attempt = 0; ; attempt++) {
-        preview = new PhoneTrackpad(() => IPAddress.Loopback, previewInput, new FakeFirewall(), previewPort) { TokenProvider = () => previewToken, Build = previewBuild.Length == 0 ? null : previewBuild };
+        preview = new PhoneTrackpad(() => IPAddress.Loopback, previewInput, new FakeFirewall(), previewPort) {
+            TokenProvider = () => previewToken, Build = previewBuild.Length == 0 ? null : previewBuild, AcceptLocal = IPAddress.IsLoopback
+        };
         if (preview.Start()) break;
         preview.Dispose();
         if (attempt > 100) throw new Exception(preview.Status);
@@ -764,8 +766,10 @@ sealed class FakeInput : ITrackpadInput {
     public void VolumeStep(int direction)=>Commands.Enqueue($"volumeStep:{direction}");
     public void History(int direction)=>Commands.Enqueue($"history:{direction}");
     public bool SupportsTyping=>true;
+    public bool SupportsKeyModifiers=>true;
     public void TypeText(string text)=>Commands.Enqueue("text:"+text);
     public void PressKey(int id,int repeat)=>Commands.Enqueue($"key:{id}x{repeat}");
+    public void PressKey(int id,int repeat,int modifiers){if(modifiers==0)PressKey(id,repeat);else Commands.Enqueue($"key:{id}x{repeat}+{modifiers}");}
     public readonly FakeClipboard Clip=new();
     public IPhoneClipboard Clipboard=>Clip;
     public void Zoom(int direction)=>Commands.Enqueue($"zoom:{direction}");

@@ -25,7 +25,8 @@ public static class PhoneClipboard {
     // Fixed key palette shared with Web/clip.js: 0 Backspace, 1 Enter, 2 Tab,
     // 3 Esc, 4-7 Left/Up/Right/Down, 8 Delete, 9 line start, 10 line end,
     // 11 delete previous word. Hosts map each id to their native keys.
-    public const int KeyCount = 12;
+    // 12–37 A–Z, 38–47 0–9, 48 Space, 49–60 F1–F12, 61–62 Page Up/Down.
+    public const int KeyCount = PhoneKeyboard.KeyCount;
 
     // Files sent from the phone are written here, one folder per transfer.
     // Folders older than a day are removed when the next transfer arrives.

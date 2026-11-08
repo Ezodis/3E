@@ -258,6 +258,7 @@ public sealed class NativeTrackpadInput : ITrackpadInput, IDisposable {
     private readonly WindowsPhoneClipboard clipboard = new();
     public IPhoneClipboard Clipboard => clipboard;
     public bool SupportsTyping => true;
+    public bool SupportsKeyModifiers => true;
     private static Input UnicodeEvent(char c, bool up) => new() { Type=1,Data=new InputData { Keyboard=new Keyboard { Scan=c,Extra=(UIntPtr)ShortcutMarker,Flags=4u | (up?2u:0u) } } };
     public void TypeText(string text) {
         if (string.IsNullOrEmpty(text)) return;
@@ -272,23 +273,22 @@ public sealed class NativeTrackpadInput : ITrackpadInput, IDisposable {
         }
         if (inputs.Count > 0) SendInput((uint)inputs.Count, inputs.ToArray(), Marshal.SizeOf<Input>());
     }
-    // Ids match PhoneClipboard.KeyCount / Web/clip.js. Extended keys need flag 1.
-    private static readonly (ushort Key, bool Extended, bool Ctrl)[] phoneKeys = {
-        (0x08,false,false), (0x0D,false,false), (0x09,false,false), (0x1B,false,false), // Backspace, Enter, Tab, Esc
-        (0x25,true,false), (0x26,true,false), (0x27,true,false), (0x28,true,false),     // Left, Up, Right, Down
-        (0x2E,true,false), (0x24,true,false), (0x23,true,false), (0x08,false,true),     // Delete, Home, End, Ctrl+Backspace
-    };
     private static Input PhoneKey(ushort key, bool extended, bool up) => new() { Type=1,Data=new InputData { Keyboard=new Keyboard { Key=key,Extra=(UIntPtr)ShortcutMarker,Flags=(up?2u:0u) | (extended?1u:0u) } } };
-    public void PressKey(int id, int repeat) {
-        if ((uint)id >= (uint)phoneKeys.Length) return;
+    public void PressKey(int id, int repeat) => PressKey(id, repeat, 0);
+    public void PressKey(int id, int repeat, int modifiers) {
+        if ((uint)id >= PhoneKeyboard.KeyCount || (uint)modifiers > PhoneKeyboard.ModifierMask) return;
         Release(); AppsEnd();
-        var (key, extended, ctrl) = phoneKeys[id];
+        var (key, extended, mask) = PhoneKeyboard.Windows(id, modifiers);
+        var held = new[] { (PhoneKeyboard.Control, (ushort)0x11), (PhoneKeyboard.Alt, (ushort)0x12),
+            (PhoneKeyboard.Shift, (ushort)0x10), (PhoneKeyboard.Meta, (ushort)0x5B) }
+            .Where(pair => (mask & pair.Item1) != 0).Select(pair => pair.Item2).ToArray();
         var inputs = new System.Collections.Generic.List<Input>();
-        if (ctrl) inputs.Add(KeyEvent(0x11));
+        foreach (var modifier in held) inputs.Add(KeyEvent(modifier));
         for (int i = 0; i < Math.Clamp(repeat, 1, 64); i++) { inputs.Add(PhoneKey(key, extended, false)); inputs.Add(PhoneKey(key, extended, true)); }
-        if (ctrl) inputs.Add(KeyEvent(0x11, true));
-        // A rejected injection must never leave Ctrl held.
-        if (SendInput((uint)inputs.Count, inputs.ToArray(), Marshal.SizeOf<Input>()) != inputs.Count && ctrl) ReleaseKeys(0x11);
+        foreach (var modifier in held.Reverse()) inputs.Add(KeyEvent(modifier, true));
+        // Recover even a partially accepted chord; no modifier survives a request.
+        try { SendInput((uint)inputs.Count,inputs.ToArray(),Marshal.SizeOf<Input>()); }
+        finally { SendInput(1,new[] { PhoneKey(key,extended,true) },Marshal.SizeOf<Input>());ReleaseKeys(held.Reverse().ToArray()); }
     }
     public void Media(int action) => media?.Invoke(action);
     public void Volume(int level) => volume?.Invoke(level);

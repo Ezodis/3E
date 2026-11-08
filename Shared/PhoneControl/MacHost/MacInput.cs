@@ -172,6 +172,7 @@ public sealed class MacInput : ITrackpadInput, IDisposable {
     private readonly MacClipboard clipboard=new();
     public IPhoneClipboard Clipboard=>clipboard;
     public bool SupportsTyping=>true;
+    public bool SupportsKeyModifiers=>true;
     private static void Unicode(ushort[] units){
         foreach(bool down in new[]{true,false}){
             var e=CGEventCreateKeyboardEvent(IntPtr.Zero,0,down);if(e==IntPtr.Zero)throw new InvalidOperationException("macOS keyboard event unavailable");
@@ -190,17 +191,12 @@ public sealed class MacInput : ITrackpadInput, IDisposable {
             else if(c>=0x20&&c!=0x7F)Unicode(new[]{(ushort)c});
         }
     }
-    // Ids match PhoneClipboard.KeyCount / Web/clip.js, with Mac text-editing
-    // equivalents: line start/end are ⌘← / ⌘→ and delete word is ⌥⌫.
-    private const ulong Option=1UL<<19,Arrow=(1UL<<21)|(1UL<<23),Fn=1UL<<23;
-    private static readonly (ushort key,ulong flags)[] phoneKeys={
-        (51,0),(36,0),(48,0),(53,0),
-        (123,Arrow),(126,Arrow),(124,Arrow),(125,Arrow),
-        (117,Fn),(123,Arrow|Cmd),(124,Arrow|Cmd),(51,Option)};
-    public void PressKey(int id,int repeat){
-        if((uint)id>=(uint)phoneKeys.Length)return;
-        Release();AppsEnd();var (key,flags)=phoneKeys[id];
-        for(int i=0;i<Math.Clamp(repeat,1,64);i++){try{Key(key,true,flags);}finally{Key(key,false,flags);}}
+    public void PressKey(int id,int repeat)=>PressKey(id,repeat,0);
+    public void PressKey(int id,int repeat,int modifiers){
+        if((uint)id>=PhoneKeyboard.KeyCount||(uint)modifiers>PhoneKeyboard.ModifierMask)return;
+        Release();AppsEnd();var (key,flags)=PhoneKeyboard.Mac(id,modifiers);
+        try { for(int i=0;i<Math.Clamp(repeat,1,64);i++){try{Key(key,true,flags);}finally{Key(key,false,flags);}} }
+        finally { Key(key,false,0); }
     }
     public void Media(int action)=>media(action);
     public void Volume(int level)=>volume.Set(level);

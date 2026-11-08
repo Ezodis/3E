@@ -457,7 +457,7 @@ public sealed class PhoneTrackpad : IDisposable {
             using var stream = pairing
                 ? new MemoryStream(Encoding.UTF8.GetBytes(PairingPage(owner.Origin + "/#" + owner.Token)))
                 : resource == "PhoneTrackpad.html" ? new MemoryStream(Encoding.UTF8.GetBytes(BrandedPage(input.Platform)))
-                : resource == "host.js" ? new MemoryStream(Encoding.UTF8.GetBytes("window.ThreeEHost="+JsonSerializer.Serialize(new { platform=input.Platform, build=Build, http=false, keyboard=input.SupportsTyping, clipboard=input.Clipboard != null, alias=owner.AliasOrigin == null ? null : new Uri(owner.AliasOrigin).Authority })+";"))
+                : resource == "host.js" ? new MemoryStream(Encoding.UTF8.GetBytes("window.ThreeEHost="+JsonSerializer.Serialize(new { platform=input.Platform, build=Build, http=false, keyboard=input.SupportsTyping, keyboardModifiers=input.SupportsKeyModifiers, clipboard=input.Clipboard != null, alias=owner.AliasOrigin == null ? null : new Uri(owner.AliasOrigin).Authority })+";"))
                 : typeof(PhoneTrackpad).Assembly.GetManifestResourceStream("ThreeE.PhoneControl.Web." + resource);
             response.ContentLength64 = stream.Length;
             await stream.CopyToAsync(response.OutputStream, owner.Cancel.Token);
@@ -950,7 +950,8 @@ input{width:100%;padding:13px;border:1px solid #415260;border-radius:10px;backgr
                 if (value.Length == 0 || value.Length > 256) throw new InvalidDataException("Invalid text.");
                 sink.TypeText(value); break;
             }
-            case "key": sink.PressKey(Range("id",0,PhoneClipboard.KeyCount-1), command.TryGetProperty("n", out _) ? Range("n",1,64) : 1); break;
+            case "key": sink.PressKey(Range("id",0,PhoneClipboard.KeyCount-1), command.TryGetProperty("n", out _) ? Range("n",1,64) : 1,
+                command.TryGetProperty("modifiers", out _) ? Range("modifiers",0,PhoneKeyboard.ModifierMask) : 0); break;
             case "midiPort": sink.MidiPort(Range("id",-1,1024)); break;
             case "midiCC": sink.Midi(false,Range("channel",0,15),Range("number",0,119),Range("value",0,127)); break;
             case "midiNote": sink.Midi(true,Range("channel",0,15),Range("number",0,127),Range("value",0,127)); break;
@@ -997,8 +998,10 @@ public interface ITrackpadInput {
     // Phone keyboard: Unicode text and the fixed PhoneClipboard key palette.
     // Hosts that implement them return true so the phone shows the Keyboard button.
     bool SupportsTyping => false;
+    bool SupportsKeyModifiers => false;
     void TypeText(string text) { }
     void PressKey(int id, int repeat) { }
+    void PressKey(int id, int repeat, int modifiers) { if (modifiers == 0) PressKey(id, repeat); }
     // The system clipboard, or null when this host cannot transfer it.
     IPhoneClipboard Clipboard => null;
     // Press for a tap-then-drag. Hosts must not let it complete a double-click.

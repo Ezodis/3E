@@ -13,10 +13,24 @@ static class ClipboardTests {
         Apply("{\"type\":\"text\",\"text\":\"héllo 👋\"}"); Apply("{\"type\":\"key\",\"id\":0,\"n\":3}"); Apply("{\"type\":\"key\",\"id\":11}");
         check(fake.Commands.Contains("text:héllo 👋") && fake.Commands.Contains("key:0x3") && fake.Commands.Contains("key:11x1"), "Phone keyboard text and palette keys reach the native boundary");
         foreach (var bad in new[] { "{\"type\":\"text\",\"text\":\"\"}", "{\"type\":\"text\",\"text\":\"" + new string('a', 257) + "\"}", "{\"type\":\"text\",\"text\":5}",
-                                    "{\"type\":\"key\",\"id\":12}", "{\"type\":\"key\",\"id\":-1}", "{\"type\":\"key\",\"id\":0,\"n\":65}", "{\"type\":\"key\",\"id\":0,\"n\":0}" }) {
+                                    "{\"type\":\"key\",\"id\":63}", "{\"type\":\"key\",\"id\":-1}", "{\"type\":\"key\",\"id\":0,\"n\":65}", "{\"type\":\"key\",\"id\":0,\"n\":0}",
+                                    "{\"type\":\"key\",\"id\":14,\"modifiers\":32}", "{\"type\":\"key\",\"id\":14,\"modifiers\":-1}" }) {
             bool rejected = false; try { Apply(bad); } catch (InvalidDataException) { rejected = true; }
             check(rejected, "Invalid keyboard command rejected: " + (bad.Length > 48 ? bad[..48] + "…" : bad));
         }
+
+        Apply("{\"type\":\"key\",\"id\":14,\"modifiers\":2}");
+        check(fake.Commands.Contains("key:14x1+2"), "Ctrl+C is one complete request with bounded modifier flags");
+        check(PhoneKeyboard.Windows(14,2)==((ushort)0x43,false,2) && PhoneKeyboard.Mac(14,8)==((ushort)8,1UL<<20), "Copy chords map to Ctrl+C on Windows and Command+C on Mac");
+        check(PhoneKeyboard.Windows(4,1)==((ushort)0x25,true,1) && (PhoneKeyboard.Mac(4,1).Flags & (1UL<<17))!=0, "Shift+arrow preserves selection modifiers on both hosts");
+        check(PhoneKeyboard.Windows(5,16)==((ushort)0x21,true,0) && PhoneKeyboard.Windows(0,16).Key==0x2E && PhoneKeyboard.Mac(7,16).Key==121, "Fn navigation maps to Page Up/Down and forward Delete without a held hardware Fn key");
+        check(PhoneKeyboard.Mac(4,16).Key==115 && (PhoneKeyboard.Mac(4,16).Flags & (1UL<<20))==0 && PhoneKeyboard.Mac(9,0).Key==123,
+            "Mac Fn+Left sends Home while the existing line-start action remains Command+Left");
+        check(PhoneKeyboard.Windows(60,4)==((ushort)0x7B,false,4) && PhoneKeyboard.Mac(49,0).Key==122, "Function keys and additional modifiers use the fixed palette");
+        foreach(var id in Enumerable.Range(0,PhoneKeyboard.KeyCount))foreach(var mask in Enumerable.Range(0,32)){
+            _=PhoneKeyboard.Windows(id,mask);_=PhoneKeyboard.Mac(id,mask);
+        }
+        check(true,"Every supported key/modifier combination has a Windows and Mac mapping");
 
         check(PhoneClipboard.SafeName("../../evil:name?.pdf") == "evil_name_.pdf" && PhoneClipboard.SafeName(@"C:\x\CON.txt") == "_CON.txt" && PhoneClipboard.SafeName("  .. ") == "Phone file",
             "Phone file names cannot leave the transfer folder or use reserved names");

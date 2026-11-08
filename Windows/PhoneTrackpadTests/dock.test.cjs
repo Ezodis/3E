@@ -84,7 +84,7 @@ const pane=elements.get('commandsPane'),commandsButton=elements.get('commands');
 const shortcutButtons=pane.children.filter(b=>b.dataset.shortcut!==undefined),toolButtons=pane.children.filter(b=>b.dataset.tool);
 check(shortcutButtons.length===18,'Shortcut palette has 18 fixed buttons');
 check(shortcutButtons.slice(-3).map(b=>+b.dataset.shortcut).join()==='0,1,2','Copy, Paste and Cut sit in the last shortcut row');
-check(pane.children.slice(-3).map(b=>b.dataset.tool).join()==='keyboard,sendClip,getClip','Keyboard, Paste to and Copy from form the bottom row');
+check(toolButtons.length===1&&toolButtons[0].dataset.tool==='keyboard','One Keyboard & clipboard action replaces the three separate tools');
 check(toolButtons.every(b=>b.hidden),'Hosts that do not report keyboard/clipboard support hide the new row');
 const copy=pane.children.find(b=>b['aria-label'].startsWith('Copy'));copy.closest=()=>copy;
 sent.length=0;event('commands','pointerdown',20,800);check(!pane.hidden,'Pressing ⌘ shows the shortcuts at once');
@@ -128,11 +128,11 @@ check(commands('media').length===1&&commands('media')[0].action===2,'A touch the
   ThreeEControl:{connected:()=>true,send(){},release(){}},ThreeESurface:{openStudio(){}}};
  vm.runInNewContext(fs.readFileSync(path.join(__dirname,'../../Shared/PhoneControl/Web/dock.js'),'utf8'),{window:host,document:{addEventListener(){},getElementById:id=>els.get(id),createElement:element,elementFromPoint:()=>target},performance:{now:()=>now},setTimeout(){return 0;},clearTimeout(){}});
  const row=els.get('commandsPane').children.filter(b=>b.dataset.tool);
- check(row.every(b=>!b.hidden)&&row.map(b=>b['aria-label']).join('|')==='Type on the Mac with the phone keyboard|Send the phone clipboard to the Mac and paste it|Copy the Mac clipboard to this phone','Mac hosts show the keyboard and clipboard buttons, named for the Mac');
+ check(row.length===1&&!row[0].hidden&&row[0]['aria-label']==='Type, paste and copy with the Mac','Mac hosts show the combined keyboard and clipboard entry');
  now+=1000;row[0].handlers.click();check(opened.join()==='keyboard'&&els.get('commandsPane').hidden,'Tapping Keyboard closes the palette and opens the phone keyboard');
- const hit=row[2];hit.closest=()=>hit;target=hit;
+ const hit=row[0];hit.closest=()=>hit;target=hit;
  const press=(type,x,y)=>els.get('commands').handlers[type]({pointerId:3,clientX:x,clientY:y,button:0,preventDefault(){}});
  press('pointerdown',20,800);press('pointermove',200,700);press('pointerup',200,700);
- check(opened.join()==='keyboard,getClip','Sliding from ⌘ onto Copy from and releasing opens it');
+ check(opened.join()==='keyboard,keyboard','Sliding from ⌘ onto the combined tool opens the keyboard panel');
 }
 console.log('PASS: '+checks+' dock gesture and icon-state checks.');

@@ -162,14 +162,14 @@
     clearTimeout(holdTimer); clearTimeout(pressTimer); clearTimeout(releaseTimer); releaseTimer=null; httpQueue = []; pendingTap = null; dragArmed = false; owedClick = false; clearTimeout(owedTimer);
     buttons.forEach(b => b.disabled = true); window.ThreeEDock?.commands(false);
     pad.classList.remove('live', 'dragging');
-    hint(); window.ThreeESurface?.state(false);
+    hint(); window.ThreeESurface?.state(false); window.ThreeEClip?.connection(false);
     status.textContent = message; connectButton.textContent = wanted ? 'Pause connection' : 'Connect';
   }
   function connected() {
     clearTimeout(connectTimeout); connecting = false; retryDelay = 250; lastReply = performance.now(); takeover = false;
     ready = true; buttons.forEach(b => b.disabled = false); pad.classList.add('live');
     connectedStatus(); connectButton.textContent = 'Pause connection';
-    window.ThreeESurface?.state(true);
+    window.ThreeESurface?.state(true); window.ThreeEClip?.connection(true);
     Prefs.sync();
     // Motion and a tap made while the link was waking are delivered now
     // instead of being lost, so the first touch after a pause still counts.
@@ -208,7 +208,7 @@
     // A finger count with no touch event for a minute is a lost touchend, not a hold.
     return touching > 0 && performance.now()-lastTouchAt < 60000 || mode > 0 || dragging || dragArmed || tapCandidate || tapDrag || threeDrag || releaseTimer != null || two != null ||
       window.ThreeEDock?.busy?.() === true || window.ThreeESurface?.busy?.() === true ||
-      active?.id === 'typeSink' || $('clipSheet')?.hidden === false;
+      active?.id === 'typeSink' || $('keyBar')?.hidden === false || $('clipSheet')?.hidden === false;
   }
   function tryUpdate() {
     clearTimeout(updateTimer); updateTimer = null;

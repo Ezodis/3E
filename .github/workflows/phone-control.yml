@@ -34,6 +34,7 @@ jobs:
         run: |
           npm install --no-save --prefix "$RUNNER_TEMP/pw" playwright-core@1.56.1
           "$RUNNER_TEMP/pw/node_modules/.bin/playwright-core" install webkit chromium
+          PLAYWRIGHT_MODULE="$RUNNER_TEMP/pw/node_modules/playwright-core" node Windows/PhoneTrackpadTests/keyboard.test.cjs "$RUNNER_TEMP/keyboard-screens"
           dotnet build Windows/PhoneTrackpadTests -v q
           url="$RUNNER_TEMP/preview-url"
           dotnet run --no-build --project Windows/PhoneTrackpadTests -- --preview "$url" > "$RUNNER_TEMP/preview.log" 2>&1 &
