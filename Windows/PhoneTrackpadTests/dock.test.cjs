@@ -84,21 +84,27 @@ const pane=elements.get('commandsPane'),commandsButton=elements.get('commands');
 const shortcutButtons=pane.children.filter(b=>b.dataset.shortcut!==undefined),toolButtons=pane.children.filter(b=>b.dataset.tool);
 check(shortcutButtons.length===18,'Shortcut palette has 18 fixed buttons');
 check(shortcutButtons.slice(-3).map(b=>+b.dataset.shortcut).join()==='0,1,2','Copy, Paste and Cut sit in the last shortcut row');
-check(toolButtons.length===1&&toolButtons[0].dataset.tool==='keyboard','One Keyboard & clipboard action replaces the three separate tools');
-check(toolButtons.every(b=>b.hidden),'Hosts that do not report keyboard/clipboard support hide the new row');
+check(toolButtons.length===0,'Shortcut palette has no keyboard entry');
+let keyboards=0;win.ThreeEClip={keyboard(){keyboards++;},close(){}};
+function commandHold(){now+=400;const entry=[...timers].find(([,t])=>t.ms===400);assert.ok(entry,'pending command hold');timers.delete(entry[0]);entry[1].fn();}
 const copy=pane.children.find(b=>b['aria-label'].startsWith('Copy'));copy.closest=()=>copy;
-sent.length=0;event('commands','pointerdown',20,800);check(!pane.hidden,'Pressing ⌘ shows the shortcuts at once');
+sent.length=0;event('commands','pointerdown',20,800);check(pane.hidden,'Touch-down does not open shortcuts');event('commands','pointerup',20,800);
+check(keyboards===1&&pane.hidden,'A tap opens the keyboard directly');commandsButton.handlers.click();check(keyboards===1,'Synthetic click cannot open the keyboard twice');
+event('commands','pointerdown',20,800);commandHold();check(!pane.hidden&&keyboards===1,'Holding opens shortcuts without opening the keyboard');
 pointTarget=copy;event('commands','pointermove',60,700);event('commands','pointerup',60,700);
-check(commands('shortcut').length===1&&commands('shortcut')[0].id===0,'Sliding from ⌘ onto Copy and releasing sends Copy');
-pointTarget=null;let closing=[...timers].find(([,t])=>t.ms===160);timers.delete(closing[0]);closing[1].fn();check(pane.hidden,'Palette closes after a slide-to-send');
-sent.length=0;event('commands','pointerdown',20,800);event('commands','pointermove',200,300);event('commands','pointerup',200,300);
-check(pane.hidden&&!commands('shortcut').length,'Releasing a slide away from every shortcut cancels');
-event('commands','pointerdown',20,800);event('commands','pointerup',20,800);check(!pane.hidden,'A plain tap on ⌘ keeps the palette open for tapping');
-event('commands','pointerdown',20,800);event('commands','pointerup',20,800);check(pane.hidden,'Tapping ⌘ again closes it');
-now+=1000;commandsButton.handlers.click();check(!pane.hidden,'Keyboard activation opens the shortcut palette');
+check(commands('shortcut').length===1&&commands('shortcut')[0].id===0,'Hold then slide sends the selected shortcut');
+pointTarget=null;let closing=[...timers].find(([,t])=>t.ms===160);timers.delete(closing[0]);closing[1].fn();check(pane.hidden,'Palette closes after sending');
+event('commands','pointerdown',20,800);event('commands','pointermove',200,300);event('commands','pointerup',200,300);
+check(pane.hidden&&keyboards===1&&![...timers.values()].some(t=>t.ms===400),'Moving before the hold cancels both actions');
+event('commands','pointerdown',20,800);event('commands','pointercancel');check(![...timers.values()].some(t=>t.ms===400),'Cancelled contact clears the hold timer');
+event('commands','pointerdown',20,800);commandHold();event('commands','pointerup',20,800);commandsButton.handlers.click();
+check(!pane.hidden&&keyboards===1,'Releasing a hold keeps shortcuts open and ignores the synthetic click');
 sent.length=0;pane.children.find(b=>b['aria-label'].startsWith('Area shot')).handlers.click();
-check(commands('shortcut').length===1&&commands('shortcut')[0].id===14,'A palette button sends only its fixed id');
-const delay=[...timers].find(([,t])=>t.ms===160);timers.delete(delay[0]);delay[1].fn();check(pane.hidden,'Palette closes after sending');
+check(commands('shortcut').length===1&&commands('shortcut')[0].id===14,'A shortcut tap sends its fixed action');
+const delay=[...timers].find(([,t])=>t.ms===160);timers.delete(delay[0]);delay[1].fn();
+now+=1000;commandsButton.handlers.click();check(keyboards===2&&pane.hidden,'Assistive click opens typing');
+commandsButton.handlers.keydown({key:'F10',shiftKey:true,preventDefault(){}});check(!pane.hidden,'Shift+F10 opens shortcuts accessibly');win.ThreeEDock.commands(false);
+
 let repaints=0;const replace=elements.get('media').replaceChildren;elements.get('media').replaceChildren=function(){repaints++;return replace.call(this);};
 win.ThreeEDock.describe({controls:{media:{playing:true}}});win.ThreeEDock.describe({controls:{media:{playing:true}}});win.ThreeEDock.describe({controls:{media:{playing:true}}});
 check(repaints===1,'Unchanged host state does not repaint dock artwork');
@@ -120,19 +126,4 @@ check(![...timers.values()].some(t=>t.ms===500),'A slow start past 6 px cannot t
 check(commands('media').length===1&&commands('media')[0].action===2&&!commands('studio').length,'A slow-starting swipe still skips');
 sent.length=0;event('media','pointerdown',200,100,7);event('media','pointerdown',200,100,8);event('media','pointermove',240,100,8);event('media','pointerup',240,100,8);
 check(commands('media').length===1&&commands('media')[0].action===2,'A touch the browser never finished does not swallow the next swipe');
-{
- // A host that supports the keyboard and clipboard (here: a Mac) shows the bottom row.
- const opened=[],els=new Map();for(const id of ['apps','media','volumePane','outputVolume','volumeValue','commands','commandsPane','volumeTrack','volumeUp','volumeDown'])els.set(id,element());
- let target=null;
- const host={ThreeEHost:{platform:'macos',keyboard:true,clipboard:true},ThreeEClip:{keyboard:()=>opened.push('keyboard'),sendClip:()=>opened.push('sendClip'),getClip:()=>opened.push('getClip')},
-  ThreeEControl:{connected:()=>true,send(){},release(){}},ThreeESurface:{openStudio(){}}};
- vm.runInNewContext(fs.readFileSync(path.join(__dirname,'../../Shared/PhoneControl/Web/dock.js'),'utf8'),{window:host,document:{addEventListener(){},getElementById:id=>els.get(id),createElement:element,elementFromPoint:()=>target},performance:{now:()=>now},setTimeout(){return 0;},clearTimeout(){}});
- const row=els.get('commandsPane').children.filter(b=>b.dataset.tool);
- check(row.length===1&&!row[0].hidden&&row[0]['aria-label']==='Type, paste and copy with the Mac','Mac hosts show the combined keyboard and clipboard entry');
- now+=1000;row[0].handlers.click();check(opened.join()==='keyboard'&&els.get('commandsPane').hidden,'Tapping Keyboard closes the palette and opens the phone keyboard');
- const hit=row[0];hit.closest=()=>hit;target=hit;
- const press=(type,x,y)=>els.get('commands').handlers[type]({pointerId:3,clientX:x,clientY:y,button:0,preventDefault(){}});
- press('pointerdown',20,800);press('pointermove',200,700);press('pointerup',200,700);
- check(opened.join()==='keyboard,keyboard','Sliding from ⌘ onto the combined tool opens the keyboard panel');
-}
 console.log('PASS: '+checks+' dock gesture and icon-state checks.');

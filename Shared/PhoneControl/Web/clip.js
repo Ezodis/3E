@@ -11,14 +11,15 @@
   // A visible native textarea keeps iOS typing, autocorrect and its Paste menu.
   const sink=$('typeSink'), bar=$('keyBar');
   let last='', caret=0, repeatTimer, repeatDelay, modifiers=0;
+  let dismissTimer, noteTimer, filePicking=false, viewportBase=0, viewportWidth=0, keyboardSeen=false;
   const modifierButtons=[...bar.querySelectorAll('[data-modifier]')];
   const functions=$('functionKeys');
   for(let n=1;n<=12;n++){const b=document.createElement('button');b.type='button';b.dataset.key=48+n;b.textContent='F'+n;functions.append(b);}
-  if(mac){for(const [mask,label] of [[2,'⌃ Control'],[4,'⌥ Option'],[8,'⌘ Command']])bar.querySelector(`[data-modifier="${mask}"]`).textContent=label;}
+  if(mac){for(const [mask,label,name] of [[2,'⌃','Control'],[4,'⌥','Option'],[8,'⌘','Command']]){const button=bar.querySelector(`[data-modifier="${mask}"]`);button.textContent=label;button.setAttribute('aria-label',name);button.title=name;}}
   $('keyModifiers').hidden=!window.ThreeEHost?.keyboardModifiers;
   sink.disabled=!window.ThreeEHost?.keyboard;
   function clearModifiers(){modifiers=0;drawModifiers();}
-  function drawModifiers(){modifierButtons.forEach(b=>b.setAttribute('aria-pressed',String(!!(modifiers&+b.dataset.modifier))));functions.hidden=!(modifiers&16);placeBar();}
+  function drawModifiers(){modifierButtons.forEach(b=>b.setAttribute('aria-pressed',String(!!(modifiers&+b.dataset.modifier))));functions.hidden=!(modifiers&16);bar.dataset.fn=String(!!(modifiers&16));placeBar();}
   function sendText(text){
     const chars=Array.from(text);let chunk='';
     for(const ch of chars){if(chunk.length+ch.length>120){C.send('text',{text:chunk});chunk='';}chunk+=ch;}
@@ -35,6 +36,7 @@
     clearModifiers();resetSink();
   }
   function sync(){
+    if(!C.connected()){resetSink();return;}
     const cur=sink.value;if(cur===last)return;
     const max=Math.min(cur.length,last.length);let p=0,s=0;
     while(p<max&&cur.charCodeAt(p)===last.charCodeAt(p))p++;
@@ -67,41 +69,59 @@
   });
   function placeBar(){
     const v=window.visualViewport;if(bar.hidden)return;
-    bar.style.maxHeight=Math.max(120,(v?.height||window.innerHeight)-12)+'px';
     if(v)bar.style.top=Math.max(v.offsetTop,v.offsetTop+v.height-bar.offsetHeight)+'px';
     else{bar.style.top='auto';bar.style.bottom='0';}
   }
-  window.visualViewport?.addEventListener('resize',placeBar);
+  function viewportChanged(){
+    placeBar();const v=window.visualViewport;if(bar.hidden||!v||Math.abs(v.scale-1)>.05)return;
+    if(Math.abs(v.width-viewportWidth)>40){viewportWidth=v.width;viewportBase=Math.max(window.innerHeight,v.height);keyboardSeen=false;return;}
+    const gap=viewportBase-v.height;
+    if(gap>100){keyboardSeen=true;clearTimeout(dismissTimer);}
+    // iOS can dismiss its keyboard while the textarea still has focus.
+    // Browser chrome/pinch changes are too small (or scaled) to count.
+    else if(keyboardSeen&&gap<70&&!filePicking&&!transferBusy){
+      clearTimeout(dismissTimer);dismissTimer=setTimeout(()=>{if(!bar.hidden&&!filePicking&&!transferBusy&&viewportBase-v.height<70)closeKeyboard();},180);
+    }
+  }
+  window.visualViewport?.addEventListener('resize',viewportChanged);
   window.visualViewport?.addEventListener('scroll',placeBar);
   function keyboard(){
     if(!C.connected())return;
     C.release();closeSheet();resetSink();clearModifiers();bar.hidden=false;
-    say('Hold in the field to paste. Modifiers apply to the next key.');
+    clearTimeout(dismissTimer);clearTimeout(noteTimer);$('keyboardNote').textContent='';
+    viewportBase=Math.max(window.innerHeight,window.visualViewport?.height||0);viewportWidth=window.visualViewport?.width||window.innerWidth;keyboardSeen=false;
     sink.focus({preventScroll:true});placeBar();setTimeout(placeBar,350);refreshClipboard();
   }
-  function closeKeyboard(){stopRepeat();clearModifiers();bar.hidden=true;sink.blur();resetSink();closeSheet();clearInlineClipboard();}
-  // Native paste/selection menus may blur the field. Keep the panel open until Done.
-  sink.addEventListener('blur',stopRepeat);
+  function closeKeyboard(){clearTimeout(dismissTimer);clearTimeout(noteTimer);stopRepeat();clearModifiers();bar.hidden=true;keyboardSeen=false;filePicking=false;sink.blur();resetSink();closeSheet();clearInlineClipboard();}
+  sink.addEventListener('blur',()=>{
+    stopRepeat();clearTimeout(dismissTimer);
+    dismissTimer=setTimeout(()=>{if(!bar.hidden&&!filePicking&&!transferBusy&&!bar.contains(document.activeElement))closeKeyboard();},180);
+  });
+  // Toolbar taps must keep iOS's typing focus; text selection and paste retain
+  // their native touch behavior. A pointer-down cancellation does not cancel click.
+  bar.addEventListener('pointerdown',e=>{if(e.target.closest('button'))e.preventDefault();});
   function stopRepeat(){clearTimeout(repeatDelay);clearInterval(repeatTimer);bar.querySelectorAll('.held').forEach(b=>b.classList.remove('held'));}
-  for(const button of bar.querySelectorAll('[data-key],[data-modifier],[data-action="done"]')){
+  for(const button of bar.querySelectorAll('[data-key],[data-modifier]')){
     button.addEventListener('mousedown',e=>e.preventDefault());
-    button.addEventListener('touchstart',e=>e.preventDefault(),{passive:false});
+    if(!functions.contains(button))button.addEventListener('touchstart',e=>e.preventDefault(),{passive:false});
     function press(){
       stopRepeat();
-      if(button.dataset.action==='done'){closeKeyboard();return;}
       if(!C.connected())return;
       if(button.dataset.modifier){sync();modifiers^=+button.dataset.modifier;drawModifiers();return;}
       sync();const id=+button.dataset.key,mask=modifiers;button.classList.add('held');sendKey(id,1,mask);clearModifiers();resetSink();
       if([0,4,5,6,7,8].includes(id))repeatDelay=setTimeout(()=>{repeatTimer=setInterval(()=>{if(C.connected())sendKey(id,1,mask);else stopRepeat();},70);},420);
     }
-    button.addEventListener('pointerdown',e=>{e.preventDefault();press();});
-    button.addEventListener('click',e=>{if(e.detail===0)press();});
+    if(!functions.contains(button))button.addEventListener('pointerdown',e=>{e.preventDefault();press();});
+    button.addEventListener('click',e=>{if(functions.contains(button)||e.detail===0)press();});
     for(const type of ['pointerup','pointercancel','pointerleave'])button.addEventListener(type,stopRepeat);
   }
   window.addEventListener('blur',()=>{stopRepeat();clearModifiers();});
   document.addEventListener('visibilitychange',()=>{if(document.hidden){stopRepeat();clearModifiers();}else if(!bar.hidden)refreshClipboard();});
   function connection(ready){
-    sink.disabled=!ready||!window.ThreeEHost?.keyboard;
+    // A temporary reconnect must not blur the field, dismiss iOS's keyboard,
+    // or make the page think it is safe to reload while the user is typing.
+    sink.disabled=!window.ThreeEHost?.keyboard;
+    sink.setAttribute('aria-disabled',String(!ready||sink.disabled));
     if(!ready){stopRepeat();clearModifiers();resetSink();clearInlineClipboard();if(!bar.hidden)say('Reconnecting…',true);}
     else if(!bar.hidden)refreshClipboard();
   }
@@ -114,7 +134,7 @@
   let pending=null, urls=[], clipGeneration=0, transferBusy=false;
   const el=(tag,props={},...kids)=>{const n=Object.assign(document.createElement(tag),props);n.append(...kids.filter(k=>k!=null));return n;};
   const size=n=>n<1024?n+' B':n<1048576?(n/1024).toFixed(0)+' KB':(n/1048576).toFixed(1)+' MB';
-  const say=(text,error=false)=>{const target=sheet.hidden&&!bar.hidden?$('keyboardNote'):note;target.textContent=text;target.classList.toggle('error',error);};
+  const say=(text,error=false)=>{const inline=sheet.hidden&&!bar.hidden,target=inline?$('keyboardNote'):note;target.textContent=text;target.classList.toggle('error',error);if(inline){clearTimeout(noteTimer);noteTimer=setTimeout(()=>{target.textContent='';},error?6000:2500);}};
   const failure={401:'Pairing expired — scan a new QR code.',403:'Pairing expired — scan a new QR code.',409:'Connect the trackpad first.',413:'Too large — 200 MB maximum.',501:'This computer does not support clipboard transfer.'};
   async function post(path,options){
     const res=await fetch(path,{method:'POST',cache:'no-store',...options,headers:{'X-Trackpad-Token':token,...(options.headers||{})}});
@@ -320,12 +340,13 @@
   // opens/refreshes it; opening this panel never reads the phone clipboard.
   const preview=$('keyboardPreview'),copyActions=$('keyboardCopyActions'),refresh=$('keyboardRefresh');
   let inlineGeneration=0,inlineUrls=[],inlineReading=false;
-  $('keyboardCopyLabel').textContent='From '+computer;
   refresh.setAttribute('aria-label','Refresh '+computer+' clipboard');
   function clearInlineClipboard(){inlineGeneration++;inlineUrls.forEach(URL.revokeObjectURL);inlineUrls=[];preview.replaceChildren();copyActions.replaceChildren();}
   function inlineLive(generation){return generation===inlineGeneration&&!bar.hidden;}
   function inlineAction(label,action){
-    const button=el('button',{type:'button',textContent:label});
+    const short={Formatted:'Aa','Plain text':'T','Copy text':'Copy','Copy link':'Link',Download:'↓','View files':'Files','Try again':'↻'};
+    const button=el('button',{type:'button',textContent:short[label]||label,title:label+' from '+computer});
+    button.setAttribute('aria-label',label+' from '+computer);
     button.addEventListener('click',async()=>{
       if(transferBusy||inlineReading||!C.connected())return;
       const generation=inlineGeneration;transferBusy=true;button.disabled=true;refresh.disabled=true;
@@ -356,6 +377,7 @@
       preview.replaceChildren();
       const files=info.files||[],text=info.text||'',rich=info.html?el('div'):null;
       if(rich)rich.append(...cleanHtml(info.html));
+      preview.title=files.length?files.map(f=>f.name).join(', '):info.image?'Picture':text||rich?.textContent||'Clipboard is empty';
       if(files.length||info.image){
         const file=files[0],isImage=!file,kind=isImage?'image':mediaType(file.name);
         const label=isImage?'Picture':files.length>1?`${files.length} files`:file.name;
@@ -388,13 +410,14 @@
         if(rich)copyActions.append(copy('Formatted',rich.innerHTML),copy('Plain text',null));
         else copyActions.append(copy(link?'Copy link':'Copy text',null));
       }else{
-        preview.textContent='Clipboard is empty';const button=el('button',{type:'button',textContent:'Copy from '+computer,disabled:true});copyActions.append(button);
+        preview.textContent='Clipboard is empty';const button=el('button',{type:'button',textContent:'Copy',title:'Clipboard is empty',disabled:true});copyActions.append(button);
       }
     }catch(e){if(inlineLive(generation)){preview.textContent='Could not read clipboard';copyActions.append(inlineAction('Try again',async()=>{transferBusy=false;await refreshClipboard();}));say(e.message,true);}}
     finally{inlineReading=false;refresh.disabled=false;placeBar();}
   }
   refresh.addEventListener('click',refreshClipboard);
-  preview.addEventListener('click',e=>{if(!e.target.closest('audio,video')&&!inlineReading&&!transferBusy)getClip();});
+  preview.addEventListener('click',()=>{if(!inlineReading&&!transferBusy)getClip();});
+  preview.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();if(!inlineReading&&!transferBusy)getClip();}});
   async function receiveInline(data){
     if(!C.connected()||transferBusy)return;
     clearModifiers();resetSink();transferBusy=true;const generation=clipGeneration;
@@ -407,8 +430,9 @@
     let files=[...(data.files||[])];if(!files.length)for(const item of data.items||[])if(item.kind==='file'){const f=item.getAsFile();if(f)files.push(f);}
     receiveInline({text:data.getData('text/plain'),html:data.getData('text/html'),files});
   });
-  $('keyboardAttach').addEventListener('click',()=>$('keyboardFile').click());
-  $('keyboardFile').addEventListener('change',()=>{const input=$('keyboardFile');if(input.files.length)receiveInline({files:[...input.files]});input.value='';});
+  $('keyboardAttach').addEventListener('click',()=>{filePicking=true;clearTimeout(dismissTimer);$('keyboardFile').click();});
+  $('keyboardFile').addEventListener('change',()=>{filePicking=false;const input=$('keyboardFile');if(input.files.length)receiveInline({files:[...input.files]});input.value='';});
+  $('keyboardFile').addEventListener('cancel',()=>{filePicking=false;if(!bar.hidden)sink.focus({preventScroll:true});});
 
   window.ThreeEClip={keyboard,sendClip,getClip,close:closeKeyboard,connection};
 })();

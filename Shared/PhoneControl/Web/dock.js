@@ -30,9 +30,9 @@
     [3,'⌘A','Select all'],[4,'⌘Z','Undo'],[5,'⇧⌘Z','Redo'],
     [0,'⌘C','Copy'],[1,'⌘V','Paste'],[2,'⌘X','Cut']];
   const commandsButton=$('commands'),commandsPane=$('commandsPane');
-  let commandsTimer,picking=null,commandsPointerAt=-Infinity;
+  let commandsTimer,commandsHold,picking=null,commandsPointerAt=-Infinity;
   function showCommands(show){
-    clearTimeout(commandsTimer);commandsPane.hidden=!show;commandsButton.setAttribute('aria-expanded',String(show));
+    clearTimeout(commandsTimer);if(!show){clearTimeout(commandsHold);picking=null;}commandsPane.hidden=!show;commandsButton.setAttribute('aria-expanded',String(show));
     commandsPane.querySelectorAll('.sent,.picking').forEach(b=>b.classList.remove('sent','picking'));
   }
   function fireShortcut(button,id){
@@ -49,56 +49,46 @@
     button.addEventListener('click',()=>fireShortcut(button,id));
     commandsPane.append(button);
   }
-  // One entry opens typing and both clipboard directions in the same panel.
-  // It appears only when the host supports either capability.
-  const toolIcons={
-    keyboard:svg('<rect x="3" y="8" width="26" height="17" rx="3" fill="none" stroke="currentColor" stroke-width="2"/><path d="M8 13h2m4 0h2m4 0h2m4 0h0M8 17h2m4 0h2m4 0h2M11 21h10" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/>'),
-  };
-  const toolRule=document.createElement('div');toolRule.className='pane-rule';commandsPane.append(toolRule);
-  const computer=window.ThreeEHost?.platform==='macos'?'Mac':'PC';
-  const toolButtons=[['keyboard','Keyboard & clipboard','Type, paste and copy with the '+computer]].map(([tool,label,description])=>{
-    const button=document.createElement('button');button.type='button';button.className='tool';button.dataset.tool=tool;
-    button.setAttribute('aria-label',description);
-    const kbd=document.createElement('kbd'),small=document.createElement('small');kbd.innerHTML=toolIcons[tool];small.textContent=label;button.append(kbd,small);
-    button.addEventListener('click',()=>runTool(tool));
-    commandsPane.append(button);return button;
-  });
-  function runTool(tool){
+  // A tap opens typing in the same user gesture (required by iPhone Safari).
+  // A deliberate hold opens shortcuts; lift to keep them open or slide to send.
+  function openKeyboard(){
     if(!C.connected())return;
-    showCommands(false);window.ThreeEClip?.[tool]?.();
+    showCommands(false);hideVolume(true);
+    if(window.ThreeEClip?.keyboard)window.ThreeEClip.keyboard();
   }
-  function showTools(){
-    const host=window.ThreeEHost||{},ready=!!window.ThreeEClip;
-    toolButtons[0].hidden=!(ready&&(host.keyboard||host.clipboard));
-    toolRule.hidden=toolButtons.every(b=>b.hidden);
-  }
-  showTools();
-  // Press ⌘ and slide onto a shortcut, then release to send it. A plain tap
-  // opens (or closes) the palette for tapping instead.
   commandsButton.addEventListener('pointerdown',e=>{
     e.preventDefault();if(!C.connected()||e.button>0)return;
     C.release();hideVolume(true);commandsPointerAt=performance.now();
-    picking={id:e.pointerId,x:e.clientX,y:e.clientY,moved:false,wasOpen:!commandsPane.hidden,target:null};
-    showCommands(true);commandsButton.setPointerCapture?.(e.pointerId);
+    clearTimeout(commandsHold);
+    picking={id:e.pointerId,x:e.clientX,y:e.clientY,moved:false,held:false,target:null};
+    try{commandsButton.setPointerCapture?.(e.pointerId);}catch{}
+    commandsHold=setTimeout(()=>{
+      if(!picking||picking.moved||!C.connected())return;
+      picking.held=true;window.ThreeEClip?.close?.();showCommands(true);
+    },400);
   });
   commandsButton.addEventListener('pointermove',e=>{
     if(!picking||picking.id!==e.pointerId)return;e.preventDefault();
-    if(Math.hypot(e.clientX-picking.x,e.clientY-picking.y)>10)picking.moved=true;
+    if(Math.hypot(e.clientX-picking.x,e.clientY-picking.y)>10){picking.moved=true;if(!picking.held)clearTimeout(commandsHold);}
+    if(!picking.held)return;
     const target=shortcutAt(e.clientX,e.clientY);
     if(target!==picking.target){picking.target?.classList.remove('picking');target?.classList.add('picking');picking.target=target;}
   });
   commandsButton.addEventListener('pointerup',e=>{
     if(!picking||picking.id!==e.pointerId)return;
-    const p=picking;picking=null;commandsPointerAt=performance.now();
+    const p=picking;picking=null;clearTimeout(commandsHold);commandsPointerAt=performance.now();
     const target=shortcutAt(e.clientX,e.clientY)||p.target;target?.classList.remove('picking');
-    if(target&&p.moved){if(target.dataset.tool)runTool(target.dataset.tool);else fireShortcut(target,+target.dataset.shortcut);}
-    else if(p.moved||p.wasOpen)showCommands(false);
+    if(p.held){if(target&&p.moved)fireShortcut(target,+target.dataset.shortcut);else if(p.moved)showCommands(false);}
+    else if(!p.moved)openKeyboard();
   });
-  commandsButton.addEventListener('pointercancel',()=>{picking?.target?.classList.remove('picking');picking=null;showCommands(false);});
-  // Keyboard / assistive activation (no pointer) toggles the palette.
-  commandsButton.addEventListener('click',()=>{if(performance.now()-commandsPointerAt<700||!C.connected())return;C.release();hideVolume(true);showCommands(commandsPane.hidden);});
+  function cancelCommands(){clearTimeout(commandsHold);picking?.target?.classList.remove('picking');picking=null;commandsPointerAt=performance.now();showCommands(false);}
+  commandsButton.addEventListener('pointercancel',cancelCommands);
+  commandsButton.addEventListener('lostpointercapture',()=>{if(picking)cancelCommands();});
+  commandsButton.addEventListener('click',()=>{if(performance.now()-commandsPointerAt<700)return;openKeyboard();});
+  commandsButton.addEventListener('keydown',e=>{if(e.key==='ContextMenu'||e.key==='F10'&&e.shiftKey){e.preventDefault();if(C.connected()){window.ThreeEClip?.close?.();showCommands(true);}}});
   commandsButton.addEventListener('contextmenu',e=>e.preventDefault());
   document.addEventListener('pointerdown',e=>{if(!commandsPane.hidden&&!commandsPane.contains(e.target)&&!commandsButton.contains(e.target))showCommands(false);});
+
   let volume={available:false,level:null},volumeEditing=false,volumePending=null,volumeSendTimer,volumeHideTimer,volumeQuiet=0;
   const volumePane=$('volumePane'),volumeSlider=$('outputVolume');
   function showVolume(){clearTimeout(volumeHideTimer);volumePane.hidden=false;$('media').setAttribute('aria-expanded','true');}
@@ -260,7 +250,7 @@
   },{passive:false});
   // A held Apps/Media contact (app switcher, swipe or volume) or a volume
   // slider being dragged: the page must not reload under the finger.
-  const busy=()=>!!active||volumeEditing||trackPointer!==null;
+  const busy=()=>!!active||!!picking||!commandsPane.hidden||volumeEditing||trackPointer!==null;
   window.ThreeEDock={cancel,busy,commands:showCommands,overviewEnded(){overviewUntil=0;},describe(info){
     if(typeof info?.multipleDesktops==='boolean')multipleDesktops=info.multipleDesktops;
     // Windows and macOS hosts map the shortcut palette; unknown hosts hide it.

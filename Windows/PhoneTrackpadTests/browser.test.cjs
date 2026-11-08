@@ -48,11 +48,11 @@ async function updateFlow(browser,name,url,urlFile,errors){
   assert.match(u.url(),/#[0-9A-F]{48}$/,'the reload keeps the pairing link');
   await u.waitForTimeout(1500);assert.equal(await loads(),2,'it reloads exactly once');}
  {// The phone keyboard is open.
-  await backdate(u);await u.locator('#commands').tap();await u.locator('#commandsPane button[data-tool="keyboard"]').tap();
+  await backdate(u);await u.locator('#commands').tap();
   assert.equal(await u.evaluate(()=>document.activeElement.id),'typeSink');
   await resetSockets();await restart('2222222222222222');await reconnected();
   assert.equal(await loads(),2,'no reload while the keyboard is open');
-  await u.locator('#keyBar .done').dispatchEvent('pointerdown');await reloaded(3);}
+  await u.locator('#typeSink').evaluate(node=>node.blur());await u.waitForTimeout(220);await reloaded(3);}
  {// The clipboard sheet is open.
   await backdate(u);await u.evaluate(()=>{window.ThreeEDock.commands(false);window.ThreeEClip.sendClip();});
   assert.equal(await u.locator('#clipSheet').isVisible(),true);
@@ -174,16 +174,16 @@ if(require.main===module)(async()=>{
    const [commandsBox,appsBox,mediaBox]=[await dockBox('#commands'),await dockBox('#apps'),await dockBox('#media')];
    assert.ok(Math.abs(appsBox.x+appsBox.width/2-195)<=1,'Apps is centred in the dock');
    assert.ok(commandsBox.x<=16&&mediaBox.x+mediaBox.width>=374,'Shortcuts sit in the left corner and Media on the right');
-   await p.locator('#commands').tap();assert.equal(await p.locator('#commandsPane button[data-shortcut]').count(),18);
-   assert.equal(await p.locator('#commandsPane button[data-tool]:visible').count(),1,'One Keyboard & clipboard entry appears for a supported host');
+   await p.locator('#commands').dispatchEvent('pointerdown',{pointerId:11});await p.waitForTimeout(450);await p.locator('#commands').dispatchEvent('pointerup',{pointerId:11});assert.equal(await p.locator('#commandsPane button[data-shortcut]').count(),18);
+   assert.equal(await p.locator('#commandsPane button[data-tool]:visible').count(),0,'Shortcut menu has no redundant keyboard entry');
    await p.locator('#commandsPane button[aria-label^="Copy ("]').tap();await p.waitForTimeout(250);
    assert.ok(commands.some(c=>c.type==='shortcut'&&c.id===0),'Copy sends its fixed shortcut id');assert.equal(await p.locator('#commandsPane').isVisible(),false);
-   {const c=await p.locator('#commands').boundingBox();await p.mouse.move(c.x+c.width/2,c.y+c.height/2);await p.mouse.down();
+   {const c=await p.locator('#commands').boundingBox();await p.mouse.move(c.x+c.width/2,c.y+c.height/2);await p.mouse.down();await p.waitForTimeout(450);
     const target=await p.locator('#commandsPane button[aria-label^="Area shot"]').boundingBox();
     await p.mouse.move(target.x+target.width/2,target.y+target.height/2,{steps:6});await p.mouse.up();await p.waitForTimeout(250);
     assert.ok(commands.some(c=>c.type==='shortcut'&&c.id===14),'press ⌘, slide to ⇧⌘4 and release sends it');assert.equal(await p.locator('#commandsPane').isVisible(),false);}
-   {// Phone keyboard: typing, autocorrect-style replacement, key bar and Done.
-    await p.locator('#commands').tap();await p.locator('#commandsPane button[data-tool="keyboard"]').tap();
+   {// Phone keyboard: typing, autocorrect-style replacement, key bar and native keyboard dismissal.
+    await p.locator('#commands').tap();
     assert.equal(await p.evaluate(()=>document.activeElement.id),'typeSink','Keyboard focuses the typing field (opens the phone keyboard)');
     assert.equal(await p.locator('#keyBar').isVisible(),true);
     const typed=()=>commands.filter(c=>c.type==='text').map(c=>c.text).join('');const start=commands.length;
@@ -196,8 +196,8 @@ if(require.main===module)(async()=>{
     for(const id of ['4','3']){await p.locator(`#keyBar button[data-key="${id}"]`).dispatchEvent('pointerdown');await p.locator(`#keyBar button[data-key="${id}"]`).dispatchEvent('pointerup');}
     await p.waitForTimeout(100);assert.ok(commands.some(c=>c.type==='key'&&c.id===4)&&commands.some(c=>c.type==='key'&&c.id===3),'key bar ← and Esc');
     assert.equal(await p.evaluate(()=>document.activeElement.id),'typeSink','the phone keyboard stays open while using the key bar');
-    await p.locator('#keyBar .done').dispatchEvent('pointerdown');await p.waitForTimeout(100);
-    assert.equal(await p.locator('#keyBar').isVisible(),false,'Done closes the keyboard');}
+    await p.locator('#typeSink').evaluate(node=>node.blur());await p.waitForTimeout(220);await p.waitForTimeout(100);
+    assert.equal(await p.locator('#keyBar').isVisible(),false,'Native keyboard dismissal closes the controls');}
    {// Paste to: text, formatting, a photo and a PDF arrive and Ctrl/⌘+V follows.
     await p.evaluate(()=>{window.ThreeEDock.commands(false);window.ThreeEClip.sendClip();});
     assert.equal(await p.locator('#clipSheet').isVisible(),true);
