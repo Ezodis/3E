@@ -18,7 +18,10 @@ void Check(bool value, string name) { if (!value) { Console.WriteLine("::error::
     var wired = new Uri(ThreeE.PhoneBar.Windows.PhonePairingLink.ForQr(direct, named, true));
     Check(wired.Host == "172.20.10.5" && wired.Port == 17833, "USB QR uses the active cable address instead of multicast DNS");
     Check(wired.Query == "?usb=1" && wired.Fragment == "#" + secret, "USB QR pins the wired route and preserves the complete pairing secret");
-    Check(ThreeE.PhoneBar.Windows.PhonePairingLink.ForQr(null, named, true) == null, "A disconnected USB receiver shows its status instead of an unusable saved-name QR");
+    var waiting = new Uri(PhonePairingLink.ForQr(null, named, true));
+    Check(waiting.Host == "3e-win.local" && waiting.Query == "?usb=1" && waiting.Fragment == wired.Fragment,
+        "A waiting USB receiver keeps a QR for the same pairing identity without advertising a Wi-Fi address");
+    Check(PhonePairingLink.ForQr(null, null, true) == null, "A stopped receiver never invents a pairing URL");
     var replugged = new Uri(ThreeE.PhoneBar.Windows.PhonePairingLink.ForQr(direct.Replace("10.5", "10.7"), named, true));
     Check(replugged.Host == "172.20.10.7" && replugged.Fragment == wired.Fragment, "Replugging updates the QR address without replacing the paired identity");
     Check(ThreeE.PhoneBar.Windows.PhonePairingLink.ForQr(direct, named, false) == named, "Permitted LAN hosts retain the stable-name pairing link");
@@ -375,12 +378,24 @@ Check(fake.Commands.Contains("history:-1") && fake.Commands.Contains("zoom:1"),"
     follow.Stop();Check(follow.Start()&&follow.NamedUrl==stableLink,"Sleep/wake rebind preserves the exact pairing URL");
     follow.Stop(); current = null; await Task.Delay(200); current = IPAddress.Loopback; await Task.Delay(3500);
     Check(!follow.Running, "An explicit Stop is never undone by network recovery");
-    using var offline = new PhoneTrackpad(() => current, new FakeInput(), new FakeFirewall(), FreePort()) { FollowNetwork = true };
+    var offlineFirewall = new FakeFirewall();
+    using var offline = new PhoneTrackpad(() => current, new FakeInput(), offlineFirewall, FreePort()) {
+        FollowNetwork = true, AliasHost = "3e-win.local", TokenProvider = () => new string('B', 48)
+    };
     current = null;
     Check(!offline.Start() && offline.Status.Contains("No local network"), "Starting offline reports no network");
+    var pendingQr = PhonePairingLink.ForQr(offline.PairingUrl, offline.NamedUrl, true);
+    Check(pendingQr != null && !offline.Running && !offlineFirewall.IsOpen,
+        "The waiting QR is available before a cable connects without opening a listener or firewall rule");
     current = IPAddress.Loopback;
     await Until(() => offline.Running);
     Check(offline.Running, "A receiver started offline comes up when Wi-Fi connects");
+    var readyQr = new Uri(PhonePairingLink.ForQr(offline.PairingUrl, offline.NamedUrl, true));
+    Check(readyQr.Host == "127.0.0.1" && readyQr.Query == "?usb=1" && readyQr.Fragment == new Uri(pendingQr).Fragment,
+        "Connecting replaces the waiting QR with the current address and the same pairing identity");
+    offline.Stop();
+    Check(PhonePairingLink.ForQr(offline.PairingUrl, offline.NamedUrl, true) == null,
+        "Stopping hides the pairing identity instead of offering an inactive receiver");
 }
 {
     // Model the observed HTTP.sys failure: GetContextAsync stays pending while

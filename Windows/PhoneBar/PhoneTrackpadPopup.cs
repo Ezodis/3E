@@ -21,23 +21,30 @@ public sealed class PhoneTrackpadPopup : IDisposable {
     private float scale = 1;
     private int width, height;
     private bool visible;
+    private Point anchor;
     public PhoneTrackpadPopup(PhoneTrackpad receiver, Func<bool> usbOnly = null) { this.receiver = receiver; this.usbOnly = usbOnly ?? (() => false); callback = HandleMessage; }
     private int Px(int value) => (int)Math.Round(value * scale);
 
     public void Show() {
-        GetCursorPos(out var point);
-        EnsureWindow(point);
+        GetCursorPos(out anchor);
+        EnsureWindow(anchor);
         scale = Math.Max(1, GetDpiForWindow(window) / 96f);
         Refresh();
-        var monitor = new MonitorInfo { Size = Marshal.SizeOf<MonitorInfo>() };
-        GetMonitorInfo(MonitorFromPoint(point, 2), ref monitor);
-        int x = Math.Clamp(point.X - width / 2, monitor.Work.Left, Math.Max(monitor.Work.Left, monitor.Work.Right - width));
-        int y = Math.Clamp(point.Y - height - Px(12), monitor.Work.Top, Math.Max(monitor.Work.Top, monitor.Work.Bottom - height));
-        SetWindowPos(window, new IntPtr(-1), x, y, width, height, 0x0040);
+        PositionWindow();
         visible = true;
         SetForegroundWindow(window);
         SetFocus(window);
         SetTimer(window, new UIntPtr(1), 1000, IntPtr.Zero);
+    }
+
+    // Keep the whole card above its tray anchor when the QR or status changes
+    // size during a cable reconnect, including taskbars on another monitor.
+    private void PositionWindow() {
+        var monitor = new MonitorInfo { Size = Marshal.SizeOf<MonitorInfo>() };
+        GetMonitorInfo(MonitorFromPoint(anchor, 2), ref monitor);
+        int x = Math.Clamp(anchor.X - width / 2, monitor.Work.Left, Math.Max(monitor.Work.Left, monitor.Work.Right - width));
+        int y = Math.Clamp(anchor.Y - height - Px(12), monitor.Work.Top, Math.Max(monitor.Work.Top, monitor.Work.Bottom - height));
+        SetWindowPos(window, new IntPtr(-1), x, y, width, height, 0x0050);
     }
 
     private void EnsureWindow(Point point) {
@@ -56,14 +63,16 @@ public sealed class PhoneTrackpadPopup : IDisposable {
     }
 
     private string Link => PhonePairingLink.ForQr(receiver.PairingUrl, receiver.NamedUrl, usbOnly());
+    private string Status => usbOnly() && receiver.Running ? "USB only · " + receiver.Status : receiver.Status;
 
     private void Refresh() {
         displayedLink = Link;
-        displayedStatus = receiver.Status;
-        var next = RenderCard(displayedLink, displayedStatus, scale);
+        displayedStatus = Status;
+        var next = RenderCard(displayedLink, displayedLink == null || usbOnly() ? displayedStatus : null, scale);
         card?.Dispose(); card = next;
         width = card.Width; height = card.Height;
-        SetWindowPos(window, IntPtr.Zero, 0, 0, width, height, 0x0006);
+        if (visible) PositionWindow();
+        else SetWindowPos(window, IntPtr.Zero, 0, 0, width, height, 0x0006);
         InvalidateRect(window, IntPtr.Zero, false);
     }
 
@@ -74,8 +83,9 @@ public sealed class PhoneTrackpadPopup : IDisposable {
         catch { return null; }
     }
 
-    // Render once per link/DPI change. Integer-sized QR modules retain their quiet zone.
-    internal static Bitmap RenderCard(string link, string unavailable, float scale) {
+    // Render once per link/status/DPI change. Keep status below the complete QR
+    // quiet zone so a waiting-for-USB card is both readable and scannable.
+    internal static Bitmap RenderCard(string link, string message, float scale) {
         int Px(int value) => (int)Math.Round(value * scale);
         Bitmap qr = null;
         if (link != null) {
@@ -85,7 +95,13 @@ public sealed class PhoneTrackpadPopup : IDisposable {
         }
         using (qr) {
             int width = Math.Max(Px(192), (qr?.Width ?? 0) + Px(20));
-            int height = qr == null ? Px(112) : qr.Height + Px(44);
+            using var font = new Font("Segoe UI", 11 * scale, FontStyle.Regular, GraphicsUnit.Pixel);
+            using var format = new StringFormat { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Center };
+            using var measureBitmap = new Bitmap(1, 1);
+            using var measure = Graphics.FromImage(measureBitmap);
+            int messageHeight = string.IsNullOrWhiteSpace(message) ? 0 :
+                (int)Math.Ceiling(measure.MeasureString(message, font, width - Px(28), format).Height) + Px(12);
+            int height = (qr?.Height ?? 0) + Px(44) + messageHeight;
             var bitmap = new Bitmap(width, height);
             using var graphics = Graphics.FromImage(bitmap);
             graphics.Clear(Color.White);
@@ -93,9 +109,7 @@ public sealed class PhoneTrackpadPopup : IDisposable {
             graphics.DrawRectangle(border, 0, 0, width - 1, height - 1);
             if (qr != null) graphics.DrawImageUnscaled(qr, (width - qr.Width) / 2, Px(10));
             graphics.TextRenderingHint = System.Drawing.Text.TextRenderingHint.AntiAliasGridFit;
-            using var font = new Font("Segoe UI", 11 * scale, FontStyle.Regular, GraphicsUnit.Pixel);
             using var ink = new SolidBrush(Color.FromArgb(74, 84, 92));
-            using var format = new StringFormat { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Center };
             // Label with the 3£ butterfly mark in front of it. The mark already
             // says 3£, so the text is just "Track Phone" (the name is spelled out
             // only if the mark cannot be loaded).
@@ -112,7 +126,8 @@ public sealed class PhoneTrackpadPopup : IDisposable {
                 using var leftAligned = new StringFormat { Alignment = StringAlignment.Near, LineAlignment = StringAlignment.Center };
                 graphics.DrawString(label, font, ink, new RectangleF(left + markWidth + spacing, labelTop, textWidth + Px(4), Px(26)), leftAligned);
             }
-            if (qr == null) graphics.DrawString(unavailable, font, ink, new RectangleF(Px(14), Px(40), width - Px(28), height - Px(48)), format);
+            if (messageHeight > 0) graphics.DrawString(message, font, ink,
+                new RectangleF(Px(14), labelTop + Px(30), width - Px(28), messageHeight - Px(8)), format);
             return bitmap;
         }
     }
@@ -130,7 +145,7 @@ public sealed class PhoneTrackpadPopup : IDisposable {
                 case 0x0010: Hide(); return IntPtr.Zero;
                 case 0x0100: if (wParam.ToInt32() == 27) { Hide(); return IntPtr.Zero; } break;
                 case 0x0113:
-                    if (displayedLink != Link || displayedLink == null && displayedStatus != receiver.Status) Refresh();
+                    if (displayedLink != Link || displayedStatus != Status) Refresh();
                     return IntPtr.Zero;
                 case 0x02E0:
                     scale = Math.Max(1, (wParam.ToInt64() & 0xffff) / 96f);
