@@ -252,7 +252,7 @@ static void StabilizePianoEdges(NSView *piano) {
         [path transformUsingAffineTransform:transform]; [piano setValue:path forKey:name];
     }
 }
-static void PianoLayout(NSView *piano,SEL selector) {
+static void ChromaticPianoLayout(NSView *piano,SEL selector) {
     BOOL rebuilt=[[piano valueForKey:@"lastWidth"] doubleValue]!=piano.bounds.size.width;
     ((void(*)(id,SEL))originalPianoLayout)(piano,selector);
     if(rebuilt) StabilizePianoEdges(piano);
@@ -570,18 +570,20 @@ static PianoConfigButton *pianoModeButton,*pianoChannelButton;
 @end
 static PianoDegreeButton *pianoDegreeButton;
 static void UpdateDegreeButton(void) {
-    BOOL enabled=PianoShowsDegrees(expandedPianoView);
+    NSInteger display=PianoDisplayMode(expandedPianoView);
+    BOOL enabled=display!=0;
     pianoDegreeButton.title=@"";
     pianoDegreeButton.stackedCaption=@"";
     pianoDegreeButton.degreeToggle=YES; pianoDegreeButton.degreeToggleOn=enabled;
     pianoDegreeButton.compactGlyph=YES;
-    pianoDegreeButton.image=[NSImage imageWithSystemSymbolName:@"music.note.list" accessibilityDescription:@"Scale harmony"] ?: [NSImage imageWithSystemSymbolName:@"music.note" accessibilityDescription:@"Scale harmony"];
+    pianoDegreeButton.image=[NSImage imageWithSystemSymbolName:display==2 ? @"square.grid.3x1.fill" : @"music.note.list" accessibilityDescription:@"Scale harmony"] ?: [NSImage imageWithSystemSymbolName:@"music.note" accessibilityDescription:@"Scale harmony"];
     pianoDegreeButton.needsDisplay=YES;
-    [pianoDegreeButton setAccessibilityLabel:enabled ? @"Scale degrees shown. Tap to hide." : @"Scale degrees hidden. Tap to show."];
+    [pianoDegreeButton setAccessibilityLabel:@[@"Plain piano. Tap for labels.",@"Labeled piano. Tap for scale-only pads.",@"Scale-only pads. Tap for plain piano."][display]];
+    pianoDegreeButton.toolTip=@"Plain → Labels → Scale pads. Scale pads follow Live’s enabled scale.";
 }
 @implementation PianoDegreeButton
 - (void)toggleDegrees {
-    SetPianoShowsDegrees(expandedPianoView,!PianoShowsDegrees(expandedPianoView));
+    SetPianoDisplayMode(expandedPianoView,(PianoDisplayMode(expandedPianoView)+1)%3);
     SaveExpandedPianoSettings(); UpdateDegreeButton();
 }
 - (void)step:(NSInteger)direction {
@@ -1732,9 +1734,9 @@ static void TestPianoExpansionCase(NSTouchBar *bar,NSTouchBar *saved,id savedIde
         NSCAssert([pianoModeButton.stackedCaption isEqual:pianoModeButton.title] && octavesButton.octaveSpanSymbol && octavesButton.stackedCaption.length==0,@"Piano options use a stacked mode label and a text-free octave symbol");
         NSCAssert(pianoDegreeButton.superview==octavesButton.superview && fabs(NSMaxX(octavesButton.frame)-NSMinX(pianoDegreeButton.frame))<.1 && pianoDegreeButton.compactGlyph && fabs(NSWidth(pianoDegreeButton.bounds)-28)<.1 && fabs(NSWidth(pianoModeButton.bounds)-36)<.1 && fabs(NSWidth(octavesButton.bounds)-36)<.1 && fabs(NSWidth(pianoConfigurationGroup.bounds)-164)<.1,@"Four compact controls share a joined item; Labels is narrower");
         NSCAssert(pianoModeButton.iconAboveCaption,@"Gesture icon is drawn above its GLISS/HOLD/BEND caption");
-        BOOL beforeDegrees=PianoShowsDegrees(piano);
+        NSInteger beforeDegrees=PianoDisplayMode(piano);
         [pianoDegreeButton beginAt:NSMakePoint(22,15) identity:NSUUID.UUID]; [pianoDegreeButton finishAt:NSMakePoint(22,15)];
-        NSCAssert(PianoShowsDegrees(piano)!=beforeDegrees && [InstanceSettings(bar,identifier)[@"showDegrees"] boolValue]!=beforeDegrees,@"A real button tap persists degree visibility for this piano only");
+        NSCAssert(PianoDisplayMode(piano)==(beforeDegrees+1)%3 && [InstanceSettings(bar,identifier)[@"scaleDisplayMode"] integerValue]==(beforeDegrees+1)%3,@"A real button tap persists degree visibility for this piano only");
         for(NSView *control in @[closeButton,pianoModeButton,octavesButton,pianoDegreeButton]) {
             NSRect frame=[control convertRect:control.bounds toView:nil];
             NSCAssert(control.window && frame.origin.x>=0 && NSMaxX(frame)<=control.window.contentView.bounds.size.width,@"All expanded settings controls must be visible");

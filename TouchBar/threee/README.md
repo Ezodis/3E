@@ -174,6 +174,12 @@ open '/Applications/3E.app'
 
 The installer updates only the injected MIDI bridge, required framework links/signatures and packaged Ableton script. It refuses to update while ThreeE or its MIDI helper is running. It never creates an installed companion app or backup. Override `STRIP_ABLETON_SCRIPT_DIR` if your configured User Library is elsewhere. Restart Live after changing its script, then choose _3E once.
 
+## Piano scale pads
+
+The piano's label icon cycles **Plain → Labels → Scale pads → Plain**. Scale pads show only notes from Live's enabled scale, with equal-width touch regions and degree/name labels. Melody pianos show note names; channels with the recognized three-mode chord rack show the scale's triad names. This view sends the original note pitches to the existing instrument and does not add another chord generator.
+
+The setting is independent per piano and survives octave changes/restarts. Held notes retain their paths until released. If Live disconnects or Scale Mode is off, the full piano returns; the scale-pad preference resumes when a valid scale is available. Arrow navigation and the existing gesture and rhythm modes stay available.
+
 ## Session clip tools
 
 Hold Record and release over **Clip Settings** or **Loop Builder**. Both spaces keep the standard left X to return to MIDI. Select a Session clip in Live first.

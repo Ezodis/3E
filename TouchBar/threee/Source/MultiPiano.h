@@ -173,7 +173,7 @@ static NSArray *PianoGeometry(NSTouchBar *bar) {
 @implementation StripPianoInstance
 @end
 static void TransferPianoInstance(NSView *source,NSView *replacement) {
-    SetPianoShowsDegrees(replacement,PianoShowsDegrees(source));
+    SetPianoDisplayMode(replacement,PianoDisplayMode(source));
     objc_setAssociatedObject(replacement,&pianoInstanceKey,objc_getAssociatedObject(source,&pianoInstanceKey),OBJC_ASSOCIATION_RETAIN_NONATOMIC);
 }
 
@@ -204,10 +204,11 @@ static void SaveExpandedPianoSettings(void) {
     settings[@"startOctave"]=[expandedPianoView valueForKey:@"startOctave"];
     settings[@"type"]=PianoModeName([[expandedPianoView valueForKey:@"type"] integerValue]);
     settings[@"showDegrees"]=@(PianoShowsDegrees(expandedPianoView));
+    settings[@"scaleDisplayMode"]=@(PianoDisplayMode(expandedPianoView));
     SaveInstanceSettings(normalLayoutBar,identifier,settings);
 }
 static void ApplyInstanceSettings(NSView *piano,NSDictionary *settings) {
-    SetPianoShowsDegrees(piano,[settings[@"showDegrees"] boolValue]);
+    SetPianoDisplayMode(piano,settings[@"scaleDisplayMode"] ? [settings[@"scaleDisplayMode"] integerValue] : [settings[@"showDegrees"] boolValue]);
     [piano setValue:settings[@"channel"] ?: @1 forKey:@"channelNumber"];
     [piano setValue:settings[@"octaves"] ?: @2 forKey:@"numOctaves"];
     [piano setValue:settings[@"startOctave"] ?: @4 forKey:@"startOctave"];
@@ -221,7 +222,8 @@ static id MakeIndependentPiano(id delegate,SEL selector,NSTouchBar *bar,NSString
     if(![identifier isEqual:SecondPianoID] && ![identifier isEqual:ThirdPianoID]) {
         id item=((id(*)(id,SEL,id,id))originalMakeItem)(delegate,selector,bar,identifier);
         if([identifier isEqual:NativePianoID]) {
-            SetPianoShowsDegrees([item view],[InstanceSettings(bar,identifier)[@"showDegrees"] boolValue]);
+            NSDictionary *settings=InstanceSettings(bar,identifier);
+            SetPianoDisplayMode([item view],settings[@"scaleDisplayMode"] ? [settings[@"scaleDisplayMode"] integerValue] : [settings[@"showDegrees"] boolValue]);
             SizePianoItem(item,bar);
         }
         return item;

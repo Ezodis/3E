@@ -1,13 +1,18 @@
-// Read-only Live scale feedback. Never transpose, filter or reroute MIDI.
+// Live scale feedback and optional scale-only geometry. Keys retain their MIDI pitches.
 static IMP originalPianoDraw;
 static NSUInteger liveScaleMask;
 static NSArray<NSNumber *> *liveScaleDegrees;
 static char pianoDegreesKey;
-static BOOL PianoShowsDegrees(NSView *piano) { return [objc_getAssociatedObject(piano,&pianoDegreesKey) boolValue]; }
-static void SetPianoShowsDegrees(NSView *piano,BOOL enabled) {
-    objc_setAssociatedObject(piano,&pianoDegreesKey,@(enabled),OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+static NSInteger PianoDisplayMode(NSView *piano) { return MIN(2,MAX(0,[objc_getAssociatedObject(piano,&pianoDegreesKey) integerValue])); }
+static BOOL PianoShowsDegrees(NSView *piano) { return PianoDisplayMode(piano)!=0; }
+static void SetPianoDisplayMode(NSView *piano,NSInteger mode) {
+    objc_setAssociatedObject(piano,&pianoDegreesKey,@(MIN(2,MAX(0,mode))),OBJC_ASSOCIATION_RETAIN_NONATOMIC);
     piano.needsDisplay=YES;
 }
+static void SetPianoShowsDegrees(NSView *piano,BOOL enabled) { SetPianoDisplayMode(piano,enabled ? 1 : 0); }
+static char pianoPadGeometryKey;
+static NSDictionary *liveChordPianos;
+static BOOL PianoHasScalePads(NSView *piano) { return objc_getAssociatedObject(piano,&pianoPadGeometryKey)!=nil; }
 static NSString *ScaleDegreeForNote(NSInteger note) {
     NSUInteger index=[liveScaleDegrees indexOfObject:@((note%12+12)%12)];
     NSArray *names=@[@"I",@"II",@"III",@"IV",@"V",@"VI",@"VII",@"VIII",@"IX",@"X",@"XI",@"XII"];
@@ -59,10 +64,65 @@ static void UpdateLiveScale(NSDictionary *state,BOOL connected) {
         NSNumber *pitch=@(([state[@"root_note"] integerValue]+interval.integerValue)%12);
         if(![degrees containsObject:pitch]) [degrees addObject:pitch];
     }
-    if(mask==liveScaleMask && [degrees isEqual:liveScaleDegrees]) return;
+    NSDictionary *chords=connected && [state[@"piano_modes"] isKindOfClass:NSDictionary.class] ? state[@"piano_modes"] : @{};
+    if(mask==liveScaleMask && [degrees isEqual:liveScaleDegrees] && [chords isEqual:liveChordPianos]) return;
+    liveChordPianos=chords;
     liveScaleMask=mask;
     liveScaleDegrees=degrees.copy;
     for(NSView *piano in scalePianos.allObjects) piano.needsDisplay=YES;
+}
+static NSString *ScalePadName(NSView *piano,NSInteger note) {
+    NSString *name=@[@"C",@"D♭",@"D",@"E♭",@"E",@"F",@"G♭",@"G",@"A♭",@"A",@"B♭",@"B"][(note%12+12)%12];
+    NSString *channel=[[piano valueForKey:@"channelNumber"] stringValue];
+    if(liveChordPianos[channel] && liveScaleDegrees.count==7) {
+        NSString *degree=ScaleDegreeForNote(note);
+        if([degree hasSuffix:@"°"]) return [name stringByAppendingString:@"dim"];
+        if([degree hasSuffix:@"+"]) return [name stringByAppendingString:@"aug"];
+        if([degree isEqual:degree.lowercaseString]) return [name stringByAppendingString:@"m"];
+    }
+    return name;
+}
+static void PianoLayout(NSView *piano,SEL selector) {
+    BOOL pads=PianoDisplayMode(piano)==2 && liveScaleMask!=0;
+    NSArray *signature=@[@(piano.bounds.size.width),@(piano.bounds.size.height),@(PianoStartNote(piano)),[piano valueForKey:@"numOctaves"],@(liveScaleMask)];
+    NSArray *previous=objc_getAssociatedObject(piano,&pianoPadGeometryKey);
+    // Keep paths stable until every held note has received its native note-off.
+    if([[piano valueForKey:@"activeKeys"] count] && (previous || pads)) return;
+    if(pads && [previous isEqual:signature]) return;
+    if(previous || pads) [piano setValue:@(-1) forKey:@"lastWidth"];
+    ChromaticPianoLayout(piano,selector);
+    objc_setAssociatedObject(piano,&pianoPadGeometryKey,nil,OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    for(NSView *label in [piano valueForKey:@"textFields"]) label.hidden=pads;
+    if(!pads) return;
+    NSInteger start=[[piano valueForKey:@"startOctave"] integerValue]*12;
+    NSMutableArray *keys=[NSMutableArray new];
+    for(id key in [piano valueForKey:@"pianoKeys"]) {
+        NSInteger note=start+[[key valueForKey:@"pitch"] integerValue];
+        if(note>=0 && note<=127 && NoteInLiveScale(note,liveScaleMask)) [keys addObject:key];
+    }
+    [keys sortUsingComparator:^NSComparisonResult(id a,id b) { return [[a valueForKey:@"pitch"] compare:[b valueForKey:@"pitch"]]; }];
+    if(!keys.count) return;
+    CGFloat edge=PianoEdgeRect(piano,NO).size.width,span=MAX(0,piano.bounds.size.width-2*edge)/keys.count;
+    for(NSUInteger i=0;i<keys.count;i++) {
+        NSRect hit=NSMakeRect(NSMinX(piano.bounds)+edge+i*span,NSMinY(piano.bounds),span,NSHeight(piano.bounds));
+        [keys[i] setValue:[NSBezierPath bezierPathWithRect:hit] forKey:@"touchPath"];
+        [keys[i] setValue:[NSBezierPath bezierPathWithRoundedRect:NSInsetRect(hit,MIN(1,span/8),1) xRadius:3 yRadius:3] forKey:@"drawPath"];
+    }
+    [piano setValue:keys forKey:@"pianoKeys"];
+    objc_setAssociatedObject(piano,&pianoPadGeometryKey,signature,OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+}
+static void DrawScalePadLabel(NSView *piano,id key) {
+    NSInteger note=[[piano valueForKey:@"startOctave"] integerValue]*12+[[key valueForKey:@"pitch"] integerValue];
+    NSString *label=[NSString stringWithFormat:@"%@\n%@",ScaleDegreeForNote(note) ?: @"",ScalePadName(piano,note)];
+    NSRect rect=[[key valueForKey:@"drawPath"] bounds];
+    NSMutableParagraphStyle *paragraph=[NSMutableParagraphStyle new];paragraph.alignment=NSTextAlignmentCenter;
+    CGFloat font=10;
+    NSMutableDictionary *attrs=[@{NSFontAttributeName:[NSFont systemFontOfSize:font weight:NSFontWeightSemibold],NSForegroundColorAttributeName:NSColor.blackColor,NSParagraphStyleAttributeName:paragraph} mutableCopy];
+    while(font>5 && [label sizeWithAttributes:attrs].width>NSWidth(rect)-2) { font-=.5;attrs[NSFontAttributeName]=[NSFont systemFontOfSize:font weight:NSFontWeightSemibold]; }
+    [NSGraphicsContext saveGraphicsState];[[key valueForKey:@"drawPath"] addClip];
+    CGFloat height=[label sizeWithAttributes:attrs].height;
+    [label drawInRect:NSMakeRect(NSMinX(rect),NSMidY(rect)-height/2,NSWidth(rect),height) withAttributes:attrs];
+    [NSGraphicsContext restoreGraphicsState];
 }
 static BOOL ScaleKeyIsPressed(NSView *piano,id key) {
     NSBezierPath *path=[key valueForKey:@"drawPath"], *touch=[key valueForKey:@"touchPath"];
@@ -77,6 +137,7 @@ static void DrawPianoScale(NSView *piano,SEL selector,NSRect dirty) {
     // count, ignoring upKey/downKey. They can land on playable end keys.
     // Render the existing native key paths/pressed state without those arrows.
     [piano viewWillDraw];
+    BOOL pads=PianoHasScalePads(piano);
     [NSGraphicsContext saveGraphicsState];
     NSRect keyboard=piano.bounds;
     keyboard.origin.x+=PianoEdgeRect(piano,NO).size.width;
@@ -86,8 +147,9 @@ static void DrawPianoScale(NSView *piano,SEL selector,NSRect dirty) {
     for(id key in [piano valueForKey:@"pianoKeys"]) {
         NSBezierPath *path=[key valueForKey:@"drawPath"];
         BOOL black=[@[@1,@3,@6,@8,@10] containsObject:@(([[key valueForKey:@"pitch"] integerValue]%12+12)%12)];
-        [(ScaleKeyIsPressed(piano,key) ? NSColor.redColor : black ? NSColor.blackColor : NSColor.whiteColor) setFill];
+        [(ScaleKeyIsPressed(piano,key) ? NSColor.redColor : pads ? [NSColor colorWithSRGBRed:.52 green:.86 blue:.93 alpha:1] : black ? NSColor.blackColor : NSColor.whiteColor) setFill];
         [path fill]; [NSColor.blackColor setStroke]; [path stroke];
+        if(pads) DrawScalePadLabel(piano,key);
     }
     [NSGraphicsContext restoreGraphicsState];
     // The sole arrows occupy the same fixed regions used by touch handling.
@@ -108,7 +170,7 @@ static void DrawPianoScale(NSView *piano,SEL selector,NSRect dirty) {
     [NSGraphicsContext restoreGraphicsState];
     if(!scalePianos) scalePianos=[NSHashTable weakObjectsHashTable];
     [scalePianos addObject:piano];
-    if(!liveScaleMask) return;
+    if(!liveScaleMask || pads) return;
     [NSGraphicsContext saveGraphicsState];
     [NSBezierPath clipRect:NSIntersectionRect(piano.bounds,dirty)];
     for(id active in [piano valueForKey:@"activeKeys"]) {

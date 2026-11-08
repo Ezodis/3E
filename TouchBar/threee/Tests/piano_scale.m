@@ -1,8 +1,55 @@
 #define STRIP3_RECORD_TESTING 1
 #import "../Source/MidiBridge.m"
+@interface ScaleTestKey : NSObject
+@property NSNumber *pitch;
+@property NSBezierPath *drawPath,*touchPath;
+@end
+@implementation ScaleTestKey
+@end
+@interface ScaleTestPiano : NSView
+@property NSArray *pianoKeys,*activeKeys,*textFields;
+@property NSNumber *startOctave,*numOctaves,*lastWidth,*channelNumber;
+@property NSBezierPath *upKey,*downKey;
+@end
+@implementation ScaleTestPiano
+@end
+static void TestNativeLayout(ScaleTestPiano *piano,SEL selector) {
+    if(piano.lastWidth.doubleValue==piano.bounds.size.width) return;
+    NSMutableArray *keys=[NSMutableArray new];
+    for(NSInteger pitch=0;pitch<12;pitch++) {
+        ScaleTestKey *key=[ScaleTestKey new];key.pitch=@(pitch);
+        key.drawPath=[NSBezierPath bezierPathWithRect:NSMakeRect(14+pitch*24,0,24,30)];key.touchPath=key.drawPath.copy;[keys addObject:key];
+    }
+    piano.pianoKeys=keys;piano.lastWidth=@(piano.bounds.size.width);
+}
+static void TestScalePads(NSDictionary *major) {
+    originalPianoLayout=(IMP)TestNativeLayout;
+    ScaleTestPiano *piano=[[ScaleTestPiano alloc] initWithFrame:NSMakeRect(0,0,364,30)];
+    piano.startOctave=@5;piano.numOctaves=@1;piano.lastWidth=@(-1);piano.channelNumber=@2;
+    piano.activeKeys=@[];piano.textFields=@[];
+    NSMutableDictionary *state=major.mutableCopy;state[@"piano_modes"]=@{@"2":@2};UpdateLiveScale(state,YES);
+    SetPianoDisplayMode(piano,2);PianoLayout(piano,@selector(viewWillDraw));
+    NSCAssert(([[piano.pianoKeys valueForKey:@"pitch"] isEqual:@[@0,@2,@4,@5,@7,@9,@11]]),@"Only scale pitches remain, ordered by pitch without transposition");
+    for(NSUInteger i=0;i<piano.pianoKeys.count;i++) {
+        NSRect hit=[piano.pianoKeys[i] touchPath].bounds;
+        NSCAssert(fabs(hit.size.width-48)<.01 && fabs(hit.origin.x-(14+i*48))<.01,@"Scale pads occupy the playable width evenly and leave arrows clear");
+        NSUInteger matches=0;for(ScaleTestKey *key in piano.pianoKeys) if([key.touchPath containsPoint:NSMakePoint(NSMidX(hit),15)]) matches++;
+        NSCAssert(matches==1,@"Each pad center triggers exactly one MIDI key");
+    }
+    NSCAssert([ScalePadName(piano,64) isEqual:@"Em"] && [ScalePadName(piano,71) isEqual:@"Bdim"],@"Chord piano names follow diatonic triad quality");
+    piano.channelNumber=@1;NSCAssert([ScalePadName(piano,64) isEqual:@"E"],@"Melody piano displays a note name, not a chord");
+    NSArray *held=piano.pianoKeys;piano.activeKeys=@[@1];SetPianoDisplayMode(piano,0);PianoLayout(piano,@selector(viewWillDraw));
+    NSCAssert(piano.pianoKeys==held,@"Held notes retain their paths through a mode change");
+    piano.activeKeys=@[];PianoLayout(piano,@selector(viewWillDraw));NSCAssert(piano.pianoKeys.count==12 && !PianoHasScalePads(piano),@"Releasing restores all chromatic keys");
+    SetPianoDisplayMode(piano,2);PianoLayout(piano,@selector(viewWillDraw));
+    UpdateLiveScale(@{},NO);PianoLayout(piano,@selector(viewWillDraw));NSCAssert(piano.pianoKeys.count==12 && PianoDisplayMode(piano)==2,@"No stale scale: disconnect restores piano while retaining the user's preference");
+    UpdateLiveScale(state,YES);PianoLayout(piano,@selector(viewWillDraw));NSCAssert(piano.pianoKeys.count==7,@"Reconnection restores the saved scale layout");
+    NSView *replacement=[NSView new];TransferPianoInstance(piano,replacement);NSCAssert(PianoDisplayMode(replacement)==2,@"Pad preference survives octave-view replacement");
+}
 int main(void) {
     @autoreleasepool {
         NSDictionary *major=@{@"scale_supported":@YES,@"scale_mode":@YES,@"root_note":@0,@"scale_intervals":@[@0,@2,@4,@5,@7,@9,@11]};
+        TestScalePads(major);
         NSUInteger mask=ScaleMaskForState(major,YES);
         UpdateLiveScale(major,YES);
         NSCAssert([ScaleDegreeForNote(60) isEqual:@"I"] && [ScaleDegreeForNote(64) isEqual:@"iii"] && !ScaleDegreeForNote(61),@"Only actual scale notes have degrees with the correct triad quality");
