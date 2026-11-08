@@ -79,6 +79,13 @@ int main(void) {
         NSMutableDictionary *minor=major.mutableCopy; minor[@"root_note"]=@6; minor[@"scale_intervals"]=@[@0,@2,@3,@5,@7,@8,@10];
         mask=ScaleMaskForState(minor,YES);
         for(NSInteger note=0;note<128;note++) NSCAssert((NoteInLiveScale(note,mask)==[@[@1,@2,@4,@6,@8,@9,@11] containsObject:@(note%12)]),@"F-sharp Minor must include the correct black and white keys");
+        UpdateLiveScale(minor,YES);
+        NSCAssert([ScaleNoteName(66) isEqual:@"F♯"] && [ScaleNoteName(61) isEqual:@"C♯"] && [ScaleNoteName(68) isEqual:@"G♯"],@"Sharp minor scales retain their sharp note names");
+        NSMutableDictionary *flat=major.mutableCopy;flat[@"root_note"]=@1;UpdateLiveScale(flat,YES);
+        NSArray *flatNames=@[@"D♭",@"E♭",@"F",@"G♭",@"A♭",@"B♭",@"C"];
+        for(NSUInteger i=0;i<7;i++) NSCAssert([ScaleNoteName([liveScaleDegrees[i] integerValue]) isEqual:flatNames[i]],@"D-flat major must spell every accidental");
+        flat[@"root_note"]=@6;UpdateLiveScale(flat,YES);
+        NSCAssert([ScaleNoteName(5) isEqual:@"E♯"],@"F-sharp major includes E-sharp, not an unmarked F");
         NSCAssert(!ScaleMaskForState(minor,NO),@"Disconnected or stale state must not highlight keys");
         minor[@"scale_mode"]=@NO; NSCAssert(!ScaleMaskForState(minor,YES),@"Scale Mode off must restore the normal piano");
         minor[@"scale_mode"]=@YES; minor[@"root_note"]=@12; NSCAssert(!ScaleMaskForState(minor,YES),@"Malformed state cannot invent a scale");

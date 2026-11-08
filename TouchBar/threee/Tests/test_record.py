@@ -65,7 +65,10 @@ class RecordTests(unittest.TestCase):
         self.song.begin_undo_step = lambda: None
         self.song.end_undo_step = lambda: None
         self.song.scenes = [SimpleNamespace(name="RUFF - Base")]
+        self.other.clip_slots = [SimpleNamespace(has_clip=False)]
         self.server.execute(self.command("song-ruff"))
+        self.assertIs(self.song.view.highlighted_clip_slot, self.other.clip_slots[0])
+        self.assertIs(self.song.view.selected_track, self.other)
         self.assertEqual(self.song.tempo, 108)
         self.assertEqual((self.song.root_note, self.song.scale_name), (1, "Major"))
         self.assertEqual(self.server.state()["piano_modes"], {"1": 1, "2": 1})
@@ -93,6 +96,23 @@ class RecordTests(unittest.TestCase):
         self.assertEqual(self.server.state()["piano_modes"], {})
         with self.assertRaises(ValueError):
             self.server.execute(self.command("piano-mode-set", channel="2", mode=0))
+
+    def test_song_specific_fourth_mode(self):
+        selector = SimpleNamespace(name="Chain Selector", value=0)
+        self.track.name = "P2 CHORDS - Ch 2"
+        rack = SimpleNamespace(name="MODE: 0 Plain | 1 Arp | 2 Bounce | 3 NOTA", parameters=[selector])
+        self.track.devices = [rack]
+        for name in ("NOTA", "RUFF"):
+            rack.name = "MODE: 0 Plain | 1 Arp | 2 Bounce | 3 " + name
+            self.assertEqual(self.server.state()["piano_mode_labels"]["2"], ["Chord", "Arpeggio", "Bounce", name])
+            self.server.execute(self.command("piano-mode-set", channel="2", mode=3))
+            self.assertEqual(selector.value, 3)
+            for value in (4, -1, True, "3"):
+                with self.assertRaises(ValueError):
+                    self.server.execute(self.command("piano-mode-set", channel="2", mode=value))
+        rack.name = "MODE: 0 Plain | 1 Arp | 2 Bounce"
+        with self.assertRaises(ValueError):
+            self.server.execute(self.command("piano-mode-set", channel="2", mode=3))
 
     def prepare_clip(self):
         clip = SimpleNamespace(name="Base", is_midi_clip=True, is_recording=False,

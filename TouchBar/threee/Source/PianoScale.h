@@ -71,8 +71,29 @@ static void UpdateLiveScale(NSDictionary *state,BOOL connected) {
     liveScaleDegrees=degrees.copy;
     for(NSView *piano in scalePianos.allObjects) piano.needsDisplay=YES;
 }
+static NSString *ScaleNoteName(NSInteger note) {
+    NSInteger pitch=(note%12+12)%12;
+    NSArray *fallback=@[@"C",@"D♭",@"D",@"E♭",@"E",@"F",@"G♭",@"G",@"A♭",@"A",@"B♭",@"B"];
+    NSUInteger degree=[liveScaleDegrees indexOfObject:@(pitch)];
+    if(liveScaleDegrees.count!=7 || degree==NSNotFound) return fallback[pitch];
+    // Spell a seven-note scale with one of each letter. Choose the tonic
+    // spelling requiring the fewest accidentals (D-flat major, F-sharp minor).
+    NSInteger natural[]={0,2,4,5,7,9,11},best=0,bestCost=NSIntegerMax;
+    for(NSInteger tonic=0;tonic<7;tonic++) {
+        NSInteger cost=0;
+        for(NSInteger i=0;i<7;i++) {
+            NSInteger delta=([liveScaleDegrees[i] integerValue]-natural[(tonic+i)%7]+18)%12-6;
+            cost+=labs(delta)+(labs(delta)>2 ? 100 : 0);
+        }
+        if(cost<bestCost) { bestCost=cost;best=tonic; }
+    }
+    NSInteger letter=(best+degree)%7,delta=(pitch-natural[letter]+18)%12-6;
+    if(labs(delta)>2) return fallback[pitch];
+    NSString *accidental=delta==-2 ? @"♭♭" : delta==-1 ? @"♭" : delta==1 ? @"♯" : delta==2 ? @"♯♯" : @"";
+    return [@[@"C",@"D",@"E",@"F",@"G",@"A",@"B"][letter] stringByAppendingString:accidental];
+}
 static NSString *ScalePadName(NSView *piano,NSInteger note) {
-    NSString *name=@[@"C",@"D♭",@"D",@"E♭",@"E",@"F",@"G♭",@"G",@"A♭",@"A",@"B♭",@"B"][(note%12+12)%12];
+    NSString *name=ScaleNoteName(note);
     NSString *channel=[[piano valueForKey:@"channelNumber"] stringValue];
     if(liveChordPianos[channel] && liveScaleDegrees.count==7) {
         NSString *degree=ScaleDegreeForNote(note);
@@ -92,7 +113,7 @@ static void PianoLayout(NSView *piano,SEL selector) {
     if(previous || pads) [piano setValue:@(-1) forKey:@"lastWidth"];
     ChromaticPianoLayout(piano,selector);
     objc_setAssociatedObject(piano,&pianoPadGeometryKey,nil,OBJC_ASSOCIATION_RETAIN_NONATOMIC);
-    for(NSView *label in [piano valueForKey:@"textFields"]) label.hidden=pads;
+    for(NSView *label in [piano valueForKey:@"textFields"]) label.hidden=pads || (liveScaleMask && PianoShowsDegrees(piano));
     if(!pads) return;
     NSInteger start=[[piano valueForKey:@"startOctave"] integerValue]*12;
     NSMutableArray *keys=[NSMutableArray new];
@@ -199,7 +220,8 @@ static void DrawPianoScale(NSView *piano,SEL selector,NSRect dirty) {
         [accent setFill];
         [path fill];
         if(PianoShowsDegrees(piano)) {
-            NSString *degree=ScaleDegreeForNote(start+[[key valueForKey:@"pitch"] integerValue]);
+            NSInteger note=start+[[key valueForKey:@"pitch"] integerValue];
+            NSString *degree=[NSString stringWithFormat:@"%@\n%@",ScaleDegreeForNote(note),ScalePadName(piano,note)];
             NSRect bounds=PianoDegreeLabelRegion(NSIntersectionRect(path.bounds,piano.bounds),path,whiteMask,black);
             CGFloat fontSize=9;
             NSMutableDictionary *attributes=[@{NSFontAttributeName:[NSFont systemFontOfSize:fontSize weight:NSFontWeightBold],NSForegroundColorAttributeName:[NSColor colorWithWhite:.05 alpha:1]} mutableCopy];

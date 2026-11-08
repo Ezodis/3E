@@ -165,18 +165,27 @@ class RecordServer:
             for track, device, selector in banks:
                 selector.value = index
             self.song.tempo = tempo
-            self.song.root_note = root
-            self.song.scale_name = scale
-            self.song.scale_mode = True
             scene = next((scene for scene in getattr(self.song, "scenes", ())
                           if str(scene.name) == name + " - Base"), None)
             if scene is not None:
                 self.song.view.selected_scene = scene
+                scene_index = list(self.song.scenes).index(scene)
+                # A previously selected song clip can restore its scale after
+                # this command. Focus the live piano's empty slot first.
+                piano = next((track for track in self.song.tracks
+                              if str(track.name).startswith("P2 CHORDS")), None)
+                slots = getattr(piano, "clip_slots", ())
+                if scene_index < len(slots):
+                    self.song.view.selected_track = piano
+                    self.song.view.highlighted_clip_slot = slots[scene_index]
+            self.song.root_note = root
+            self.song.scale_name = scale
+            self.song.scale_mode = True
         finally:
             self.song.end_undo_step()
 
     def piano_modes(self):
-        """Only expose the explicit three-mode racks on named piano tracks."""
+        """Only expose explicit mode racks on unambiguous named piano tracks."""
         found = {}
         for track in self.song.tracks:
             prefix = str(track.name).split(" ", 1)[0]
@@ -195,6 +204,21 @@ class RecordServer:
                     else:
                         found[channel] = parameter
         return {channel: parameter for channel, parameter in found.items() if parameter is not None}
+
+    def piano_mode_labels(self):
+        modes = self.piano_modes()
+        labels = {channel: ["Chord", "Arpeggio", "Bounce"] for channel in modes}
+        for track in self.song.tracks:
+            channel = str(track.name).split(" ", 1)[0][1:]
+            if channel not in modes:
+                continue
+            for device in self.active_piano_devices(track):
+                if self.chain_selector(device) != modes[channel]:
+                    continue
+                for extra in ("RUFF", "NOTA"):
+                    if str(device.name) == "MODE: 0 Plain | 1 Arp | 2 Bounce | 3 " + extra:
+                        labels[channel].append(extra)
+        return labels
 
     def clip_context(self):
         slot = getattr(self.song.view, "highlighted_clip_slot", None)
@@ -310,6 +334,7 @@ class RecordServer:
                       root_note=int(getattr(self.song, "root_note", 0)),
                       scale_name=str(getattr(self.song, "scale_name", "")),
                       scale_intervals=intervals)
+        result["piano_mode_labels"] = self.piano_mode_labels()
         result["piano_modes"] = {channel: int(parameter.value)
                                  for channel, parameter in self.piano_modes().items()}
         result["clip_tools"] = 1
@@ -337,11 +362,11 @@ class RecordServer:
         elif action == "piano-mode-set":
             mode = command.get("mode")
             channel = str(command.get("channel", ""))
-            if type(mode) is not int or mode not in (0, 1, 2):
+            if type(mode) is not int or not 0 <= mode < len(self.piano_mode_labels().get(channel, ())):
                 raise ValueError("Invalid piano mode")
             parameter = self.piano_modes().get(channel)
             if parameter is None:
-                raise ValueError("No unique three-mode rack for this piano")
+                raise ValueError("No unique mode rack for this piano")
             parameter.value = mode
         elif action in TOGGLES:
             prop = TOGGLES[action]

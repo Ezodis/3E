@@ -212,3 +212,11 @@ xcrun clang -fobjc-arc -O0 -Wno-unused-parameter -framework AppKit -framework Co
 ```
 
 The gesture tests call the actual direct-touch handlers (including identity, movement, release, hold and cancellation), without launching another tray app or sending Live commands. `Tests/record_live.m` is an explicit opt-in diagnostic that sends actual commands to a connected Live session; do not run it on an active recording or important project. Automated tests are not a substitute for a user's finger test on the physical Touch Bar.
+
+### Song-specific piano rhythms and scale spelling
+
+Piano rhythm controls read `piano_mode_labels` from the active Live song bank. Existing Chord, Arpeggio and Bounce remain available; upgraded RUFF and NOTA banks add their own fourth mode. NOTA alternates a low root on each beat with a chord half a beat later. RUFF uses offset UpDown sixteenth picking, editable in its Arpeggiator; it is a source-inspired starting pattern, not an exact transcription. Select a song through Record-hold → Song Sounds, then cycle Piano 2’s rhythm button. Song selection focuses the live Piano 2 slot before applying the key so an older selected clip cannot restore another song’s scale.
+
+`Ableton/add_song_hold_modes.py SET.als` upgrades an existing three-song bank set in place while Live is closed. It preserves scenes and existing modes, assigns fresh device IDs, and skips banks already upgraded. Source samples remain local.
+
+Scale labels include the degree and note/chord name in both labeled-key and pad views. Seven-note scales use diatonic spelling (including sharps, flats and double accidentals); other scales use pitch-class names. Pads remain white until pressed.

@@ -614,19 +614,25 @@ static void UpdatePianoConfigControls(void) {
 @interface PianoRhythmButton : MidiNavigationButton
 @end
 static PianoRhythmButton *pianoRhythmButton;
+static NSArray *PianoRhythmNames(NSString *channel) {
+    id labels=recordController.state[@"piano_mode_labels"][channel ?: @""];
+    if([labels isKindOfClass:NSArray.class] && [labels count]>=3 && [labels count]<=4) return labels;
+    return @[@"Chord",@"Arpeggio",@"Bounce"];
+}
 static void UpdatePianoRhythmButton(void) {
     if(!pianoRhythmButton) return;
     NSString *channel=[[expandedPianoView valueForKey:@"channelNumber"] stringValue];
     NSNumber *value=recordController.state[@"piano_modes"][channel ?: @""];
-    BOOL available=[recordController connected] && value && value.integerValue>=0 && value.integerValue<3;
+    NSArray *names=PianoRhythmNames(channel);
+    BOOL available=[recordController connected] && value && value.integerValue>=0 && value.integerValue<names.count;
     NSInteger mode=available ? value.integerValue : 0;
-    NSString *name=available ? @[@"Chord",@"Arpeggio",@"Bounce"][mode] : @"Modes unavailable";
+    NSString *name=available ? names[mode] : @"Modes unavailable";
     pianoRhythmButton.enabled=available && !recordController.pending;
     pianoRhythmButton.title=@"";
     pianoRhythmButton.stackedCaption=@"";
     pianoRhythmButton.compactGlyph=YES;
-    pianoRhythmButton.image=[NSImage imageWithSystemSymbolName:available ? @[@"pianokeys",@"chart.bar.xaxis",@"repeat"] [mode] : @"pianokeys" accessibilityDescription:name];
-    pianoRhythmButton.toolTip=available ? [NSString stringWithFormat:@"%@: tap to cycle Chord, Arpeggio, Bounce; swipe to change.",name] : @"Open Live with the three-mode piano rack and updated 3£ control surface.";
+    pianoRhythmButton.image=[NSImage imageWithSystemSymbolName:available ? @[@"pianokeys",@"chart.bar.xaxis",@"repeat",@"waveform.path"] [mode] : @"pianokeys" accessibilityDescription:name];
+    pianoRhythmButton.toolTip=available ? [NSString stringWithFormat:@"%@: tap to cycle %@; swipe to change.",name,[names componentsJoinedByString:@", "]] : @"Open Live with the piano mode rack and updated 3£ control surface.";
     [pianoRhythmButton setAccessibilityLabel:pianoRhythmButton.toolTip];
     pianoRhythmButton.needsDisplay=YES;
 }
@@ -636,7 +642,8 @@ static void UpdatePianoRhythmButton(void) {
     NSString *channel=[[expandedPianoView valueForKey:@"channelNumber"] stringValue];
     NSNumber *value=recordController.state[@"piano_modes"][channel ?: @""];
     if(!value) return;
-    [recordController send:@"piano-mode-set" payload:@{@"channel":channel,@"mode":@((value.integerValue+direction+3)%3)}];
+    NSInteger count=PianoRhythmNames(channel).count;
+    [recordController send:@"piano-mode-set" payload:@{@"channel":channel,@"mode":@((value.integerValue+direction+count)%count)}];
     UpdatePianoRhythmButton();
 }
 - (void)step:(NSInteger)direction {
