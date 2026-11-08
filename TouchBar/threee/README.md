@@ -174,6 +174,14 @@ open '/Applications/3E.app'
 
 The installer updates only the injected MIDI bridge, required framework links/signatures and packaged Ableton script. It refuses to update while ThreeE or its MIDI helper is running. It never creates an installed companion app or backup. Override `STRIP_ABLETON_SCRIPT_DIR` if your configured User Library is elsewhere. Restart Live after changing its script, then choose _3E once.
 
+## Session clip tools
+
+Hold Record and release over **Clip Settings** or **Loop Builder**. Both spaces keep the standard left X to return to MIDI. Select a Session clip in Live first.
+
+Clip Settings cycles Trigger/Gate/Toggle/Repeat, Legato, launch quantization (Global, bar, quarter, eighth, sixteenth, None), loop enable and velocity response. Loop Builder creates a four-bar MIDI clip in an empty selected slot, duplicates a clip as a variation, doubles a MIDI loop, transposes all its notes by one semitone, starts Session Record or stops clips. Native Live Undo remains available. Follow Actions remain in Live's native Clip panel.
+
+The `_3E` script publishes clip identity and capabilities; commands reject a changed selection, a replaced clip or an active recording. Unsupported MIDI operations are disabled. These controls need the updated script and a Live restart. They do not require a song-specific template.
+
 ## Verification
 
 In 3.0.9 the actual `showTouchbar:` preset-switch path is intercepted: it no longer empties the live root or copies identifiers into the presentation shell. A stable outer group swaps the selected original preset content; close/navigation/record controls are retained. A permanent flexible spacer absorbs unused space instead of stretching controls, and the outer group is not a principal item. Two/three-piano content uses a uniquely identified compact row (not the outer group's identifier). Native regressions exercise `receivedGlobalKeyFrom:key:` and assert presentation identity, serial, fixed control widths, unchanged piano widths and two-point gaps. Finger-perceived smoothness still needs physical verification.

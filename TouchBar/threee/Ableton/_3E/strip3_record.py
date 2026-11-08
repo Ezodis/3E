@@ -119,6 +119,92 @@ class RecordServer:
                         found[channel] = parameter
         return {channel: parameter for channel, parameter in found.items() if parameter is not None}
 
+    def clip_context(self):
+        slot = getattr(self.song.view, "highlighted_clip_slot", None)
+        for ti, track in enumerate(self.song.tracks):
+            for si, candidate in enumerate(getattr(track, "clip_slots", ())):
+                if candidate == slot:
+                    clip = candidate.clip if candidate.has_clip else None
+                    previous = getattr(self, "_clip_identity", None)
+                    identity = (ti, si, clip)
+                    if previous != identity:
+                        self._clip_identity = identity
+                        self._clip_token = str(uuid.uuid4())
+                    return track, slot, clip, ti, si, self._clip_token
+        return None
+
+    def clip_state(self):
+        context = self.clip_context()
+        if context is None:
+            return None
+        track, slot, clip, ti, si, token = context
+        result = dict(token=token, track_index=ti, slot_index=si,
+                      name=str(clip.name) if clip else "Empty slot", has_clip=clip is not None,
+                      midi=bool(getattr(clip, "is_midi_clip", False)),
+                      recording=bool(getattr(clip, "is_recording", False)),
+                      can_create=bool(getattr(track, "has_midi_input", False)) and clip is None)
+        if clip:
+            for key in ("launch_mode", "launch_quantization", "legato", "looping", "velocity_amount"):
+                if hasattr(clip, key):
+                    result[key] = getattr(clip, key)
+            result["can_transpose"] = result["midi"] and hasattr(clip, "get_notes_extended") and hasattr(clip, "apply_note_modifications")
+        return result
+
+    def execute_clip(self, command):
+        context = self.clip_context()
+        if context is None or command.get("clip_token") != context[-1]:
+            raise ValueError("Selected clip changed; try again")
+        track, slot, clip, ti, si, token = context
+        action = command["action"]
+        if action == "clip-new":
+            if clip is not None or not getattr(track, "has_midi_input", False):
+                raise ValueError("Select an empty MIDI slot")
+            beats = self.song.signature_numerator * 4.0 / self.song.signature_denominator
+            slot.create_clip(4 * beats)
+            slot.clip.name = "New idea - 4 bars"
+            self.song.view.detail_clip = slot.clip
+            return
+        if clip is None:
+            raise ValueError("Select a Session clip")
+        if getattr(clip, "is_recording", False):
+            raise ValueError("Finish recording before editing the clip")
+        if action == "clip-launch":
+            clip.launch_mode = (int(clip.launch_mode) + 1) % 4
+        elif action == "clip-quantization":
+            values = (0, 5, 8, 10, 12, 1)
+            current = int(clip.launch_quantization)
+            clip.launch_quantization = values[(values.index(current) + 1) % len(values)] if current in values else 0
+        elif action == "clip-legato":
+            clip.legato = not clip.legato
+        elif action == "clip-loop":
+            clip.looping = not clip.looping
+        elif action == "clip-velocity":
+            clip.velocity_amount = (round(float(clip.velocity_amount) * 4) + 1) % 5 / 4.0
+        elif action == "clip-duplicate":
+            self.song.begin_undo_step()
+            try:
+                track.duplicate_clip_slot(si)
+            finally:
+                self.song.end_undo_step()
+        elif action == "clip-double":
+            if not clip.is_midi_clip:
+                raise ValueError("Select a MIDI clip to duplicate its notes")
+            clip.duplicate_loop()
+        elif action in ("clip-up", "clip-down"):
+            if not clip.is_midi_clip:
+                raise ValueError("Select a MIDI clip")
+            notes = clip.get_notes_extended(0, 128, 0, max(clip.end_marker, clip.loop_end))
+            delta = 1 if action == "clip-up" else -1
+            if not notes:
+                raise ValueError("The clip has no notes")
+            if any(not 0 <= note.pitch + delta <= 127 for note in notes):
+                raise ValueError("Transposition would exceed the MIDI note range")
+            for note in notes:
+                note.pitch += delta
+            clip.apply_note_modifications(notes)
+        else:
+            raise ValueError("Unknown clip command")
+
     def state(self):
         track = self.song.view.selected_track
         result = {"protocol": 1, "pid": os.getpid(), "session_id": self.session,
@@ -148,6 +234,8 @@ class RecordServer:
                       scale_intervals=intervals)
         result["piano_modes"] = {channel: int(parameter.value)
                                  for channel, parameter in self.piano_modes().items()}
+        result["clip_tools"] = 1
+        result["selected_clip"] = self.clip_state() or {}
         return result
 
     def atomic_json(self, path, payload):
@@ -164,7 +252,9 @@ class RecordServer:
         if command.get("session") != self.session or age < -1 or age > 2:
             raise ValueError("Expired Live command; try again")
         action = command.get("action")
-        if action == "piano-mode-set":
+        if isinstance(action, str) and action.startswith("clip-"):
+            self.execute_clip(command)
+        elif action == "piano-mode-set":
             mode = command.get("mode")
             channel = str(command.get("channel", ""))
             if type(mode) is not int or mode not in (0, 1, 2):

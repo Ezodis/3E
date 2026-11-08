@@ -54,6 +54,62 @@ class RecordTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.server.execute(self.command("piano-mode-set", channel="2", mode=0))
 
+    def prepare_clip(self):
+        clip = SimpleNamespace(name="Base", is_midi_clip=True, is_recording=False,
+            launch_mode=0, launch_quantization=0, legato=False, looping=True,
+            velocity_amount=0.0, end_marker=16, loop_end=16)
+        slot = SimpleNamespace(has_clip=True, clip=clip)
+        self.track.clip_slots = [slot]
+        self.track.has_midi_input = True
+        self.song.view.highlighted_clip_slot = slot
+        return clip, slot
+
+    def test_clip_settings_are_selected_and_acknowledged(self):
+        clip, slot = self.prepare_clip()
+        token = self.server.state()["selected_clip"]["token"]
+        for action in ("clip-launch", "clip-quantization", "clip-legato", "clip-loop", "clip-velocity"):
+            self.server.execute(self.command(action, clip_token=token))
+        self.assertEqual((clip.launch_mode, clip.launch_quantization, clip.legato, clip.looping, clip.velocity_amount), (1, 5, True, False, .25))
+        self.assertEqual(self.song.loop_length, 16)  # Never edit Arrangement loop.
+        self.song.view.highlighted_clip_slot = None
+        with self.assertRaises(ValueError):
+            self.server.execute(self.command("clip-loop", clip_token=token))
+        self.assertEqual(self.server.state()["selected_clip"], {})
+
+    def test_replaced_or_recording_clip_rejects_edits(self):
+        clip, slot = self.prepare_clip()
+        token = self.server.state()["selected_clip"]["token"]
+        clip.is_recording = True
+        with self.assertRaises(ValueError):
+            self.server.execute(self.command("clip-duplicate", clip_token=token))
+        slot.clip = SimpleNamespace(name="Replacement")
+        with self.assertRaises(ValueError):
+            self.server.execute(self.command("clip-launch", clip_token=token))
+
+    def test_transpose_checks_entire_range_before_writing(self):
+        clip, slot = self.prepare_clip()
+        notes = [SimpleNamespace(pitch=60), SimpleNamespace(pitch=127)]
+        clip.get_notes_extended = lambda *args: notes
+        clip.apply_note_modifications = lambda ns: self.calls.append([n.pitch for n in ns])
+        token = self.server.state()["selected_clip"]["token"]
+        with self.assertRaises(ValueError):
+            self.server.execute(self.command("clip-up", clip_token=token))
+        self.assertEqual([n.pitch for n in notes], [60, 127])
+        self.server.execute(self.command("clip-down", clip_token=token))
+        self.assertEqual(self.calls, [[59, 126]])
+
+    def test_new_clip_never_overwrites_and_uses_time_signature(self):
+        clip, slot = self.prepare_clip()
+        token = self.server.state()["selected_clip"]["token"]
+        with self.assertRaises(ValueError):
+            self.server.execute(self.command("clip-new", clip_token=token))
+        slot.has_clip = False
+        slot.create_clip = lambda beats: self.calls.append(beats)
+        self.song.signature_numerator = 3
+        token = self.server.state()["selected_clip"]["token"]
+        self.server.execute(self.command("clip-new", clip_token=token))
+        self.assertEqual(self.calls, [12])
+
     def test_arm_is_explicit_and_selected_only(self):
         for _ in range(2): self.server.execute(self.command("arm-on"))
         self.assertTrue(self.track.arm)

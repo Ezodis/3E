@@ -417,7 +417,8 @@ static void ApplyRecordLight(StripRecordButton *button,BOOL connected,NSDictiona
 }
 - (void)option:(NSButton *)sender { [self send:sender.identifier]; }
 - (void)perform:(NSString *)action {
-    if([action isEqual:@"arm-exclusive"]) [self send:action payload:@{@"track_indices":[self selectedTrackIndicesForSwipe]}];
+    if([action hasPrefix:@"clip-"]) [self send:action payload:@{@"clip_token":self.state[@"selected_clip"][@"token"] ?: @""}];
+    else if([action isEqual:@"arm-exclusive"]) [self send:action payload:@{@"track_indices":[self selectedTrackIndicesForSwipe]}];
     else if([action isEqual:@"tempo"]) [self send:@"tap-tempo"];
     else if([action isEqual:@"more"]) [self showMenu:action];
     else [self send:action];
@@ -612,7 +613,20 @@ static void ApplyRecordLight(StripRecordButton *button,BOOL connected,NSDictiona
         BOOL legacy=[@[@"record",@"session",@"punch-in",@"punch-out",@"overdub",@"loop",@"click",@"quantization"] containsObject:action];
         BOOL performance=connected && [self.state[@"performance"] integerValue]==1;
         button.enabled=menu || (connected && (!self.pending || [action isEqual:@"tempo"]) && (legacy || performance));
+        if([action hasPrefix:@"clip-"]) {
+            NSDictionary *clip=[self.state[@"selected_clip"] isKindOfClass:NSDictionary.class] ? self.state[@"selected_clip"] : @{};
+            BOOL present=[clip[@"has_clip"] boolValue], recording=[clip[@"recording"] boolValue];
+            button.enabled=connected && !self.pending && [self.state[@"clip_tools"] integerValue]==1 && !recording && ([action isEqual:@"clip-new"] ? [clip[@"can_create"] boolValue] : present);
+            if([action isEqual:@"clip-double"]) button.enabled &= [clip[@"midi"] boolValue];
+            if([@[@"clip-up",@"clip-down"] containsObject:action]) button.enabled &= [clip[@"can_transpose"] boolValue];
+            if([action isEqual:@"clip-launch"]) { NSInteger mode=[clip[@"launch_mode"] integerValue]; button.title=mode>=0 && mode<4 ? @[@"Trigger",@"Gate",@"Toggle",@"Repeat"][mode] : @"Launch"; button.enabled &= clip[@"launch_mode"]!=nil; }
+            if([action isEqual:@"clip-quantization"]) { NSDictionary *names=@{@0:@"Global",@1:@"None",@5:@"1 bar",@8:@"1/4",@10:@"1/8",@12:@"1/16"}; button.title=[@"Q: " stringByAppendingString:names[clip[@"launch_quantization"] ?: @(-1)] ?: @"Other"]; button.enabled &= clip[@"launch_quantization"]!=nil; }
+            if([action isEqual:@"clip-velocity"]) { button.title=[NSString stringWithFormat:@"Vel: %.0f%%",[clip[@"velocity_amount"] doubleValue]*100]; button.enabled &= clip[@"velocity_amount"]!=nil; }
+            button.toolTip=present ? clip[@"name"] : @"Select a Session clip in Live";
+        }
         BOOL active=connected && [self.state[[action isEqual:@"session-capture"] ? @"session" : action] boolValue];
+        if([action isEqual:@"clip-legato"]) active=[self.state[@"selected_clip"][@"legato"] boolValue];
+        if([action isEqual:@"clip-loop"]) active=[self.state[@"selected_clip"][@"looping"] boolValue];
         button.bezelColor=active ? ([action isEqual:@"record"] || [action isEqual:@"session-capture"] ? NSColor.systemRedColor : NSColor.systemOrangeColor) : nil;
         button.contentTintColor=NSColor.whiteColor;
         if([action isEqual:@"play"]) {

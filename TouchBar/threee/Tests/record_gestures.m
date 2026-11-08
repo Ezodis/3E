@@ -169,7 +169,7 @@ int main(void) {
         button.frame=NSMakeRect(560,0,32,30); [host.contentView addSubview:button];
         [controller.menus removeAllObjects]; [controller.commands removeAllObjects];
         [button beginAt:NSMakePoint(16,15) identity:nil]; [button fireHold];
-        NSCAssert(midiWorkspaceChooser && midiWorkspaceChooser.choices.count==9 && midiWorkspaceChooser.selected==-1,@"Hold immediately exposes all production spaces without executing one");
+        NSCAssert(midiWorkspaceChooser && midiWorkspaceChooser.choices.count==MidiWorkspaceCatalog().count && midiWorkspaceChooser.selected==-1,@"Hold immediately exposes all production spaces without executing one");
         MidiWorkspaceChooser *previewPicker=[[MidiWorkspaceChooser alloc] initWithFrame:NSMakeRect(0,0,1004,30)];
         previewPicker.choices=MidiWorkspaceCatalog(); previewPicker.selected=1;
         NSImage *pickerImage=[[NSImage alloc] initWithSize:previewPicker.bounds.size];
@@ -178,7 +178,7 @@ int main(void) {
         [[pickerRep representationUsingType:NSBitmapImageFileTypePNG properties:@{}] writeToFile:@"/tmp/3e-workspace-picker.png" atomically:YES];
         NSPoint vocal=[button convertPoint:NSMakePoint(150,15) fromView:midiWorkspaceChooser];
         [button moveAt:vocal];
-        NSCAssert(midiWorkspaceChooser.selected==1 && !button.pendingSwipeDirection,@"Sliding a held Record highlights Vocals without arming tracks");
+        NSCAssert(midiWorkspaceChooser.selected==1 && !button.pendingSwipeDirection,@"Sliding a held Record highlights Clip Settings without arming tracks");
         [button finishAt:vocal];
         [NSRunLoop.mainRunLoop runUntilDate:[NSDate dateWithTimeIntervalSinceNow:.02]];
         NSCAssert(!midiWorkspaceChooser && [controller.menus isEqual:@[@1]] && !controller.commands.count,@"Release opens exactly the highlighted workspace without a Record command");

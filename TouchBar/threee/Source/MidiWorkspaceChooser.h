@@ -3,6 +3,8 @@
 static NSArray<NSArray *> *MidiWorkspaceCatalog(void) {
     return @[
         @[@"Control Surface", @"slider.horizontal.3", @[]],
+        @[@"Clip Settings", @"switch.2", @[@[@"clip-launch",@"Trigger"],@[@"clip-legato",@"Legato"],@[@"clip-quantization",@"Q: Global"],@[@"clip-loop",@"Loop"],@[@"clip-velocity",@"Vel: 0%"]]],
+        @[@"Loop Builder", @"square.stack.3d.up", @[@[@"clip-new",@"New 4 bars"],@[@"clip-duplicate",@"Variation"],@[@"clip-double",@"Double"],@[@"clip-down",@"−1 note"],@[@"clip-up",@"+1 note"],@[@"session-capture",@"Session Rec"],@[@"stop-clips",@"Stop Clips"]]],
         @[@"Vocals", @"mic.fill", @[@[@"arm-exclusive",@"Arm selected"],@[@"punch-in",@"Punch In"],@[@"punch-out",@"Punch Out"],@[@"click",@"Click"],@[@"loop-4",@"4 bars"],@[@"play",@"Play / Pause"],@[@"stop",@"Stop"]]],
         @[@"Instruments", @"pianokeys", @[@[@"arm-exclusive",@"Arm selected"],@[@"overdub",@"Overdub"],@[@"click",@"Click"],@[@"quantization",@"Record Q"],@[@"loop-8",@"8 bars"],@[@"session-capture",@"Session Rec"]]],
         @[@"Techno", @"waveform", @[@[@"loop-1",@"1 bar"],@[@"loop-4",@"4 bars"],@[@"loop-8",@"8 bars"],@[@"overdub",@"Overdub"],@[@"quantization",@"Record Q"],@[@"automation-arm",@"Auto Arm"],@[@"tap-tempo",@"Tap BPM"]]],
