@@ -3,6 +3,8 @@ param([switch]$SkipBuild)
 $ErrorActionPreference = 'Stop'
 $repository = Split-Path -Parent $PSScriptRoot
 $version = (Get-Content (Join-Path $PSScriptRoot 'version.json') -Raw | ConvertFrom-Json).version
+dotnet run --project (Join-Path $PSScriptRoot 'DragTests')
+if ($LASTEXITCODE -ne 0) { throw 'Three-finger drag recovery checks failed.' }
 if ($version -notmatch '^\d+\.\d+\.\d+$') { throw 'Invalid Windows release version.' }
 dotnet run --project (Join-Path $PSScriptRoot 'CarViewTests')
 if ($LASTEXITCODE -ne 0) { throw 'Car View native capture and reflection checks failed.' }

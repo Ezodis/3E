@@ -32,13 +32,13 @@ public class MouseOperations {
         return currentIntMousePoint;
     }
 
-    public static void ShiftCursorPosition(float x, float y){
+    public static bool ShiftCursorPosition(float x, float y){
         var intX = (int) (x + _decimalX);
         var intY = (int) (y + _decimalY);
         _decimalX = x + _decimalX - intX;
         _decimalY = y + _decimalY - intY;
 
-        MoveMouse(intX, intY);
+        return MoveMouse(intX, intY);
     }
 
     public static void SetCursorPosition(float x, float y){
@@ -54,7 +54,7 @@ public class MouseOperations {
     [DllImport("user32.dll", SetLastError = true)]
     private static extern uint SendInput(uint nInputs, Input[] pInputs, int cbSize);
 
-    private static void MoveMouse(int dx, int dy){
+    private static bool MoveMouse(int dx, int dy){
         var input = new Input[1];
         input[0].type = INPUT_MOUSE;
         input[0].mi.dx = dx;
@@ -62,45 +62,46 @@ public class MouseOperations {
         input[0].mi.dwFlags = MOUSEEVENTF_MOVE;
 
         var result = SendInput(1, input, Marshal.SizeOf(typeof(Input)));
-        if(result == 0) Console.WriteLine("Failed to move the mouse. Error code: " + Marshal.GetLastWin32Error());
+        int error = result == 1 ? 0 : Marshal.GetLastWin32Error();
+        DragDiagnostics.Sent("move", result == 1, error);
+        return result == 1;
     }
 
-    public static void MouseClick(int mouseEventFlag){
+    public static bool MouseClick(int mouseEventFlag){
         var input = new Input[1];
         input[0].type = INPUT_MOUSE;
         input[0].mi.dwFlags = mouseEventFlag;
 
         var result = SendInput(1, input, Marshal.SizeOf(typeof(Input)));
 
-        if(result == 0) Console.WriteLine("Failed to send mouse click. Error code: " + Marshal.GetLastWin32Error());
+        int error = result == 1 ? 0 : Marshal.GetLastWin32Error();
+        bool down = (mouseEventFlag & (MOUSEEVENTF_LEFTDOWN | MOUSEEVENTF_RIGHTDOWN | MOUSEEVENTF_MIDDLEDOWN)) != 0;
+        DragDiagnostics.Sent(down ? "down" : "up", result == 1, error);
+        return result == 1;
     }
 
-    public static void ThreeFingersDragMouseDown(){
+    public static bool ThreeFingersDragMouseDown(){
         switch (App.SettingsData.ThreeFingerDragButton){
             case SettingsData.ThreeFingerDragButtonType.LEFT:
-                MouseClick(MOUSEEVENTF_LEFTDOWN);
-                break;
+                return MouseClick(MOUSEEVENTF_LEFTDOWN);
             case SettingsData.ThreeFingerDragButtonType.RIGHT:
-                MouseClick(MOUSEEVENTF_RIGHTDOWN);
-                break;
+                return MouseClick(MOUSEEVENTF_RIGHTDOWN);
             case SettingsData.ThreeFingerDragButtonType.MIDDLE:
-                MouseClick(MOUSEEVENTF_MIDDLEDOWN);
-                break;
+                return MouseClick(MOUSEEVENTF_MIDDLEDOWN);
         }
+        return false;
     }
 
-    public static void ThreeFingersDragMouseUp(){
+    public static bool ThreeFingersDragMouseUp(){
         switch (App.SettingsData.ThreeFingerDragButton){
             case SettingsData.ThreeFingerDragButtonType.LEFT:
-                MouseClick(MOUSEEVENTF_LEFTUP);
-                break;
+                return MouseClick(MOUSEEVENTF_LEFTUP);
             case SettingsData.ThreeFingerDragButtonType.RIGHT:
-                MouseClick(MOUSEEVENTF_RIGHTUP);
-                break;
+                return MouseClick(MOUSEEVENTF_RIGHTUP);
             case SettingsData.ThreeFingerDragButtonType.MIDDLE:
-                MouseClick(MOUSEEVENTF_MIDDLEUP);
-                break;
+                return MouseClick(MOUSEEVENTF_MIDDLEUP);
         }
+        return true;
     }
 
 

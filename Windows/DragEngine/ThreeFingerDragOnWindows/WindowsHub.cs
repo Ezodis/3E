@@ -21,7 +21,7 @@ namespace ThreeFingerDragOnWindows;
 
 // The drag engine and the hub share this process and its single notification icon.
 public sealed class WindowsHub : IDisposable {
-    public const string Version = "3.0.167.3";
+    public const string Version = "3.0.167.4";
     private const string ReleasesUrl = "https://api.github.com/repos/Ezodis/3E/releases";
     private readonly string root = AppContext.BaseDirectory;
     private readonly string data = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "3EWindows");
@@ -227,6 +227,7 @@ public sealed class WindowsHub : IDisposable {
                 ssmsThemeSync = settings.SsmsTheme, ssmsThemeProfiles,
                 ssmsThemes = SsmsTheme.CurrentThemeNames,
                 touchpadDetected = handler.TouchpadExists, inputReceiverInstalled = handler.InputReceiverInstalled,
+                threeFingerDrag = DragDiagnostics.Snapshot(),
                 keyboardInstalled = File.Exists(KeyboardPath), keyboardRunning = IsRunning("3EWindows.Keyboard"),
                 macKeyboardEnabled = settings.MacKeyboard, macKeyboardRunning = macKeyboard.Active,
                 powerToysRunning = IsRunning("PowerToys"), shortcutsRunning = IsRunning("PowerToys.KeyboardManagerEngine"),

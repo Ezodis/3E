@@ -14,7 +14,8 @@ public class ThreeFingerDrag{
     private readonly DistanceManager _distanceManager = new();
     private readonly FingerCounter _fingerCounter = new();
     private readonly Timer _dragEndTimer = new();
-    private bool _isDragging;
+    private readonly object _gate = new();
+    private readonly DragButtonState _button = new(MouseOperations.ThreeFingersDragMouseDown, MouseOperations.ThreeFingersDragMouseUp);
 
     public ThreeFingerDrag(){
         _dragEndTimer.AutoReset = false;
@@ -26,6 +27,12 @@ public class ThreeFingerDrag{
     private int _averagingCount = 0;
 
     public void OnTouchpadContact(IntPtr currentDevice, TouchpadContact[] oldContacts, TouchpadContact[] contacts, long elapsed){
+        lock (_gate) OnTouchpadContactLocked(currentDevice, oldContacts, contacts, elapsed);
+    }
+
+    private void OnTouchpadContactLocked(IntPtr currentDevice, TouchpadContact[] oldContacts, TouchpadContact[] contacts, long elapsed){
+        DragDiagnostics.Contacts(contacts.Length);
+        if (_button.ReleasePending && !_button.End()) return;
         var deviceInfo = TouchpadHelper.GetDeivceInfo(currentDevice);
         bool hasFingersReleased = elapsed > RELEASE_FINGERS_THRESHOLD_MS;
         Logger.Log("TFD: " + string.Join(", ", oldContacts.Select(c => c.ToString())) + " | " +
@@ -42,18 +49,17 @@ public class ThreeFingerDrag{
                    shortDelayMovingFingersCount + "/" + longDelayMovingFingersCount + ", dist: " + longestDist2D);
 
         if(fingersCount >= 3 && areContactsIdsCommons && longDelayMovingFingersCount == 3 &&
-           originalFingersCount == 3 && !_isDragging){
+           originalFingersCount == 3 && !_button.Held){
             // Start dragging
-            _isDragging = true;
             Logger.Log("    START DRAG, click down");
-            MouseOperations.ThreeFingersDragMouseDown();
-        } else if(_isDragging &&
+            if (_button.Begin(Environment.TickCount64, GetReleaseDelay())) ArmTimer();
+        } else if(_button.Held &&
                   (shortDelayMovingFingersCount < 2 || (originalFingersCount != 3 && originalFingersCount >= 2))){
             // Stop dragging
             // Condition over originalFingersCount to catch cases where the drag has continued with only two or four fingers
             Logger.Log("    STOP DRAG, click up");
             StopDrag();
-        } else if(fingersCount >= 2 && originalFingersCount == 3 && areContactsIdsCommons && _isDragging){
+        } else if(fingersCount >= 2 && originalFingersCount == 3 && areContactsIdsCommons && _button.Held){
             // Dragging
             // The Store UI normally creates this per-device entry. The bundled
             // headless build intentionally has no settings UI, so fall back to
@@ -72,36 +78,50 @@ public class ThreeFingerDrag{
                         _averagingCount++;
                         if(_averagingCount >= App.SettingsData.ThreeFingerDragCursorAveraging){
                             Logger.Log("    MOVING (avg effectively), (x, y) = (" + longestDistDelta.x + ", " + longestDistDelta.y + ")");
-                            MouseOperations.ShiftCursorPosition(_averagingX, _averagingY);
+                            if (!MouseOperations.ShiftCursorPosition(_averagingX, _averagingY)) { StopDrag(); return; }
                             _averagingX = 0;
                             _averagingY = 0;
                             _averagingCount = 0;
                         }
                     } else{
                         Logger.Log("    MOVING, (x, y) = (" + longestDistDelta.x + ", " + longestDistDelta.y + ")");
-                        MouseOperations.ShiftCursorPosition(delta.x, delta.y);
+                        if (!MouseOperations.ShiftCursorPosition(delta.x, delta.y)) { StopDrag(); return; }
                     }
                 }
 
-                _dragEndTimer.Stop();
-                _dragEndTimer.Interval = GetReleaseDelay();
-                _dragEndTimer.Start();
             }
+            _button.Refresh(Environment.TickCount64, GetReleaseDelay());
+            ArmTimer();
         }
         Logger.Log("");
     }
 
     private void OnTimerElapsed(object source, ElapsedEventArgs e){
-        if(_isDragging){
-            Logger.Log("    STOP DRAG FROM TIMER, Left click up");
-            Logger.Log("");
-            StopDrag();
+        lock (_gate) {
+            // A callback already queued before Stop/Start must not release a
+            // newer drag. The monotonic deadline belongs to the current hold.
+            if (!_button.Held) return;
+            if (!_button.Expire(Environment.TickCount64)) { ArmTimer(); return; }
+            _dragEndTimer.Stop();
+            ResetAveraging();
         }
     }
 
+    private void ArmTimer(){
+        _dragEndTimer.Stop();
+        _dragEndTimer.Interval = Math.Max(1, _button.ReleaseAt - Environment.TickCount64);
+        _dragEndTimer.Start();
+    }
+
     private void StopDrag(){
-        _isDragging = false;
-        MouseOperations.ThreeFingersDragMouseUp();
+        _dragEndTimer.Stop();
+        _button.End();
+        ResetAveraging();
+    }
+
+    private void ResetAveraging(){
+        _averagingX = _averagingY = 0;
+        _averagingCount = 0;
     }
 
     private int GetReleaseDelay(){
