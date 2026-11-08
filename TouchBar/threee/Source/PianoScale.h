@@ -147,7 +147,7 @@ static void DrawPianoScale(NSView *piano,SEL selector,NSRect dirty) {
     for(id key in [piano valueForKey:@"pianoKeys"]) {
         NSBezierPath *path=[key valueForKey:@"drawPath"];
         BOOL black=[@[@1,@3,@6,@8,@10] containsObject:@(([[key valueForKey:@"pitch"] integerValue]%12+12)%12)];
-        [(ScaleKeyIsPressed(piano,key) ? NSColor.redColor : pads ? [NSColor colorWithSRGBRed:.52 green:.86 blue:.93 alpha:1] : black ? NSColor.blackColor : NSColor.whiteColor) setFill];
+        [(ScaleKeyIsPressed(piano,key) ? NSColor.redColor : pads ? NSColor.whiteColor : black ? NSColor.blackColor : NSColor.whiteColor) setFill];
         [path fill]; [NSColor.blackColor setStroke]; [path stroke];
         if(pads) DrawScalePadLabel(piano,key);
     }

@@ -36,6 +36,46 @@ class RecordTests(unittest.TestCase):
         command = dict(action=action, session=self.server.session, time=100, track_index=0)
         command.update(changes)
         return command
+    def test_song_loop_envelopes_are_native_and_not_overwritten(self):
+        selector = SimpleNamespace(name="Chain Selector", value=0)
+        steps = []
+        envelope = SimpleNamespace(insert_step=lambda *args: steps.append(args))
+        clip = SimpleNamespace(name="RUFF - Base", is_recording=False, loop_start=0, loop_end=16,
+                               automation_envelope=lambda parameter: None,
+                               create_automation_envelope=lambda parameter: envelope)
+        self.track.name = "P2 MIDI LOOPS - Chords"
+        self.track.devices = [SimpleNamespace(name="SONG: 0 DIABLA | 1 RUFF | 2 NOTA", parameters=[selector], chains=[None]*3)]
+        self.track.clip_slots = [SimpleNamespace(has_clip=True, clip=clip)]
+        self.server.execute(self.command("song-bind-loops"))
+        self.assertEqual(steps, [(0, 16, 1)])
+        clip.automation_envelope = lambda parameter: envelope
+        self.server.execute(self.command("song-bind-loops"))
+        self.assertEqual(len(steps), 1)
+
+    def test_song_bank_switch_and_active_chord_mode(self):
+        banks = []
+        for track in (self.track, self.other):
+            selector = SimpleNamespace(name="Chain Selector", value=0)
+            modes = [SimpleNamespace(name="Chain Selector", value=i) for i in range(3)]
+            chains = [SimpleNamespace(devices=[SimpleNamespace(name="MODE: 0 Plain | 1 Arp | 2 Bounce", parameters=[mode])]) for mode in modes]
+            bank = SimpleNamespace(name="SONG: 0 DIABLA | 1 RUFF | 2 NOTA", parameters=[selector], chains=chains)
+            track.devices = [bank]
+            banks.append((selector, modes))
+        self.track.name, self.other.name = "P1 MELODY - Ch 1", "P2 CHORDS - Ch 2"
+        self.song.begin_undo_step = lambda: None
+        self.song.end_undo_step = lambda: None
+        self.song.scenes = [SimpleNamespace(name="RUFF - Base")]
+        self.server.execute(self.command("song-ruff"))
+        self.assertEqual(self.song.tempo, 108)
+        self.assertEqual((self.song.root_note, self.song.scale_name), (1, "Major"))
+        self.assertEqual(self.server.state()["piano_modes"], {"1": 1, "2": 1})
+        self.server.execute(self.command("piano-mode-set", channel="2", mode=2))
+        self.assertEqual(banks[1][1][1].value, 2)
+        self.assertEqual(banks[1][1][0].value, 0)
+        self.song.record_mode = True
+        with self.assertRaises(ValueError): self.server.execute(self.command("song-nota"))
+        self.assertEqual(self.song.tempo, 108)
+
     def test_piano_mode_changes_only_matching_rack(self):
         selector = SimpleNamespace(name="Chain Selector", original_name="Chain Selector", value=2)
         self.track.name = "P2 CHORDS - Ch 2"

@@ -176,9 +176,15 @@ The installer updates only the injected MIDI bridge, required framework links/si
 
 ## Piano scale pads
 
-The piano's label icon cycles **Plain → Labels → Scale pads → Plain**. Scale pads show only notes from Live's enabled scale, with equal-width touch regions and degree/name labels. Melody pianos show note names; channels with the recognized three-mode chord rack show the scale's triad names. This view sends the original note pitches to the existing instrument and does not add another chord generator.
+The piano's label icon cycles **Plain → Labels → Scale pads → Plain**. Scale pads use white unpressed keys and show only notes from Live's enabled scale, with equal-width touch regions and degree/name labels. Melody pianos show note names; channels with the recognized three-mode chord rack show the scale's triad names. This view sends the original note pitches to the existing instrument and does not add another chord generator.
 
 The setting is independent per piano and survives octave changes/restarts. Held notes retain their paths until released. If Live disconnects or Scale Mode is off, the full piano returns; the scale-pad preference resumes when a valid scale is available. Arrow navigation and the existing gesture and rhythm modes stay available.
+
+## Song sound banks
+
+Record-hold → **Song Sounds** selects DIABLA, RUFF or NOTA in the song-library template, stops current clips and sets the live piano sound bank, tempo, scale and selected Base scene. Recording blocks preset changes. Piano 2's existing Chord/Arpeggio/Bounce button controls the active bank's mode rack, preserving each song's mode independently. Saved loop clips use native Chain Selector envelopes to choose their matching sounds on launch.
+
+The supplied RUFF and NOTA keyboard loops are editable estimated transcriptions of the user's Piano/Other stems, with one four-bar Base and one Variation each. Their playable tones use harmonic isolation of individual source notes; they are not whole-song sections assigned to keys or verified exact recreations. The personal set, audio and analysis stay in the local Ableton project rather than the public app repository.
 
 ## Session clip tools
 

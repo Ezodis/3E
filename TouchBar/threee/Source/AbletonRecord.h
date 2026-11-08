@@ -624,6 +624,7 @@ static void ApplyRecordLight(StripRecordButton *button,BOOL connected,NSDictiona
             if([action isEqual:@"clip-velocity"]) { button.title=[NSString stringWithFormat:@"Vel: %.0f%%",[clip[@"velocity_amount"] doubleValue]*100]; button.enabled &= clip[@"velocity_amount"]!=nil; }
             button.toolTip=present ? clip[@"name"] : @"Select a Session clip in Live";
         }
+        if([action hasPrefix:@"song-"]) { button.enabled &= [self.state[@"song_presets"] boolValue] && ![self.state[@"record"] boolValue] && ![self.state[@"session"] boolValue]; button.toolTip=@"Load song sounds, tempo and scale; stop current clips. Launch the selected Base scene when ready."; }
         BOOL active=connected && [self.state[[action isEqual:@"session-capture"] ? @"session" : action] boolValue];
         if([action isEqual:@"clip-legato"]) active=[self.state[@"selected_clip"][@"legato"] boolValue];
         if([action isEqual:@"clip-loop"]) active=[self.state[@"selected_clip"][@"looping"] boolValue];

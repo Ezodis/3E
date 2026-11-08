@@ -98,6 +98,83 @@ class RecordServer:
                         pass
         return "selected_track"
 
+    @staticmethod
+    def chain_selector(device):
+        return next((p for p in getattr(device, "parameters", ())
+                     if getattr(p, "original_name", p.name) == "Chain Selector"), None)
+
+    def song_banks(self):
+        return [(track, device, self.chain_selector(device))
+                for track in self.song.tracks
+                for device in getattr(track, "devices", ())
+                if str(device.name) == "SONG: 0 DIABLA | 1 RUFF | 2 NOTA"
+                and self.chain_selector(device) is not None
+                and len(getattr(device, "chains", ())) == 3]
+
+    def active_piano_devices(self, track):
+        for device in getattr(track, "devices", ()):
+            if str(device.name) == "SONG: 0 DIABLA | 1 RUFF | 2 NOTA":
+                selector = self.chain_selector(device)
+                chains = getattr(device, "chains", ())
+                index = int(selector.value) if selector else -1
+                if 0 <= index < len(chains):
+                    yield from getattr(chains[index], "devices", ())
+            else:
+                yield device
+
+    def bind_song_loop_sounds(self):
+        """Native clip automation keeps saved loops paired with their sound bank."""
+        count = 0
+        for track, device, selector in self.song_banks():
+            if "MIDI LOOPS" not in str(track.name):
+                continue
+            for slot in getattr(track, "clip_slots", ()):
+                clip = slot.clip if slot.has_clip else None
+                if clip is None or clip.is_recording:
+                    continue
+                name = str(clip.name).split(" - ", 1)[0]
+                if name not in ("DIABLA", "RUFF", "NOTA"):
+                    continue
+                envelope = clip.automation_envelope(selector)
+                if envelope is None:
+                    envelope = clip.create_automation_envelope(selector)
+                    envelope.insert_step(clip.loop_start, clip.loop_end - clip.loop_start,
+                                         ("DIABLA", "RUFF", "NOTA").index(name))
+                count += 1
+        if not count:
+            raise ValueError("No song-library loops found")
+
+    def select_song_preset(self, action):
+        if action == "song-bind-loops":
+            self.bind_song_loop_sounds()
+            return
+        presets = {"song-diabla": (0, 84, 10, "Minor", "DIABLA"),
+                   "song-ruff": (1, 108, 1, "Major", "RUFF"),
+                   "song-nota": (2, 94, 2, "Minor", "NOTA")}
+        if action not in presets:
+            raise ValueError("Unknown song preset")
+        banks = self.song_banks()
+        if len(banks) < 2:
+            raise ValueError("Open the song-library template first")
+        if self.song.record_mode or self.song.session_record:
+            raise ValueError("Finish recording before switching song sounds")
+        index, tempo, root, scale, name = presets[action]
+        self.song.begin_undo_step()
+        try:
+            self.song.stop_all_clips()
+            for track, device, selector in banks:
+                selector.value = index
+            self.song.tempo = tempo
+            self.song.root_note = root
+            self.song.scale_name = scale
+            self.song.scale_mode = True
+            scene = next((scene for scene in getattr(self.song, "scenes", ())
+                          if str(scene.name) == name + " - Base"), None)
+            if scene is not None:
+                self.song.view.selected_scene = scene
+        finally:
+            self.song.end_undo_step()
+
     def piano_modes(self):
         """Only expose the explicit three-mode racks on named piano tracks."""
         found = {}
@@ -105,7 +182,7 @@ class RecordServer:
             prefix = str(track.name).split(" ", 1)[0]
             if prefix not in ("P1", "P2", "P3"):
                 continue
-            for device in getattr(track, "devices", ()):
+            for device in self.active_piano_devices(track):
                 if not str(device.name).startswith("MODE: 0 Plain | 1 Arp | 2 Bounce"):
                     continue
                 parameter = next((p for p in device.parameters
@@ -207,7 +284,8 @@ class RecordServer:
 
     def state(self):
         track = self.song.view.selected_track
-        result = {"protocol": 1, "pid": os.getpid(), "session_id": self.session,
+        result = {"song_presets": bool(self.song_banks()),
+                  "song_bank_values": [{"track": str(track.name), "value": int(selector.value)} for track, device, selector in self.song_banks()], "protocol": 1, "pid": os.getpid(), "session_id": self.session,
                   "time": self.clock(), "track_index": self.selected_index(),
                   "track_name": str(track.name), "can_arm": bool(track.can_be_armed),
                   "armed": bool(track.arm) if track.can_be_armed else False,
@@ -252,7 +330,9 @@ class RecordServer:
         if command.get("session") != self.session or age < -1 or age > 2:
             raise ValueError("Expired Live command; try again")
         action = command.get("action")
-        if isinstance(action, str) and action.startswith("clip-"):
+        if isinstance(action, str) and action.startswith("song-"):
+            self.select_song_preset(action)
+        elif isinstance(action, str) and action.startswith("clip-"):
             self.execute_clip(command)
         elif action == "piano-mode-set":
             mode = command.get("mode")
