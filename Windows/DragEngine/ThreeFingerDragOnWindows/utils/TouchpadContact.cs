@@ -7,9 +7,11 @@ public struct TouchpadContact : IEquatable<TouchpadContact> {
     public int ContactId{ get; }
     public int X{ get; }
     public int Y{ get; }
+    public bool IsActive { get; }
 
-    public TouchpadContact(int contactId, int x, int y){
+    public TouchpadContact(int contactId, int x, int y, bool isActive = true){
         (ContactId, X, Y) = (contactId, x, y);
+        IsActive = isActive;
     }
 
     public override bool Equals(object obj){
@@ -17,7 +19,7 @@ public struct TouchpadContact : IEquatable<TouchpadContact> {
     }
 
     public bool Equals(TouchpadContact other){
-        return ContactId == other.ContactId && X == other.X && Y == other.Y;
+        return ContactId == other.ContactId && X == other.X && Y == other.Y && IsActive == other.IsActive;
     }
 
     public static bool operator ==(TouchpadContact a, TouchpadContact b){
@@ -29,7 +31,7 @@ public struct TouchpadContact : IEquatable<TouchpadContact> {
     }
 
     public override int GetHashCode(){
-        return (ContactId, X, Y).GetHashCode();
+        return (ContactId, X, Y, IsActive).GetHashCode();
     }
 
     public override string ToString(){
@@ -46,10 +48,11 @@ internal class TouchpadContactCreator {
     public int? ContactId{ get; set; }
     public int? X{ get; set; }
     public int? Y{ get; set; }
+    public bool IsActive { get; set; } = true;
 
     public bool TryCreate(out TouchpadContact contact){
         if(ContactId.HasValue && X.HasValue && Y.HasValue){
-            contact = new TouchpadContact(ContactId.Value, X.Value, Y.Value);
+            contact = new TouchpadContact(ContactId.Value, X.Value, Y.Value, IsActive);
             return true;
         }
 
@@ -61,5 +64,6 @@ internal class TouchpadContactCreator {
         ContactId = null;
         X = null;
         Y = null;
+        IsActive = true;
     }
 }

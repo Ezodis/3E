@@ -108,7 +108,7 @@
   // touch began. Holds and taps use offset so natural finger jitter on a real
   // phone does not count as movement.
   let mode = 0, peak = 0, started = 0, distance = 0, offset = 0, armPoint = null, last = null, cancelled = false;
-  let lastTap = null, tapCandidate = false, tapDrag = false, gestureOrigin = null, fourOrigin = null, fourDone = false;
+  let lastTap = null, tapCandidate = false, tapDrag = false, gestureOrigin = null, four = null;
   let lastTouchAt = -Infinity, touching = 0;
   // Updates: host.js names the build of the page this receiver serves. When
   // the receiver we (re)connect to reports a different build (the computer
@@ -124,7 +124,7 @@
   const applySpeed = () => { const saved = Number(Prefs.get('speed')); if (saved >= .5 && saved <= 20) speed.value = saved; showSpeed(); };
   speed.addEventListener('input', () => { showSpeed(); Prefs.set('speed', Number(speed.value)); });
   applySpeed(); Prefs.onLoad(applySpeed);
-  const OVERVIEW_ENDING = new Set(['left','right','down','dragStart','appsBegin','navigate','desktop','shortcut']);
+  const OVERVIEW_ENDING = new Set(['left','right','down','dragStart','appsBegin','appWindow','navigate','desktop','shortcut']);
   function send(type, data = {}) {
     if (OVERVIEW_ENDING.has(type)) window.ThreeEDock?.overviewEnded?.();
     if (ready && httpClient) {
@@ -156,7 +156,7 @@
   function reset(message) {
     ready = false; dragging = false; threeDrag = false; contacts.clear();
     mode = peak = 0; last = null; cancelled = false;
-    lastTap = null; tapCandidate = tapDrag = fourDone = false; gestureOrigin = fourOrigin = null;
+    lastTap = null; tapCandidate = tapDrag = false; gestureOrigin = four = null;
     dx = dy = sx = sy = 0; clearTimeout(motionTimer); motionTimer = null;
     clearInterval(heartbeat); clearTimeout(updateTimer); updateTimer = null; receiverBuild = null;
     clearTimeout(holdTimer); clearTimeout(pressTimer); clearTimeout(releaseTimer); releaseTimer=null; httpQueue = []; pendingTap = null; dragArmed = false; owedClick = false; clearTimeout(owedTimer);
@@ -397,7 +397,7 @@
       started = performance.now(); distance = 0; offset = 0; peak = 0; cancelled = false; motionHistory = []; lastMotionSent = -Infinity;
       settle = { x: 0, y: 0, done: false }; smoothedSpeed = 0; lastMotionAt = started;
       if (Math.abs(dx) < 1) dx = 0; if (Math.abs(dy) < 1) dy = 0; if (Math.abs(sx) < 1) sx = 0; if (Math.abs(sy) < 1) sy = 0; // drop sub-unit leftovers from the last gesture
-      gestureOrigin = point; fourOrigin = null; fourDone = false;
+      gestureOrigin = point; four = null;
       tapCandidate = count === 1 && !dragging && !scrollMode && lastTap && started - lastTap.time < SECOND_TAP && Math.hypot(point.x-lastTap.x,point.y-lastTap.y) < SECOND_TAP_DISTANCE;
       lastTap = null;
       if (tapCandidate) { clearTimeout(owedTimer); owedTimer = null; } else payClick();
@@ -416,22 +416,15 @@
     if (count >= 4) {
       // Four fingers must never become an accidental three-finger drag.
       dx = dy = sx = sy = 0; drag(false); threeDrag = tapDrag = false;
-      fourOrigin ??= point;
-      if (count > 4) cancelled = true;
+      if (count === 4 && !four) beginFour(e.touches);
+      if (count > 4) { endFour(false); cancelled = true; }
     }
   }, { passive: false });
   onContact('touchmove', e => {
     e.preventDefault(); lastTouchAt = performance.now(); touching = e.touches.length; if (cancelled || !e.touches.length) return;
     const point = center(e.touches), count = e.touches.length;
     if (peak >= 4) {
-      if (count === 4 && fourOrigin && !fourDone) {
-        const x = point.x-fourOrigin.x, y = point.y-fourOrigin.y;
-        if (Math.abs(y) >= 44 && Math.abs(y) > Math.abs(x)*1.3) {
-          send(y < 0 ? 'taskView' : 'showDesktop'); fourDone = true;
-        } else if(Math.abs(x)>=44 && Math.abs(x)>Math.abs(y)*1.3) {
-          send('desktop',{direction:x<0 ? 1 : -1}); fourDone=true;
-        }
-      }
+      if (count === 4) moveFour(e.touches);
       last = point; mode = count; return;
     }
     if (last && mode === e.touches.length) {
@@ -471,6 +464,49 @@
     flush(); // First movement goes immediately; subsequent samples are capped at 125 Hz.
   }, { passive: false });
   const tapTolerance = () => TAP_TOLERANCE;
+  // Track Tab: mirrored by Shared/PhoneControl/TrackTabGesture.cs for the
+  // Windows Precision Touchpad. Commands use the host's native modifiers.
+  function fourPoints(touches) {
+    return Array.from(touches,(t,i)=>({id:t.identifier ?? i,...pinchPoint(t,four.screen)}))
+      .map(p=>({id:p.id,x:p.x/four.unit,y:p.y/four.unit}));
+  }
+  const fourCenter = points => ({x:points.reduce((s,p)=>s+p.x,0)/4,y:points.reduce((s,p)=>s+p.y,0)/4});
+  const fourRadius = (points,c) => points.reduce((s,p)=>s+Math.hypot(p.x-c.x,p.y-c.y),0)/4;
+  function beginFour(touches) {
+    two=null; dropClick();
+    const screen=Array.from(touches).every(t=>Number.isFinite(t.screenX)&&Number.isFinite(t.screenY)) &&
+      Array.from(touches).some(t=>t.screenX!==touches[0].screenX||t.screenY!==touches[0].screenY);
+    four={screen,unit:Math.max(1,Math.min(window.innerWidth||390,window.innerHeight||844)),start:performance.now(),travel:0,done:false,switching:false,ending:false};
+    four.points=fourPoints(touches);four.origin=fourCenter(four.points);four.radius=fourRadius(four.points,four.origin);four.stepX=four.origin.x;
+  }
+  function moveFour(touches) {
+    if(!four || four.done || four.ending)return;
+    const points=fourPoints(touches), now=performance.now();
+    if(points.some(p=>!four.points.some(o=>o.id===p.id))){endFour(false);four.done=true;return;}
+    const c=fourCenter(points), x=c.x-four.origin.x, y=c.y-four.origin.y;
+    const deltas=points.map(p=>{const o=four.points.find(o=>o.id===p.id);return {x:p.x-o.x,y:p.y-o.y};});
+    four.travel=Math.max(four.travel,...deltas.map(p=>Math.hypot(p.x,p.y)));
+    if(four.switching) {
+      if(now-four.switched>=200 && Math.abs(c.x-four.stepX)>=.07){send('appsStep',{direction:Math.sign(c.x-four.stepX)});four.stepX=c.x;four.switched=now;}
+      return;
+    }
+    const spread=fourRadius(points,c)-four.radius;
+    const opposing=['x','y'].some(axis=>deltas.some(p=>p[axis]>.012)&&deltas.some(p=>p[axis]<-.012));
+    if(Math.abs(spread)>=.025 && Math.abs(spread)>Math.hypot(x,y)*.65 && opposing) {
+      four.done=true;send('shortcut',{id:spread<0?0:1});
+    } else if(Math.abs(x)>=.07 && Math.abs(x)>Math.abs(y)*1.3) {
+      four.switching=true;four.stepX=c.x;four.switched=now;send('appsBegin',{direction:Math.sign(x)});
+    } else if(Math.abs(y)>=.09 && Math.abs(y)>Math.abs(x)*1.3) {
+      four.done=true;send(y<0?'taskView':'showDesktop');
+    }
+  }
+  function endFour(tap) {
+    if(!four)return;
+    const windowTap=tap&&!four.done&&!four.switching&&four.travel<.025&&performance.now()-four.start<=350;
+    if(four.switching){four.done=true;four.switching=false;send('appsEnd');}
+    four.ending=true;
+    if(windowTap){four.done=true;send('appWindow',{direction:1});}
+  }
   function viewportPoint(t) {
     const v = window.visualViewport, scale = v?.scale || 1;
     return { x: (t.clientX-(v?.offsetLeft || 0))*scale, y: (t.clientY-(v?.offsetTop || 0))*scale };
@@ -478,7 +514,7 @@
   function snapshotContact(t) {
     // Pointer contacts arrive separately: retain each sample's normalized
     // position so a later viewport change cannot rescale the stationary finger.
-    return {clientX:t.clientX, clientY:t.clientY, screenX:t.screenX, screenY:t.screenY, pinchPosition:viewportPoint(t)};
+    return {identifier:t.identifier ?? t.pointerId,clientX:t.clientX, clientY:t.clientY, screenX:t.screenX, screenY:t.screenY, pinchPosition:viewportPoint(t)};
   }
   function pinchPoint(t, screen) { return screen ? {x:t.screenX, y:t.screenY} : t.pinchPosition || viewportPoint(t); }
   function spread(touches) {
@@ -611,7 +647,8 @@
   onContact('touchend', e => {
     e.preventDefault(); clearTimeout(holdTimer); lastTouchAt = performance.now(); touching = e.touches.length; flush(true);
     if (peak >= 4) {
-      if (!e.touches.length) { mode = peak = 0; last = lastTap = fourOrigin = null; cancelled = false; }
+      if(e.touches.length<4)endFour(!cancelled && !e.touches.length);
+      if (!e.touches.length) { mode = peak = 0; last = lastTap = four = null; cancelled = false; }
       return;
     }
     if (threeDrag && e.touches.length < 3) { drag(false); threeDrag = false; cancelled = true; }
@@ -694,7 +731,7 @@
     contacts.clear(); clearTimeout(motionTimer); motionTimer = null;
     clearTimeout(holdTimer); clearTimeout(pressTimer); clearTimeout(releaseTimer); releaseTimer=null;
     dx=dy=sx=sy=0; two=null; momentum=null; dropClick(); drag(false); dragArmed=false; send('releaseAll'); pad.classList.remove('dragging'); hint();
-    threeDrag=tapDrag=tapCandidate=false; mode=peak=0; last=lastTap=null; cancelled=true;
+    threeDrag=tapDrag=tapCandidate=false; mode=peak=0; last=lastTap=four=null; cancelled=true;
     window.ThreeESurface?.cancel();
   }
   function settings(show) {

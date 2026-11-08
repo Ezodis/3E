@@ -935,9 +935,10 @@ input{width:100%;padding:13px;border:1px solid #415260;border-radius:10px;backgr
                 else sink.Navigate(direction);
                 break;
             case "navigateEnd": sink.NavigateEnd(); break;
-            case "appsBegin": sink.Release(); sink.AppsBegin(); break;
+            case "appsBegin": sink.Release(); sink.AppsBegin(command.TryGetProperty("direction",out _) ? Range("direction",-1,1) : 1); break;
             case "appsStep": sink.AppsStep(Range("direction",-1,1)); break;
             case "appsEnd": sink.AppsEnd(); break;
+            case "appWindow": sink.ReleaseAll(); sink.AppWindow(Range("direction",-1,1)); break;
             case "media": sink.Media(Range("action",0,2)); break;
             case "volume": sink.Volume(Range("level",0,100)); break;
             case "volumeStep": sink.VolumeStep(Range("direction",-1,1)); break;
@@ -980,8 +981,10 @@ public interface ITrackpadInput {
     void NavigateSwipe(int direction) => Navigate(-direction);
     void NavigateEnd() => AppsEnd();
     void AppsBegin() { }
+    void AppsBegin(int direction) { AppsBegin(); if(direction<0){AppsStep(-1);AppsStep(-1);} }
     void AppsStep(int direction) { }
     void AppsEnd() { }
+    void AppWindow(int direction) { }
     void Media(int action) { }
     void Volume(int level) { }
     // One native volume step (Windows: the volume keys, which show the system OSD).

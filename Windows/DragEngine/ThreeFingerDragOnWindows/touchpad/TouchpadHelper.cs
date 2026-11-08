@@ -242,6 +242,13 @@ internal static class TouchpadHelper {
 
             uint scanTime = 0;
             uint contactCount = 99;
+            if(GetDeivceInfo(currentDevice)==null)Exists(currentDevice);
+            var deviceInfo=GetDeivceInfo(currentDevice);
+            foreach(var cap in valueCaps) {
+                if(deviceInfo==null || cap.UsagePage!=1 || cap.LinkCollection==0)continue;
+                if(cap.Usage==0x30){deviceInfo.XMin=cap.LogicalMin;deviceInfo.XMax=cap.LogicalMax;}
+                if(cap.Usage==0x31){deviceInfo.YMin=cap.LogicalMin;deviceInfo.YMax=cap.LogicalMax;}
+            }
 
             List<TouchpadContactCreator> creators = new();
             List<TouchpadContact> contacts = new();
@@ -298,6 +305,13 @@ internal static class TouchpadHelper {
                                 case (0x0D, 0x51): // Contact ID
                                     toLog += $"ID{(int) value} ";
                                     creators[contactIndex].ContactId = (int) value;
+                                    // Tip Switch is a HID button, not a value cap.
+                                    // Keep lifted slots until the frame is assembled,
+                                    // then exclude them from both gesture engines.
+                                    ushort[] usages=new ushort[16];uint usageCount=(uint)usages.Length;
+                                    if(HidP_GetUsages(HIDP_REPORT_TYPE.HidP_Input,0x0D,valueCap.LinkCollection,usages,ref usageCount,
+                                        preparsedDataPointer,rawHidRawDataPointerAdjusted,rawInput.Hid.dwSizeHid)==HIDP_STATUS_SUCCESS)
+                                        creators[contactIndex].IsActive=usages.Take((int)usageCount).Contains((ushort)0x42);
                                     break;
 
                                 case (0x01, 0x30): // X
@@ -457,10 +471,10 @@ internal static class TouchpadHelper {
         HIDP_REPORT_TYPE reportType,
         ushort usagePage,
         ushort linkCollection,
-        [Out] uint[] usageList,
+        [Out] ushort[] usageList,
         ref uint usageLength,
         IntPtr preparsedData,
-        byte[] report,
+        IntPtr report,
         uint reportLength
     );
 

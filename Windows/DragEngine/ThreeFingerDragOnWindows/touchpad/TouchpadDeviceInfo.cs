@@ -11,6 +11,7 @@ public class TouchpadDeviceInfo
     public String productId { get; set; }
     
     public IntPtr hid { get; set; }
+    public int XMin, XMax, YMin, YMax;
 
     public override string ToString()
     {

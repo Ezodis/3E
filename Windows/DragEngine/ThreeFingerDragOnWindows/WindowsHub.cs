@@ -1,4 +1,4 @@
-using ThreeE.PhoneBar.Windows;
+﻿using ThreeE.PhoneBar.Windows;
 using ThreeE.CarView;
 using ThreeE.Brand;
 using System;
@@ -21,7 +21,7 @@ namespace ThreeFingerDragOnWindows;
 
 // The drag engine and the hub share this process and its single notification icon.
 public sealed class WindowsHub : IDisposable {
-    public const string Version = "3.0.167.7";
+    public const string Version = "3.0.167.8";
     private const string ReleasesUrl = "https://api.github.com/repos/Ezodis/3E/releases";
     private readonly string root = AppContext.BaseDirectory;
     private readonly string data = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "3EWindows");
@@ -228,6 +228,7 @@ public sealed class WindowsHub : IDisposable {
                 ssmsThemes = SsmsTheme.CurrentThemeNames,
                 touchpadDetected = handler.TouchpadExists, inputReceiverInstalled = handler.InputReceiverInstalled,
                 threeFingerDrag = DragDiagnostics.Snapshot(),
+                trackTabEnabled = handler.TrackTab.Enabled, trackTabError = handler.TrackTab.Error,
                 keyboardInstalled = File.Exists(KeyboardPath), keyboardRunning = IsRunning("3EWindows.Keyboard"),
                 macKeyboardEnabled = settings.MacKeyboard, macKeyboardRunning = macKeyboard.Active,
                 powerToysRunning = IsRunning("PowerToys"), shortcutsRunning = IsRunning("PowerToys.KeyboardManagerEngine"),
@@ -446,6 +447,11 @@ public sealed class WindowsHub : IDisposable {
             settings.PhoneBarAlwaysOn = enabled;
             if (enabled) phoneBar.EnsureRunning(); else phoneBar.Stop();
         }, NewPhoneLink);
+        Toggle("Track Tab",App.Instance.HandlerWindow.TrackTab.Enabled,enabled=> {
+            var trackTab=App.Instance.HandlerWindow.TrackTab;
+            if(trackTab.SetEnabled(enabled)){App.SettingsData.TrackTab=enabled;App.SettingsData.save();}
+            else MessageBox(IntPtr.Zero,"Track Tab could not start: "+trackTab.Error,"3£ Track Tab",0x40 | ForegroundDialog);
+        },()=>MessageBox(IntPtr.Zero,"Four fingers:\n• Swipe left/right to switch apps; hold to browse, lift to choose.\n• Pinch in to copy; spread to paste.\n• Tap to cycle windows in the current app.\n• Swipe up for Task View; down for the desktop.\n\nTrack Phone uses the same gestures. Three-finger drag stays separate.","3£ Track Tab",0x40 | ForegroundDialog));
         Toggle("Car View",carView.Enabled,enabled=>carView.SetEnabled(enabled),()=>carView.ToggleMirror(),MirrorSlot);
         Toggle("Three-finger drag", App.SettingsData.ThreeFingerDrag, enabled => { App.SettingsData.ThreeFingerDrag = enabled; App.SettingsData.save(); },
             () => App.Instance.OpenSettingsWindow());

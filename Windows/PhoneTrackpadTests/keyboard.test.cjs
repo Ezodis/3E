@@ -21,7 +21,7 @@ let checks=0;function check(condition,label){assert.ok(condition,label);checks++
 (async()=>{
  fs.mkdirSync(out,{recursive:true});await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
  const url=`http://127.0.0.1:${server.address().port}/#${'A'.repeat(48)}`;
- for(const [name,engine] of [['chromium',chromium],['webkit',webkit]]){
+ for(const [name,engine] of [['chromium',chromium],['webkit',webkit]].filter(([name])=>!process.env.PLAYWRIGHT_ENGINE||process.env.PLAYWRIGHT_ENGINE===name)){
   const browser=await engine.launch({headless:true,executablePath:process.env['PLAYWRIGHT_'+name.toUpperCase()+'_PATH']||undefined});
   try{for(platform of ['windows','macos']){
    clipboard={text:'Hello from the computer',html:'<b>Hello</b> from the computer'};uploads=[];
@@ -115,8 +115,8 @@ let checks=0;function check(condition,label){assert.ok(condition,label);checks++
    await page.locator('#commandsPane [data-shortcut="0"]').click();
    check(await page.evaluate(()=>sent.some(c=>c.type==='shortcut'&&c.id===0)),'held menu still sends shortcuts');
 
-   check(errors.length===0,'no script errors: '+errors.join(';'));await ctx.close();
+   check(errors.length===0,'no script errors: '+errors.join(';'));console.log(`PASS: ${name} ${platform} keyboard and clipboard (${checks} checks so far)`);await ctx.close();
   }}finally{await browser.close();}
  }
- console.log(`PASS: ${checks} keyboard, clipboard, modifier, disconnect and responsive checks in Chromium and WebKit.`);
+ console.log(`PASS: ${checks} keyboard, clipboard, modifier, disconnect and responsive checks.`);
 })().catch(error=>{console.error(error);process.exitCode=1;}).finally(()=>server.close());

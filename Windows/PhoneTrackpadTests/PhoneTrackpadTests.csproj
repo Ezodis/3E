@@ -1,8 +1,10 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup><OutputType>Exe</OutputType><TargetFramework>net10.0</TargetFramework><ImplicitUsings>enable</ImplicitUsings></PropertyGroup>
   <ItemGroup>
+    <None Include="../../Shared/PhoneControl/Tests/track-tab.json" Link="track-tab.json" CopyToOutputDirectory="PreserveNewest" />
     <ProjectReference Include="../../Shared/PhoneControl/PhoneControlCore.csproj" />
     <Compile Include="../PhoneBar/PhoneTrackpadWindows.cs" />
+    <Compile Include="../PhoneBar/WindowsAppWindows.cs" />
     <Compile Include="../PhoneBar/PhoneBarNetworkPolicy.cs" />
     <Compile Include="../PhoneBar/PhonePairingLink.cs" />
     <Compile Include="../../Shared/PhoneControl/MacHost/MacPointerMotion.cs" />

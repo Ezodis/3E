@@ -30,6 +30,8 @@ public class ThreeFingerDrag{
         lock (_gate) OnTouchpadContactLocked(currentDevice, oldContacts, contacts, elapsed);
     }
 
+    public void Cancel() { lock(_gate) { StopDrag(); _fingerCounter.Reset(); } }
+
     private void OnTouchpadContactLocked(IntPtr currentDevice, TouchpadContact[] oldContacts, TouchpadContact[] contacts, long elapsed){
         DragDiagnostics.Contacts(contacts.Length);
         if (_button.ReleasePending && !_button.End()) return;

@@ -17,6 +17,7 @@ public sealed partial class HandlerWindow : Window {
     private readonly App _app;
     private readonly ContactsManager _contactsManager;
     private readonly ThreeFingerDrag _threeFingersDrag;
+    public TrackTabWindows TrackTab { get; private set; }
     private readonly DispatcherTimer _iconTimer = new() { Interval = TimeSpan.FromSeconds(2) };
     private System.Drawing.Icon _trayArtwork;
     private bool? _lightTaskbar;
@@ -37,6 +38,7 @@ public sealed partial class HandlerWindow : Window {
         _iconTimer.Tick += (_, _) => UpdateTrayIcon();
         _iconTimer.Start();
         Closed += (_, _) => {
+            TrackTab?.Dispose();_threeFingersDrag?.Cancel();
             _iconTimer.Stop();
             Microsoft.Win32.SystemEvents.UserPreferenceChanged -= OnUserPreferenceChanged;
             TaskbarIcon.Dispose();
@@ -44,6 +46,8 @@ public sealed partial class HandlerWindow : Window {
         };
         _contactsManager = new ContactsManager(this);
         _threeFingersDrag = new ThreeFingerDrag();
+        TrackTab = new TrackTabWindows();
+        TrackTab.SetEnabled(App.SettingsData.TrackTab);
 
         // Let the _handlerWindow to be defined in App.xaml.cs before initializing the source
         Utils.runOnMainThreadAfter(100, () => {
@@ -113,7 +117,10 @@ public sealed partial class HandlerWindow : Window {
     private long _lastContactCtms = Ctms();
 
     public void OnTouchpadContact(IntPtr currentDevice, List<TouchpadContact> contacts){
-        if(App.SettingsData.ThreeFingerDrag){
+        contacts = contacts.Where(c=>c.IsActive).ToList();
+        if(TrackTab.Process(currentDevice,contacts.ToArray())) {
+            _threeFingersDrag.Cancel();_oldContacts=Array.Empty<TouchpadContact>();
+        } else if(App.SettingsData.ThreeFingerDrag){
             _threeFingersDrag.OnTouchpadContact(currentDevice, _oldContacts, contacts.ToArray(), Ctms() - _lastContactCtms);
         }
 

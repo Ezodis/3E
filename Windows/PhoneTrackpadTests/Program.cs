@@ -206,11 +206,16 @@ foreach(ushort key in new ushort[]{0x12,0x09,0x10,0x11,0x5B,0x25,0x27,0xB3,0x2C,
     marked &= ((UIntPtr)keyboard.GetType().GetField("Extra").GetValue(keyboard)).ToUInt64()==0x101;
 }
 Check(marked,"Fixed shortcut presses and releases bypass the suite's PowerToys remappings without injecting test input");
+TrackTabTests.Run(Check);
 void ApplyText(string command) { using var parsed=JsonDocument.Parse(command); PhoneTrackpad.Apply(parsed.RootElement,fake); }
 ApplyText("{\"type\":\"navigate\",\"direction\":1,\"swipe\":true}");
 Check(fake.Commands.Contains("navigateSwipe:1"),"Swipe packet preserves finger direction at the native boundary");
 ApplyText("{\"type\":\"appsBegin\"}"); ApplyText("{\"type\":\"appsStep\",\"direction\":-1}");
 Check(fake.Switching && fake.Commands.Contains("appsStep:-1"),"App switcher begins and steps through the native boundary");
+ApplyText("{\"type\":\"appsEnd\"}");ApplyText("{\"type\":\"appsBegin\",\"direction\":-1}");
+Check(fake.Switching && fake.Commands.Contains("appsBegin:-1"),"Track Tab begins directly in reverse direction");
+ApplyText("{\"type\":\"appWindow\",\"direction\":1}");
+Check(!fake.Switching && fake.Commands.Contains("appWindow:1"),"Same-app switching releases app modifiers first");
 ApplyText("{\"type\":\"midiNote\",\"channel\":15,\"number\":36,\"value\":127}");
 ApplyText("{\"type\":\"releaseAll\"}");
 Check(!fake.Switching && fake.MidiNotes==0,"Release-all clears app modifiers and MIDI notes");
@@ -456,7 +461,7 @@ Check(fake.Commands.Contains("history:-1") && fake.Commands.Contains("zoom:1"),"
 }
 ApplyText("{\"type\":\"dragStart\",\"x\":-1,\"y\":0}");
 Check(fake.Held && fake.Commands.Contains("dragStart:-1,0"),"Tap-drag start presses through the host's double-click-safe path");ApplyText("{\"type\":\"up\"}");
-foreach(string invalid in new[]{"{\"type\":\"midiCC\",\"channel\":16,\"number\":1,\"value\":64}","{\"type\":\"midiCC\",\"channel\":0,\"number\":120,\"value\":64}","{\"type\":\"midiNote\",\"channel\":0,\"number\":1,\"value\":128}","{\"type\":\"desktop\",\"direction\":2}","{\"type\":\"shortcut\",\"id\":18}","{\"type\":\"shortcut\",\"id\":-1}","{\"type\":\"dragStart\",\"x\":2,\"y\":0}","{\"type\":\"volumeStep\",\"direction\":2}","{\"type\":\"history\",\"direction\":2}","{\"type\":\"zoom\",\"direction\":-2}"}) {
+foreach(string invalid in new[]{"{\"type\":\"appsBegin\",\"direction\":2}","{\"type\":\"appWindow\",\"direction\":-2}","{\"type\":\"midiCC\",\"channel\":16,\"number\":1,\"value\":64}","{\"type\":\"midiCC\",\"channel\":0,\"number\":120,\"value\":64}","{\"type\":\"midiNote\",\"channel\":0,\"number\":1,\"value\":128}","{\"type\":\"desktop\",\"direction\":2}","{\"type\":\"shortcut\",\"id\":18}","{\"type\":\"shortcut\",\"id\":-1}","{\"type\":\"dragStart\",\"x\":2,\"y\":0}","{\"type\":\"volumeStep\",\"direction\":2}","{\"type\":\"history\",\"direction\":2}","{\"type\":\"zoom\",\"direction\":-2}"}) {
     bool refused=false;try{ApplyText(invalid);}catch(InvalidDataException){refused=true;}Check(refused,"Out-of-range MIDI/shortcut control rejected");
 }
 using(var midi=new TestMidi()) {midi.Select(0);midi.Send(false,15,1,64);midi.Send(true,15,36,100);midi.Panic();Check(midi.Messages.SequenceEqual(new[]{"191,1,64","159,36,100","143,36,0"}),"MIDI CC and note bytes are correct; panic releases only its own held note");}
@@ -755,6 +760,8 @@ sealed class FakeInput : ITrackpadInput {
     public object GetInfo(){if(FailMidiDiscovery)throw new InvalidOperationException("MIDI driver unavailable");return new {platform="windows",controls=new {dj=DJInfo},volume=new {available=true,level=outputVolume},midi=new {ports=new[]{new MidiPort(0,"Test MIDI (no hardware)")},selected,status="Test MIDI"}};}
     public void ReleaseAll(){Release();AppsEnd();MidiPanic();}
     public void AppsBegin(){Switching=true;Commands.Enqueue("appsBegin");}
+    public void AppsBegin(int direction){if(direction==1)AppsBegin();else if(direction!=0){Switching=true;Commands.Enqueue($"appsBegin:{direction}");}}
+    public void AppWindow(int direction)=>Commands.Enqueue($"appWindow:{direction}");
     public void AppsStep(int direction)=>Commands.Enqueue($"appsStep:{direction}");
     public void AppsEnd(){if(Switching)Commands.Enqueue("appsEnd");Switching=false;}
     public void Desktop(int direction)=>Commands.Enqueue($"desktop:{direction}");

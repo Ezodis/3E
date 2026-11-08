@@ -131,6 +131,8 @@ public sealed class MacInput : ITrackpadInput, IDisposable {
     public void Navigate(int direction)=>navigation.Step(direction);
     public void NavigateSwipe(int direction)=>navigation.Step(direction,true);
     public void AppsBegin()=>BeginApps(1);
+    public void AppsBegin(int direction){if(direction!=0)BeginApps(Math.Sign(direction));}
+    public void AppWindow(int direction){if(direction==0)return;ReleaseAll();ulong flags=Cmd|(direction<0?Shift:0);try{Key(50,true,flags);}finally{Key(50,false,flags);}}
     private void BeginApps(int direction){if(appSwitcherHeld)return;Release();Key(55,true,Cmd);appSwitcherHeld=true;CycleAppKey(direction);}
     public void NavigateEnd()=>navigation.End();
     public void AppsStep(int direction){if(direction!=0){if(!appSwitcherHeld)AppsBegin();CycleAppKey(direction);}}

@@ -177,6 +177,8 @@ public sealed class NativeTrackpadInput : ITrackpadInput, IDisposable {
     private static void Keys(params Input[] keys) { if(SendInput((uint)keys.Length,keys,Marshal.SizeOf<Input>())!=keys.Length) throw new InvalidOperationException("Windows could not accept the shortcut."); }
     private static void ReleaseKeys(params ushort[] keys) { foreach(var key in keys) SendInput(1,new[]{KeyEvent(key,true)},Marshal.SizeOf<Input>()); }
     public void AppsBegin() => BeginApps(1);
+    public void AppsBegin(int direction) { if(direction!=0) BeginApps(Math.Sign(direction)); }
+    public void AppWindow(int direction) { ReleaseAll(); WindowsAppWindows.Cycle(direction); }
     private void BeginApps(int direction) {
         if(switching) return;
         switching=true;

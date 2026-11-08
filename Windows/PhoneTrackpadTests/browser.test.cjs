@@ -127,6 +127,34 @@ if(require.main===module)(async()=>{
    const connectStart=Date.now();await p.goto(url);await p.waitForFunction(()=>document.getElementById('status').textContent==='Connected');
    assert.equal(await p.evaluate(()=>window.ThreeEPrefs.get('swapZoom')),false);
    assert.equal(await p.locator('#reverseZoom').count(),0);
+   // Four contacts through both engines' real pointer event path. The local
+   // receiver uses FakeInput, so no native app switching or clipboard changes.
+   for(const gesture of ['right','left','copy','paste','tap','cancel']) {
+    const start=commands.length;
+    await p.evaluate(async gesture=> {
+     const pad=document.getElementById('pad');
+     function frame(type,step) {
+      for(let id=0;id<4;id++) {
+       const spread=gesture==='copy'?1-step*.07:gesture==='paste'?1+step*.07:1;
+       const dx=gesture==='right'||gesture==='cancel'?step*9:gesture==='left'?-step*9:0;
+       const x=195+(id-1.5)*42*spread+dx,y=330;
+       pad.dispatchEvent(new PointerEvent(type,{pointerType:'touch',pointerId:201+id,clientX:x,clientY:y,screenX:x,screenY:y,bubbles:true,cancelable:true}));
+      }
+     }
+     frame('pointerdown',0);
+     if(gesture!=='tap')for(let i=1;i<=6;i++){frame('pointermove',i);await new Promise(r=>setTimeout(r,20));}
+     frame(gesture==='cancel'?'pointercancel':'pointerup',6);
+    },gesture);
+    await p.waitForTimeout(150);
+    const events=commands.slice(start).filter(c=>!['ping','info'].includes(c.type));
+    if(gesture==='right'||gesture==='left'||gesture==='cancel') {
+     assert.equal(events.find(c=>c.type==='appsBegin')?.direction,gesture==='left'?-1:1,name+' four-finger '+gesture);
+     assert.ok(events.some(c=>c.type===(gesture==='cancel'?'releaseAll':'appsEnd')),name+' releases app switcher');
+     assert.ok(!events.some(c=>['move','down','dragStart','desktop','shortcut','appWindow'].includes(c.type)),'app swipe cannot drag, paste or change desktops');
+    } else if(gesture==='tap') assert.deepEqual(events,[{type:'appWindow',direction:1}],'four-finger tap cycles current app windows once');
+    else assert.deepEqual(events,[{type:'shortcut',id:gesture==='copy'?0:1}],name+' four-finger '+gesture+' once');
+   }
+   commands.length=0; // Existing dock assertions below start with a fresh history.
    // Both WebKit and Chromium: the diagonal gesture shown in the bug report.
    for(const direction of [1,-1]) {
     const start=commands.length;

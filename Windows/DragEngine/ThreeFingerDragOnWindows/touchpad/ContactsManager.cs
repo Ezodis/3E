@@ -48,11 +48,18 @@ public class ContactsManager{
     // Contacts managements
     private List<TouchpadContact> _lastContacts = new();
     private uint _targetContactCount;
+    private IntPtr _lastDevice;
 
-    private void ReceiveTouchpadContacts(IntPtr currentDevice, List<TouchpadContact> contacts, uint count){
+    internal void ReceiveTouchpadContacts(IntPtr currentDevice, List<TouchpadContact> contacts, uint count){
+        if(currentDevice!=_lastDevice){_lastContacts.Clear();_targetContactCount=0;_lastDevice=currentDevice;}
         if(contacts == null || contacts.Count == 0){
             Logger.Log("Receiving empty contacts with cC=" + count);
+            if(contacts!=null && count==0) { _lastContacts.Clear();_targetContactCount=0;_source.OnTouchpadContact(currentDevice,contacts); }
             return;
+        }
+
+        if(count==0 && _lastContacts.Count==0 && contacts.All(c=>!c.IsActive)) {
+            _targetContactCount=0;_source.OnTouchpadContact(currentDevice,new List<TouchpadContact>());return;
         }
 
         // Regular contact list
@@ -89,25 +96,10 @@ public class ContactsManager{
             return;
         }
 
-        // Old partial contact list has not been submitted yet : duplicating
+        // Never invent fingers to complete a partial frame: that could fire
+        // a copy/paste or phantom drag. Wait for the next complete frame.
         if(_lastContacts.Count != 0){
-            Logger.Log("[WARNING] New incomplete contact list received while old lastContacts not empty: " + contacts.Count);
-
-            if(_lastContacts.Count < _targetContactCount){
-                var lastContact = _lastContacts.Last();
-                var maxId = _lastContacts.Max(c => c.ContactId);
-                for(int i = 1; i <= _targetContactCount - _lastContacts.Count; i++){
-                    _lastContacts.Add(new TouchpadContact(maxId + i, lastContact.X, lastContact.Y));
-                }
-                Logger.Log("+ Duplicated last contact to fulfil list: " + string.Join(", ", _lastContacts.Select(c => c.ToString())));
-            }else if(_lastContacts.Count > _targetContactCount){
-                Logger.Log("[WARNING] LastContact list has more contacts than expected: " + string.Join(", ", _lastContacts.Select(c => c.ToString())));
-                _lastContacts = _lastContacts.Take((int) _targetContactCount).ToList();
-            }
-
-            Logger.Log("+ LastContact list has correct length: " + string.Join(", ", _lastContacts.Select(c => c.ToString())));
-
-            _source.OnTouchpadContact(currentDevice, _lastContacts);
+            Logger.Log("Discarding incomplete touchpad frame.");
             _lastContacts.Clear();
         }
 

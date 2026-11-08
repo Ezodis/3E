@@ -31,6 +31,7 @@ public class SettingsData{
 
     // Three finger drag Settings
     public bool ThreeFingerDrag { get; set; } = true;
+    public bool TrackTab { get; set; } = true;
 
     public enum ThreeFingerDragButtonType {
         NONE,

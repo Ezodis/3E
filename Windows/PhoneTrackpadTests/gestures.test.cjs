@@ -40,8 +40,8 @@ fire('touchstart',fingers(3,10,10));time+=120;fire('touchmove',fingers(3,30,10))
 fire('touchstart',fingers(3,10,10));fire('touchend',[]);expect([],'three-finger tap never clicks');
 for(let n=1;n<=4;n++)fire('touchstart',fingers(n,10,100));fire('touchmove',fingers(4,10,40));fire('touchmove',fingers(4,10,-40));fire('touchend',fingers(3,10,0));fire('touchmove',fingers(3,50,30));fire('touchend',[]);expect([{type:'taskView'}],'four up fires once without drag');
 fire('touchstart',fingers(4,10,10));fire('touchmove',fingers(4,10,70));fire('touchend',[]);expect([{type:'showDesktop'}],'four down');
-fire('touchstart',fingers(4,10,10));fire('touchmove',fingers(4,80,20));fire('touchmove',fingers(4,140,20));fire('touchend',[]);expect([{type:'desktop',direction:-1}],'four right goes to previous desktop once');
-fire('touchstart',fingers(4,100,10));fire('touchmove',fingers(4,20,10));fire('touchend',[]);expect([{type:'desktop',direction:1}],'four left goes to next desktop');
+fire('touchstart',fingers(4,10,10));fire('touchmove',fingers(4,80,20));fire('touchmove',fingers(4,140,20));fire('touchend',[]);expect([{type:'appsBegin',direction:1},{type:'appsEnd'}],'four right switches apps and selects on lift');
+fire('touchstart',fingers(4,100,10));fire('touchmove',fingers(4,20,10));fire('touchend',[]);expect([{type:'appsBegin',direction:-1},{type:'appsEnd'}],'four left switches apps backwards');
 fire('touchstart',fingers(5,10,10));fire('touchmove',fingers(5,10,90));fire('touchend',[]);expect([],'five contacts ignored');
 element('speed').value='20';begin();fire('touchmove',[touch(210,10)]);fire('touchend',[]);timer(120);expect([{type:'dragStart',x:1,y:0},{type:'move',x:4000,y:0},{type:'up'}],'20x motion uses one packet');element('speed').value='3';
 grab();fire('touchcancel',[]);expect([{type:'dragStart',x:1,y:0},{type:'move',x:18,y:0},{type:'up'},{type:'releaseAll'}],'cancel immediately releases all held controls');

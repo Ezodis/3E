@@ -6,6 +6,7 @@ using ThreeFingerDragOnWindows.utils;
 namespace ThreeFingerDragOnWindows.threefingerdrag;
 
 public class FingerCounter {
+    public void Reset() { _originalFingersCount=_shortDelayFingersCount=_longDelayFingersCount=0;_shortDelayFingersMove=_longDelayFingersMove=0; }
 
     private int _originalFingersCount; // Number of original fingers on the touchpad after the short delay. This is updated only when contacts list length is <= 1.
 
