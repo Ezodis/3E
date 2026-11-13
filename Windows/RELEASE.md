@@ -1,3 +1,9 @@
+3£ switches desktops with the Track Tab swipe, like macOS.
+
+- With more than one Windows desktop, a four-finger sideways swipe on the touchpad switches to the next desktop (one per swipe; fingers left shows the desktop on the right). With a single desktop it still opens the app switcher.
+
+Previous release:
+
 3£ fixes reversed Track Phone pinch zoom on Windows and Mac.
 
 - Spreading two fingers zooms in; pinching them together zooms out, including diagonal and one-finger-moving pinches.
