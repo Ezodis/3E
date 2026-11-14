@@ -14,5 +14,12 @@ public sealed class NavigationGesture(Func<bool> multipleDesktops, Action<int> d
         else if (first) beginWindows(direction);
         else stepWindows(direction);
     }
+    // Track Tab (four-finger swipe): with several desktops, switch exactly one
+    // desktop per swipe, like macOS; otherwise drive the app switcher.
+    public void Tab(int direction) {
+        if (direction == 0) return;
+        if (desktops == true) return;
+        Step(direction, true);
+    }
     public void End() { desktops = null; endWindows(); }
 }

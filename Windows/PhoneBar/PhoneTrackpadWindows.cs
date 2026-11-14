@@ -173,7 +173,7 @@ public sealed class NativeTrackpadInput : ITrackpadInput, IDisposable {
     }
     public void TaskView() => WindowsShortcut(0x09); // Windows + Tab
     public void ShowDesktop() => WindowsShortcut(0x44); // Windows + D
-    private static Input KeyEvent(ushort key,bool up=false) => new() { Type=1,Data=new InputData { Keyboard=new Keyboard { Key=key,Extra=(UIntPtr)ShortcutMarker,Flags=(up?2u:0u) | (key==0x5B || key==0x25 || key==0x27 || key==0x2C || key==0xAE || key==0xAF || key==0xB0 || key==0xB1 ? 1u:0u) } } };
+    private static Input KeyEvent(ushort key,bool up=false) => new() { Type=1,Data=new InputData { Keyboard=new Keyboard { Key=key,Extra=(UIntPtr)ShortcutMarker,Flags=(up?2u:0u) | (key==0x5B || key==0xA3 || key==0x25 || key==0x27 || key==0x2C || key==0xAE || key==0xAF || key==0xB0 || key==0xB1 ? 1u:0u) } } };
     private static void Keys(params Input[] keys) { if(SendInput((uint)keys.Length,keys,Marshal.SizeOf<Input>())!=keys.Length) throw new InvalidOperationException("Windows could not accept the shortcut."); }
     private static void ReleaseKeys(params ushort[] keys) { foreach(var key in keys) SendInput(1,new[]{KeyEvent(key,true)},Marshal.SizeOf<Input>()); }
     public void AppsBegin() => BeginApps(1);
@@ -196,11 +196,14 @@ public sealed class NativeTrackpadInput : ITrackpadInput, IDisposable {
     }
     public void Navigate(int direction) => navigation.Step(direction);
     public void NavigateSwipe(int direction) => navigation.Step(direction,true);
+    public void TrackTab(int direction) => navigation.Tab(direction);
     public void NavigateEnd() => navigation.End();
     private void SendDesktopShortcut(int direction) {
         ushort arrow=direction<0?(ushort)0x25:(ushort)0x27;
-        try { Keys(KeyEvent(0x5B),KeyEvent(0x11),KeyEvent(arrow),KeyEvent(arrow,true)); }
-        finally { ReleaseKeys(arrow,0x11,0x5B); }
+        // Right Ctrl: remappers commonly bind Left Ctrl+arrow (PowerToys: Ctrl+→ = End),
+        // which would turn Ctrl+Win+arrow into Win+End and never switch desktops.
+        try { Keys(KeyEvent(0x5B),KeyEvent(0xA3),KeyEvent(arrow),KeyEvent(arrow,true)); }
+        finally { ReleaseKeys(arrow,0xA3,0x5B); }
     }
     // Fixed Mac-style palette (ids match Web/dock.js). Command maps to Ctrl, and
     // the screenshot trio maps to the Windows capture shortcuts.

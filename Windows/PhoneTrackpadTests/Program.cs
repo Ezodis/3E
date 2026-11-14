@@ -169,6 +169,12 @@ navigationLog.Clear();multiple=true;navigation.Step(1,true);navigation.Step(-1,t
 Check(navigationLog.SequenceEqual(new[]{"desktop:-1","desktop:1","end"}),"Desktop swipes move opposite the finger");
 navigationLog.Clear();multiple=false;navigation.Step(1,true);navigation.Step(-1,true);navigation.End();
 Check(navigationLog.SequenceEqual(new[]{"begin:1","step:-1","end"}),"Single-desktop window swipes follow the finger in both directions");
+navigationLog.Clear();multiple=true;navigation.Tab(1);navigation.Tab(1);navigation.Tab(-1);navigation.End();
+Check(navigationLog.SequenceEqual(new[]{"desktop:-1","end"}),"Track Tab switches exactly one desktop per swipe when several exist");
+navigationLog.Clear();multiple=false;navigation.Tab(-1);navigation.Tab(1);navigation.End();
+Check(navigationLog.SequenceEqual(new[]{"begin:-1","step:1","end"}),"Track Tab drives the app switcher with a single desktop");
+ApplyText("{\"type\":\"navigate\",\"direction\":-1,\"swipe\":true,\"tab\":true}");
+Check(fake.Commands.Contains("trackTab:-1"),"Phone four-finger swipe reaches the host's desktop-aware Track Tab");
 navigationLog.Clear();var unknownNavigation=new NavigationGesture(()=>throw new Exception("OS unavailable"),d=>navigationLog.Add("desktop"),d=>navigationLog.Add("begin:"+d),d=>{},()=>{});unknownNavigation.Step(1);
 Check(navigationLog.SequenceEqual(new[]{"begin:1"}),"Unavailable desktop discovery falls back to window switching");
 Check(!NativeTrackpadInput.HasMultipleDesktopIds(null)&&!NativeTrackpadInput.HasMultipleDesktopIds(new byte[16])&&!NativeTrackpadInput.HasMultipleDesktopIds(new byte[33])&&NativeTrackpadInput.HasMultipleDesktopIds(new byte[32]),"Desktop discovery handles missing, single and malformed Explorer data");
@@ -777,6 +783,7 @@ sealed class FakeInput : ITrackpadInput {
     public void AppsStep(int direction)=>Commands.Enqueue($"appsStep:{direction}");
     public void AppsEnd(){if(Switching)Commands.Enqueue("appsEnd");Switching=false;}
     public void Desktop(int direction)=>Commands.Enqueue($"desktop:{direction}");
+    public void TrackTab(int direction)=>Commands.Enqueue($"trackTab:{direction}");
     public void NavigateSwipe(int direction){Switching=true;Commands.Enqueue($"navigateSwipe:{direction}");}
     public void Navigate(int direction){Switching=true;Commands.Enqueue($"navigate:{direction}");}
     public void NavigateEnd(){Commands.Enqueue("navigateEnd");AppsEnd();}

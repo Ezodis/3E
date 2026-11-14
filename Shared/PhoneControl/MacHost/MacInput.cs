@@ -130,6 +130,7 @@ public sealed class MacInput : ITrackpadInput, IDisposable {
     // otherwise it cycles apps. Holding Apps always opens the app switcher.
     public void Navigate(int direction)=>navigation.Step(direction);
     public void NavigateSwipe(int direction)=>navigation.Step(direction,true);
+    public void TrackTab(int direction)=>navigation.Tab(direction);
     public void AppsBegin()=>BeginApps(1);
     public void AppsBegin(int direction){if(direction!=0)BeginApps(Math.Sign(direction));}
     public void AppWindow(int direction){if(direction==0)return;ReleaseAll();ulong flags=Cmd|(direction<0?Shift:0);try{Key(50,true,flags);}finally{Key(50,false,flags);}}

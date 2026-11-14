@@ -148,8 +148,8 @@ if(require.main===module)(async()=>{
     await p.waitForTimeout(150);
     const events=commands.slice(start).filter(c=>!['ping','info'].includes(c.type));
     if(gesture==='right'||gesture==='left'||gesture==='cancel') {
-     assert.equal(events.find(c=>c.type==='appsBegin')?.direction,gesture==='left'?-1:1,name+' four-finger '+gesture);
-     assert.ok(events.some(c=>c.type===(gesture==='cancel'?'releaseAll':'appsEnd')),name+' releases app switcher');
+     assert.equal(events.find(c=>c.type==='navigate'&&c.tab)?.direction,gesture==='left'?-1:1,name+' four-finger '+gesture);
+     assert.ok(events.some(c=>c.type===(gesture==='cancel'?'releaseAll':'navigateEnd')),name+' releases app switcher');
      assert.ok(!events.some(c=>['move','down','dragStart','desktop','shortcut','appWindow'].includes(c.type)),'app swipe cannot drag, paste or change desktops');
     } else if(gesture==='tap') assert.deepEqual(events,[{type:'appWindow',direction:1}],'four-finger tap cycles current app windows once');
     else assert.deepEqual(events,[{type:'shortcut',id:gesture==='copy'?0:1}],name+' four-finger '+gesture+' once');

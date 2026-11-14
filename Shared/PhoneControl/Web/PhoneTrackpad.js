@@ -487,7 +487,7 @@
     const deltas=points.map(p=>{const o=four.points.find(o=>o.id===p.id);return {x:p.x-o.x,y:p.y-o.y};});
     four.travel=Math.max(four.travel,...deltas.map(p=>Math.hypot(p.x,p.y)));
     if(four.switching) {
-      if(now-four.switched>=200 && Math.abs(c.x-four.stepX)>=.07){send('appsStep',{direction:Math.sign(c.x-four.stepX)});four.stepX=c.x;four.switched=now;}
+      if(now-four.switched>=200 && Math.abs(c.x-four.stepX)>=.07){send('navigate',{direction:Math.sign(c.x-four.stepX),swipe:true,tab:true});four.stepX=c.x;four.switched=now;}
       return;
     }
     const spread=fourRadius(points,c)-four.radius;
@@ -495,7 +495,7 @@
     if(Math.abs(spread)>=.025 && Math.abs(spread)>Math.hypot(x,y)*.65 && opposing) {
       four.done=true;send('shortcut',{id:spread<0?0:1});
     } else if(Math.abs(x)>=.07 && Math.abs(x)>Math.abs(y)*1.3) {
-      four.switching=true;four.stepX=c.x;four.switched=now;send('appsBegin',{direction:Math.sign(x)});
+      four.switching=true;four.stepX=c.x;four.switched=now;send('navigate',{direction:Math.sign(x),swipe:true,tab:true});
     } else if(Math.abs(y)>=.09 && Math.abs(y)>Math.abs(x)*1.3) {
       four.done=true;send(y<0?'taskView':'showDesktop');
     }
@@ -503,7 +503,7 @@
   function endFour(tap) {
     if(!four)return;
     const windowTap=tap&&!four.done&&!four.switching&&four.travel<.025&&performance.now()-four.start<=350;
-    if(four.switching){four.done=true;four.switching=false;send('appsEnd');}
+    if(four.switching){four.done=true;four.switching=false;send('navigateEnd');}
     four.ending=true;
     if(windowTap){four.done=true;send('appWindow',{direction:1});}
   }

@@ -21,21 +21,15 @@ public sealed class TrackTabWindows : IDisposable {
     private IntPtr device;
     private long lastContact;
     private bool suspended;
-    // Like macOS: with several desktops a horizontal swipe switches desktop
-    // (once per swipe) instead of opening the app switcher.
-    private bool desktopSwipe;
     public bool Enabled { get; private set; }
     public string Error { get; private set; }
     public TrackTabWindows() {
         gesture=new((action,direction)=> {
             switch(action) {
-                case "appsBegin":
-                    try { desktopSwipe=NativeTrackpadInput.HasMultipleDesktops(); } catch { desktopSwipe=false; }
-                    // Desktop surfaces move opposite the finger, as in NavigationGesture.
-                    if(desktopSwipe)input.Desktop(-direction);else input.AppsBegin(direction);
-                    break;
-                case "appsStep": if(!desktopSwipe)input.AppsStep(direction); break;
-                case "appsEnd": desktopSwipe=false; input.AppsEnd(); break;
+                // Like macOS: with several desktops the swipe switches one desktop
+                // per swipe instead of opening the app switcher (shared with Track Phone).
+                case "appsBegin": case "appsStep": input.TrackTab(direction); break;
+                case "appsEnd": input.NavigateEnd(); break;
                 case "shortcut": input.Shortcut(direction); break;
                 case "appWindow": input.AppWindow(direction); break;
                 case "taskView": input.TaskView(); break;
@@ -69,7 +63,7 @@ public sealed class TrackTabWindows : IDisposable {
         } catch(Exception ex) { Error=ex.Message; Cancel(); }
         return claimed || gesture.Claimed;
     }
-    public void Cancel() { try {gesture.Cancel();} finally {desktopSwipe=false;input.AppsEnd();} }
+    public void Cancel() { try {gesture.Cancel();} finally {input.NavigateEnd();} }
     private void SessionChanged(object sender,SessionSwitchEventArgs e) {
         App.Instance.DispatcherQueue.TryEnqueue(()=> { suspended=e.Reason is not (SessionSwitchReason.SessionUnlock or SessionSwitchReason.ConsoleConnect or SessionSwitchReason.RemoteConnect);Cancel(); });
     }
