@@ -1,3 +1,9 @@
+3£ makes the first touch on Track Phone smooth.
+
+- When you touch the pad after a pause, the phone's Wi-Fi often delivers the first few movements late and all at once. They were applied in one step, so the pointer skipped. They are now replayed evenly (at most a little faster than your finger moved) and catch up within a fraction of a second, with any lag capped at 120 ms. Applies to Windows and Mac.
+
+Previous release:
+
 3£ always shows the permanent Track Phone link.
 
 - The QR and link are `http://3e-win.local:17833/#…` whether the phone is on the USB cable or Wi-Fi, instead of the cable's IP address. The raw address is shown only if the name is unavailable.

@@ -290,7 +290,22 @@ Check(fake.Commands.Contains("history:-1") && fake.Commands.Contains("zoom:1"),"
     Check(learned > 0, "The learned Wi-Fi jitter survives a pause between gestures (" + learned.ToString("0.0") + " ms)");
     var resumed = Enumerable.Range(1, 4).Select(i => bursty.Due(5000 + i * 8, 10000 + 32)).ToArray();
     var resumedGaps = resumed.Zip(resumed.Skip(1), (a, b) => b - a).ToArray();
-    Check(resumedGaps.All(g => Math.Abs(g - 8) < 1), "The first clump of the next gesture is replayed at the finger's pace");
+    // Within a 2 ms easing step per move while the learned playout returns.
+    Check(resumedGaps.All(g => g >= 7.5 && g <= 10.5), "The first clump of the next gesture is replayed at the finger's pace (gaps " + string.Join("/", resumedGaps.Select(g => g.ToString("0.0"))) + " ms)");
+    // First touch after a pause: the dozing radio delivers the first move late
+    // together with the moves behind it. They must not all apply at once.
+    foreach (var (name, schedule) in new[] { ("after a pause", bursty), ("on a new connection", new MotionPacer.Schedule()) }) {
+        double start = schedule == bursty ? 20000 : 0, arrive = start + 5100;
+        var first = Enumerable.Range(0, 6).Select(i => schedule.Due(start + i * 8, arrive)).ToArray();
+        var firstGaps = first.Zip(first.Skip(1), (a, b) => b - a).ToArray();
+        Check(first[0] == arrive && firstGaps.All(g => g >= 5 && g <= 8.5), "A late first clump " + name + " is replayed smoothly instead of jumping (gaps " + string.Join("/", firstGaps.Select(g => g.ToString("0.0"))) + " ms)");
+        // The lag then shrinks back to the link's normal delay while moving.
+        double later = 0; for (int i = 6; i <= 120; i++) later = schedule.Due(start + i * 8, start + i * 8 + 5000) - (start + i * 8 + 5000);
+        Check(later < 1 + MotionPacer.MaxPlayout, "The first-touch lag catches up with the finger " + name + " (" + later.ToString("0.0") + " ms left)");
+    }
+    var stalled = new MotionPacer.Schedule();
+    var backlog = Enumerable.Range(0, 60).Select(i => stalled.Due(i * 8, 7000)).ToArray(); // half a second of motion at once
+    Check(backlog.Max() - 7000 <= MotionPacer.MaxResumeLag + MotionPacer.MaxPlayout + 1, "A huge first clump never lags more than the resume cap (" + (backlog.Max() - 7000).ToString("0") + " ms)");
     bursty.Reset();
     Check(bursty.Playout == 0 && bursty.Due(0, 20000) == 20000, "A new connection starts with no inherited delay");
     var order = new List<string>(); var lockObject = new object();

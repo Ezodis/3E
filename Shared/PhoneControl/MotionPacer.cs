@@ -19,11 +19,15 @@ namespace ThreeE.PhoneControl;
 // a click never lands before the motion that preceded it.
 public sealed class MotionPacer : IDisposable {
     public const double MaxPlayout = 40, ResetGap = 300;
+    // First touch: the late first clump may replay at most CatchUp faster than
+    // the finger moved (never all at once), and never lags over MaxResumeLag.
+    public const double CatchUp = 0.25, MaxResumeLag = 120;
     private const int MaxQueued = 64;
 
     // Pure scheduling (no threads, injectable times) so it can be tested.
     public sealed class Schedule {
         private double offset = double.NaN, jitter, lastArrival = double.NegativeInfinity;
+        private double resumePhone, lastDue, lastPhone;
         public double Playout => Math.Clamp(jitter, 0, MaxPlayout);
         // Host time at which a move stamped phoneTime should be applied.
         public double Due(double phoneTime, double hostNow) {
@@ -35,7 +39,8 @@ public sealed class MotionPacer : IDisposable {
                 // radios were dozing), so the moves bunched up behind it are
                 // replayed from it at the finger's pace. The learned jitter is
                 // kept, so the gesture is smooth from its first clump.
-                offset = sample;
+                // The phone's clock can pause while it sleeps, so re-measure.
+                offset = sample; resumePhone = lastPhone = phoneTime; lastDue = hostNow;
                 return hostNow;
             }
             if (sample < offset) offset = sample;                 // fastest delivery seen
@@ -44,7 +49,17 @@ public sealed class MotionPacer : IDisposable {
             // covers a whole clump with one steady delay, then shrinks again
             // on a calm link. Pauses keep it, so the next gesture starts smooth.
             jitter = Math.Max(Math.Max(0, sample - offset), jitter * 0.99);
-            return phoneTime + offset + Playout;
+            // The first move applied with no playout; ease the learned playout
+            // back in instead of pausing the pointer for it in one step.
+            double playout = Math.Min(Playout, Math.Max(0, phoneTime - resumePhone) * CatchUp);
+            double due = phoneTime + offset + playout;
+            // Moves bunched behind a late first move look "early" against it and
+            // would all be due at once: the first-touch jump. Never replay
+            // faster than (1 - CatchUp) of the finger's own spacing.
+            due = Math.Max(due, lastDue + Math.Max(0, phoneTime - lastPhone) * (1 - CatchUp));
+            due = Math.Min(due, hostNow + Playout + MaxResumeLag);
+            lastDue = due; lastPhone = phoneTime;
+            return due;
         }
         // A new connection: its clock and link may differ from the last one.
         public void Reset() { offset = double.NaN; jitter = 0; lastArrival = double.NegativeInfinity; }
