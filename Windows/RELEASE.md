@@ -1,3 +1,9 @@
+3£ always shows the permanent Track Phone link.
+
+- The QR and link are `http://3e-win.local:17833/#…` whether the phone is on the USB cable or Wi-Fi, instead of the cable's IP address. The raw address is shown only if the name is unavailable.
+
+Previous release:
+
 3£ switches desktops with the Track Tab swipe, like macOS.
 
 - With more than one Windows desktop, a four-finger sideways swipe on the touchpad switches to the next desktop (one per swipe; fingers left shows the desktop on the right). With a single desktop it still opens the app switcher.

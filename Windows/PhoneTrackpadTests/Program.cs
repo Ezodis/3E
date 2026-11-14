@@ -15,16 +15,13 @@ void Check(bool value, string name) { if (!value) { Console.WriteLine("::error::
     var secret = new string('A', 48);
     var direct = "http://172.20.10.5:17833/#" + secret;
     var named = "http://3e-win.local:17833/#" + secret;
-    var wired = new Uri(ThreeE.PhoneBar.Windows.PhonePairingLink.ForQr(direct, named, true));
-    Check(wired.Host == "172.20.10.5" && wired.Port == 17833, "USB QR uses the active cable address instead of multicast DNS");
-    Check(wired.Query == "?usb=1" && wired.Fragment == "#" + secret, "USB QR pins the wired route and preserves the complete pairing secret");
-    var waiting = new Uri(PhonePairingLink.ForQr(null, named, true));
-    Check(waiting.Host == "3e-win.local" && waiting.Query == "?usb=1" && waiting.Fragment == wired.Fragment,
-        "A waiting USB receiver keeps a QR for the same pairing identity without advertising a Wi-Fi address");
+    Check(PhonePairingLink.ForQr(direct, named, true) == named, "USB QR shows the permanent 3e-win.local link, not the cable address");
+    Check(PhonePairingLink.ForQr(null, named, true) == named, "A waiting USB receiver shows the same permanent link");
+    Check(PhonePairingLink.ForQr(direct.Replace("10.5", "10.7"), named, true) == named, "Replugging keeps the same link");
+    Check(PhonePairingLink.ForQr(direct, named, false) == named, "Wi-Fi hosts show the same permanent link");
+    var fallback = new Uri(PhonePairingLink.ForQr(direct, null, true));
+    Check(fallback.Host == "172.20.10.5" && fallback.Query == "?usb=1" && fallback.Fragment == "#" + secret, "Without a name, USB falls back to the pinned cable address and full secret");
     Check(PhonePairingLink.ForQr(null, null, true) == null, "A stopped receiver never invents a pairing URL");
-    var replugged = new Uri(ThreeE.PhoneBar.Windows.PhonePairingLink.ForQr(direct.Replace("10.5", "10.7"), named, true));
-    Check(replugged.Host == "172.20.10.7" && replugged.Fragment == wired.Fragment, "Replugging updates the QR address without replacing the paired identity");
-    Check(ThreeE.PhoneBar.Windows.PhonePairingLink.ForQr(direct, named, false) == named, "Permitted LAN hosts retain the stable-name pairing link");
     Check(ThreeE.PhoneBar.Windows.PhonePairingLink.ForQr(direct, null, false) == direct, "Hosts without a name retain direct-IP pairing");
 }
 Check(PhoneNetwork.ParseBridgeMembers("bridge100: flags\n\tmember: en9 flags=3<LEARNING,DISCOVER>\n\tmember: en3 flags=3<LEARNING,DISCOVER>\n").SequenceEqual(new[]{"en9","en3"}),"USB bridge membership uses explicit member names");
@@ -398,8 +395,8 @@ Check(fake.Commands.Contains("history:-1") && fake.Commands.Contains("zoom:1"),"
     await Until(() => offline.Running);
     Check(offline.Running, "A receiver started offline comes up when Wi-Fi connects");
     var readyQr = new Uri(PhonePairingLink.ForQr(offline.PairingUrl, offline.NamedUrl, true));
-    Check(readyQr.Host == "127.0.0.1" && readyQr.Query == "?usb=1" && readyQr.Fragment == new Uri(pendingQr).Fragment,
-        "Connecting replaces the waiting QR with the current address and the same pairing identity");
+    Check(readyQr.Host == "3e-win.local" && readyQr.Fragment == new Uri(pendingQr).Fragment,
+        "Connecting keeps the permanent link and the same pairing identity");
     offline.Stop();
     Check(PhonePairingLink.ForQr(offline.PairingUrl, offline.NamedUrl, true) == null,
         "Stopping hides the pairing identity instead of offering an inactive receiver");
