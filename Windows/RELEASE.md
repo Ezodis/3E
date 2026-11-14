@@ -1,3 +1,10 @@
+3£ tidies the Track Phone keyboard bar.
+
+- **Mac-style keys:** fn, Control (Win on Windows), Option/Alt and ⌘ sit bottom-left, and the arrows form an inverted T on the right. ⌘ sends Ctrl on Windows, matching the Mac layout. Esc, Tab, ⇧ and Del sit above the modifiers. ⌫ and ↵ are gone because the phone keyboard has them.
+- **One clipboard button:** the preview next to the text field opens the Copy menu with copy with or without formatting, Copy link, picture and file downloads, and ↻ refresh. The separate Aa, T and ↻ buttons are removed.
+
+Previous release:
+
 3£ makes the first touch on Track Phone smooth.
 
 - When you touch the pad after a pause, the phone's Wi-Fi often delivers the first few movements late and all at once. They were applied in one step, so the pointer skipped. They are now replayed evenly (at most a little faster than your finger moved) and catch up within a fraction of a second, with any lag capped at 120 ms. Applies to Windows and Mac.

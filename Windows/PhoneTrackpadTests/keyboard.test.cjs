@@ -30,9 +30,18 @@ let checks=0;function check(condition,label){assert.ok(condition,label);checks++
    await page.addInitScript(()=>{Object.defineProperty(window,'isSecureContext',{value:false});document.execCommand=command=>{window.lastCopy={command,text:getSelection()?.toString(),value:document.activeElement?.value};return true;};});
    await page.goto(url);await page.locator('#commands').evaluate(b=>{b.disabled=false;});
    check(await page.locator('#commandsPane [data-tool]').count()===0,'shortcuts contain no keyboard entry');
-   await page.locator('#commands').tap();await page.waitForSelector('#keyboardCopyActions button');
+   await page.locator('#commands').tap();await page.waitForSelector('#keyboardPreview[data-state=text]');
    check(await page.locator('#typeSink').isVisible(),'visible native type/paste field');
-   check((await page.locator('#keyboardCopyActions button').allTextContents()).join('|')==='Aa|T','formatted and plain copy share the same row');
+   check(await page.locator('#keyBar [data-key="0"],#keyBar [data-key="1"],#keyboardRefresh,#keyboardCopyActions').count()===0,'no Backspace, Enter, refresh or inline copy buttons on the bar');
+   const box=s=>page.locator('#keyBar '+s).boundingBox();
+   const [fn,m1,m2,m3,up,down,left,right]=await Promise.all(['.k-fn','.k-m1','.k-m2','.k-m3','.k-up','.k-down','.k-left','.k-right'].map(box));
+   check(fn.x<m1.x&&m1.x<m2.x&&m2.x<m3.x&&m3.x<left.x,'fn, Control/Win, Option/Alt and ⌘ run left to right before the arrows');
+   check(Math.abs((up.x+up.width/2)-(down.x+down.width/2))<1&&up.y+up.height<=down.y&&Math.abs(left.y-down.y)<1&&left.x<down.x&&down.x<right.x,'arrows form an inverted T');
+   check(await page.locator('#keyBar .k-m3').textContent()==='⌘'&&await page.locator('#keyBar .k-m1').textContent()===(platform==='macos'?'⌃':'Win'),'Mac-layout modifier labels');
+   await page.locator('#keyboardPreview').click();await page.waitForSelector('#clipSheet button:text("Copy without formatting")');
+   check((await page.locator('#clipSheet .row button').allTextContents()).join('|')==='Copy with formatting|Copy without formatting','one menu copies with or without formatting');
+   check(await page.locator('#clipRefresh').isVisible(),'refresh lives in the copy menu');
+   await page.locator('#clipClose').click();await page.waitForSelector('#typeSink:visible');
    await page.locator('#typeSink').fill('Hello 👋');
    check(await page.evaluate(()=>sent.some(c=>c.type==='text'&&c.text==='Hello 👋')),'Unicode typing');
    const modifier=platform==='macos'?8:2;await press(page,`[data-modifier="${modifier}"]`);await page.locator('#typeSink').fill('Hello 👋c');
@@ -56,25 +65,30 @@ let checks=0;function check(condition,label){assert.ok(condition,label);checks++
    });
    await page.waitForFunction(()=>sent.filter(c=>c.type==='shortcut'&&c.id===1).length===2);
    check(uploads.length===2&&uploads[1].manifest.map(p=>p.kind).join()==='image,file,file','native field accepts a photo and a file together');
-   await page.locator('#keyboardCopyActions button').last().click();
-   check(await page.evaluate(()=>lastCopy?.value==='Hello from the computer'),'plain copy uses the full text');
-   clipboard={text:'https://example.com/watch?v=3'};await page.locator('#keyboardRefresh').click();await page.waitForSelector('#keyboardCopyActions button:text("Link")');
+   const reread=async expected=>{await page.evaluate(()=>ThreeEClip.keyboard());await page.waitForFunction(()=>{const p=document.getElementById('keyboardPreview');return p.dataset.state!=='reading'&&p.title!=='Reading clipboard…';});await page.waitForTimeout(150);await page.waitForFunction(()=>document.getElementById('keyboardPreview').dataset.state!=='reading');};
+   const menu=async()=>{await page.locator('#keyboardPreview').click();await page.waitForFunction(()=>!document.getElementById('clipSheet').hidden&&!/Reading/.test(document.getElementById('clipNote').textContent));};
+   const back=async()=>{await page.locator('#clipClose').click();await page.waitForSelector('#typeSink:visible');};
+   await menu();await page.locator('#clipSheet button:text("Copy without formatting")').click();
+   check(await page.evaluate(()=>lastCopy?.value==='Hello from the computer'),'plain copy uses the full text');await back();
+   clipboard={text:'https://example.com/watch?v=3'};await reread();
    check(await page.locator('#keyboardPreview').getAttribute('title')==='https://example.com/watch?v=3','link preview stays local');
-   clipboard={image:{width:1,height:1,size:png.length}};await page.locator('#keyboardRefresh').click();await page.waitForSelector('#keyboardPreview img');
-   const downloaded=page.waitForEvent('download');await page.locator('#keyboardCopyActions button').click();check((await downloaded).suggestedFilename()===(platform==='macos'?'Mac':'PC')+' picture.png','picture downloads with a preview');
+   await menu();check(await page.locator('#clipSheet button:text("Copy link")').count()===1,'links offer Copy link');await back();
+   clipboard={image:{width:1,height:1,size:png.length}};await reread();await page.waitForSelector('#keyboardPreview img');
+   await menu();await page.waitForSelector('#clipSheet .clip-image button:text("Download")');
+   const downloaded=page.waitForEvent('download');await page.locator('#clipSheet .clip-image button:text("Download")').click();check((await downloaded).suggestedFilename()===(platform==='macos'?'Mac':'PC')+' picture.png','picture downloads from the menu');await back();
    for(const file of ['Voice memo.m4a','Clip.mp4','Document.pdf']){
-    clipboard={files:[{name:file,size:100,folder:false}]};await page.locator('#keyboardRefresh').click();await page.waitForFunction(()=>!document.getElementById('keyboardRefresh').disabled);
-    check((await page.locator('#keyboardCopyActions button').allTextContents()).join()==='↓',file+' uses the same download action');
+    clipboard={files:[{name:file,size:100,folder:false}]};await reread();
+    await menu();check(await page.locator('#clipSheet .clip-list button:text("Download")').count()===1,file+' downloads from the menu');await back();
     if(file.endsWith('.m4a')||file.endsWith('.mp4')){
      const mime=await page.locator('#keyboardPreview audio,#keyboardPreview video').evaluate(async node=>(await (await fetch(node.src)).blob()).type);
      check(mime===(file.endsWith('.m4a')?'audio/mp4':'video/mp4'),'media preview has the correct MIME type');
     }
    }
-   clipboard={text:'Select and copy this',html:'<b>Select</b> and copy this'};await page.locator('#keyboardRefresh').click();await page.waitForFunction(()=>!document.getElementById('keyboardRefresh').disabled);
+   clipboard={text:'Select and copy this',html:'<b>Select</b> and copy this'};await reread();
    await page.locator('#keyboardPreview').click();check(await page.locator('#clipSheet').isVisible(),'preview expands');await page.locator('#clipClose').click();check(await page.locator('#keyBar').isVisible(),'preview Done returns to keyboard');
    for(const width of [320,390,844]){
     await page.setViewportSize({width,height:width===844?390:600});await page.waitForTimeout(80);
-    check(await page.evaluate(()=>{const r=document.getElementById('keyBar').getBoundingClientRect();return r.left>=-1&&r.right<=innerWidth+1&&r.top>=-1&&r.bottom<=innerHeight+1&&r.height<=74&&document.getElementById('typeSink').getBoundingClientRect().width>=innerWidth*.44;}),'two-row panel stays under 74px with a wide field at '+width+'px');
+    check(await page.evaluate(()=>{const r=document.getElementById('keyBar').getBoundingClientRect();return r.left>=-1&&r.right<=innerWidth+1&&r.top>=-1&&r.bottom<=innerHeight+1&&r.height<=100&&document.getElementById('typeSink').getBoundingClientRect().width>=innerWidth*.44;}),'flat panel stays under 100px with a wide field at '+width+'px');
     await page.screenshot({path:path.join(out,`${name}-${platform}-${width}.png`)});
    }
    await press(page,'[data-modifier="2"]');await page.evaluate(()=>{testConnected=false;ThreeEClip.connection(false);});

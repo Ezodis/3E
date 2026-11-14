@@ -15,8 +15,12 @@
   const modifierButtons=[...bar.querySelectorAll('[data-modifier]')];
   const functions=$('functionKeys');
   for(let n=1;n<=12;n++){const b=document.createElement('button');b.type='button';b.dataset.key=48+n;b.textContent='F'+n;functions.append(b);}
-  if(mac){for(const [mask,label,name] of [[2,'⌃','Control'],[4,'⌥','Option'],[8,'⌘','Command']]){const button=bar.querySelector(`[data-modifier="${mask}"]`);button.textContent=label;button.setAttribute('aria-label',name);button.title=name;}}
-  $('keyModifiers').hidden=!window.ThreeEHost?.keyboardModifiers;
+  // Same Mac order on both hosts: fn, Control (Win on Windows), Option/Alt, ⌘.
+  // Windows uses the Mac layout, so ⌘ sends Ctrl there.
+  for(const [key,mask,label,name] of mac?[['m1',2,'⌃','Control'],['m2',4,'⌥','Option'],['m3',8,'⌘','Command']]:[['m1',8,'Win','Windows'],['m2',4,'Alt','Alt'],['m3',2,'⌘','Command (Ctrl)']]){
+    const button=bar.querySelector('.k-'+key);button.dataset.modifier=mask;button.textContent=label;button.setAttribute('aria-label',name);button.title=name;
+  }
+  bar.dataset.modifiers=String(!!window.ThreeEHost?.keyboardModifiers);bar.dataset.mac=String(mac);
   sink.disabled=!window.ThreeEHost?.keyboard;
   function clearModifiers(){modifiers=0;drawModifiers();}
   function drawModifiers(){modifierButtons.forEach(b=>b.setAttribute('aria-pressed',String(!!(modifiers&+b.dataset.modifier))));functions.hidden=!(modifiers&16);bar.dataset.fn=String(!!(modifiers&16));placeBar();}
@@ -130,9 +134,14 @@
   const sheet=$('clipSheet'), body=$('clipBody'), title=$('clipTitle'), note=$('clipNote');
   let returnToKeyboard=false;
   $('clipClose').addEventListener('click',()=>{const resume=returnToKeyboard;closeSheet();if(resume)keyboard();});
-  function closeSheet(){clipGeneration++;transferBusy=false;sheet.hidden=true;body.replaceChildren();note.textContent='';pending=null;urls.forEach(URL.revokeObjectURL);urls=[];}
+  function closeSheet(){clipGeneration++;transferBusy=false;sheet.hidden=true;clipRefresh.hidden=true;body.replaceChildren();note.textContent='';pending=null;urls.forEach(URL.revokeObjectURL);urls=[];}
   let pending=null, urls=[], clipGeneration=0, transferBusy=false;
   const el=(tag,props={},...kids)=>{const n=Object.assign(document.createElement(tag),props);n.append(...kids.filter(k=>k!=null));return n;};
+  // Copy from the computer: refresh lives in this menu, not on the key bar.
+  const clipRefresh=el('button',{type:'button',id:'clipRefresh',hidden:true,textContent:'↻'});
+  clipRefresh.setAttribute('aria-label','Refresh clipboard');clipRefresh.title='Refresh clipboard';
+  $('clipClose').before(clipRefresh);
+  clipRefresh.addEventListener('click',()=>{const resume=returnToKeyboard;getClip();returnToKeyboard=resume;});
   const size=n=>n<1024?n+' B':n<1048576?(n/1024).toFixed(0)+' KB':(n/1048576).toFixed(1)+' MB';
   const say=(text,error=false)=>{const inline=sheet.hidden&&!bar.hidden,target=inline?$('keyboardNote'):note;target.textContent=text;target.classList.toggle('error',error);if(inline){clearTimeout(noteTimer);noteTimer=setTimeout(()=>{target.textContent='';},error?6000:2500);}};
   const failure={401:'Pairing expired — scan a new QR code.',403:'Pairing expired — scan a new QR code.',409:'Connect the trackpad first.',413:'Too large — 200 MB maximum.',501:'This computer does not support clipboard transfer.'};
@@ -276,28 +285,34 @@
   }
   async function getClip(){
     if(!open('Copy from '+computer))return;
+    clipRefresh.hidden=false;
     const generation=clipGeneration;
     say('Reading the '+computer+' clipboard…');
     let info;
     try{info=await (await postJson('/clipboard/read',{})).json();}catch(e){say(e.message,true);return;}
     if(sheet.hidden||generation!==clipGeneration)return;say('');
     let any=false;
-    if(info.html){
-      any=true;const rich=el('div',{className:'clip-rich'});rich.append(...cleanHtml(info.html));
-      const copy=copyButton('Copy formatted',async()=>{
-        if(secure&&navigator.clipboard?.write&&window.ClipboardItem){try{await navigator.clipboard.write([new ClipboardItem({'text/html':new Blob([rich.innerHTML],{type:'text/html'}),'text/plain':new Blob([info.text||rich.innerText],{type:'text/plain'})})]);return true;}catch{}}
-        return copySelection(rich,true);
+    if(info.html||info.text){
+      // One menu for text: copy with or without formatting, then the preview.
+      any=true;const actions=el('div',{className:'row'});
+      const plain=info.text||'',link=/^https?:\/\/\S+$/i.test(plain.trim());
+      let rich=null;
+      if(info.html){
+        rich=el('div',{className:'clip-rich'});rich.append(...cleanHtml(info.html));
+        actions.append(copyButton('Copy with formatting',async()=>{
+          if(secure&&navigator.clipboard?.write&&window.ClipboardItem){try{await navigator.clipboard.write([new ClipboardItem({'text/html':new Blob([rich.innerHTML],{type:'text/html'}),'text/plain':new Blob([plain||rich.innerText],{type:'text/plain'})})]);return true;}catch{}}
+          return copySelection(rich,true);
+        }));
+      }
+      const area=el('textarea',{readOnly:true,value:plain||rich?.innerText||'',className:'clip-text',hidden:!!rich});
+      const copyPlain=copyButton(rich?'Copy without formatting':link?'Copy link':'Copy text',async()=>{
+        if(secure&&navigator.clipboard?.writeText){try{await navigator.clipboard.writeText(area.value);return true;}catch{}}
+        area.hidden=false;area.focus();area.select();area.setSelectionRange(0,area.value.length);
+        let ok=false;try{ok=document.execCommand('copy');}catch{}area.blur();if(rich)area.hidden=true;return ok;
       });
-      body.append(el('h2',{textContent:'Formatted text'}),rich,el('div',{className:'row'},copy));
-    }
-    if(info.text){
-      any=true;const area=el('textarea',{readOnly:true,value:info.text,className:'clip-text'});
-      const copy=copyButton('Copy text',async()=>{
-        if(secure&&navigator.clipboard?.writeText){try{await navigator.clipboard.writeText(info.text);return true;}catch{}}
-        area.focus();area.select();area.setSelectionRange(0,area.value.length);
-        let ok=false;try{ok=document.execCommand('copy');}catch{}area.blur();return ok;
-      });
-      body.append(el('h2',{textContent:info.html?'Plain text':'Text'}),area,el('div',{className:'row'},copy));
+      if(rich)copyPlain.classList.remove('primary');
+      actions.append(copyPlain);
+      body.append(el('h2',{textContent:rich?'Formatted text':link?'Link':'Text'}),actions,rich,area);
     }
     if(info.image){
       any=true;const holder=el('div',{className:'clip-image'},el('span',{textContent:'Loading picture…'}));
@@ -338,85 +353,49 @@
 
   // Clipboard controls share the keyboard surface. Read only while the user
   // opens/refreshes it; opening this panel never reads the phone clipboard.
-  const preview=$('keyboardPreview'),copyActions=$('keyboardCopyActions'),refresh=$('keyboardRefresh');
+  const preview=$('keyboardPreview');
   let inlineGeneration=0,inlineUrls=[],inlineReading=false;
-  refresh.setAttribute('aria-label','Refresh '+computer+' clipboard');
-  function clearInlineClipboard(){inlineGeneration++;inlineUrls.forEach(URL.revokeObjectURL);inlineUrls=[];preview.replaceChildren();copyActions.replaceChildren();}
+  function clearInlineClipboard(){inlineGeneration++;inlineUrls.forEach(URL.revokeObjectURL);inlineUrls=[];preview.replaceChildren();}
   function inlineLive(generation){return generation===inlineGeneration&&!bar.hidden;}
-  function inlineAction(label,action){
-    const short={Formatted:'Aa','Plain text':'T','Copy text':'Copy','Copy link':'Link',Download:'↓','View files':'Files','Try again':'↻'};
-    const button=el('button',{type:'button',textContent:short[label]||label,title:label+' from '+computer});
-    button.setAttribute('aria-label',label+' from '+computer);
-    button.addEventListener('click',async()=>{
-      if(transferBusy||inlineReading||!C.connected())return;
-      const generation=inlineGeneration;transferBusy=true;button.disabled=true;refresh.disabled=true;
-      try{await action(generation);}catch(e){if(inlineLive(generation))say(e.message||'Transfer failed. Try again.',true);}
-      finally{transferBusy=false;button.disabled=false;refresh.disabled=false;}
-    });return button;
-  }
-  async function copyInlineText(text,html){
-    if(secure&&navigator.clipboard){try{
-      if(html&&navigator.clipboard.write&&window.ClipboardItem){await navigator.clipboard.write([new ClipboardItem({'text/plain':new Blob([text],{type:'text/plain'}),'text/html':new Blob([html],{type:'text/html'})})]);return true;}
-      if(!html&&navigator.clipboard.writeText){await navigator.clipboard.writeText(text);return true;}
-    }catch{}}
-    const node=html?el('div',{className:'clipboard-copy-source'}):el('textarea',{className:'clipboard-copy-source',readOnly:true,value:text});
-    if(html)node.append(...cleanHtml(html));bar.append(node);let ok=false;
-    try{if(html)ok=copySelection(node,true);else{node.focus();node.select();node.setSelectionRange(0,text.length);ok=document.execCommand('copy');}}
-    finally{node.remove();sink.focus({preventScroll:true});placeBar();}
-    return ok;
-  }
   const mediaType=name=>/\.(png|jpe?g|gif|webp|heic)$/i.test(name)?'image':/\.(mp4|mov|m4v|webm)$/i.test(name)?'video':/\.(mp3|m4a|aac|wav|ogg|flac)$/i.test(name)?'audio':'file';
   const mediaMime=name=>({png:'image/png',jpg:'image/jpeg',jpeg:'image/jpeg',gif:'image/gif',webp:'image/webp',heic:'image/heic',mp4:'video/mp4',mov:'video/quicktime',m4v:'video/mp4',webm:'video/webm',mp3:'audio/mpeg',m4a:'audio/mp4',aac:'audio/aac',wav:'audio/wav',ogg:'audio/ogg',flac:'audio/flac'}[name.split('.').pop().toLowerCase()]||'application/octet-stream');
+  // The key bar shows only a preview of the computer clipboard. Tapping it
+  // opens the Copy menu (formatted/plain copy, downloads, refresh). It is
+  // re-read whenever the keyboard opens or the page returns to the front.
+  let readAgain=false;
   async function refreshClipboard(){
-    if(bar.hidden||inlineReading||transferBusy||!C.connected())return;
+    // A request during a read runs once that read finishes, so the preview
+    // never keeps showing an older clipboard.
+    if(inlineReading){readAgain=true;return;}
+    if(bar.hidden||transferBusy||!C.connected())return;
     clearInlineClipboard();const generation=inlineGeneration;
-    if(!window.ThreeEHost?.clipboard){preview.textContent='Clipboard unavailable';return;}
-    inlineReading=true;refresh.disabled=true;preview.textContent='Reading clipboard…';
+    if(!window.ThreeEHost?.clipboard){preview.textContent='Clipboard unavailable';preview.dataset.state='empty';return;}
+    inlineReading=true;preview.dataset.state='reading';preview.title='Reading clipboard…';
     try{
       const info=await (await postJson('/clipboard/read',{})).json();if(!inlineLive(generation))return;
       preview.replaceChildren();
       const files=info.files||[],text=info.text||'',rich=info.html?el('div'):null;
       if(rich)rich.append(...cleanHtml(info.html));
       preview.title=files.length?files.map(f=>f.name).join(', '):info.image?'Picture':text||rich?.textContent||'Clipboard is empty';
-      if(files.length||info.image){
+      preview.dataset.state=files.length>1?'files':files.length||info.image?'media':text||rich?'text':'empty';
+      if(files.length===1||info.image){
         const file=files[0],isImage=!file,kind=isImage?'image':mediaType(file.name);
-        const label=isImage?'Picture':files.length>1?`${files.length} files`:file.name;
-        preview.append(el('span',{className:'clipboard-snippet',textContent:label}));
-        if(files.length>1){copyActions.append(inlineAction('View files',async()=>getClip()));return;}
-        if(file&&(file.folder||file.size<0)){preview.append(el('span',{textContent:file.folder?'Folder':'Unavailable'}));return;}
-        let savedBlob;
-        const load=async()=>{
-          if(!savedBlob){const blob=await (await postJson('/clipboard/item',{index:isImage?-1:0})).blob();savedBlob=isImage?blob:blob.slice(0,blob.size,mediaMime(file.name));}
-          return savedBlob;
-        };
-        copyActions.append(inlineAction('Download',async current=>{
-          const blob=await load();if(!inlineLive(current))return;
-          await download(isImage?computer+' picture.png':file.name,blob);say('Download opened on your phone.');
-        }));
-        // Small media previews only. Large videos/files remain a deliberate download.
-        if(kind!=='file'&&(isImage?info.image.size:file.size)<=8*1048576){
-          try{const blob=await load();if(!inlineLive(generation))return;
-            const url=URL.createObjectURL(blob);inlineUrls.push(url);
+        preview.append(el('span',{className:'clipboard-snippet',textContent:isImage?'Picture':file.name}));
+        // Small media thumbnails only; large files stay a deliberate download in the menu.
+        if(kind!=='file'&&!(file&&(file.folder||file.size<0))&&(isImage?info.image.size:file.size)<=8*1048576){
+          try{const blob=await (await postJson('/clipboard/item',{index:isImage?-1:0})).blob();if(!inlineLive(generation))return;
+            const url=URL.createObjectURL(isImage?blob:blob.slice(0,blob.size,mediaMime(file.name)));inlineUrls.push(url);
             const media=el(kind==='image'?'img':kind,{src:url});
-            if(kind==='image')media.alt=label;
+            if(kind==='image')media.alt='';
             else{media.preload='metadata';media.controls=kind==='audio';media.setAttribute('playsinline','');media.muted=kind==='video';}
             preview.prepend(media);
-          }catch{if(inlineLive(generation))say('Preview unavailable. You can still download the file.');}
+          }catch{}
         }
-      }else if(text||rich){
-        const plain=text||rich.textContent,link=/^https?:\/\/\S+$/i.test(plain.trim());
-        preview.append(el('span',{className:'clipboard-snippet',textContent:plain}));
-        const copy=(label,html)=>inlineAction(label,async()=>{const ok=await copyInlineText(plain,html);say(ok?'Copied to your phone.':'Use the preview to select and copy the text.',!ok);});
-        if(rich)copyActions.append(copy('Formatted',rich.innerHTML),copy('Plain text',null));
-        else copyActions.append(copy(link?'Copy link':'Copy text',null));
-      }else{
-        preview.textContent='Clipboard is empty';const button=el('button',{type:'button',textContent:'Copy',title:'Clipboard is empty',disabled:true});copyActions.append(button);
-      }
-    }catch(e){if(inlineLive(generation)){preview.textContent='Could not read clipboard';copyActions.append(inlineAction('Try again',async()=>{transferBusy=false;await refreshClipboard();}));say(e.message,true);}}
-    finally{inlineReading=false;refresh.disabled=false;placeBar();}
-  }
-  refresh.addEventListener('click',refreshClipboard);
-  preview.addEventListener('click',()=>{if(!inlineReading&&!transferBusy)getClip();});
+      }else if(files.length)preview.append(el('span',{className:'clipboard-snippet',textContent:files.length+' files'}));
+      else if(text||rich)preview.append(el('span',{className:'clipboard-snippet',textContent:text||rich.textContent}));
+    }catch(e){if(inlineLive(generation)){preview.dataset.state='error';preview.title='Could not read clipboard';say(e.message,true);}}
+    finally{inlineReading=false;placeBar();if(readAgain){readAgain=false;refreshClipboard();}}
+  }  preview.addEventListener('click',()=>{if(!inlineReading&&!transferBusy)getClip();});
   preview.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();if(!inlineReading&&!transferBusy)getClip();}});
   async function receiveInline(data){
     if(!C.connected()||transferBusy)return;
