@@ -32,10 +32,12 @@
   function sendKey(id,n=1,mask=0){while(n>0){const step=Math.min(n,64);C.send('key',{id,n:step,...(mask?{modifiers:mask}:{})});n-=step;}}
   function arrows(delta){if(delta<0)sendKey(4,-delta);else if(delta>0)sendKey(6,delta);}
   function resetSink(){sink.value='';last='';caret=0;}
+  const chordName=(mask,key)=>(mask&16?'fn ':'')+(mac?[[2,'⌃'],[4,'⌥'],[1,'⇧'],[8,'⌘']]:[[8,'Win+'],[2,'Ctrl+'],[4,'Alt+'],[1,'Shift+']]).filter(([m])=>mask&m).map(([,l])=>l).join('')+key;
+  let swallowUntil=0;
   function chord(text){
     const ch=Array.from(text)[0]||'',lower=ch.toLowerCase();
     const id=/^[a-z]$/.test(lower)?12+lower.charCodeAt(0)-97:/^[0-9]$/.test(ch)?38+Number(ch):ch===' '?48:ch==='\n'?1:ch==='\t'?2:-1;
-    if(id>=0&&C.connected())sendKey(id,1,modifiers);
+    if(id>=0&&C.connected()){sendKey(id,1,modifiers);say(chordName(modifiers,ch===' '?'Space':ch==='\n'?'Return':ch==='\t'?'Tab':ch.toUpperCase())+' sent');}
     else say('Use a letter, number, Space or a key above with modifiers.',true);
     clearModifiers();resetSink();
   }
@@ -59,7 +61,19 @@
     if(now!==caret&&C.connected()){arrows(cp(cur.slice(caret,now))-cp(cur.slice(now,caret)));caret=now;}
     if(added.includes('\n')||cur.length>2000)resetSink();
   }
-  sink.addEventListener('input',e=>{if(!e.isComposing)sync();});
+  // With a modifier latched, the next typed key is a shortcut (⌘A selects
+  // all), never text: take it before Safari inserts the letter.
+  sink.addEventListener('beforeinput',e=>{
+    if(!modifiers||e.isComposing)return;
+    const text=e.inputType==='insertText'?e.data:/^insert(LineBreak|Paragraph)$/.test(e.inputType)?'\n':null;
+    if(!text)return;
+    e.preventDefault();swallowUntil=performance.now()+400;chord(text);
+  });
+  sink.addEventListener('input',e=>{
+    // If the browser inserted the letter anyway, it was already sent as a shortcut.
+    if(performance.now()<swallowUntil){swallowUntil=0;sink.value='';resetSink();return;}
+    if(!e.isComposing)sync();
+  });
   sink.addEventListener('compositionend',sync);
   sink.addEventListener('keydown',e=>{
     if((e.key==='Backspace'||e.key==='Enter')&&!e.isComposing&&sink.value===''){
@@ -115,8 +129,11 @@
       sync();const id=+button.dataset.key,mask=modifiers;button.classList.add('held');sendKey(id,1,mask);clearModifiers();resetSink();
       if([0,4,5,6,7,8].includes(id))repeatDelay=setTimeout(()=>{repeatTimer=setInterval(()=>{if(C.connected())sendKey(id,1,mask);else stopRepeat();},70);},420);
     }
-    if(!functions.contains(button))button.addEventListener('pointerdown',e=>{e.preventDefault();press();});
-    button.addEventListener('click',e=>{if(functions.contains(button)||e.detail===0)press();});
+    // One tap is one press: a click that follows the pointer press (some
+    // iOS versions report it with detail 0) must not toggle ⌘ back off.
+    let pressedAt=-Infinity;
+    if(!functions.contains(button))button.addEventListener('pointerdown',e=>{e.preventDefault();pressedAt=performance.now();press();});
+    button.addEventListener('click',e=>{if(functions.contains(button)||e.detail===0&&performance.now()-pressedAt>800)press();});
     for(const type of ['pointerup','pointercancel','pointerleave'])button.addEventListener(type,stopRepeat);
   }
   window.addEventListener('blur',()=>{stopRepeat();clearModifiers();});

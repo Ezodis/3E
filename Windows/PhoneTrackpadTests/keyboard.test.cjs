@@ -36,12 +36,12 @@ let checks=0;function check(condition,label){assert.ok(condition,label);checks++
    const box=s=>page.locator('#keyBar '+s).boundingBox();
    const [fn,m1,m2,m3,up,down,left,right]=await Promise.all(['.k-fn','.k-m1','.k-m2','.k-m3','.k-up','.k-down','.k-left','.k-right'].map(box));
    const [esc,attach,clip,sink]=await Promise.all(['.k-esc','#keyboardAttach','#keyboardPreview','#typeSink'].map(box));
-   const [shift,tab]=await Promise.all(['.k-shift','.k-tab'].map(box)),row=[fn,m1,m2,m3,esc,shift,tab,clip,up,attach],gaps=row.slice(1).map((b,i)=>b.x-(row[i].x+row[i].width));
+   const [shift,tab]=await Promise.all(['.k-shift','.k-tab'].map(box)),row=[esc,shift,tab,fn,m1,m2,m3,clip,up,attach],gaps=row.slice(1).map((b,i)=>b.x-(row[i].x+row[i].width));
    check(await page.locator('#keyBar .k-del,#keyBar [data-key="8"]').count()===0,'no Del key');
-   check(row.every((b,i)=>!i||row[i-1].x<b.x)&&row.every(b=>Math.abs(b.y-esc.y)<1),'one row of keys: fn Control/Win Option/Alt ⌘ Esc ⇧ Tab, clipboard ▲ +');
+   check(row.every((b,i)=>!i||row[i-1].x<b.x)&&row.every(b=>Math.abs(b.y-esc.y)<1),'one row of keys: Esc ⇧ Tab first, then fn Control/Win Option/Alt ⌘, clipboard ▲ +');
    check(Math.max(...gaps)-Math.min(...gaps)<1&&row.every(b=>Math.abs(b.width-fn.width)<1),'top row keys are evenly sized and spaced');
    check(clip.x+clip.width<=up.x&&up.x+up.width<=attach.x&&Math.abs(clip.y-up.y)<1&&Math.abs(attach.y-up.y)<1,'clipboard and + flank ▲ in the key row');
-   check(sink.x<=fn.x+1&&sink.x+sink.width<=left.x&&Math.abs(left.y-sink.y)<1,'full-width field with ◀ ▼ ▶ to its right');
+   check(sink.x<=esc.x+1&&sink.x+sink.width<=left.x&&Math.abs(left.y-sink.y)<1,'full-width field with ◀ ▼ ▶ to its right');
    check(Math.abs((up.x+up.width/2)-(down.x+down.width/2))<1&&up.y+up.height<=down.y&&Math.abs(left.y-down.y)<1&&left.x<down.x&&down.x<right.x,'arrows form an inverted T');
    check(await page.locator('#keyBar .k-m3').textContent()==='⌘'&&await page.locator('#keyBar .k-m1').textContent()===(platform==='macos'?'⌃':'Win'),'Mac-layout modifier labels');
    await page.locator('#keyboardPreview').click();await page.waitForSelector('#clipSheet button:text("Copy without formatting")');
@@ -53,6 +53,9 @@ let checks=0;function check(condition,label){assert.ok(condition,label);checks++
    const modifier=platform==='macos'?8:2;await press(page,`[data-modifier="${modifier}"]`);await page.locator('#typeSink').fill('Hello 👋c');
    check(await page.evaluate(mask=>sent.some(c=>c.type==='key'&&c.id===14&&c.modifiers===mask),modifier),'native copy chord');
    check(await page.locator('[data-modifier][aria-pressed="true"]').count()===0,'one-shot modifier clears');
+   await press(page,`[data-modifier="${modifier}"]`);await page.evaluate(()=>{sent.length=0;});await page.locator('#typeSink').pressSequentially('a');
+   check(await page.evaluate(mask=>sent.some(c=>c.type==='key'&&c.id===12&&c.modifiers===mask)&&!sent.some(c=>c.type==='text'),modifier),'typed letter after ⌘ sends the shortcut, not text');
+   check(await page.locator('#typeSink').inputValue()==='','shortcut letter is not left in the field');
    await press(page,'[data-modifier="1"]');await press(page,'[data-modifier="2"]');await press(page,'[data-key="4"]');
    check(await page.evaluate(()=>sent.some(c=>c.type==='key'&&c.id===4&&c.modifiers===3)),'combined Ctrl+Shift+Left');
    await press(page,'[data-modifier="16"]');check(await page.locator('#functionKeys button').first().isVisible(),'Fn reveals F1–F12');await page.locator('[data-key="53"]').click();

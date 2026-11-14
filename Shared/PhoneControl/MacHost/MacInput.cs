@@ -133,7 +133,7 @@ public sealed class MacInput : ITrackpadInput, IDisposable {
     public void TrackTab(int direction)=>navigation.Tab(direction);
     public void AppsBegin()=>BeginApps(1);
     public void AppsBegin(int direction){if(direction!=0)BeginApps(Math.Sign(direction));}
-    public void AppWindow(int direction){if(direction==0)return;ReleaseAll();ulong flags=Cmd|(direction<0?Shift:0);try{Key(50,true,flags);}finally{Key(50,false,flags);}}
+    public void AppWindow(int direction){if(direction==0)return;ReleaseAll();Chord(50,Cmd|(direction<0?Shift:0));}
     private void BeginApps(int direction){if(appSwitcherHeld)return;Release();Key(55,true,Cmd);appSwitcherHeld=true;CycleAppKey(direction);}
     public void NavigateEnd()=>navigation.End();
     public void AppsStep(int direction){if(direction!=0){if(!appSwitcherHeld)AppsBegin();CycleAppKey(direction);}}
@@ -149,18 +149,32 @@ public sealed class MacInput : ITrackpadInput, IDisposable {
     private static readonly (ushort key,ulong flags)[] shortcuts={
         (8,Cmd),(9,Cmd),(7,Cmd),(0,Cmd),(6,Cmd),(6,Cmd|Shift),(17,Cmd),(17,Cmd|Shift),(13,Cmd),(45,Cmd),(3,Cmd),(1,Cmd),
         (15,Cmd),(20,Cmd|Shift),(21,Cmd|Shift),(23,Cmd|Shift),(49,Cmd),(12,Cmd)};
+    // A key event that only carries modifier flags leaves macOS believing the
+    // modifier is still down afterwards (later clicks become ⌘-clicks), and
+    // some apps ignore it. Press the real modifier keys around the key and
+    // release them, so every chord ends with nothing held.
+    private static readonly (ulong Flag,ushort Key)[] modifierKeys={(Cmd,55),(Shift,56),(1UL<<18,59),(1UL<<19,58)};
+    private static void Chord(ushort key,ulong flags,int repeat=1){
+        ulong down=0;
+        try {
+            foreach(var m in modifierKeys)if((flags&m.Flag)!=0){down|=m.Flag;Key(m.Key,true,down);}
+            for(int i=0;i<Math.Clamp(repeat,1,64);i++){try{Key(key,true,flags);}finally{Key(key,false,flags);}}
+        } finally {
+            for(int i=modifierKeys.Length-1;i>=0;i--)if((down&modifierKeys[i].Flag)!=0){down&=~modifierKeys[i].Flag;Key(modifierKeys[i].Key,false,down);}
+            Key(key,false,0); // also clears Fn/arrow flags from the session state
+        }
+    }
     public void Shortcut(int id){
         if((uint)id>=(uint)shortcuts.Length)return;
-        Release();var (key,flags)=shortcuts[id];
-        try{Key(key,true,flags);}finally{Key(key,false,flags);}
+        Release();AppsEnd();var (key,flags)=shortcuts[id];Chord(key,flags);
     }
-    public void History(int direction){if(direction==0)return;Release();ushort key=direction<0?(ushort)33:(ushort)30;try{Key(key,true,Cmd);}finally{Key(key,false,Cmd);}} // Cmd+[ / Cmd+]
+    public void History(int direction){if(direction==0)return;Release();AppsEnd();Chord(direction<0?(ushort)33:(ushort)30,Cmd);} // Cmd+[ / Cmd+]
     private static IntPtr ZoomEvent(int direction,bool down) {
         var e=CGEventCreateKeyboardEvent(IntPtr.Zero,direction>0?(ushort)24:(ushort)27,down); // Cmd+= / Cmd+-
         if(e==IntPtr.Zero)throw new InvalidOperationException("macOS zoom event unavailable");
         CGEventSetFlags(e,Cmd);return e;
     }
-    public void Zoom(int direction){if(direction==0)return;try{Post(ZoomEvent(direction,true));}finally{Post(ZoomEvent(direction,false));}}
+    public void Zoom(int direction){if(direction==0)return;AppsEnd();Key(55,true,Cmd);try{try{Post(ZoomEvent(direction,true));}finally{Post(ZoomEvent(direction,false));}}finally{Key(55,false,0);}}
     public static void ValidateZoomEvents() {
         foreach(int direction in new[]{1,-1})foreach(bool down in new[]{true,false}) {
             var e=ZoomEvent(direction,down);
@@ -198,8 +212,7 @@ public sealed class MacInput : ITrackpadInput, IDisposable {
     public void PressKey(int id,int repeat,int modifiers){
         if((uint)id>=PhoneKeyboard.KeyCount||(uint)modifiers>PhoneKeyboard.ModifierMask)return;
         Release();AppsEnd();var (key,flags)=PhoneKeyboard.Mac(id,modifiers);
-        try { for(int i=0;i<Math.Clamp(repeat,1,64);i++){try{Key(key,true,flags);}finally{Key(key,false,flags);}} }
-        finally { Key(key,false,0); }
+        Chord(key,flags,repeat);
     }
     public void Media(int action)=>media(action);
     public void Volume(int level)=>volume.Set(level);
