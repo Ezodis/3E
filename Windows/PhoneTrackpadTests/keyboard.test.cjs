@@ -35,7 +35,9 @@ let checks=0;function check(condition,label){assert.ok(condition,label);checks++
    check(await page.locator('#keyBar [data-key="0"],#keyBar [data-key="1"],#keyboardRefresh,#keyboardCopyActions').count()===0,'no Backspace, Enter, refresh or inline copy buttons on the bar');
    const box=s=>page.locator('#keyBar '+s).boundingBox();
    const [fn,m1,m2,m3,up,down,left,right]=await Promise.all(['.k-fn','.k-m1','.k-m2','.k-m3','.k-up','.k-down','.k-left','.k-right'].map(box));
-   check(fn.x<m1.x&&m1.x<m2.x&&m2.x<m3.x&&m3.x<left.x,'fn, Control/Win, Option/Alt and ⌘ run left to right before the arrows');
+   const [esc,attach,clip,sink]=await Promise.all(['.k-esc','#keyboardAttach','#keyboardPreview','#typeSink'].map(box));
+   check(fn.x<m1.x&&m1.x<m2.x&&m2.x<m3.x&&m3.x<esc.x&&esc.x<up.x&&[fn,m1,m2,m3,up].every(b=>Math.abs(b.y-esc.y)<1),'one row of keys: fn Control/Win Option/Alt ⌘ Esc Tab ⇧ Del and ▲');
+   check(attach.x<clip.x&&clip.x+clip.width<=sink.x&&sink.x+sink.width<=left.x&&Math.abs(left.y-sink.y)<1,'+ and clipboard sit left of the field, ◀ ▼ ▶ to its right');
    check(Math.abs((up.x+up.width/2)-(down.x+down.width/2))<1&&up.y+up.height<=down.y&&Math.abs(left.y-down.y)<1&&left.x<down.x&&down.x<right.x,'arrows form an inverted T');
    check(await page.locator('#keyBar .k-m3').textContent()==='⌘'&&await page.locator('#keyBar .k-m1').textContent()===(platform==='macos'?'⌃':'Win'),'Mac-layout modifier labels');
    await page.locator('#keyboardPreview').click();await page.waitForSelector('#clipSheet button:text("Copy without formatting")');
@@ -88,7 +90,7 @@ let checks=0;function check(condition,label){assert.ok(condition,label);checks++
    await page.locator('#keyboardPreview').click();check(await page.locator('#clipSheet').isVisible(),'preview expands');await page.locator('#clipClose').click();check(await page.locator('#keyBar').isVisible(),'preview Done returns to keyboard');
    for(const width of [320,390,844]){
     await page.setViewportSize({width,height:width===844?390:600});await page.waitForTimeout(80);
-    check(await page.evaluate(()=>{const r=document.getElementById('keyBar').getBoundingClientRect();return r.left>=-1&&r.right<=innerWidth+1&&r.top>=-1&&r.bottom<=innerHeight+1&&r.height<=100&&document.getElementById('typeSink').getBoundingClientRect().width>=innerWidth*.44;}),'flat panel stays under 100px with a wide field at '+width+'px');
+    check(await page.evaluate(()=>{const r=document.getElementById('keyBar').getBoundingClientRect();return r.left>=-1&&r.right<=innerWidth+1&&r.top>=-1&&r.bottom<=innerHeight+1&&r.height<=74&&document.getElementById('typeSink').getBoundingClientRect().width>=innerWidth*.44;}),'one key row plus the field stays under 74px with a wide field at '+width+'px');
     await page.screenshot({path:path.join(out,`${name}-${platform}-${width}.png`)});
    }
    await press(page,'[data-modifier="2"]');await page.evaluate(()=>{testConnected=false;ThreeEClip.connection(false);});

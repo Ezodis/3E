@@ -1,3 +1,9 @@
+3£ flattens the Track Phone keyboard bar to one row of keys.
+
+- One row: fn, Control/Win, Option/Alt, ⌘, Esc, Tab, ⇧, Del, with ▲ at the right. Below it, + and the clipboard preview sit left of the text field and ◀ ▼ ▶ sit to its right, so the arrows form an inverted T across both rows.
+
+Previous release:
+
 3£ tidies the Track Phone keyboard bar.
 
 - **Mac-style keys:** fn, Control (Win on Windows), Option/Alt and ⌘ sit bottom-left, and the arrows form an inverted T on the right. ⌘ sends Ctrl on Windows, matching the Mac layout. Esc, Tab, ⇧ and Del sit above the modifiers. ⌫ and ↵ are gone because the phone keyboard has them.
