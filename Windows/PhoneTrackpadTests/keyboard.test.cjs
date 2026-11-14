@@ -37,7 +37,8 @@ let checks=0;function check(condition,label){assert.ok(condition,label);checks++
    const [fn,m1,m2,m3,up,down,left,right]=await Promise.all(['.k-fn','.k-m1','.k-m2','.k-m3','.k-up','.k-down','.k-left','.k-right'].map(box));
    const [esc,attach,clip,sink]=await Promise.all(['.k-esc','#keyboardAttach','#keyboardPreview','#typeSink'].map(box));
    check(fn.x<m1.x&&m1.x<m2.x&&m2.x<m3.x&&m3.x<esc.x&&esc.x<up.x&&[fn,m1,m2,m3,up].every(b=>Math.abs(b.y-esc.y)<1),'one row of keys: fn Control/Win Option/Alt ⌘ Esc Tab ⇧ Del and ▲');
-   check(attach.x<clip.x&&clip.x+clip.width<=sink.x&&sink.x+sink.width<=left.x&&Math.abs(left.y-sink.y)<1,'+ and clipboard sit left of the field, ◀ ▼ ▶ to its right');
+   check(clip.x+clip.width<=up.x&&up.x+up.width<=attach.x&&Math.abs(clip.y-up.y)<1&&Math.abs(attach.y-up.y)<1,'clipboard and + flank ▲ in the key row');
+   check(sink.x<=fn.x+1&&sink.x+sink.width<=left.x&&Math.abs(left.y-sink.y)<1,'full-width field with ◀ ▼ ▶ to its right');
    check(Math.abs((up.x+up.width/2)-(down.x+down.width/2))<1&&up.y+up.height<=down.y&&Math.abs(left.y-down.y)<1&&left.x<down.x&&down.x<right.x,'arrows form an inverted T');
    check(await page.locator('#keyBar .k-m3').textContent()==='⌘'&&await page.locator('#keyBar .k-m1').textContent()===(platform==='macos'?'⌃':'Win'),'Mac-layout modifier labels');
    await page.locator('#keyboardPreview').click();await page.waitForSelector('#clipSheet button:text("Copy without formatting")');

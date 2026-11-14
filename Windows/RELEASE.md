@@ -1,6 +1,6 @@
 3£ flattens the Track Phone keyboard bar to one row of keys.
 
-- One row: fn, Control/Win, Option/Alt, ⌘, Esc, Tab, ⇧, Del, with ▲ at the right. Below it, + and the clipboard preview sit left of the text field and ◀ ▼ ▶ sit to its right, so the arrows form an inverted T across both rows.
+- One row: fn, Control/Win, Option/Alt, ⌘, Esc, Tab, ⇧, Del, then the clipboard preview, ▲ and + at the right. The text field spans the row below, with ◀ ▼ ▶ to its right, so the arrows form an inverted T.
 
 Previous release:
 
