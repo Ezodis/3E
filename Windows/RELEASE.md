@@ -1,3 +1,5 @@
+- Track Phone key bar: removed Del, reordered to Esc ⇧ Tab, and made every top-row key (including clipboard, ▲ and +) the same size with even spacing.
+
 3£ flattens the Track Phone keyboard bar to one row of keys.
 
 - One row: fn, Control/Win, Option/Alt, ⌘, Esc, Tab, ⇧, Del, then the clipboard preview, ▲ and + at the right. The text field spans the row below, with ◀ ▼ ▶ to its right, so the arrows form an inverted T.

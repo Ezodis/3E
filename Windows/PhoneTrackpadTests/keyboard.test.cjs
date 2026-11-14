@@ -36,7 +36,10 @@ let checks=0;function check(condition,label){assert.ok(condition,label);checks++
    const box=s=>page.locator('#keyBar '+s).boundingBox();
    const [fn,m1,m2,m3,up,down,left,right]=await Promise.all(['.k-fn','.k-m1','.k-m2','.k-m3','.k-up','.k-down','.k-left','.k-right'].map(box));
    const [esc,attach,clip,sink]=await Promise.all(['.k-esc','#keyboardAttach','#keyboardPreview','#typeSink'].map(box));
-   check(fn.x<m1.x&&m1.x<m2.x&&m2.x<m3.x&&m3.x<esc.x&&esc.x<up.x&&[fn,m1,m2,m3,up].every(b=>Math.abs(b.y-esc.y)<1),'one row of keys: fn Control/Win Option/Alt ⌘ Esc Tab ⇧ Del and ▲');
+   const [shift,tab]=await Promise.all(['.k-shift','.k-tab'].map(box)),row=[fn,m1,m2,m3,esc,shift,tab,clip,up,attach],gaps=row.slice(1).map((b,i)=>b.x-(row[i].x+row[i].width));
+   check(await page.locator('#keyBar .k-del,#keyBar [data-key="8"]').count()===0,'no Del key');
+   check(row.every((b,i)=>!i||row[i-1].x<b.x)&&row.every(b=>Math.abs(b.y-esc.y)<1),'one row of keys: fn Control/Win Option/Alt ⌘ Esc ⇧ Tab, clipboard ▲ +');
+   check(Math.max(...gaps)-Math.min(...gaps)<1&&row.every(b=>Math.abs(b.width-fn.width)<1),'top row keys are evenly sized and spaced');
    check(clip.x+clip.width<=up.x&&up.x+up.width<=attach.x&&Math.abs(clip.y-up.y)<1&&Math.abs(attach.y-up.y)<1,'clipboard and + flank ▲ in the key row');
    check(sink.x<=fn.x+1&&sink.x+sink.width<=left.x&&Math.abs(left.y-sink.y)<1,'full-width field with ◀ ▼ ▶ to its right');
    check(Math.abs((up.x+up.width/2)-(down.x+down.width/2))<1&&up.y+up.height<=down.y&&Math.abs(left.y-down.y)<1&&left.x<down.x&&down.x<right.x,'arrows form an inverted T');
