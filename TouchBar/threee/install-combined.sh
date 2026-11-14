@@ -8,14 +8,14 @@ case "${1:-}" in
   *) printf 'Usage: install-combined.sh [--built]\n' >&2; exit 2 ;;
 esac
 strip_source="$PWD/build/threee/3E.app"
-strip_app='/Applications/3E.app'
+strip_app='/Applications/3£.app'
 [[ "$(/usr/libexec/PlistBuddy -c 'Print CFBundleIdentifier' "$strip_source/Contents/Info.plist")" == local.musicstrip.app ]]
 [[ "$(/usr/libexec/PlistBuddy -c 'Print ThreeEIncludesTouchTab' "$strip_source/Contents/Info.plist")" == true ]]
 codesign --verify --deep --strict "$strip_source"
 "$strip_source/Contents/MacOS/ThreeE" --self-test
 # Identify old and new executables by their bundle path, not branding.
 if pgrep -f '/(3E|3£|Strip3£)\.app/Contents/' >/dev/null; then
-  printf 'Quit 3E before installing. No installed files changed.\n' >&2; exit 1
+  printf 'Quit 3£ before installing. No installed files changed.\n' >&2; exit 1
 fi
 zsh threee/rename-installed.sh
 if [[ -e "$strip_app" ]]; then
@@ -23,10 +23,10 @@ if [[ -e "$strip_app" ]]; then
 fi
 strip_stage=$(mktemp -d /Applications/.threee-install.XXXXXX)
 trap '[[ "$strip_stage" == /Applications/.threee-install.* ]] && /bin/rm -r -- "$strip_stage"' EXIT
-ditto --norsrc --noextattr "$strip_source" "$strip_stage/3E.app"
-codesign --verify --deep --strict "$strip_stage/3E.app"
+ditto --norsrc --noextattr "$strip_source" "$strip_stage/3£.app"
+codesign --verify --deep --strict "$strip_stage/3£.app"
 [[ ! -e "$strip_app" ]] || /bin/mv "$strip_app" "$strip_stage/previous.app"
-if ! /bin/mv "$strip_stage/3E.app" "$strip_app"; then
+if ! /bin/mv "$strip_stage/3£.app" "$strip_app"; then
   [[ ! -e "$strip_stage/previous.app" ]] || /bin/mv "$strip_stage/previous.app" "$strip_app"
   exit 1
 fi

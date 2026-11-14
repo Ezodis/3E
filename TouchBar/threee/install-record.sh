@@ -3,12 +3,12 @@
 set -eu
 cd "${0:A:h:h}"
 zsh threee/rename-installed.sh
-strip_app='/Applications/3E.app'
+strip_app='/Applications/3£.app'
 strip_helper="$strip_app/Contents/Helpers/MIDI Touchbar.app"
 strip_framework="$strip_helper/Contents/Frameworks/SnoizeMIDI.framework"
 strip_identity="${STRIP_SIGNING_IDENTITY:-EDA0E1C9F0DD46BE3437CD2733933E31D3A8623D}"
 if pgrep -x ThreeE >/dev/null || pgrep -x 'MIDI Touchbar' >/dev/null; then
-  printf 'Quit Strip3 from its menu first. No files changed.\n' >&2
+  printf 'Quit 3£ from its menu first. No files changed.\n' >&2
   exit 1
 fi
 [[ -f "$strip_app/Contents/MacOS/ThreeE" ]]

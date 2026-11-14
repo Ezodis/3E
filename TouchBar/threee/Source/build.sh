@@ -41,7 +41,7 @@ fi
 strip_stage=$(mktemp -d /tmp/strip3-build.XXXXXX)
 trap '[[ "$strip_stage" == /tmp/strip3-build.* ]] && /bin/rm -r -- "$strip_stage"' EXIT
 strip_app="$strip_stage/3E.app"
-ditto --norsrc --noextattr "$strip_repo/recovered/Strip3£.app" "$strip_app"
+ditto --norsrc --noextattr "$strip_repo/recovered/Strip3£-base" "$strip_app"
 cp Info.plist "$strip_app/Contents/Info.plist"
 if [[ "$strip_combined" == YES ]]; then
   mkdir -p "$strip_app/Contents/Frameworks"
@@ -60,8 +60,8 @@ zsh "$strip_repo/../Shared/PhoneControl/MacHost/build-hosts.sh" "$strip_app"
 strip_apps_helper="$strip_app/Contents/Helpers/ThreeE Apps.app"
 cp "$strip_app/Contents/MacOS/ThreeE" "$strip_apps_helper/Contents/MacOS/ThreeEApps"
 strip_midi="$strip_app/Contents/Helpers/MIDI Touchbar.app"
-plutil -replace CFBundleName -string '3E' "$strip_midi/Contents/Info.plist"
-plutil -replace CFBundleDisplayName -string '3E' "$strip_midi/Contents/Info.plist"
+plutil -replace CFBundleName -string '3£' "$strip_midi/Contents/Info.plist"
+plutil -replace CFBundleDisplayName -string '3£' "$strip_midi/Contents/Info.plist"
 # Replace every application icon inherited from the bundled helper apps.
 for strip_icon in "$strip_app"/**/*.icns(N); do
   cp "$strip_repo/../Shared/Brand/3E.icns" "$strip_icon"

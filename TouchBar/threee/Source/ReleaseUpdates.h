@@ -163,13 +163,13 @@ static BOOL StripRunTool(NSString *path,NSArray<NSString *> *arguments) {
     NSTask *task=[NSTask new]; task.executableURL=[NSURL fileURLWithPath:path]; task.arguments=arguments;
     task.standardOutput=[NSFileHandle fileHandleWithNullDevice]; task.standardError=[NSFileHandle fileHandleWithNullDevice];
     @try { [task launchAndReturnError:nil]; [task waitUntilExit]; return task.terminationStatus==0; }
-    @catch(NSException *exception) { NSLog(@"3E update tool failed: %@",exception.reason); return NO; }
+    @catch(NSException *exception) { NSLog(@"3£ update tool failed: %@",exception.reason); return NO; }
 }
 static void StripFinishUpdateFailure(NSString *message,BOOL foreground) {
     if(stripInstallLock>=0) { close(stripInstallLock); stripInstallLock=-1; }
     stripUpdateInstalling=NO; StripModuleOperation=NO; stripRequestedModules=nil;
-    NSLog(@"3E update failed: %@",message);
-    if(foreground) StripNotify(@"3E update failed",message);
+    NSLog(@"3£ update failed: %@",message);
+    if(foreground) StripNotify(@"3£ update failed",message);
 }
 static void StripInstallArchive(NSString *downloadedArchive,NSDictionary *release,BOOL foreground) {
             NSString *bundlePath=NSBundle.mainBundle.bundlePath;
@@ -187,7 +187,9 @@ static void StripInstallArchive(NSString *downloadedArchive,NSDictionary *releas
                 [[NSFileManager defaultManager] createDirectoryAtPath:extract withIntermediateDirectories:YES attributes:nil error:&fileError] &&
                 StripRunTool(@"/usr/bin/ditto",@[@"-x",@"-k",archive,extract]);
             [[NSFileManager defaultManager] removeItemAtPath:downloadedArchive error:nil];
-            NSString *candidate=[extract stringByAppendingPathComponent:@"3E.app"];
+            // Releases name the bundle 3£.app; older ones used 3E.app.
+            NSString *candidate=[extract stringByAppendingPathComponent:@"3£.app"];
+            if(![NSFileManager.defaultManager fileExistsAtPath:candidate]) candidate=[extract stringByAppendingPathComponent:@"3E.app"];
             NSString *infoPath=[candidate stringByAppendingPathComponent:@"Contents/Info.plist"];
             NSDictionary *info=[NSDictionary dictionaryWithContentsOfFile:infoPath];
             NSString *expectedID=StripCombinedRelease() ? @"combined-v" : @"touchbar-v";
@@ -217,7 +219,7 @@ static void StripInstallArchive(NSString *downloadedArchive,NSDictionary *releas
             for(NSRunningApplication *app in [NSRunningApplication runningApplicationsWithBundleIdentifier:@"local.musicstrip.app"]) if(!app.terminated && [app.bundleURL.path isEqual:bundlePath]) { mainPID=app.processIdentifier; break; }
             if(!mainPID) {
                 [[NSFileManager defaultManager] removeItemAtPath:work error:nil]; [[NSFileManager defaultManager] removeItemAtPath:installerCopy error:nil];
-                dispatch_async(dispatch_get_main_queue(),^{ StripFinishUpdateFailure(@"The main 3E app could not be found.",foreground); }); return;
+                dispatch_async(dispatch_get_main_queue(),^{ StripFinishUpdateFailure(@"The main 3£ app could not be found.",foreground); }); return;
             }
             NSTask *installer=[NSTask new]; installer.executableURL=[NSURL fileURLWithPath:@"/bin/zsh"];
             installer.arguments=@[installerCopy,candidate,bundlePath,work,[NSString stringWithFormat:@"%d",mainPID],[NSString stringWithFormat:@"%d",helperPID]];
@@ -236,14 +238,14 @@ static void StripInstallArchive(NSString *downloadedArchive,NSDictionary *releas
                     }
                     CFPreferencesAppSynchronize((__bridge CFStringRef)StripAppBundleID);
                 }
-                StripNotify(@"Installing 3E update",[NSString stringWithFormat:@"Version %@ will install now. 3E will restart when installation finishes.",release[@"version"]]);
+                StripNotify(@"Installing 3£ update",[NSString stringWithFormat:@"Version %@ will install now. 3£ will restart when installation finishes.",release[@"version"]]);
                 for(NSRunningApplication *app in [NSRunningApplication runningApplicationsWithBundleIdentifier:StripAppBundleID]) if(app.processIdentifier==mainPID && mainPID!=getpid()) [app terminate];
                 [NSApp terminate:nil];
             });
 }
 static void StripDownloadAndInstall(NSDictionary *release,BOOL foreground) {
     if(stripUpdateInstalling) return;
-    if(!StripAcquireInstallLock()) { StripFinishUpdateFailure(@"Another 3E module change or update is in progress. Try again when it finishes.",foreground); return; }
+    if(!StripAcquireInstallLock()) { StripFinishUpdateFailure(@"Another 3£ module change or update is in progress. Try again when it finishes.",foreground); return; }
     stripUpdateInstalling=YES;
     NSURL *url=[NSURL URLWithString:release[@"url"]];
     NSURLSessionConfiguration *configuration=NSURLSessionConfiguration.defaultSessionConfiguration;
@@ -265,8 +267,8 @@ static void StripDownloadAndInstall(NSDictionary *release,BOOL foreground) {
     [task resume];
 }
 static void StripChangeModules(NSArray<NSString *> *modules,BOOL downloading) {
-    if(stripUpdateInstalling || stripUpdateChecking) { StripNotify(@"3E is busy",@"Wait for the current update or module change to finish, then try again."); return; }
-    if(!StripAcquireInstallLock()) { StripNotify(@"3E is busy",@"An update or module change is already in progress."); return; }
+    if(stripUpdateInstalling || stripUpdateChecking) { StripNotify(@"3£ is busy",@"Wait for the current update or module change to finish, then try again."); return; }
+    if(!StripAcquireInstallLock()) { StripNotify(@"3£ is busy",@"An update or module change is already in progress."); return; }
     stripRequestedModules=[modules copy]; StripModuleOperation=YES;
     if(!downloading) {
         stripUpdateInstalling=YES;
@@ -280,7 +282,7 @@ static void StripChangeModules(NSArray<NSString *> *modules,BOOL downloading) {
         return;
     }
     stripUpdateChecking=YES;
-    StripNotify(@"Installing 3E module",@"Downloading modules. 3E will restart when installation finishes.");
+    StripNotify(@"Installing 3£ module",@"Downloading modules. 3£ will restart when installation finishes.");
     NSMutableURLRequest *request=[NSMutableURLRequest requestWithURL:[NSURL URLWithString:StripReleasesAPI]];
     request.timeoutInterval=30;
     [request setValue:@"3E" forHTTPHeaderField:@"User-Agent"];
@@ -349,8 +351,8 @@ static void StripCheckRelease(BOOL foreground) {
             }
             if(!foreground) return;
             NSAlert *alert=[NSAlert new];
-            alert.messageText=newer ? @"A 3E update is available" : (release ? @"3E is up to date" : @"Could not check for updates");
-            alert.informativeText=newer ? [NSString stringWithFormat:@"Version %@ is available. Install it now? 3E will restart after the update is ready.",release[@"version"]] : (release ? [NSString stringWithFormat:@"Installed version: %@. TouchBar updates come from Ezodis/3E.",installed] : @"Check your connection and try again. No app files were changed.");
+            alert.messageText=newer ? @"A 3£ update is available" : (release ? @"3£ is up to date" : @"Could not check for updates");
+            alert.informativeText=newer ? [NSString stringWithFormat:@"Version %@ is available. Install it now? 3£ will restart after the update is ready.",release[@"version"]] : (release ? [NSString stringWithFormat:@"Installed version: %@. TouchBar updates come from Ezodis/3E.",installed] : @"Check your connection and try again. No app files were changed.");
             [alert addButtonWithTitle:newer ? @"Install" : @"OK"];
             if(newer) [alert addButtonWithTitle:@"Later"];
             [alert addButtonWithTitle:@"View Releases"];
@@ -389,7 +391,7 @@ static void StripRelaunch(void) {
     task.arguments=@[@"-c",@"for p in $1; do while /bin/kill -0 \"$p\" 2>/dev/null; do /bin/sleep 0.2; done; done; /usr/bin/open \"$2\"",@"3E-restart",pids,bundlePath];
     task.standardOutput=[NSFileHandle fileHandleWithNullDevice]; task.standardError=[NSFileHandle fileHandleWithNullDevice];
     NSError *error=nil;
-    if(![task launchAndReturnError:&error]) { StripNotify(@"3E could not restart",error.localizedDescription ?: @"The relaunch helper did not start."); return; }
+    if(![task launchAndReturnError:&error]) { StripNotify(@"3£ could not restart",error.localizedDescription ?: @"The relaunch helper did not start."); return; }
     for(NSRunningApplication *app in others) {
         [app terminate];
         dispatch_after(dispatch_time(DISPATCH_TIME_NOW,(int64_t)(2*NSEC_PER_SEC)),dispatch_get_main_queue(),^{ if(!app.terminated) [app forceTerminate]; });

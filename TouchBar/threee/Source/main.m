@@ -463,7 +463,7 @@ static OSStatus SendScriptablePlayerCommand(pid_t pid, AEEventClass eventClass, 
     self.playbackBook = [PlaybackBook new];
     if(!touchBarAvailable) {
         self.baseStatusItem=[NSStatusBar.systemStatusBar statusItemWithLength:NSVariableStatusItemLength];
-        self.baseStatusItem.button.image=ThreeEBrandMenuImage(); self.baseStatusItem.button.title=@""; self.baseStatusItem.button.toolTip=@"3E";
+        self.baseStatusItem.button.image=ThreeEBrandMenuImage(); self.baseStatusItem.button.title=@""; self.baseStatusItem.button.toolTip=@"3£";
 #ifdef STRIP_COMBINED_TOUCHTAB
         self.baseStatusItem.menu=StripBaseMenu(self,YES);
 #else
@@ -645,7 +645,7 @@ static OSStatus SendScriptablePlayerCommand(pid_t pid, AEEventClass eventClass, 
     NSString *state=StripRefreshGestures();
     if(![state isEqual:self.gestureState]) {
         self.gestureState=state;
-        NSLog(@"3E combined trackpad state: %@ (host PID %d)",state,getpid());
+        NSLog(@"3£ combined trackpad state: %@ (host PID %d)",state,getpid());
         if([state isEqual:@"on"]) dispatch_async(dispatch_get_global_queue(QOS_CLASS_UTILITY,0),^{
             NSMutableDictionary *apps=[NSMutableDictionary new];
             for(NSString *bundle in @[@"com.apple.Safari",@"com.apple.finder",@"com.openai.codex"]) {
@@ -822,7 +822,7 @@ static OSStatus SendScriptablePlayerCommand(pid_t pid, AEEventClass eventClass, 
                 self.abletonPermissionPrompted = YES;
                 AXIsProcessTrustedWithOptions((__bridge CFDictionaryRef)@{(__bridge NSString *)kAXTrustedCheckOptionPrompt:@YES});
             }
-            NSLog(@"Enable 3E in macOS Accessibility to control Ableton's transport.");
+            NSLog(@"Enable 3£ in macOS Accessibility to control Ableton's transport.");
             return;
         }
         pid_t pid = app.processIdentifier;
@@ -853,7 +853,7 @@ static OSStatus SendScriptablePlayerCommand(pid_t pid, AEEventClass eventClass, 
         NSInteger state=[self.playbackBook state:bundle];
         ThreeETransport action=TransportForCommand(command,state);
         if(action==ThreeETransportNone) { self.commandPending=NO; [self refresh]; return; }
-        if(!AXIsProcessTrusted()) { self.commandPending=NO; NSLog(@"Enable 3E in macOS Accessibility to control %@.",bundle); return; }
+        if(!AXIsProcessTrusted()) { self.commandPending=NO; NSLog(@"Enable 3£ in macOS Accessibility to control %@.",bundle); return; }
         pid_t pid=app.processIdentifier;
         dispatch_async(ProviderQueue(), ^{
             BOOL sent=SendPlayerTransport(bundle,pid,action);

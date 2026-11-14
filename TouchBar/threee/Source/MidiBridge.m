@@ -759,7 +759,7 @@ static void CleanMenu(NSMenu *menu) {
         [menu insertItem:toggle atIndex:position];
         toggle.state=[combinedGestureState isEqual:@"on"] ? NSControlStateValueOn : NSControlStateValueOff;
         toggle.title=StripHasModule(@"touchtab")?@"Track Tab":@"Track Tab — Install…";
-        toggle.toolTip=[combinedGestureState isEqual:@"permission"] ? @"Accessibility approval is required for the main 3E app" : [combinedGestureState isEqual:@"unavailable"] ? @"Trackpad gesture listener unavailable" : @"Toggle trackpad gestures";
+        toggle.toolTip=[combinedGestureState isEqual:@"permission"] ? @"Accessibility approval is required for the main 3£ app" : [combinedGestureState isEqual:@"unavailable"] ? @"Trackpad gesture listener unavailable" : @"Toggle trackpad gestures";
     }
     for(NSMenuItem *item in menu.itemArray.copy) {
         if([item.identifier isEqual:@"local.musicstrip.modules"]){[menu removeItem:item];continue;}
@@ -780,11 +780,11 @@ static void CleanMenu(NSMenu *menu) {
         }
         if(item.action==NSSelectorFromString(@"setKeyCommands:") || [title containsString:@"key command"] || [title containsString:@"keyboard shortcut"]) { [menu removeItem:item]; continue; }
         if([item.title hasPrefix:@"MIDI Touchbar (v."] || [item.title hasPrefix:@"3£ (v."] || [item.title hasPrefix:@"3E (v."])
-            item.title=[NSString stringWithFormat:@"3E (v. %@)",StripInstalledVersion()];
+            item.title=[NSString stringWithFormat:@"3£ (v. %@)",StripInstalledVersion()];
         else if([title hasPrefix:@"hide "] && ([title containsString:@"3£"] || [title containsString:@"3E"] || [title containsString:@"midi touchbar"])) item.title=@"Hide Touch Bar Midi";
         else if([title hasPrefix:@"show "] && ([title containsString:@"3£"] || [title containsString:@"3E"] || [title containsString:@"midi touchbar"])) item.title=@"Show Touch Bar Midi";
-        else if([item.title containsString:@"MIDI Touchbar"]) item.title=[item.title stringByReplacingOccurrencesOfString:@"MIDI Touchbar" withString:@"3E"];
-        else if([item.title containsString:@"Strip3£"]) item.title=[item.title stringByReplacingOccurrencesOfString:@"Strip3£" withString:@"3E"];
+        else if([item.title containsString:@"MIDI Touchbar"]) item.title=[item.title stringByReplacingOccurrencesOfString:@"MIDI Touchbar" withString:@"3£"];
+        else if([item.title containsString:@"Strip3£"]) item.title=[item.title stringByReplacingOccurrencesOfString:@"Strip3£" withString:@"3£"];
         item.keyEquivalent=@""; item.keyEquivalentModifierMask=0;
         if(item.action==NSSelectorFromString(@"customizeTouchbar:"))StripAttachModuleGear(item,@"touchbar",@"Touch Bar",StripHasModule(@"touchbar"));
         if(item.submenu) CleanMenu(item.submenu);
@@ -827,7 +827,7 @@ static void CleanMenu(NSMenu *menu) {
         if(!restart) {
             restart=[[NSMenuItem alloc] initWithTitle:@"Restart" action:NSSelectorFromString(@"restartAll:") keyEquivalent:@""];
             restart.identifier=@"local.musicstrip.restart";restart.target=NSClassFromString(@"ThreeEMidiBridge");
-            restart.toolTip=@"Restart 3E and check for updates";
+            restart.toolTip=@"Restart 3£ and check for updates";
         }
         apps.state=appsMenuVisible&&!recordController.activeMenuBar?NSControlStateValueOn:NSControlStateValueOff;
         if(midi)midi.state=[[(id)NSApp.delegate valueForKey:@"touchbarShown"] boolValue] && !recordController.activeMenuBar && !appsMenuVisible ? NSControlStateValueOn:NSControlStateValueOff;
@@ -2354,7 +2354,7 @@ static void Command(NSString *command) {
     return; // Gesture tests never install helper hooks or add a tray item.
 #endif
     @autoreleasepool {
-        if(!StripInstallUpdateHooks()) NSLog(@"3E release-update hooks unavailable");
+        if(!StripInstallUpdateHooks()) NSLog(@"3£ release-update hooks unavailable");
         Method tray = class_getClassMethod(NSTouchBarItem.class, NSSelectorFromString(@"addSystemTrayItem:"));
         if (tray) method_setImplementation(tray, (IMP)SuppressTray);
         Class keyCenter = NSClassFromString(@"DDHotKeyCenter");

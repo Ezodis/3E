@@ -20,7 +20,7 @@ import subprocess
 ROOT = Path(__file__).resolve().parent.parent
 REPO = "Ezodis/3E"
 EDITIONS = {
-    "combined": ("combined", "3E-Combined.zip", "3E Combined"),
+    "combined": ("combined", "3E-Combined.zip", "3£ Combined"),
     "touchbar": ("touchbar", "TouchBar.zip", "TouchBar only"),
     "touchtab": ("touchtab", "TouchTab.zip", "3£ with Track Tab"),
     "phone": ("phone", "3E-Phone-Mac.zip", "3£ with Track Phone"),
@@ -172,7 +172,7 @@ def publish(values, editions):
                 raise RuntimeError(f"Refusing to overwrite an existing release: {tag}")
         else:
             notes = (f"Built from commit `{commit}`. Universal Intel/Apple Silicon.\n\n"
-                     "Every download contains the same 3E.app with different initial modules. "
+                     "Every download contains the same 3£ app (packaged as 3E.app so older installs can update; it installs as 3£.app) with different initial modules. "
                      "Click a missing feature in the menu to install it, or use the gear to uninstall modules. "
                      "Development-signed or ad-hoc signed, not notarized. Approve this app "
                      "on your Mac when required. If an enabled permission still denies access, "
