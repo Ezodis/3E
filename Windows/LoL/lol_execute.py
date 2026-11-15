@@ -340,16 +340,15 @@ def find_spear_slot(frame, scale):
     r, g, b = a[..., 0], a[..., 1], a[..., 2]
     red = (r > 95) & (r - g > 30) & (r - b > 30)
     cols = np.where(red.mean(axis=0) > 0.45)[0]
-    if not len(cols):
-        return None
     # merge neighbouring columns into border lines (x centres, frame px)
-    lines, run = [], [cols[0]]
+    lines, run = [], [cols[0]] if len(cols) else []
     for c in cols[1:]:
         if c - run[-1] <= 2:
             run.append(c)
         else:
             lines.append(sum(run) / len(run)); run = [c]
-    lines.append(sum(run) / len(run))
+    if run:
+        lines.append(sum(run) / len(run))
     width = (ICON_SLOT0[2] - ICON_SLOT0[0]) * scale
     used = set()
     for i in range(len(lines) - 1, 0, -1):        # right to left
@@ -365,6 +364,23 @@ def find_spear_slot(frame, scale):
                 if bb - rr > 25 and bb - gg > 15:
                     return left, iy0, right, iy1
                 break
+    # Some frames (e.g. monsters) draw the icon with a light border instead of the red one:
+    # fall back to the fixed slots and recognise the spear art itself (bright spear-blue
+    # with white highlights; empty slots and the map behind have neither).
+    for k in range(ICON_SLOTS):
+        box = (ICON_SLOT0[0] - k * ICON_STEP, iy0, ICON_SLOT0[2] - k * ICON_STEP, iy1)
+        if box[0] < bx0:
+            break
+        x0, y0, x1, y1 = (int(v * scale) for v in box)
+        px = np.array(frame.crop((x0, y0, x1, y1))).astype(int).reshape(-1, 3)
+        if not len(px):
+            break
+        r, g, b = px[:, 0], px[:, 1], px[:, 2]
+        blue = ((b > 110) & (b - r > 45) & (b >= g)).mean()     # bright spear art
+        navy = ((b > 60) & (b - r > 30) & (b >= g)).mean()       # dark icon background
+        white = ((r > 200) & (g > 200) & (b > 200)).mean()      # highlights / stack number
+        if (blue >= 0.05 or navy >= 0.08) and white >= 0.01:
+            return box
     return None
 
 

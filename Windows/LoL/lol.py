@@ -10,7 +10,7 @@ Features (only active while the League game window is focused):
                      hold: open the shop.
   * Space         -> click: Space as usual (E, attack-move, item 3).   hold: Stop every 0.35 s.
   * Win           -> Win as usual (R, item 1, ...); the Start menu never opens in game.
-  * MB5           -> click: MB5 as usual (centre camera).
+  * MB5           -> click: MB5's League binds (Flash, centre camera), now on MB5_KEY.
                      hold (Kalista): kite. Attack (attack-move), one move order to the cursor
                      during the windup (= a Martial Poise hop), wait for the hop to land and the
                      attack timer, repeat. Uses your live attack speed and boots tier.
@@ -21,7 +21,7 @@ Features (only active while the League game window is focused):
                      (pulsing border when one more spear would kill). See lol_execute.py.
 
 Keybinds it relies on are set by lol_settings.py (stop = v, camera lock = y, pan = h,
-N's old binds = j, shop = b, attack-move = F9).
+N's old binds = j, shop = b, attack-move = F9, MB5's old binds = F10).
 
 Setup:  pip install pynput rapidocr_onnxruntime mss
 Run:    3£ tray menu -> LoL macros (no tray icon of its own; or: python lol.py, Ctrl+C to quit)
@@ -49,6 +49,7 @@ HOLD_TIME = 0.18          # a macro key held longer than this is a hold, shorter
 RECALL_KEY = "j"          # N's old League binds (recall, item 6, ...) live here now
 SHOP_KEY = "b"            # must match evtOpenShop
 ATTACK_KEY = "f9"         # must match evtPlayerAttackMove (attack-move at the cursor)
+MB5_KEY = "f10"           # MB5's old League binds (Flash, centre camera, ...) live here now
 CAM_LOCK_KEY = "y"        # must match evtCameraLockToggle
 PAN_KEY = "h"             # must match evtOnUIMouse4Pan
 CAMERA_STARTS_LOCKED = True
@@ -75,7 +76,7 @@ user32.SetWindowLongW.argtypes = [wt.HWND, ctypes.c_int, wt.LONG]
 user32.SetWindowPos.argtypes = [wt.HWND, wt.HWND, ctypes.c_int, ctypes.c_int,
                                 ctypes.c_int, ctypes.c_int, wt.UINT]
 SCAN = {"1": 0x02, "2": 0x03, "3": 0x04, "4": 0x05, "5": 0x06, "v": 0x2F, "y": 0x15, "h": 0x23,
-        "j": 0x24, "b": 0x30, "space": 0x39, "f9": 0x43}
+        "j": 0x24, "b": 0x30, "space": 0x39, "f9": 0x43, "f10": 0x44}
 KEYEVENTF_EXTENDEDKEY = 0x0001
 KEYEVENTF_KEYUP, KEYEVENTF_SCANCODE = 0x0002, 0x0008
 ULONG_PTR = ctypes.c_size_t
@@ -176,11 +177,10 @@ def do_scroll(direction):
 
 
 def mb5_click():
-    """MB5 as the game knows it (centre camera)."""
-    for f in (0x0080, 0x0100):          # MOUSEEVENTF_XDOWN, XUP; mouseData 2 = XBUTTON2 = MB5
-        inp = INPUT(type=0, u=_U(mi=MOUSEINPUT(0, 0, 2, f, 0, 0)))
-        user32.SendInput(1, ctypes.byref(inp), ctypes.sizeof(INPUT))
-        time.sleep(0.02)
+    """MB5's own League binds (Flash, centre camera, ...). League reads mouse buttons below the
+    hook, so a blocked MB5 press would still reach it: those binds live on MB5_KEY instead and
+    only this click sends it."""
+    tap(MB5_KEY)
 
 
 # ---- camera (N) ----

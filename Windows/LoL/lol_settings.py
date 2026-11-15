@@ -12,7 +12,8 @@ JSON = CFG / "PersistedSettings.json"
 
 # 1) Key swaps applied to every binding (simultaneously, so B->N doesn't then become N->Win).
 #    Later change: lol.py now uses N itself, so the binds on [n] were moved again to [j]
-#    (B clicks send j).
+#    (B clicks send j). MB5's binds were moved to [F10] too: League reads mouse buttons below
+#    the input hook, so only the macro (an MB5 click) may send them.
 SWAP = {"[n]": "[L Win]", "[b]": "[n]"}
 
 # 2) Explicit bindings set after the swap
