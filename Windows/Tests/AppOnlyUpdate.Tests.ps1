@@ -89,6 +89,7 @@ try {
     }
     Check ($helper -notmatch 'HNetCfg|ScriptBlock\]::Create|Invoke-Expression|Restore-ClicksKeyboard') 'AppOnly invokes full-setup side effects.'
     Check (-not $template.Contains('$arguments = ''-NoProfile -ExecutionPolicy Bypass')) 'Manual elevation bypasses execution policy.'
+    Check (-not $template.Contains('$accentCurrent')) 'Preserved device helpers cause repeated app-only installs.'
     Write-Host "PASS: $checks app-only update, preservation, preflight and rollback checks."
 } finally {
     $resolved = [IO.Path]::GetFullPath($testRoot)
