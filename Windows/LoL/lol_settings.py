@@ -25,7 +25,7 @@ SET = {
     "evtHoldShowScoreBoard": "[Alt][k],[Button 3]",  # MB3 = scoreboard
     "evtPlayerStopPosition": "[v]",               # stop (sent by lol.py while holding N)
     "evtCameraLockToggle": "[y]",                 # sent by lol.py (Space unlocks, Tab+Win tap locks)
-    "FreeDynamicCameraToggle": "[h]",             # Win removed (Win is now the old N keys)
+    "FreeDynamicCameraToggle": "",                # off: on h it flipped camera modes on every Space pan
     "evtOnUIMouse4Pan": "[h]",                    # lol.py holds h while Space is held
 }
 

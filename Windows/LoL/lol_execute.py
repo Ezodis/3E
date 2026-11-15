@@ -432,14 +432,23 @@ def locate_frame(window, hint=None):
 
 # ---------------- background watcher ----------------
 class ExecuteWatcher:
-    """Polls API + OCR in a thread; `.result` holds the latest evaluate() output (or None)."""
+    """`.result` holds the latest evaluate() output (or None).
+
+    Three threads: the API (your stats), OCR (the target's numbers, ~0.1 s per changed read) and a
+    fast loop that grabs the frame every 20 ms. The fast loop re-reads only the health bar's fill,
+    so the line and the lightning follow HP as soon as the bar moves instead of waiting for OCR;
+    OCR then replaces the bar estimate with the exact number."""
 
     def __init__(self, focused_fn, interval=0.02):
         self.focused = focused_fn
         self.interval = interval
         self.result = None
         self.me = None
+        self._tgt = None          # newest target from OCR (+ the fill/stats pixels it was read from)
+        self._latest = None       # newest frame for the OCR thread
+        self._ocr_wake = threading.Event()
         threading.Thread(target=self._api_loop, daemon=True).start()
+        threading.Thread(target=self._ocr_loop, daemon=True).start()
         threading.Thread(target=self._run, daemon=True).start()
 
     _prev = None
@@ -559,7 +568,7 @@ class ExecuteWatcher:
                 self._spears = 0
         else:
             self._zero_since = None
-            if v == self._spear_cand:
+            if v == self._spears + 1 or v == self._spear_cand:   # one more spear: show it at once
                 self._spears = v
         self._spear_cand = v
         return {"hp": hp, "max_hp": max_hp, "armor": self._armor, "mr": obs["mr"],
@@ -597,6 +606,9 @@ class ExecuteWatcher:
         gw, gh = rect[2] - rect[0], rect[3] - rect[1]
         layout = self._layout(rect, gw, gh)
         if not layout:
+            self._tgt = None
+            self._latest = None
+            self.result = None
             self._track({"ally": False, "present": False})
             return
         scale, ox, oy = layout
@@ -606,20 +618,59 @@ class ExecuteWatcher:
         h = int(max(r[3] for r in REGIONS.values()) * scale) + 2
         shot = self._mss.grab({"left": int(rect[0] + ox), "top": int(rect[1] + oy), "width": w, "height": h})
         frame = Image.frombytes("RGB", shot.size, shot.bgra, "raw", "BGRX")
-        obs, raw = read_target(frame, scale)
-        tgt = self._track(obs)
-        if not tgt:
+        self._latest = (frame, scale)
+        self._ocr_wake.set()
+        known = self._tgt
+        if not known:
+            self.result = None
             return
-        stable = tgt == self._prev
-        self._prev = tgt
-        res = evaluate(me, tgt)   # the line always follows the newest read (instant on target switch)
-        # lightning: two kill reads in a row to turn on, one non-kill read turns it off
+        tgt, ocr_fill, ocr_sig = known
+        fill = bar_fill(frame, scale)
+        if fill is None:
+            return                     # bar not readable this frame: keep the last result
+        if self._stats_sig(frame, scale) != ocr_sig:
+            self.result = None         # armor/MR pixels changed: maybe another target, wait for OCR
+            return
+        if abs(fill - ocr_fill) * (HEALTH_BAR[2] - HEALTH_BAR[0]) * scale >= 1:   # bar moved >= 1 px
+            tgt = dict(tgt, hp=round(fill * tgt["max_hp"]), hp_estimated=True)
+        res = evaluate(me, tgt)
+        # lightning: exact OCR HP lights it at once; a bar estimate must agree on two frames (40 ms)
         self._kill_streak = self._kill_streak + 1 if res["state"] == "kill" else 0
-        if res["state"] == "kill" and self._kill_streak < 2:
+        if res["state"] == "kill" and tgt.get("hp_estimated") and self._kill_streak < 2:
             res["state"] = "close"
         self.result = res
-        if stable:
-            self._log(me, tgt, res, frame)
+
+    @staticmethod
+    def _stats_sig(frame, scale):
+        """Pixels of the armor + MR numbers: same target -> same pixels (cheap identity check)."""
+        x0, y0, _, y1 = REGIONS["armor"]
+        x1 = REGIONS["mr"][2]
+        return hash(frame.crop((int(x0 * scale), int(y0 * scale), int(x1 * scale), int(y1 * scale))).tobytes())
+
+    def _ocr_loop(self):
+        while True:
+            self._ocr_wake.wait()
+            self._ocr_wake.clear()
+            latest, self._latest = self._latest, None
+            if not latest:
+                continue
+            frame, scale = latest
+            try:
+                obs, raw = read_target(frame, scale)
+                tgt = self._track(obs)
+                if not tgt or obs["fill"] is None:
+                    if not tgt:
+                        self._tgt = None
+                    continue
+                self._tgt = (tgt, obs["fill"], self._stats_sig(frame, scale))
+                stable = tgt == self._prev
+                self._prev = tgt
+                me = self.me
+                if stable and me:
+                    self._log(me, tgt, evaluate(me, tgt), frame)
+            except Exception as e:
+                print("execute OCR:", e)
+                time.sleep(0.5)
 
 
 # ---------------- calibration ----------------

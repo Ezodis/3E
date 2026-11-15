@@ -6,7 +6,7 @@ Features (only active while the League game window is focused):
   * Hold N        -> sends Stop (STOP_KEY) right away, then every 0.6 s while N is held.
   * Hold Space    -> unlocks the camera (if locked) and pans it with the mouse right away
                      (holds PAN_KEY); Space still does its own binds too.
-  * Tab + Win     -> quick tap both: locks the camera again.
+  * Tab + Win     -> quick tap both: locks the camera (and resets the lock guess if it drifted).
   * Win key       -> Start menu is blocked from popping up when you tap Win in game.
   * Kalista E     -> line on the target's health bar at the HP Rend kills at (moves right
                      with more spears) + lightning around the screen when Rend kills
@@ -108,7 +108,7 @@ def game_focused():
 
 
 # ---------------- state ----------------
-VK_TAB, VK_LWIN, VK_N, VK_SPACE = 0x09, 0x5B, 0x4E, 0x20
+VK_TAB, VK_LWIN, VK_N, VK_SPACE, VK_Y = 0x09, 0x5B, 0x4E, 0x20, 0x59
 WM_KEYDOWN, WM_KEYUP, WM_SYSKEYDOWN, WM_SYSKEYUP = 0x100, 0x101, 0x104, 0x105
 WM_MOUSEWHEEL = 0x020A
 MOUSE_DOWNS = {0x0201, 0x0204, 0x0207, 0x020B}  # L, R, M, X button down
@@ -154,6 +154,7 @@ def pan_start():
     if camera_locked:
         tap(CAM_LOCK_KEY)
         camera_locked = False
+        time.sleep(0.05)       # let the game unlock before the pan key goes down
     key_down(PAN_KEY)
     combo["panning"] = True
 
@@ -169,7 +170,9 @@ def combo_end():
     if not combo["active"]:
         return
     combo["active"] = False
-    if time.time() - combo["start"] < COMBO_HOLD and not camera_locked:
+    # You only tap Tab+Win to lock a camera you can see is free, so lock it even if we thought it
+    # was locked already: that also corrects our guess if it ever got out of step with the game.
+    if time.time() - combo["start"] < COMBO_HOLD:
         tap(CAM_LOCK_KEY)
         camera_locked = True
 
@@ -184,8 +187,11 @@ def worker():
 
 
 # ---------------- hooks ----------------
+game_hwnd = None
+
+
 def kb_filter(msg, data):
-    global n_held
+    global n_held, camera_locked, game_hwnd
     if data.flags & LLKHF_INJECTED:
         return True  # our own SendInput events
     vk = data.vkCode
@@ -209,8 +215,14 @@ def kb_filter(msg, data):
 
     if not game_focused():
         return True
+    hwnd = user32.GetForegroundWindow()
+    if hwnd != game_hwnd:      # new game window = new game, which starts with the camera locked
+        game_hwnd = hwnd
+        camera_locked = CAMERA_STARTS_LOCKED
 
     if first_down:
+        if vk == VK_Y:         # you toggled the camera lock yourself
+            camera_locked = not camera_locked
         if held_num:
             actions.put(lambda: release_num(reset=True))  # any other key releases the number
         if vk == VK_LWIN:
