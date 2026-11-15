@@ -6,6 +6,9 @@ Features (only active while the League game window is focused):
   * Hold N        -> sends Stop (STOP_KEY) right away, then every 0.6 s while N is held.
   * Hold Space    -> unlocks the camera (if locked) and pans it with the mouse right away
                      (holds PAN_KEY); Space still does its own binds too.
+  * Hold MB2      -> (Kalista) right-clicks KITE_CLICKS times per attack at your live attack
+                     speed, so every attack windup gets a move order (= a Martial Poise hop)
+                     and the next attack starts on time. Attack speed is re-read while held.
   * Tab + Win     -> quick tap both: locks the camera (and resets the lock guess if it drifted).
   * Win key       -> Start menu is blocked from popping up when you tap Win in game.
   * Kalista E     -> line on the target's health bar at the HP Rend kills at (moves right
@@ -40,6 +43,8 @@ CAM_LOCK_KEY = "y"        # must match evtCameraLockToggle
 PAN_KEY = "h"             # must match evtOnUIMouse4Pan
 COMBO_HOLD = 0.25         # Tab+Win released within this = lock the camera
 CAMERA_STARTS_LOCKED = True
+KITE_CLICKS = 3           # right-clicks per attack while MB2 is held (start, during windup, after)
+KITE_AS_POLL = 0.05       # how often attack speed is re-read while MB2 is held
 watcher = None
 
 # ---------------- Win32 SendInput (scan codes, games read these reliably) -------------
@@ -73,6 +78,15 @@ class _U(ctypes.Union):
 
 class INPUT(ctypes.Structure):
     _fields_ = [("type", wt.DWORD), ("u", _U)]
+
+
+MOUSEEVENTF_RIGHTDOWN, MOUSEEVENTF_RIGHTUP = 0x0008, 0x0010
+
+
+def right_click():
+    for f in (MOUSEEVENTF_RIGHTDOWN, MOUSEEVENTF_RIGHTUP):
+        inp = INPUT(type=0, u=_U(mi=MOUSEINPUT(0, 0, 0, f, 0, 0)))
+        user32.SendInput(1, ctypes.byref(inp), ctypes.sizeof(INPUT))
 
 
 def _send(vk=0, scan=0, flags=0):
@@ -177,6 +191,36 @@ def combo_end():
         camera_locked = True
 
 
+kite = {"held": False, "as": None}
+
+
+def kite_as_loop():
+    """Keeps kite["as"] fresh while MB2 is held (items like Rageblade change it every attack)."""
+    while kite["held"]:
+        a = lol_execute.read_attack_speed()
+        if a:
+            kite["as"] = a
+        time.sleep(KITE_AS_POLL)
+
+
+def kite_loop():
+    """Right-click now, then every 1/(attack speed * KITE_CLICKS) s, re-checking the speed in
+    small steps so a faster attack speed takes effect within the same attack."""
+    while kite["held"]:
+        right_click()
+        last = time.perf_counter()
+        while kite["held"]:
+            a = kite["as"] or 1.0
+            if time.perf_counter() - last >= 1.0 / (a * KITE_CLICKS):
+                break
+            time.sleep(0.004)
+
+
+def kite_on():
+    me = watcher.me if watcher else None
+    return bool(me and me.get("kalista"))
+
+
 def worker():
     while True:
         fn = actions.get()
@@ -237,9 +281,25 @@ def kb_filter(msg, data):
     return True
 
 
+WM_RBUTTONDOWN, WM_RBUTTONUP = 0x0204, 0x0205
+
+
 def mouse_filter(msg, data):
-    if data.flags & LLMHF_INJECTED or not game_focused():
+    if data.flags & LLMHF_INJECTED:
         return True
+    if msg == WM_RBUTTONUP and kite["held"]:   # always end the kite, even if focus moved
+        kite["held"] = False
+        mouse_listener.suppress_event()
+    if not game_focused():
+        return True
+    if msg == WM_RBUTTONDOWN and not kite["held"] and kite_on():
+        if held_num:
+            actions.put(lambda: release_num(reset=True))
+        kite["held"] = True
+        kite["as"] = (watcher.me or {}).get("attack_speed") or kite["as"]
+        threading.Thread(target=kite_as_loop, daemon=True).start()
+        threading.Thread(target=kite_loop, daemon=True).start()
+        mouse_listener.suppress_event()        # the game gets our timed clicks instead
     if msg == WM_MOUSEWHEEL:
         delta = ctypes.c_short(data.mouseData >> 16).value
         actions.put(lambda d=(1 if delta > 0 else -1): do_scroll(d))
@@ -250,6 +310,7 @@ def mouse_filter(msg, data):
 
 
 def cleanup():
+    kite["held"] = False
     release_num()
     if combo["panning"]:
         key_up(PAN_KEY)

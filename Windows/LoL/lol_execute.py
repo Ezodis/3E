@@ -98,6 +98,14 @@ def _get(path):
         return json.load(r)
 
 
+def read_attack_speed():
+    """Your current attacks per second (changes mid-fight with stacking items), or None."""
+    try:
+        return float(_get("activeplayer/championStats")["attackSpeed"]) or None
+    except Exception:
+        return None
+
+
 def read_me():
     """Your stats from the game, or None if not in game / not Kalista."""
     try:
@@ -118,6 +126,7 @@ def read_me():
         "pen_pct": pen_pct,
         "flat_pen": max(s.get("armorPenetrationFlat", 0.0), s.get("physicalLethality", 0.0)),
         "magic_pen": s.get("magicPenetrationFlat", 0.0),
+        "attack_speed": s.get("attackSpeed", 0.0),
         "e_level": ap.get("abilities", {}).get("E", {}).get("abilityLevel", 0),
         "coup": any(r.get("id") == COUP_DE_GRACE
                     for r in ap.get("fullRunes", {}).get("generalRunes", [])),
@@ -164,6 +173,9 @@ def _fix(t):
              .replace("I", "1").replace("|", "1").replace("i", "1").replace("S", "5"))
 
 
+_group_cache = {}
+
+
 def read_numbers(crop, name, scale, cut=150):
     """Find digit-height blobs, group neighbours into numbers, recognise each group."""
     import cv2
@@ -196,7 +208,12 @@ def read_numbers(crop, name, scale, cut=150):
         x0 = min(c[1] for c in grp); x1 = max(c[1] + c[3] for c in grp)
         y0 = min(c[2] for c in grp); y1 = max(c[2] + c[4] for c in grp)
         mask = np.isin(lab[y0:y1, x0:x1], [c[0] for c in grp])
-        texts.append(_fix(_rec(mask)))
+        gkey = (mask.shape, np.packbits(mask).tobytes())   # e.g. max HP: same pixels while HP moves
+        if gkey not in _group_cache:
+            if len(_group_cache) > 20000:
+                _group_cache.clear()
+            _group_cache[gkey] = _fix(_rec(mask))
+        texts.append(_group_cache[gkey])
     _region_cache[rkey] = texts
     return texts
 
@@ -537,14 +554,14 @@ class ExecuteWatcher:
                 self._reset()
             return None
         self._last_ok = now
-        # target identity = max HP, trusted after two identical reads
+        # target identity = max HP. read_target only returns an HP/max pair that matches the bar's
+        # fill, so one read is enough: a new target shows at once even when switching quickly.
         mx = obs["max_hp"]
         if mx is not None and mx != self._max_ok:
-            if mx == self._max_seen:
-                self._reset()
-                self._max_ok = mx
-                self._spears = obs["stacks"]
-            self._max_seen = mx
+            self._reset()
+            self._max_ok = mx
+            self._spears = obs["stacks"]
+            self._spear_cand = obs["stacks"]
         if self._max_ok is None:
             return None
         max_hp = self._max_ok
