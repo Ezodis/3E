@@ -5,7 +5,7 @@ Features (only active while the League game window is focused):
   * N             -> click: lock / unlock the camera.
                      hold while locked: unlock, drag the camera with the mouse, lock again on release.
                      hold while unlocked: just drag (stays unlocked until you click N again).
-                     The real lock state is re-checked from your own (green) health bar.
+                     The real lock state is read from the HUD camera button (crossed = locked).
   * B             -> click: N's old League binds (recall, item 6, ...), now on RECALL_KEY.
                      hold: open the shop.
   * Space         -> click: Space as usual (E, attack-move, item 3).   hold: Stop every 0.35 s.
@@ -339,50 +339,69 @@ def macro_release(vk):
         actions.put(click)
 
 
-# ---- camera lock check: your own (green) health bar sits still in the middle when locked ----
+# ---- camera lock check: read from the HUD's camera button ----
 def camera_watch():
-    """Corrects `camera_locked` from the screen, so a missed toggle can never leave N backwards.
-    Unlocked for sure: your bar is far from the middle, or it moved while we thought it locked.
-    Locked: your bar stays dead centre for 2.5 s while you keep giving move orders."""
+    """Keeps `camera_locked` equal to the game's real camera lock, read from the HUD's camera
+    button (next to the options gear): a plain camera = unlocked, a crossed-out camera = locked.
+    The gear is found by template matching once per window size (any size / HUD scale)."""
     global camera_locked
+    import cv2
     import mss
     import numpy as np
+    from PIL import Image
+    from pathlib import Path
+    here = Path(__file__).resolve().parent
+    gray = lambda im: cv2.cvtColor(np.array(im.convert("RGB")), cv2.COLOR_RGB2GRAY)
+    gear_t = gray(Image.open(here / "lol_hud_gear.png"))          # 41x41 at a 2048-px-wide game
+    cam_t = gray(Image.open(here / "lol_hud_cam_unlocked.png"))   # 46x41, plain camera
     grabber = getattr(mss, "MSS", mss.mss)()
-    hist = []
+    layout = {}                       # (w, h) -> (scale, gear x, gear y) in window pixels
     while True:
-        time.sleep(0.12)
+        time.sleep(0.05)
         try:
-            if not game_focused() or cam["dragging"] or time.time() < cam["quiet_until"]:
-                hist.clear()
+            if not game_focused():
                 continue
             r = lol_execute.game_rect()
             if not r:
                 continue
             w, h = r[2] - r[0], r[3] - r[1]
-            shot = grabber.grab({"left": r[0], "top": r[1] + int(h * 0.05),
-                                 "width": w, "height": int(h * 0.77)})
-            a = np.frombuffer(shot.bgra, np.uint8).reshape(shot.height, shot.width, 4)[::2, ::2]
-            b_, g_, r_ = (a[..., i].astype(np.int16) for i in range(3))
-            green = (g_ > 140) & (g_ - r_ > 60) & (g_ - b_ > 60)
-            good = np.nonzero(green.sum(axis=1) > w * 0.01)[0]   # rows with a bar-wide green run
-            if len(good) < 3 or (good[-1] - good[0]) * 2 > h * 0.02:  # none, or not one bar
-                hist.clear()
+            top = int(h * 0.85)
+            shot = grabber.grab({"left": r[0], "top": r[1] + top, "width": w // 2, "height": h - top})
+            g = cv2.cvtColor(np.frombuffer(shot.bgra, np.uint8).reshape(shot.height, shot.width, 4),
+                             cv2.COLOR_BGRA2GRAY)
+            known = layout.get((w, h))
+            if known:
+                s, gx, gy = known
+                t = cv2.resize(gear_t, (round(41 * s), round(41 * s)), interpolation=cv2.INTER_AREA)
+                patch = g[max(0, gy - 3):gy + t.shape[0] + 3, max(0, gx - 3):gx + t.shape[1] + 3]
+                if patch.shape[0] < t.shape[0] or patch.shape[1] < t.shape[1] or \
+                        cv2.matchTemplate(patch, t, cv2.TM_CCOEFF_NORMED).max() < 0.6:
+                    known = None      # HUD moved (HUD scale changed?) -> search again
+            if not known:
+                best = (-1, 0, (0, 0))
+                s0 = w / 2048
+                for s in np.arange(max(0.3, s0 - 0.25), s0 + 0.26, 0.01):
+                    t = cv2.resize(gear_t, (round(41 * s), round(41 * s)), interpolation=cv2.INTER_AREA)
+                    if t.shape[0] >= g.shape[0] or t.shape[1] >= g.shape[1]:
+                        continue
+                    _, sc, _, loc = cv2.minMaxLoc(cv2.matchTemplate(g, t, cv2.TM_CCOEFF_NORMED))
+                    if sc > best[0]:
+                        best = (sc, s, loc)
+                if best[0] < 0.6:
+                    time.sleep(0.5)   # HUD hidden (dead screen, shop full-screen...): try later
+                    continue
+                known = (best[1], best[2][0], best[2][1])
+                layout[(w, h)] = known
+            s, gx, gy = known
+            cx, m = gx + round(45 * s), max(2, round(5 * s))
+            area = g[max(0, gy - m):gy + round(41 * s) + m, max(0, cx - m):cx + round(46 * s) + m]
+            ct = cv2.resize(cam_t, (round(46 * s), round(41 * s)), interpolation=cv2.INTER_AREA)
+            if area.shape[0] < ct.shape[0] or area.shape[1] < ct.shape[1]:
                 continue
-            xs = np.nonzero(green[good].any(axis=0))[0]
-            left = xs.min() * 2 / w                              # bar's left end (HP doesn't move it)
-            cx = left + 0.054                                     # ~half a full bar: your champion
-            top = (good[0] * 2 + h * 0.05) / h
-            now = time.time()
-            hist.append((now, cx, top, cam["clicks"]))
-            hist[:] = [p for p in hist if now - p[0] <= 2.5]
-            if camera_locked:
-                moved = len(hist) >= 2 and (abs(hist[-1][1] - hist[-2][1]) > 0.01
-                                            or abs(hist[-1][2] - hist[-2][2]) > 0.01)
-                if abs(cx - 0.5) > 0.08 or moved:
-                    camera_locked = False
-            elif (len(hist) >= 15 and now - hist[0][0] >= 2.3 and hist[-1][3] - hist[0][3] >= 2
-                  and all(abs(p[1] - 0.5) < 0.03 for p in hist)
-                  and max(p[2] for p in hist) - min(p[2] for p in hist) < 0.004):
+            score = cv2.matchTemplate(area, ct, cv2.TM_CCOEFF_NORMED).max()
+            if score >= 0.88:
+                camera_locked = False
+            elif score < 0.85:
                 camera_locked = True
         except Exception as e:
             print("camera watch:", e)

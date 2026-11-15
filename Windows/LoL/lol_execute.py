@@ -199,8 +199,10 @@ def _fix(t):
 _group_cache = {}
 
 
-def read_numbers(crop, name, scale, cut=150):
-    """Find digit-height blobs, group neighbours into numbers, recognise each group."""
+def _group_masks(crop, name, scale, cut=150):
+    """Digit-height blobs grouped into numbers. Returns (cache key, mask) per number, left to
+    right. The key is the number's exact pixel shape, so the same number always has the same key
+    wherever it is drawn (e.g. max HP keeps its key when the current HP loses a digit)."""
     import cv2
     if scale < 0.98:  # small HUD: enlarge the digits to the reference size before reading
         k = 1.0 / scale
@@ -208,11 +210,6 @@ def read_numbers(crop, name, scale, cut=150):
         scale = 1.0
     g = np.array(crop.convert("L"))
     b = (g > cut).astype(np.uint8)
-    rkey = (name, cut, b.shape, np.packbits(b).tobytes())
-    if rkey in _region_cache:  # box looks exactly like last time -> no work
-        return _region_cache[rkey]
-    if len(_region_cache) > 5000:
-        _region_cache.clear()
     n, lab, st, _ = cv2.connectedComponentsWithStats(b, 8)
     H = DIGIT_H[name] * scale
     comps = [(i, *st[i][:4]) for i in range(1, n)
@@ -226,19 +223,95 @@ def read_numbers(crop, name, scale, cut=150):
         cur.append(c)
     if cur:
         groups.append(cur)
-    texts = []
+    out = []
     for grp in groups:
         x0 = min(c[1] for c in grp); x1 = max(c[1] + c[3] for c in grp)
         y0 = min(c[2] for c in grp); y1 = max(c[2] + c[4] for c in grp)
         mask = np.isin(lab[y0:y1, x0:x1], [c[0] for c in grp])
-        gkey = (mask.shape, np.packbits(mask).tobytes())   # e.g. max HP: same pixels while HP moves
-        if gkey not in _group_cache:
-            if len(_group_cache) > 20000:
+        out.append(((mask.shape, np.packbits(mask).tobytes()), mask))
+    return out
+
+
+_group_cache = {}
+
+
+def read_numbers(crop, name, scale, cut=150):
+    """Find digit-height blobs, group neighbours into numbers, recognise each group (each number's
+    pixel shape is recognised once, then remembered)."""
+    texts = []
+    for key, mask in _group_masks(crop, name, scale, cut):
+        if key not in _group_cache:
+            if len(_group_cache) > 50000:
                 _group_cache.clear()
-            _group_cache[gkey] = _fix(_rec(mask))
-        texts.append(_group_cache[gkey])
-    _region_cache[rkey] = texts
+            _group_cache[key] = _fix(_rec(mask))
+        texts.append(_group_cache[key])
     return texts
+
+
+def known_numbers(crop, name, scale, cut=150):
+    """Like read_numbers but never runs OCR: numbers not seen before come back as None."""
+    return [_group_cache.get(key) for key, _ in _group_masks(crop, name, scale, cut)]
+
+
+def quick_read(frame, scale):
+    """Everything about the target that can be known this instant without OCR: bar fill, and any
+    number whose exact pixel shape was read before (max HP, armor, MR, spears, often current HP).
+    Unknown values are None; the OCR thread reads them once and from then on they're instant."""
+    def crop(box):
+        x0, y0, x1, y1 = box
+        return frame.crop((int(x0 * scale), int(y0 * scale), int(x1 * scale), int(y1 * scale)))
+
+    def first_int(texts):
+        for t in texts:
+            if t is None:
+                return None
+            m = re.search(r"\d+", t)
+            if m:
+                return int(m[0])
+        return None
+
+    fill = bar_fill(frame, scale)
+    out = {"present": False, "ally": False, "fill": fill, "hp": None, "max_hp": None,
+           "armor": None, "mr": 0, "stacks": None, "monster": False}
+    if fill is None:
+        return out
+    hcrop = crop(REGIONS["health"])
+    # same brightness cut-offs as read_target, so whatever OCR read is recognised here
+    for cut in (150, 120, 180, 100):
+        ht = known_numbers(hcrop, "health", scale, cut)
+        if len(ht) < 2:
+            continue
+        out["present"] = True
+        if None not in ht:
+            pair = parse_health(ht)
+            if pair and abs(pair[0] / pair[1] - fill) <= FILL_TOLERANCE:
+                out["max_hp"], out["hp"] = pair[1], pair[0]
+                break
+        if not out["max_hp"] and ht[-1] and ht[-1].isdigit():
+            out["max_hp"] = int(ht[-1])   # max HP known, current HP new: HP comes from the bar
+    if not out["present"]:
+        return out
+    if bar_is_ally(frame, scale):
+        out["ally"] = True
+        return out
+    if out["max_hp"] and out["max_hp"] < 10:
+        out["max_hp"] = None
+    out["armor"] = first_int(known_numbers(crop(REGIONS["armor"]), "armor", scale))
+    mr = first_int(known_numbers(crop(REGIONS["mr"]), "mr", scale))
+    out["mr"] = mr or 0
+    out["monster"] = not has_kda_row(frame, scale)
+    icon = find_spear_slot(frame, scale)
+    if not icon:
+        out["stacks"] = 0
+    else:
+        x0, y0, x1, y1 = icon
+        st = known_numbers(crop((x0 - 3, y0 + 20, x1 + 6, y1 + 4)), "stacks", scale)
+        if None in st:
+            out["stacks"] = None
+        else:
+            vals = [int(v) for t in st for v in re.findall(r"\d+", t) if 0 < int(v) < 1000]
+            out["stacks"] = vals[-1] if vals else 1   # icon without a number = 1 spear
+    return out
 
 
 # Buff icons sit in fixed slots under the frame, right-aligned: slot 0 is the rightmost.
@@ -661,37 +734,51 @@ class ExecuteWatcher:
         frame = Image.frombytes("RGB", shot.size, shot.bgra, "raw", "BGRX")
         self._latest = (frame, scale)
         self._ocr_wake.set()
-        known = self._tgt
-        if not known:
-            self.result = None
+        now = time.time()
+        q = quick_read(frame, scale)
+        if q["ally"] or (not q["present"] and now - self._q_ok > 0.1):
+            self.result = None               # ally, or no target any more
+            self._q_key = None
             return
-        tgt, ocr_fill, ocr_sig = known
-        fill = bar_fill(frame, scale)
-        if fill is None:
-            return                     # bar not readable this frame: keep the last result
-        prev, self._fast_fill = self._fast_fill, fill
-        px = (HEALTH_BAR[2] - HEALTH_BAR[0]) * scale        # bar width in pixels
-        # Same target? Armor/MR, max-HP digits and spear-count digits must look exactly as they did
-        # in the OCR'd frame, and the bar must not jump (a switch to a same-looking minion or camp
-        # usually does). Otherwise wait for OCR instead of mixing two targets.
-        if (self._ident(frame, scale) != ocr_sig or (fill - ocr_fill) * px > 2
-                or (prev is not None and abs(fill - prev) > 0.15)):
-            self.result = None
-            self._kill_streak = 0
+        if not q["present"] or not q["max_hp"] or q["armor"] is None or q["stacks"] is None:
+            # a number this frame shows hasn't been read yet (OCR is on it, ~0.1 s): keep the
+            # last line briefly instead of blinking
+            if now - self._q_ok > 0.3:
+                self.result = None
             return
-        if abs(fill - ocr_fill) * px >= 1:                      # bar moved >= 1 px since OCR
-            tgt = dict(tgt, hp=round(fill * tgt["max_hp"]), hp_estimated=True)
+        max_hp = q["max_hp"]
+        key = (max_hp, q["armor"], q["mr"])           # same target
+        if key != self._q_key:
+            self._q_key, self._q_stacks, self._q_zero, self._kill_streak = key, q["stacks"], None, 0
+        elif q["stacks"] == 0 and self._q_stacks > 0:  # spear icon can blink for a frame
+            self._q_zero = self._q_zero or now
+            if now - self._q_zero < 0.2:
+                q["stacks"] = self._q_stacks
+            else:
+                self._q_stacks = 0
+        else:
+            self._q_zero, self._q_stacks = None, q["stacks"]
+        est = q["hp"] is None
+        tgt = {"hp": round(q["fill"] * max_hp) if est else q["hp"], "max_hp": max_hp,
+               "armor": q["armor"], "mr": q["mr"], "stacks": q["stacks"], "hp_estimated": est,
+               "epic": q["monster"] and max_hp >= EPIC_MIN_HP}
         res = evaluate(me, tgt)
         # The bar itself must agree with a kill too (catches a misread HP number).
-        if res["state"] == "kill" and fill * tgt["max_hp"] > res["dmg"] + 0.01 * tgt["max_hp"]:
+        if res["state"] == "kill" and q["fill"] * max_hp > res["dmg"] + 0.01 * max_hp:
             res["state"] = "close"
-        # lightning: exact OCR HP lights it at once; a bar estimate must agree on 3 frames (60 ms)
+        # exact HP lights it at once; an HP taken from the bar must agree on 3 frames (60 ms)
         self._kill_streak = self._kill_streak + 1 if res["state"] == "kill" else 0
-        if res["state"] == "kill" and tgt.get("hp_estimated") and self._kill_streak < 3:
+        if res["state"] == "kill" and est and self._kill_streak < 3:
             res["state"] = "close"
         self.result = res
-        if res["state"] == "kill" and tgt.get("hp_estimated"):
-            self._log(me, tgt, dict(res, state="kill-bar"), frame)
+        self._q_ok = now
+        if res["state"] == "kill":
+            self._log(me, tgt, dict(res, state="kill-bar" if est else "kill"), frame)
+
+    _q_ok = 0.0
+    _q_key = None
+    _q_stacks = 0
+    _q_zero = None
 
     _fast_fill = None
 
@@ -719,14 +806,10 @@ class ExecuteWatcher:
                 continue
             frame, scale = latest
             try:
-                obs, raw = read_target(frame, scale)
+                obs, raw = read_target(frame, scale)   # teaches the number memory
                 tgt = self._track(obs)
                 if not tgt or obs["fill"] is None:
-                    if not tgt:
-                        self._tgt = None
                     continue
-                self._tgt = (tgt, obs["fill"], self._ident(frame, scale))
-                self._fast_fill = obs["fill"]
                 stable = tgt == self._prev
                 self._prev = tgt
                 me = self.me
