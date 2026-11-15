@@ -18,14 +18,15 @@ SET = {
     "evtOpenShop": "[b]",                         # B = shop
     "evtRadialEmoteOpen": "[m]",                  # M = emote wheel
     "evntPlayerPing": "[Cmd][Button 1],[m]",      # M = ping wheel too
-    "evtPlayerPingRadialDanger": "[.]",           # . = retreat wheel
+    "evtPlayerPingRadialDanger": "",              # no retreat wheel
+    "evntPlayerPingCursorDanger": "[.]",          # . = retreat ping at the cursor
     "evtCameraSnap": "[Button 5]",                # MB5 = center camera
     "evtChatHistory": "[Alt][k],[Button 3]",      # MB3 = chat history
     "evtHoldShowScoreBoard": "[Alt][k],[Button 3]",  # MB3 = scoreboard
     "evtPlayerStopPosition": "[v]",               # stop (sent by lol.py while holding N)
-    "evtCameraLockToggle": "[y]",                 # sent by lol.py for Tab+Win
+    "evtCameraLockToggle": "[y]",                 # sent by lol.py (Space unlocks, Tab+Win tap locks)
     "FreeDynamicCameraToggle": "[h]",             # Win removed (Win is now the old N keys)
-    "evtOnUIMouse4Pan": "[h]",                    # lol.py holds h while Tab+Win held
+    "evtOnUIMouse4Pan": "[h]",                    # lol.py holds h while Space is held
 }
 
 

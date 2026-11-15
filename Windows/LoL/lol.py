@@ -3,9 +3,10 @@
 Features (only active while the League game window is focused):
   * Scroll wheel  -> holds 1, next scroll releases it and holds 2, then 3, 4, back to 1.
                      Scroll up = next, scroll down = previous. Any other key/click releases it.
-  * Hold N        -> sends Stop (STOP_KEY) every 0.6 s while N is held.
-  * Tab + Win     -> hold both: unlocks camera (if locked) and pans it (holds PAN_KEY)
-                     quick tap both: locks the camera again.
+  * Hold N        -> sends Stop (STOP_KEY) right away, then every 0.6 s while N is held.
+  * Hold Space    -> unlocks the camera (if locked) and pans it with the mouse right away
+                     (holds PAN_KEY); Space still does its own binds too.
+  * Tab + Win     -> quick tap both: locks the camera again.
   * Win key       -> Start menu is blocked from popping up when you tap Win in game.
   * Kalista E     -> line on the target's health bar at the HP Rend kills at (moves right
                      with more spears) + lightning around the screen when Rend kills
@@ -37,7 +38,7 @@ STOP_KEY = "v"            # must match evtPlayerStopPosition
 STOP_INTERVAL = 0.6
 CAM_LOCK_KEY = "y"        # must match evtCameraLockToggle
 PAN_KEY = "h"             # must match evtOnUIMouse4Pan
-COMBO_HOLD = 0.25         # Tab+Win held longer than this = unlock + pan; shorter = lock
+COMBO_HOLD = 0.25         # Tab+Win released within this = lock the camera
 CAMERA_STARTS_LOCKED = True
 watcher = None
 
@@ -107,7 +108,7 @@ def game_focused():
 
 
 # ---------------- state ----------------
-VK_TAB, VK_LWIN, VK_N = 0x09, 0x5B, 0x4E
+VK_TAB, VK_LWIN, VK_N, VK_SPACE = 0x09, 0x5B, 0x4E, 0x20
 WM_KEYDOWN, WM_KEYUP, WM_SYSKEYDOWN, WM_SYSKEYUP = 0x100, 0x101, 0x104, 0x105
 WM_MOUSEWHEEL = 0x020A
 MOUSE_DOWNS = {0x0201, 0x0204, 0x0207, 0x020B}  # L, R, M, X button down
@@ -141,26 +142,26 @@ def do_scroll(direction):
 
 
 def stop_spam():
-    while True:
-        time.sleep(STOP_INTERVAL)
-        if not n_held:
-            return
+    while n_held:
         actions.put(lambda: tap(STOP_KEY))
+        time.sleep(STOP_INTERVAL)
 
 
-def combo_watch(start):
+def pan_start():
     global camera_locked
-    time.sleep(COMBO_HOLD)
+    if combo["panning"]:
+        return
+    if camera_locked:
+        tap(CAM_LOCK_KEY)
+        camera_locked = False
+    key_down(PAN_KEY)
+    combo["panning"] = True
 
-    def go():
-        global camera_locked
-        if combo["active"] and combo["start"] == start:
-            if camera_locked:
-                tap(CAM_LOCK_KEY)
-                camera_locked = False
-            key_down(PAN_KEY)
-            combo["panning"] = True
-    actions.put(go)
+
+def pan_end():
+    if combo["panning"]:
+        key_up(PAN_KEY)
+        combo["panning"] = False
 
 
 def combo_end():
@@ -168,10 +169,7 @@ def combo_end():
     if not combo["active"]:
         return
     combo["active"] = False
-    if combo["panning"]:
-        key_up(PAN_KEY)
-        combo["panning"] = False
-    elif time.time() - combo["start"] < COMBO_HOLD and not camera_locked:
+    if time.time() - combo["start"] < COMBO_HOLD and not camera_locked:
         tap(CAM_LOCK_KEY)
         camera_locked = True
 
@@ -205,6 +203,8 @@ def kb_filter(msg, data):
             n_held = False
         if vk in (VK_TAB, VK_LWIN):
             actions.put(combo_end)
+        if vk == VK_SPACE:
+            actions.put(pan_end)
         return True
 
     if not game_focused():
@@ -218,10 +218,10 @@ def kb_filter(msg, data):
         if vk == VK_N and not n_held:
             n_held = True
             threading.Thread(target=stop_spam, daemon=True).start()
+        if vk == VK_SPACE:
+            actions.put(pan_start)
         if vk in (VK_TAB, VK_LWIN) and VK_TAB in pressed and VK_LWIN in pressed and not combo["active"]:
-            start = time.time()
-            combo.update(active=True, start=start, panning=False)
-            threading.Thread(target=combo_watch, args=(start,), daemon=True).start()
+            combo.update(active=True, start=time.time())
     return True
 
 
