@@ -14,8 +14,8 @@ Features (only active while the League game window is focused):
 
 Keybinds it relies on are set by lol_settings.py (stop = v, camera lock = y, pan = h).
 
-Setup:  pip install pynput pystray rapidocr_onnxruntime mss
-Run:    3£ tray menu -> LoL macros (or: python lol.py, Ctrl+C to quit)
+Setup:  pip install pynput rapidocr_onnxruntime mss
+Run:    3£ tray menu -> LoL macros (no tray icon of its own; or: python lol.py, Ctrl+C to quit)
 """
 import ctypes
 import ctypes.wintypes as wt
@@ -429,22 +429,6 @@ def make_indicator():
 quit_requested = threading.Event()
 
 
-def make_tray():
-    """System tray icon with a Quit option."""
-    import pystray
-    from PIL import Image, ImageDraw
-    img = Image.new("RGBA", (64, 64), (0, 0, 0, 0))
-    d = ImageDraw.Draw(img)
-    for poly in spear_polys(64, pad=3):
-        d.polygon(poly, fill=SPEAR_ON, outline=SPEAR_EDGE, width=2)
-    icon = pystray.Icon("lol_macros", img, "LoL macros: running", menu=pystray.Menu(
-        pystray.MenuItem("LoL macros running", None, enabled=False),
-        pystray.MenuItem("Quit", lambda icon, item: (quit_requested.set(), icon.stop())),
-    ))
-    icon.run_detached()
-    return icon
-
-
 if __name__ == "__main__":
     import os
     import sys
@@ -464,11 +448,10 @@ if __name__ == "__main__":
     print("lol.py running - active only while the League game window is focused. Ctrl+C to quit.")
     watcher = lol_execute.ExecuteWatcher(game_focused)
     root = make_indicator()
-    tray = make_tray()
 
     STOP_FILE = os.path.join(os.path.dirname(PID_FILE), "lol.stop")
 
-    def keepalive():  # lets Ctrl+C reach Python while Tk's loop runs; handles tray Quit
+    def keepalive():  # lets Ctrl+C reach Python while Tk's loop runs; handles 3£'s off switch
         if os.path.exists(STOP_FILE):  # 3£'s "LoL macros" toggle was switched off
             quit_requested.set()
         if quit_requested.is_set():
@@ -487,6 +470,5 @@ if __name__ == "__main__":
             os.remove(PID_FILE)
         except OSError:
             pass
-        tray.stop()
         kb_listener.stop()
         mouse_listener.stop()
