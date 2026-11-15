@@ -102,6 +102,15 @@ class ExecuteTest(unittest.TestCase):
         self.observe(identity=b"enemy1")
         self.assertIsNone(self.observe(identity=b"enemy2", stacks=None))
 
+    def test_result_publishes_a_complete_immutable_bar_snapshot(self):
+        self.w.rect = (100, 200, 2148, 2760)
+        first = self.observe(identity=b"enemy1")
+        self.assertEqual(first["bar"], (417, 261, 640, 291))
+        self.w.origin = (20, 30)
+        second = self.observe(identity=b"enemy1")
+        self.assertEqual(second["bar"], (437, 291, 660, 321))
+        self.assertEqual(first["bar"], (417, 261, 640, 291))
+
     def test_digit_learning_reads_new_combinations_without_ocr(self):
         one = np.array([[0,1,0], [1,1,0], [0,1,0], [0,1,0], [1,1,1]], dtype=bool)
         two = np.array([[1,1,1], [0,0,1], [1,1,1], [1,0,0], [1,1,1]], dtype=bool)

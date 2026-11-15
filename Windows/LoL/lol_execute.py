@@ -748,7 +748,6 @@ class ExecuteWatcher:
         q = quick_read(frame, scale)
         tgt = self._observe(me, q)
         if tgt:
-            self.result = dict(self.result, bar=self.bar_on_screen())
             self._log(me, tgt, self.result, frame)
 
     def _clear_result(self):
@@ -794,7 +793,9 @@ class ExecuteWatcher:
         self._kill_streak = self._kill_streak + 1 if res["state"] == "kill" else 0
         if res["state"] == "kill" and est and self._kill_streak < 3:
             res["state"] = "close"
-        self.result = res
+        # Publish the calculation and its bar together. The renderer must never
+        # observe a new result before its coordinates have been attached.
+        self.result = dict(res, bar=self.bar_on_screen())
         self._portrait, self._confirmed_at = q.get("identity"), now
         return tgt
 
