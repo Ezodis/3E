@@ -171,6 +171,27 @@ actions = queue.Queue()          # hook callbacks must be fast -> do the work on
 lock = threading.Lock()
 pressed = set()                  # physical keys currently down
 captured = set()                 # suppressed presses still need a suppressed release after Alt+Tab
+last_down = {}                   # vk -> time of its latest key-down (auto-repeats included)
+
+
+def _repeat_gap():
+    """Longest normal pause between key-downs of a held key (Windows repeat delay + period).
+    A longer pause before another key-down means its key-up was lost."""
+    v = wt.UINT()
+    delay = 1
+    speed = 31
+    try:
+        if user32.SystemParametersInfoW(0x16, 0, ctypes.byref(v), 0):   # SPI_GETKEYBOARDDELAY
+            delay = v.value
+        if user32.SystemParametersInfoW(0x0A, 0, ctypes.byref(v), 0):   # SPI_GETKEYBOARDSPEED
+            speed = v.value
+    except Exception:
+        pass
+    period = 1.0 / (2.5 + speed * 27.5 / 31)
+    return (delay + 1) * 0.25 + period + 0.15
+
+
+REPEAT_GAP = _repeat_gap()
 cycle_idx = -1                   # index into CYCLE_KEYS, -1 = none
 held_num = None                  # number key we are holding
 camera_locked = CAMERA_STARTS_LOCKED
@@ -417,9 +438,20 @@ def kb_filter(msg, data):
             kb_listener.suppress_event()
         return True
 
+    now = time.monotonic()
+    gap = now - last_down.get(vk, now)
+    if down:
+        last_down[vk] = now
     if down and vk in captured:
-        kb_listener.suppress_event()
-        return True
+        if gap <= REPEAT_GAP:
+            kb_listener.suppress_event()     # auto-repeat of a held macro key
+            return True
+        # Windows dropped this key's release (it can when the PC is busy): end the old
+        # press now and treat this one as a new press instead of swallowing it.
+        logging.warning("missed key-up for vk %#x after %.2fs; recovered", vk, gap)
+        captured.discard(vk)
+        macro_release(vk)
+        first_down = True
 
     if not macros_active():
         return True
@@ -723,6 +755,7 @@ if __name__ == "__main__":
     PID_FILE = str(lol_execute.DATA / "lol.pid")
     with open(PID_FILE, "w") as f:
         f.write(str(os.getpid()))
+    sys.setswitchinterval(0.002)   # the input hooks get the CPU quickly even while reading the screen
     threading.Thread(target=worker, daemon=True).start()
     threading.Thread(target=camera_watch, daemon=True).start()
     kb_listener = keyboard.Listener(win32_event_filter=kb_filter)

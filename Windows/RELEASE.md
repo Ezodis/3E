@@ -3,6 +3,8 @@
 - When a target's number changes (a new spear count, new armor), the line keeps its last spear count and turns grey until the new number is read, instead of disappearing. It never shows lightning while grey.
 - The target frame's position on screen is remembered between targets, so the line shows as soon as you select the next target.
 - Monster portraits are recognized once per portrait, not on every frame.
+- The line shows the moment a new red bar is selected, grey until its numbers are read. The reader loads at start-up instead of on the first target.
+- Holding Space or N stops the instant you let go: the release runs at once instead of waiting behind other macro actions. If Windows drops a key's release, the hold is ended and your next press works normally instead of being swallowed.
 
 Previous release:
 

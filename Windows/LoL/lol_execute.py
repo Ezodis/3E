@@ -664,6 +664,8 @@ class ExecuteWatcher:
         self._ocr_wake = threading.Event()
         threading.Thread(target=self._api_loop, daemon=True).start()
         threading.Thread(target=self._ocr_loop, daemon=True).start()
+        # load the OCR model now, not on the first target (the first read took over a second)
+        threading.Thread(target=lambda: _rec(np.ones((18, 10), bool)), daemon=True).start()
         threading.Thread(target=self._run, daemon=True).start()
 
     _last_log = None
@@ -809,10 +811,11 @@ class ExecuteWatcher:
                 and self._held["max_hp"] == q["max_hp"] and now - self._held["t"] < 1.5)
         pending = False
         if q["armor"] is None:
-            if not same:
-                self._clear_result()
-                return None
-            q["armor"], q["mr"], pending = self._held["armor"], self._held["mr"], True
+            # new target whose armor isn't read yet (~0.1 s): draw at once with the last armor
+            # seen (or none), grey and never lightning, until the real number is in
+            q["armor"], pending = (self._held["armor"] if self._held else 0), True
+            if same:
+                q["mr"] = self._held["mr"]
         if q["stacks"] is None:
             if not same:
                 self._clear_result()

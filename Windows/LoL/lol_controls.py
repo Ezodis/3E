@@ -1,6 +1,6 @@
 """Tap/hold scheduling, independent of Windows hooks so timing can be tested safely."""
 from dataclasses import dataclass
-from threading import RLock
+from threading import RLock, Thread
 from time import monotonic
 
 
@@ -63,7 +63,8 @@ class HoldController:
     def _finish(self, key, press):
         end = self.bindings[key][2]
         if end:
-            self.enqueue(lambda: end() if press.started else None)
+            # Run at once on its own thread: releasing must never wait behind queued taps.
+            Thread(target=lambda: end() if press.started else None, daemon=True).start()
 
     def cancel(self):
         with self.lock:
