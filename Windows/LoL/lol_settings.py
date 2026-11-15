@@ -20,8 +20,8 @@ SET = {
     "evtOpenShop": "[b]",                         # B = shop
     "evtRadialEmoteOpen": "[m]",                  # M = emote wheel
     "evntPlayerPing": "[Cmd][Button 1],[m]",      # M = ping wheel too
-    "evtPlayerPingRadialDanger": "",              # no retreat wheel
-    "evntPlayerPingCursorDanger": "[.]",          # . = retreat ping at the cursor
+    "evtPlayerPingRadialDanger": "[.]",           # . = danger (retreat) ping wheel
+    "evntPlayerPingCursorDanger": "",
     "evtCameraSnap": "[Button 5]",                # MB5 = center camera
     "evtChatHistory": "[Alt][k],[Button 3]",      # MB3 = chat history
     "evtHoldShowScoreBoard": "[Alt][k],[Button 3]",  # MB3 = scoreboard
