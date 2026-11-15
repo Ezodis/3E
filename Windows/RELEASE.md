@@ -1,3 +1,9 @@
+3£ puts the Rend execute line back at the HP where Rend kills.
+
+- The line starts at the left edge of the target's health bar and moves right as spears add up (damage / max HP). The red fill shrinks toward it; Rend kills when the fill reaches the line. It had been drawn at damage / current HP, which started it near the right edge and moved it the wrong way.
+
+Previous release:
+
 3£ corrects Rend's current-health coverage and target readings, and repairs tray-menu lifetimes.
 
 - Updates the legacy `resources.pri` alongside both current resource aliases. An obsolete installed PRI could override the new tray XAML and crash startup after an app-only update. All three aliases are now packaged and hash-checked together.
