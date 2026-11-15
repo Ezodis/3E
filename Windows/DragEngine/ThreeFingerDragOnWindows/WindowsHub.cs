@@ -67,6 +67,9 @@ public sealed class WindowsHub : IDisposable {
         public bool AutoUpdate { get; set; } = true;
         public string AutoUpdateTag { get; set; }
         public int AutoUpdateAttempts { get; set; }
+        // LoL macros: the user's own script, lol.pyw in Documents unless LolScript names another file.
+        public bool LolMacros { get; set; } = false;
+        public string LolScript { get; set; }
     }
 
     public WindowsHub(MenuFlyout menu) {
@@ -106,6 +109,7 @@ public sealed class WindowsHub : IDisposable {
             // Recover a lease left by an interrupted update before honoring OFF.
             if (!settings.MacKeyboard) await macKeyboard.DisableAsync();
             ConfigureHiddenIcons(); await EnsureComponentsAsync(); ApplyTheme(); KeepPhoneBar(); WriteDiagnostics();
+            if (settings.LolMacros) StartLol();
         }
         catch (Exception ex) { Log(ex); }
         if ((DateTime.UtcNow - settings.LastUpdateCheckUtc).TotalMinutes >= UpdateCheckMinutes) await CheckUpdatesAsync(false);
@@ -129,6 +133,65 @@ public sealed class WindowsHub : IDisposable {
             WorkingDirectory = Path.GetDirectoryName(path), UseShellExecute = shell,
             CreateNoWindow = !shell, WindowStyle = shell ? ProcessWindowStyle.Normal : ProcessWindowStyle.Hidden
         })?.Dispose();
+    }
+
+    // LoL macros run the user's script through an on-demand task with the signed-in user's
+    // limited token, so it never inherits 3£'s administrator rights (the script lives in a
+    // user-writable folder). The script writes lol.pid next to itself and quits when lol.stop
+    // appears there.
+    private string LolScript => string.IsNullOrWhiteSpace(settings.LolScript)
+        ? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), "lol.pyw") : settings.LolScript;
+    private string LolFile(string name) => Path.Combine(Path.GetDirectoryName(LolScript) ?? "", name);
+
+    private Process LolProcess() {
+        try {
+            if (!int.TryParse(File.ReadAllText(LolFile("lol.pid")).Trim(), out int pid)) return null;
+            var process = Process.GetProcessById(pid);
+            if (process.ProcessName.StartsWith("python", StringComparison.OrdinalIgnoreCase)) return process;
+            process.Dispose();
+        } catch { }
+        return null;
+    }
+
+    private bool LolRunning() { using var process = LolProcess(); return process != null; }
+
+    // The program Windows opens .pyw files with (normally the py launcher's pyw.exe, which honours
+    // the script's "#! python3.x" line); pythonw.exe on PATH otherwise.
+    private static string PythonWindowless() {
+        try {
+            using var key = Registry.ClassesRoot.OpenSubKey(@"Python.NoConFile\shell\open\command");
+            if (key?.GetValue("") is string command && command.Length > 1) {
+                string exe = command[0] == '"' ? command[1..command.IndexOf('"', 1)] : command.Split(' ')[0];
+                if (File.Exists(exe)) return exe;
+            }
+        } catch { }
+        return "pythonw.exe";
+    }
+
+    private void StartLol() {
+        if (!File.Exists(LolScript) || LolRunning()) return;
+        try { File.Delete(LolFile("lol.stop")); } catch { }
+        using var service = new Microsoft.Win32.TaskScheduler.TaskService();
+        var definition = service.NewTask();
+        definition.RegistrationInfo.Description = "Runs the LoL macros script for 3£ as the signed-in user, without administrator rights.";
+        definition.Principal.RunLevel = Microsoft.Win32.TaskScheduler.TaskRunLevel.LUA;
+        definition.Settings.DisallowStartIfOnBatteries = false;
+        definition.Settings.StopIfGoingOnBatteries = false;
+        definition.Settings.ExecutionTimeLimit = TimeSpan.Zero;
+        definition.Settings.MultipleInstances = Microsoft.Win32.TaskScheduler.TaskInstancesPolicy.IgnoreNew;
+        definition.Actions.Add(new Microsoft.Win32.TaskScheduler.ExecAction(PythonWindowless(), "\"" + LolScript + "\"", Path.GetDirectoryName(LolScript)));
+        service.RootFolder.RegisterTaskDefinition("3£ LoL macros", definition, Microsoft.Win32.TaskScheduler.TaskCreation.CreateOrUpdate,
+            null, null, Microsoft.Win32.TaskScheduler.TaskLogonType.InteractiveToken).Run();
+    }
+
+    private async Task StopLolAsync() {
+        using var process = LolProcess();
+        if (process == null) return;
+        // Ask first so the script releases any key it is holding; force only if it does not exit.
+        try { File.WriteAllText(LolFile("lol.stop"), ""); } catch { }
+        for (int i = 0; i < 30 && !process.HasExited; i++) await Task.Delay(100);
+        if (!process.HasExited) { try { process.Kill(); process.WaitForExit(4000); } catch { } }
+        try { File.Delete(LolFile("lol.stop")); File.Delete(LolFile("lol.pid")); } catch { }
     }
 
     private string PowerToysPath => MacKeyboardLayout.PowerToysPath;
@@ -465,6 +528,11 @@ public sealed class WindowsHub : IDisposable {
             settings.PowerToys = enabled;
             if (enabled) _ = EnsureComponentsAsync(); else { Stop("PowerToys"); if (settings.MacKeyboard) _ = macKeyboard.EnsureAsync(); }
         }, OpenPowerToysSettings);
+        // The check mark means the script is running; its icon shows the script in Explorer.
+        Toggle(File.Exists(LolScript) ? "LoL macros" : "LoL macros — put lol.pyw in Documents", LolRunning(), enabled => {
+            settings.LolMacros = enabled;
+            if (enabled) StartLol(); else _ = StopLolAsync();
+        }, () => Process.Start(new ProcessStartInfo("explorer.exe", "/select,\"" + LolScript + "\"") { UseShellExecute = true })?.Dispose());
         menu.Items.Add(new MenuFlyoutSeparator());
         Toggle("Dynamic wallpaper", settings.Wallpaper, enabled => {
             settings.Wallpaper = enabled;

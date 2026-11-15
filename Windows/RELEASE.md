@@ -1,3 +1,4 @@
+- LoL macros: a new tray toggle starts or stops your own `lol.pyw` script from Documents and remembers the choice. It runs as you, without 3£'s administrator rights, is asked to quit cleanly when switched off, and its icon shows the script in Explorer.
 - Track Tab and Track Phone: with more than one desktop, the four-finger swipe now really switches desktops (one per swipe). The desktop shortcut uses right Ctrl so Ctrl+arrow remaps (like PowerToys Ctrl+→ = End) no longer swallow it, and the phone's swipe now checks desktops on the PC like the trackpad does.
 - Track Phone key bar: removed Del, reordered to Esc ⇧ Tab, and made every top-row key (including clipboard, ▲ and +) the same size with even spacing.
 
