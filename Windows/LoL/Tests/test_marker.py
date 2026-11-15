@@ -26,23 +26,25 @@ class MarkerTest(unittest.TestCase):
                 self.assertEqual(call.args[2], marker["x"])
         return marker, canvas
 
-    def test_reported_one_hp_target_draws_at_lethal_right_edge(self):
-        marker, canvas = self.draw(1, 730.4, state="kill")
-        self.assertEqual(marker["coverage"], 1)
-        self.assertEqual(marker["x"], 540)
-        self.assertEqual(canvas.create_line.call_args_list[1].kwargs["fill"], "#ff3b5c")
+    def test_line_sits_at_kill_hp_from_left(self):
+        marker, _ = self.draw(900, 300)
+        self.assertAlmostEqual(marker["coverage"], .3)
+        self.assertAlmostEqual(marker["x"], 317 + .3 * 223)
 
-    def test_falling_health_moves_right_with_same_damage(self):
-        for hp, expected in [(1000, .2), (600, 1/3), (201, 200/201), (200, 1), (1, 1)]:
+    def test_line_ignores_current_hp(self):
+        for hp in (1000, 600, 201, 1):
             with self.subTest(hp=hp):
                 marker, _ = self.draw(hp, 200)
-                self.assertEqual(marker["coverage"], expected)
-                self.assertAlmostEqual(marker["x"], 317 + expected * 223)
+                self.assertAlmostEqual(marker["x"], 317 + .2 * 223)
 
-    def test_added_spears_move_right_without_waiting_for_hp_change(self):
+    def test_added_spears_move_right(self):
         first, _ = self.draw(900, 100)
         second, _ = self.draw(900, 500)
         self.assertGreater(second["x"], first["x"])
+
+    def test_kill_colour(self):
+        _, canvas = self.draw(100, 200, state="kill")
+        self.assertEqual(canvas.create_line.call_args_list[1].kwargs["fill"], "#ff3b5c")
 
     def test_overkill_clamps_to_right_edge(self):
         marker, _ = self.draw(1, 10000, state="kill")
@@ -52,14 +54,14 @@ class MarkerTest(unittest.TestCase):
         marker, _ = self.draw(500, 0, stacks=0)
         self.assertEqual(marker["x"], 317)
 
-    def test_target_switch_and_healing_have_no_previous_position(self):
+    def test_target_switch_has_no_previous_position(self):
         self.draw(1, 900, state="kill")
         marker, _ = self.draw(800, 100)
-        self.assertAlmostEqual(marker["x"], 317 + .125 * 223)
+        self.assertAlmostEqual(marker["x"], 317 + .1 * 223)
 
-    def test_pending_read_updates_hp_but_stays_muted(self):
+    def test_pending_read_stays_muted(self):
         marker, canvas = self.draw(100, 200, pending=True)
-        self.assertEqual(marker["coverage"], 1)
+        self.assertAlmostEqual(marker["coverage"], .2)
         self.assertEqual(canvas.create_line.call_args_list[1].kwargs["fill"], "#91a5a0")
 
     def test_window_offsets_and_hud_scales(self):
@@ -67,7 +69,7 @@ class MarkerTest(unittest.TestCase):
             for origin in ((0, 0), (500, 100), (-2048, -300)):
                 with self.subTest(scale=scale, origin=origin):
                     marker, _ = self.draw(750, 250, scale=scale, origin=origin)
-                    self.assertAlmostEqual(marker["x"], (317 + 223 / 3) * scale)
+                    self.assertAlmostEqual(marker["x"], (317 + 223 / 4) * scale)
 
     def test_invalid_or_missing_bar_draws_nothing(self):
         for changes in (dict(max_hp=0), dict(bar=None)):
@@ -77,11 +79,6 @@ class MarkerTest(unittest.TestCase):
         marker, canvas = self.draw(0, 100)
         self.assertIsNone(marker)
         canvas.create_line.assert_not_called()
-
-    def test_requested_600_hp_300_damage_example_is_halfway(self):
-        marker, _ = self.draw(600, 300)
-        self.assertEqual(marker["coverage"], .5)
-        self.assertEqual(marker["x"], (317 + 540) / 2)
 
     def test_lightning_requires_fresh_confirmed_lethal_hit(self):
         res = dict(hp=100, dmg=100, stacks=1, state="kill", observed_at=10)

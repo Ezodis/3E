@@ -16,8 +16,8 @@ Features (only active while the League game window is focused):
                      attack timer, repeat. Uses your live attack speed and boots tier.
   * Scroll wheel  -> holds 1, next scroll releases it and holds 2, then 3, 4, back to 1.
                      Scroll up = next, scroll down = previous. Any other key/click releases it.
-  * Kalista E     -> current-health coverage line (moves right with damage/current HP,
-                     reaching the right edge when lethal). Lightning only for a fresh,
+  * Kalista E     -> line on the target's health bar at the HP Rend kills at (starts at the
+                     left, moves right with more spears). Lightning only for a fresh,
                      confirmed lethal reading. See lol_execute.py.
 
 Keybinds it relies on are set by lol_settings.py (stop = v, camera lock = y, pan = h,
@@ -519,10 +519,9 @@ BOLT_COLORS = [(16, "#0b4f44"), (9, "#1fd1a0"), (3, "#eafff9")]  # glow -> core
 
 
 def draw_rend_marker(canvas, res, origin, dpi):
-    """Draw Rend's coverage of current HP: empty left, lethal at the far right.
+    """Draw the execute line at the HP where Rend kills (dmg / max HP along the bar).
 
-    Use the latest HP/damage pair directly: smoothing can leave a lethal marker to the
-    wrong position, or carry the previous target's marker into the next target.
+    Uses the latest result directly so a target switch or new spear moves it at once.
     Returns the rendered position for diagnostics; creates no windows or input hooks.
     """
     bar = res.get("bar")
@@ -530,8 +529,9 @@ def draw_rend_marker(canvas, res, origin, dpi):
         return None
     ox, oy = origin
     x0, y0, x1, y1 = bar[0] - ox, bar[1] - oy, bar[2] - ox, bar[3] - oy
-    hp = max(0, min(res["hp"], res["max_hp"]))
-    coverage = min(1, max(0, res["dmg"]) / hp)
+    # The line sits at the HP Rend kills at: left edge with no damage, sliding right as
+    # spears add up. The red fill shrinks toward it; Rend kills once the fill reaches it.
+    coverage = min(1, max(0, res["dmg"]) / res["max_hp"])
     x = x0 + coverage * (x1 - x0)
     kill = res["state"] == "kill"
     core = "#ffffff" if kill else "#eafff9"

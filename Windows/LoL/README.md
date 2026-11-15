@@ -15,12 +15,11 @@ refuses to run while League or its client is open, and can be rerun without
 moving bindings again. League must restart to load changed bindings; an in-memory
 MB5 → Flash binding cannot be suppressed reliably by a Windows mouse hook.
 
-The Rend line shows **current-health coverage**: `damage / current HP`, capped at
-100%. It moves right as damage rises or HP falls. Halfway means Rend removes half
-of the selected target's current HP; the far right means it covers all of it.
-For example, 600/1000 HP with 300 damage puts the line halfway across;
-1/1000 HP with 730 damage puts it at the far right. Positions are never smoothed
-across target switches. This is a coverage gauge, not the underlying bar's HP scale.
+The Rend line marks **the HP where Rend kills**: `damage / max HP` along the bar,
+capped at 100%. It starts at the left edge and moves right as spears add up; the
+red fill shrinks toward it and Rend kills once the fill reaches the line.
+For example, 300 damage on a 1000 max HP target puts the line 30% across.
+Positions are never smoothed across target switches.
 
 Rend uses cached whole numbers and learned individual digit shapes. An unreadable
 spear count clears the result immediately, including identical portraits: two
