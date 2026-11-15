@@ -19,6 +19,7 @@ function New-TestInstall([string]$Name) {
     New-Item -ItemType Directory -Path $dir -Force | Out-Null
     [IO.File]::WriteAllText((Join-Path $dir 'ThreeEWindows.dll'), 'old application')
     [IO.File]::WriteAllText((Join-Path $dir '3£.exe'), 'old apphost')
+    [IO.File]::WriteAllText((Join-Path $dir 'resources.pri'), 'obsolete tray XAML')
     foreach ($name in @('network-policy.json','settings.json','Launch-3EWindows.ps1','Launch-3EWindows.vbs')) {
         [IO.File]::WriteAllText((Join-Path $dir $name), 'preserve exactly')
     }
@@ -27,7 +28,7 @@ function New-TestInstall([string]$Name) {
 function New-TestPayload([hashtable]$Extra = @{}) {
     $stream = [IO.MemoryStream]::new()
     $zip = [IO.Compression.ZipArchive]::new($stream, [IO.Compression.ZipArchiveMode]::Create, $true)
-    $entries = [ordered]@{'3£.exe'=[Text.Encoding]::UTF8.GetBytes('new apphost');'ThreeEWindows.dll'=[IO.File]::ReadAllBytes($script:fixture)}
+    $entries = [ordered]@{'3£.exe'=[Text.Encoding]::UTF8.GetBytes('new apphost');'ThreeEWindows.dll'=[IO.File]::ReadAllBytes($script:fixture);'resources.pri'=[Text.Encoding]::UTF8.GetBytes('current tray XAML')}
     foreach ($key in $Extra.Keys) { $entries[$key] = [Text.Encoding]::UTF8.GetBytes($Extra[$key]) }
     try {
         foreach ($key in $entries.Keys) {
@@ -50,6 +51,7 @@ try {
     Check ([IO.File]::ReadAllText((Join-Path $dir '3£.exe')) -eq 'new apphost') 'Apphost was not updated.'
     Check ((Get-FileHash (Join-Path $dir 'ThreeEWindows.dll')).Hash -eq (Get-FileHash $fixture).Hash) 'DLL hash mismatch.'
     Check ($script:stops -eq 1) 'Expected one owned-process stop.'
+    Check ([IO.File]::ReadAllText((Join-Path $dir 'resources.pri')) -eq 'current tray XAML') 'Legacy XAML resources were not replaced.'
     foreach ($name in @('network-policy.json','settings.json','Launch-3EWindows.ps1','Launch-3EWindows.vbs')) {
         Check ([IO.File]::ReadAllText((Join-Path $dir $name)) -eq 'preserve exactly') "Changed deployment file: $name"
     }

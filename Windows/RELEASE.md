@@ -1,5 +1,6 @@
 3£ corrects Rend's current-health coverage and target readings, and repairs tray-menu lifetimes.
 
+- Updates the legacy `resources.pri` alongside both current resource aliases. An obsolete installed PRI could override the new tray XAML and crash startup after an app-only update. All three aliases are now packaged and hash-checked together.
 - Uses two persistent native WinUI command adapters at the tray boundary, while menu snapshots remain managed data. Adds a packaged tray-window startup and command check, plus bounded crash diagnostics.
 - Rend's line moves right with damage/current HP: 300 damage against 600 HP is halfway; lethal damage reaches the right edge immediately.
 - Lightning appears only for a fresh confirmed lethal reading. Almost-lethal borders, stale results and carried-over unreadable spear counts are removed.

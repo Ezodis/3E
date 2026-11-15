@@ -41,6 +41,11 @@ foreach ($arch in @('x64','arm64')) {
     if (Test-Path -LiteralPath $appHost) { Move-Item -LiteralPath $appHost -Destination (Join-Path $output '3£.exe') -Force }
     # WinUI locates its PRI by the apphost filename.
     Copy-Item -LiteralPath (Join-Path $output 'ThreeEWindows.pri') -Destination (Join-Path $output '3£.pri') -Force
+    # Older installations contain this default-name PRI. WinUI can prefer it
+    # over the apphost alias, so ship/update all names together on every release.
+    Copy-Item -LiteralPath (Join-Path $output 'ThreeEWindows.pri') -Destination (Join-Path $output 'resources.pri') -Force
+    $resourceHashes = @('ThreeEWindows.pri','3£.pri','resources.pri') | ForEach-Object { (Get-FileHash -LiteralPath (Join-Path $output $_)).Hash }
+    if (@($resourceHashes | Select-Object -Unique).Count -ne 1) { throw "Mismatched $arch XAML resource aliases." }
     # Incremental builds must not ship stale apphosts from older public names.
     foreach ($legacyName in @('3e.exe','3e.pri','3£Windows.exe','3£Windows.pri')) {
         $legacyFile = Join-Path $output $legacyName
