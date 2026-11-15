@@ -1,3 +1,10 @@
+3£ moves the Kalista kite to the mouse's extra side button.
+
+- Set the macro-only side button in the mouse app to send F13 (or Pause). Holding it kites in League, starting the instant it's pressed. Outside League, or with the macros off, it's a normal key.
+- MB5 is no longer touched by the macros: its League binds (Flash, center camera) work as always, with or without macros.
+
+Previous release:
+
 3£ makes the Rend execute line appear and update at once.
 
 - When a target's number changes (a new spear count, new armor), the line keeps its last spear count and turns grey until the new number is read, instead of disappearing. It never shows lightning while grey.

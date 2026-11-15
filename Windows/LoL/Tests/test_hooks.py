@@ -46,14 +46,31 @@ class HookTest(unittest.TestCase):
         lol.kb_listener.suppress_event.assert_not_called()
         self.assertFalse(lol.macro_down)
 
-    def test_cancelled_mb5_release_is_suppressed(self):
+    def test_mb5_always_reaches_league(self):
         data = SimpleNamespace(flags=0, mouseData=2 << 16)
         lol.mouse_filter(lol.WM_XBUTTONDOWN, data)
-        self.active.return_value = False
-        lol.controls.poll()
         lol.mouse_filter(lol.WM_XBUTTONUP, data)
-        self.assertEqual(lol.mouse_listener.suppress_event.call_count, 2)
-        self.assertFalse(lol.captured)
+        lol.mouse_listener.suppress_event.assert_not_called()
+        self.assertFalse(lol.macro_down)
+
+    def test_kite_key_starts_at_once_and_is_blocked(self):
+        with patch.object(lol, "kite_start") as start:
+            lol.MACRO_KEYS[lol.VK_F13] = (None, start, None, True)
+            key = SimpleNamespace(flags=0, vkCode=lol.VK_F13)
+            lol.kb_filter(lol.WM_KEYDOWN, key)
+            lol.actions.get_nowait()()           # queued at press time, no hold wait
+            start.assert_called_once()
+            lol.kb_filter(lol.WM_KEYUP, key)
+            self.assertEqual(lol.kb_listener.suppress_event.call_count, 2)
+            self.assertFalse(lol.captured)
+            lol.MACRO_KEYS[lol.VK_F13] = (None, lol.kite_start, None, True)
+
+    def test_kite_key_is_a_normal_key_outside_league(self):
+        self.active.return_value = False
+        key = SimpleNamespace(flags=0, vkCode=lol.VK_PAUSE)
+        lol.kb_filter(lol.WM_KEYDOWN, key)
+        lol.kb_filter(lol.WM_KEYUP, key)
+        lol.kb_listener.suppress_event.assert_not_called()
 
     def test_inactive_outputs_send_nothing(self):
         self.active.return_value = False

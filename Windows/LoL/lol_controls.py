@@ -22,7 +22,11 @@ class HoldController:
     def press(self, key):
         with self.lock:
             if key not in self.down and self.enabled():
-                self.down[key] = Press(self.clock())
+                press = self.down[key] = Press(self.clock())
+                if len(self.bindings[key]) > 3 and self.bindings[key][3]:
+                    # hold-only key (no click action): start at once, no tap/hold wait
+                    press.scheduled = True
+                    self.enqueue(lambda k=key, p=press: self._start(k, p))
 
     def _held(self, key, press):
         with self.lock:

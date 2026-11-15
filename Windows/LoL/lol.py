@@ -10,8 +10,10 @@ Features (only active while the League game window is focused):
                      hold: open the shop.
   * Space         -> click: Space as usual (E, attack-move, item 3).   hold: Stop every 0.35 s.
   * Win           -> Win as usual (R, item 1, ...); the Start menu never opens in game.
-  * MB5           -> click: MB5's League binds (Flash, centre camera), now on MB5_KEY.
-                     hold (Kalista): kite. Attack (attack-move), one move order to the cursor
+  * MB5           -> untouched: League's own MB5 binds (Flash, centre camera) as always.
+  * Kite button   -> the mouse's macro-only side button, set in the mouse app to send F13
+                     (or Pause). Hold (Kalista, in League): kite at once. Elsewhere, or with
+                     the macros off, it is a normal key. Attack (attack-move), one move order to the cursor
                      during the windup (= a Martial Poise hop), wait for the hop to land and the
                      attack timer, repeat. Uses your live attack speed and boots tier.
   * Scroll wheel  -> holds 1, next scroll releases it and holds 2, then 3, 4, back to 1.
@@ -21,7 +23,7 @@ Features (only active while the League game window is focused):
                      confirmed lethal reading. See lol_execute.py.
 
 Keybinds it relies on are set by lol_settings.py (stop = v, camera lock = y, pan = h,
-N's old binds = j, shop = b, attack-move = F9, MB5's old binds = F10).
+N's old binds = j, shop = b, attack-move = F9).
 
 Setup:  pip install pynput rapidocr_onnxruntime mss
 Run:    3£ tray menu -> LoL macros (no separate launcher or tray icon).
@@ -53,7 +55,6 @@ HOLD_TIME = 0.18          # a macro key held longer than this is a hold, shorter
 RECALL_KEY = "j"          # N's old League binds (recall, item 6, ...) live here now
 SHOP_KEY = "b"            # must match evtOpenShop
 ATTACK_KEY = "f9"         # must match evtPlayerAttackMove (attack-move at the cursor)
-MB5_KEY = "f10"           # MB5's old League binds (Flash, centre camera, ...) live here now
 CAM_LOCK_KEY = "y"        # must match evtCameraLockToggle
 PAN_KEY = "h"             # must match evtOnUIMouse4Pan
 CAMERA_STARTS_LOCKED = True
@@ -217,13 +218,6 @@ def do_scroll(direction):
     key_down(held_num)
 
 
-def mb5_click():
-    """MB5's own League binds (Flash, centre camera, ...). League reads mouse buttons below the
-    hook, so a blocked MB5 press would still reach it: those binds live on MB5_KEY instead and
-    only this click sends it."""
-    tap(MB5_KEY)
-
-
 # ---- camera (N) ----
 def toggle_camera():
     global camera_locked
@@ -325,8 +319,12 @@ MACRO_KEYS = {
     VK_N: (toggle_camera, camera_hold_start, camera_hold_end),
     VK_B: (lambda: tap(RECALL_KEY), lambda held: tap(SHOP_KEY) if held() else None, None),
     VK_SPACE: (lambda: tap("space"), stop_start, None),
-    "MB5": (mb5_click, kite_start, None),
 }
+# The mouse's macro-only side button sends one of these keys (set in the mouse app).
+VK_F13, VK_PAUSE = 0x7C, 0x13
+KITE_KEYS = (VK_F13, VK_PAUSE)
+for _vk in KITE_KEYS:
+    MACRO_KEYS[_vk] = (None, kite_start, None, True)      # hold-only: kites from the first instant
 controls = HoldController(MACRO_KEYS, actions.put, macros_active, HOLD_TIME)
 macro_down = controls.down
 macro_press = controls.press
@@ -480,20 +478,8 @@ def kb_filter(msg, data):
 def mouse_filter(msg, data):
     if data.flags & LLMHF_INJECTED:
         return True
-    mb5 = msg in (WM_XBUTTONDOWN, WM_XBUTTONUP) and (data.mouseData >> 16) == XBUTTON2
-    if mb5 and msg == WM_XBUTTONUP and "MB5" in captured:
-        captured.discard("MB5")
-        macro_release("MB5")
-        mouse_listener.suppress_event()
     if not macros_active():
         return True
-    if mb5 and msg == WM_XBUTTONDOWN:
-        if "MB5" not in macro_down:
-            if held_num:
-                actions.put(lambda: release_num(reset=True))
-            macro_press("MB5")
-            captured.add("MB5")
-        mouse_listener.suppress_event()          # the game only sees what the macro sends
     if msg == WM_RBUTTONDOWN:
         cam["clicks"] += 1
     if msg == WM_MOUSEWHEEL:
