@@ -303,6 +303,22 @@ def spear_count(texts):
     return None
 
 
+EPIC_MIN_HP = 2800   # unrecognised monster portrait this big: treat as epic (Rend does 50%)
+
+
+def _same_portrait(a, b, bits=6):
+    """Portrait fingerprints of the same target (allows a few flickering pixels)."""
+    if not (isinstance(a, tuple) and isinstance(b, tuple)):
+        return a == b
+    if a[0] != b[0] or len(a[1]) != len(b[1]):
+        return False
+    diff = np.bitwise_xor(np.frombuffer(a[1], np.uint8), np.frombuffer(b[1], np.uint8))
+    return int(np.unpackbits(diff).sum()) <= bits
+
+
+_kind_cache = {}
+
+
 def quick_read(frame, scale):
     """Everything about the target that can be known this instant without OCR: bar fill, and any
     number whose exact pixel shape was read before (max HP, armor, MR, spears, often current HP).
@@ -354,7 +370,17 @@ def quick_read(frame, scale):
     mr = first_int(known_numbers(crop(REGIONS["mr"]), "mr", scale))
     out["mr"] = mr or 0
     out["monster"] = not has_kda_row(frame, scale)
-    out["monster_kind"] = identify_monster(frame, scale) if out["monster"] else None
+    if out["monster"]:
+        kind = _kind_cache.get(identity)
+        if kind is None:
+            kind = identify_monster(frame, scale)
+            if kind is not None:
+                if len(_kind_cache) > 2000:
+                    _kind_cache.clear()
+                _kind_cache[identity] = kind
+        out["monster_kind"] = kind
+    else:
+        out["monster_kind"] = None
     if not icon:
         out["stacks"] = 0
     else:
@@ -672,8 +698,12 @@ class ExecuteWatcher:
             self._layouts[(gw, gh)] = found[:3]
             self._next_locate = now + 5   # cheap re-check every 5 s while a target is shown
             return found[:3]
-        self._next_locate = now + 0.15    # no frame visible (no target) -> look again shortly
-        self._layouts.pop((gw, gh), None)
+        if known:
+            # No target right now. Keep the known position so the next target shows at once;
+            # quick_read sees "no target" by itself. Re-check the position now and then.
+            self._next_locate = now + 2
+            return known
+        self._next_locate = now + 0.15    # never found yet -> look again shortly
         return None
 
     def bar_on_screen(self):
@@ -767,18 +797,36 @@ class ExecuteWatcher:
         self._kill_streak = 0
 
     def _observe(self, me, q):
-        # Never carry a kill or spear count through an unreadable/new target or a vanished
-        # Rend icon. Consecutive minions can have identical HP/armor/MR.
-        if q["ally"] or not q["present"] or q["fill"] is None:
+        # Never carry a kill or spear count to another target. Within the same target, a
+        # number that changed (new spear count, new armor) keeps the last value for a moment
+        # while it is read, shown muted and never lightning, instead of hiding the line.
+        if q["ally"] or not q["present"] or q["fill"] is None or not q["max_hp"]:
             self._clear_result()
             return None
+        now = time.monotonic()
         kind = q.get("monster_kind")
-        if (not q["max_hp"] or q["armor"] is None or q["stacks"] is None
-                or (q["monster"] and kind is None)):
-            # A portrait cannot distinguish two identical dummies/minions. Never
-            # borrow the previous target's count while its new badge is being read.
-            self._clear_result()
-            return None
+        same = (self._held and _same_portrait(self._held["identity"], q.get("identity"))
+                and self._held["max_hp"] == q["max_hp"] and now - self._held["t"] < 1.5)
+        pending = False
+        if q["armor"] is None:
+            if not same:
+                self._clear_result()
+                return None
+            q["armor"], q["mr"], pending = self._held["armor"], self._held["mr"], True
+        if q["stacks"] is None:
+            if not same:
+                self._clear_result()
+                return None
+            q["stacks"], pending = self._held["stacks"], True
+        if q["monster"] and kind is None:
+            kind = self._held["kind"] if same and self._held["kind"] else None
+            if kind is None:
+                kind, pending = ("?", q["max_hp"] >= EPIC_MIN_HP), True
+        if not pending:
+            self._held = {"identity": q.get("identity"), "max_hp": q["max_hp"], "armor": q["armor"],
+                          "mr": q["mr"], "stacks": q["stacks"], "kind": kind, "t": now}
+        elif same:
+            self._held["t"] = now
         max_hp = q["max_hp"]
         key = (q.get("identity"), max_hp, q["armor"], q["mr"], q["stacks"], kind)
         if key != self._q_key:
@@ -792,16 +840,17 @@ class ExecuteWatcher:
         if res["state"] == "kill" and q["fill"] * max_hp > res["dmg"] + 0.01 * max_hp:
             res["state"] = "close"
         # exact HP lights it at once; an HP taken from the bar must agree on 3 frames (60 ms)
-        self._kill_streak = self._kill_streak + 1 if res["state"] == "kill" else 0
-        if res["state"] == "kill" and est and self._kill_streak < 3:
+        self._kill_streak = self._kill_streak + 1 if res["state"] == "kill" and not pending else 0
+        if res["state"] == "kill" and (pending or (est and self._kill_streak < 3)):
             res["state"] = "close"
         # Publish the calculation and its bar together. The renderer must never
         # observe a new result before its coordinates have been attached.
-        self.result = dict(res, bar=self.bar_on_screen(),
+        self.result = dict(res, bar=self.bar_on_screen(), pending=pending,
                            monster=kind[0] if kind else None, hp_estimated=est,
                            observed_at=time.monotonic())
-        return tgt
+        return None if pending else tgt
 
+    _held = None
     _q_key = None
 
     def _ocr_loop(self):

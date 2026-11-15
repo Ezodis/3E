@@ -56,10 +56,17 @@ class ExecuteTest(unittest.TestCase):
         self.assertIsNone(result["state"])
 
     def test_ally_or_missing_target_clears_immediately(self):
-        for changes in ({"ally": True}, {"present": False}, {"max_hp": None},
-                        {"armor": None}, {"stacks": None}, {"fill": None}):
+        for changes in ({"ally": True}, {"present": False}, {"max_hp": None}, {"fill": None}):
             self.observe()
             self.assertIsNone(self.observe(**changes), changes)
+
+    def test_new_number_on_same_target_keeps_a_muted_line_without_lightning(self):
+        for changes in ({"armor": None, "stacks": 4}, {"stacks": None}):
+            self.observe(identity=b"dummy", stacks=4)
+            result = self.observe(identity=b"dummy", **changes)
+            self.assertTrue(result["pending"], changes)
+            self.assertEqual(result["stacks"], 4)
+            self.assertNotEqual(result["state"], "kill")
 
     def test_estimate_requires_three_consecutive_frames(self):
         self.assertEqual(self.observe(hp=None)["state"], "close")
@@ -89,7 +96,9 @@ class ExecuteTest(unittest.TestCase):
 
     def test_identical_portrait_never_borrows_unreadable_spears(self):
         self.observe(identity=b"dummy", stacks=60)
-        self.assertIsNone(self.observe(identity=b"dummy", stacks=None))
+        held = self.observe(identity=b"dummy", stacks=None)
+        self.assertTrue(held["pending"])
+        self.assertNotEqual(held["state"], "kill")
         result = self.observe(identity=b"dummy", stacks=1)
         self.assertEqual(result["stacks"], 1)
         self.assertEqual(result["dmg"], 185)
@@ -101,7 +110,9 @@ class ExecuteTest(unittest.TestCase):
         epic = self.observe(monster=True, monster_kind=("sru_baron", True),
                             hp=2695, max_hp=2870, fill=2695/2870, armor=42)
         self.assertAlmostEqual(epic["dmg"], normal["dmg"] / 2)
-        self.assertIsNone(self.observe(monster=True, monster_kind=None))
+        unknown = self.observe(monster=True, monster_kind=None)
+        self.assertTrue(unknown["pending"])
+        self.assertNotEqual(unknown["state"], "kill")
 
     def test_unreadable_badges_never_default_to_one(self):
         for texts in ([], [None], ["■"], ["1x"], ["1", "7"], ["0"], ["1000"]):

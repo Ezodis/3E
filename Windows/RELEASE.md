@@ -1,3 +1,11 @@
+3£ makes the Rend execute line appear and update at once.
+
+- When a target's number changes (a new spear count, new armor), the line keeps its last spear count and turns grey until the new number is read, instead of disappearing. It never shows lightning while grey.
+- The target frame's position on screen is remembered between targets, so the line shows as soon as you select the next target.
+- Monster portraits are recognized once per portrait, not on every frame.
+
+Previous release:
+
 3£ puts the Rend execute line back at the HP where Rend kills.
 
 - The line starts at the left edge of the target's health bar and moves right as spears add up (damage / max HP). The red fill shrinks toward it; Rend kills when the fill reaches the line. It had been drawn at damage / current HP, which started it near the right edge and moved it the wrong way.
