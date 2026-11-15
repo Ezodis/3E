@@ -31,6 +31,22 @@ Check(PhoneNetwork.Kind("iPhone hotspot",NetworkInterfaceType.Wireless80211)=="w
 Check(PhoneNetwork.Choose(new[]{new PhoneNetwork.PathInfo(IPAddress.Parse("192.168.1.2"),"wifi","Wi-Fi",true),new PhoneNetwork.PathInfo(IPAddress.Parse("172.20.10.2"),"usb","iPhone USB",false)}).Equals(IPAddress.Parse("172.20.10.2")), "USB direct link is preferred even without a gateway");
 using(var cmd=JsonDocument.Parse("{\"op\":\"move\",\"control\":17,\"id\":42,\"x\":-0.15}"))Check(PhoneDJCommand.Parse(cmd.RootElement).x==-.15,"Bounded DJ gestures preserve fractional travel");
 foreach(var invalid in new[]{"{\"op\":\"shell\"}","{\"op\":\"move\",\"control\":29}","{\"op\":\"move\",\"x\":1e30}","{\"op\":\"target\",\"target\":\"other\"}"}){bool rejected=false;try{using var doc=JsonDocument.Parse(invalid);PhoneDJCommand.Parse(doc.RootElement);}catch{rejected=true;}Check(rejected,"Malformed DJ commands are rejected: "+invalid);}
+// The phone submits bounded, fresh commands to the same processor as Touch Bar.
+{
+    string dir=Directory.CreateTempSubdirectory("3e-performance-test-").FullName;
+    try {
+        var bridge=new PerformanceBridge(dir);string session=Guid.NewGuid().ToString(),id=Guid.NewGuid().ToString();
+        void WriteState(double age=0)=>File.WriteAllText(Path.Combine(dir,"state.json"),JsonSerializer.Serialize(new {protocol=1,time=DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()/1000.0-age,session_id=session,track_index=2,selected_clip=new{token="clip-current"}}));
+        JsonElement Command(string action,string commandId,string commandSession,string token="clip-current")=>JsonSerializer.SerializeToElement(new {action,id=commandId,session=commandSession,track_index=2,clip_token=token});
+        WriteState();Check(bridge.Read()!=null,"Fresh Live state is available to phone");
+        bridge.Send(Command("record",id,session));Check(File.Exists(Path.Combine(dir,"commands",id+".json")),"Record uses acknowledged Live command queue");
+        bridge.Send(Command("record",id,session));Check(Directory.GetFiles(Path.Combine(dir,"commands"),"*.json").Length==1,"Duplicate phone commands are not queued twice");
+        string stale=Guid.NewGuid().ToString();bridge.Send(Command("record",stale,"old-session"));Check(!File.Exists(Path.Combine(dir,"commands",stale+".json")),"Old Live session is rejected");
+        bridge.Send(Command("clip-double",stale,session,"old-clip"));Check(!File.Exists(Path.Combine(dir,"commands",stale+".json")),"Changed clip cannot be edited by an old phone view");
+        bool rejected=false;try{bridge.Send(Command("shell",stale,session));}catch(InvalidDataException){rejected=true;}Check(rejected,"Phone performance actions are allowlisted");
+        WriteState(10);bridge.Send(Command("record",stale,session));Check(bridge.Read()==null&&!File.Exists(Path.Combine(dir,"commands",stale+".json")),"Stale state disables controls without queuing a toggle");
+    } finally {Directory.Delete(dir,true);}
+}
 Check(NativeTrackpadInput.ZoomWheelDelta(1) == 120 && NativeTrackpadInput.ZoomWheelDelta(-1) == -120 && NativeTrackpadInput.ZoomWheelDelta(0) == 0, "Spread zooms in, pinch zooms out at the Windows wheel boundary");
 // Simulate delayed/intermediate Quartz observations without moving a real cursor.
 var pointerMotion=new ThreeE.PhoneHost.MacPointerMotion();

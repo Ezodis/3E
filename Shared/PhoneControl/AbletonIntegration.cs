@@ -28,7 +28,7 @@ public static class AbletonIntegration {
     public static void InstallTo(string library) {
         var destination=Path.Combine(library,"Remote Scripts","_3E_Phone_Bar");
         Directory.CreateDirectory(destination);
-        foreach(var name in new[]{"__init__.py","phone_bar.py","mapping.py"}) {
+        foreach(var name in new[]{"__init__.py","phone_bar.py","mapping.py","strip3_record.py"}) {
             using var resource=typeof(AbletonIntegration).Assembly.GetManifestResourceStream("ThreeE.PhoneControl.Ableton."+name)??throw new InvalidOperationException("Missing Track Phone script: "+name);
             using var buffer=new MemoryStream();resource.CopyTo(buffer);var content=buffer.ToArray();
             var target=Path.Combine(destination,name);

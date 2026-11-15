@@ -45,3 +45,18 @@
 
 /* Preserve access on watch-sized viewers; phone performance pages stay fixed. */
 .watch #studio[data-dj-active=true]{display:block;overflow:auto;touch-action:pan-y;padding:5px 5px 100px}.watch .phone-dj{position:static;display:flex!important;flex-direction:column;overflow:visible;touch-action:pan-y}.watch .phone-dj[hidden]{display:none!important}.watch .dj-decks{display:grid;grid-template-columns:1fr;overflow:visible;gap:7px}.watch .dj-card{height:390px;grid-template-rows:28px 160px 60px minmax(90px,1fr)}.watch .dj-wheel-zone{grid-template-rows:minmax(0,1fr) 24px auto}.watch .dj-hub{min-height:35px}.watch .dj-toolbar{min-height:30px}.watch .dj-dial{width:27px;height:27px}.watch .dj-knob strong,.watch .dj-knob output{font-size:8px}.watch #studio:not([data-dj-active=true]){display:block;overflow:auto;padding:6px 6px 100px}.watch #studio .studio-heading{display:flex;flex-wrap:wrap}.watch #studio .studio-heading h1{font-size:12px}.watch #studio #midiView{min-height:250px}.watch #studio .studio-tabs{height:32px}.watch #studio .studio-nav{padding:5px;height:85px}.watch #studio #closeStudio{width:36px!important;height:32px!important}.watch #studio #mixerView{grid-template-columns:repeat(2,minmax(0,1fr))}.watch #studio .strip{min-height:280px}
+
+/* Transport is a reserved row, never an overlay on playable DJ controls. */
+#studio:not([data-dj-active=true]){grid-template-rows:42px 34px minmax(0,1fr) 48px}
+#studio[data-view=midi]:not([data-dj-active=true]){grid-template-rows:42px 34px minmax(0,1fr)}
+#studio[data-dj-active=true]>.performance-bar{position:absolute;top:max(4px,env(safe-area-inset-top));left:10px;right:10px;height:32px;z-index:3}
+#studio[data-dj-active=true] .phone-dj{top:calc(max(6px,env(safe-area-inset-top)) + 38px)}
+#studio .performance-bar button{min-height:28px;padding:2px 10px}
+#studio .performance-menu{position:fixed;inset:10% auto auto 3%;z-index:30;margin:0;box-shadow:0 12px 80px #000d;max-height:75dvh;overflow:auto}
+@media(max-height:450px){#studio:not([data-dj-active=true]){grid-template-rows:32px 28px minmax(0,1fr) 40px;gap:4px}#studio[data-view=midi]:not([data-dj-active=true]){grid-template-rows:32px 28px minmax(0,1fr)}#studio[data-dj-active=true] .phone-dj{top:calc(max(4px,env(safe-area-inset-top)) + 32px)}}
+#studio .scale-pads .piano-key.white{background:white;color:#18252c;border-radius:5px;height:100%;font-size:11px;padding-bottom:12px}#studio .scale-pads .piano-key.held{background:#f46b76}
+#studio .piano-key.black{color:white}#studio .piano-toolbar{flex-wrap:wrap}
+#studio:not([data-dj-active=true]){grid-template-columns:minmax(0,1fr)}
+#studio>.performance-bar{min-width:0;max-width:100%;overflow:hidden}
+@media(orientation:landscape) and (max-height:500px){#studio #midiView{grid-template-rows:auto minmax(0,1fr)}}
+#studio #phoneRecord.recording{background:#b61f35;color:white;border-color:#ef6c7b}

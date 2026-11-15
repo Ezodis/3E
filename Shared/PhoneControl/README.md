@@ -106,3 +106,13 @@ New phone-control source is MIT-licensed. QRCoder retains its bundled MIT licens
 The Windows tray popup shows only the QR and **3£ Track Phone**. Click outside or press Escape to dismiss it; use **Stop Track Phone** in the tray menu to stop the receiver. If no local network is available, the popup shows the reason instead of a QR. Pairing returns basic platform/permission information immediately; MIDI output discovery runs only when the MIDI controls open or refresh, including after reconnect.
 
 Mac Track Phone keeps its saved pairing secret across sleep, restarts and updates. Bookmark the full `3e-mac.local:17833` pairing link (including its fragment). Sleep releases active input; wake recreates the listener and multicast announcement even if the IP is unchanged. Unexpected receiver exits and listener failures retry automatically, while explicitly disabling Track Phone stays disabled. The Mac must be awake with 3E running on the same local network.
+
+## Shared performance controls
+
+Track Phone shares the Touch Bar MIDI workspace catalog in `Shared/Performance/workspaces.json`. Run `python3 Shared/Performance/generate.py` after editing it; CI checks that both generated clients match. Phone Record taps toggle arrangement recording and holds open the same workspace choices. The menu button also opens them without a hold. Play, Stop, Clip Settings, Loop Builder, Song Sounds, Vocals, Instruments, Techno, Reggaeton, Loops, Tempo, Automation and Session actions run through the existing `strip3_record.py` processor on Live's own thread. Control Surface opens the phone mixer.
+
+The phone assembly embeds that exact Python source from the Touch Bar directory and installs it alongside `_3E_Phone_Bar`. On macOS, both surfaces share the existing Record queue; file locking permits only one processor. Windows uses LOCALAPPDATA and a Windows file lock. Restart Live after updating its script. Commands carry the observed Live session, track and clip token; stale views are rejected, pending commands are not automatically replayed, and disconnected controls are disabled.
+
+Piano includes rhythm cycling from the active rack and normal / labeled / white scale-pad views with diatonic accidental spelling. MIDI note ownership and release cleanup remain in the existing shared phone controller. DJ continues using its native gesture implementation and opposite page pairing; the phone transport has a reserved row so it cannot cover a wheel or pad.
+
+Validation: `dotnet run --project Windows/PhoneTrackpadTests`, the Python Record tests, native Record gesture tests, and `phone_dj.test.cjs` / `phone_performance.test.cjs` against the preview receiver. Browser tests capture performance commands rather than operating the user's Live set.

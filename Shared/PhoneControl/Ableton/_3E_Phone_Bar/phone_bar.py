@@ -6,12 +6,14 @@ import sys
 import time
 from ableton.v2.control_surface import ControlSurface, MIDI_CC_TYPE, MIDI_NOTE_TYPE
 from ableton.v2.control_surface.elements import ButtonElement, SliderElement
+from .strip3_record import RecordServer
 from .mapping import Mapping, CONTROL_CHANNEL, CCS, NOTES
 
 
 class PhoneBar(ControlSurface):
     def __init__(self, *args, **kwargs):
         super(PhoneBar, self).__init__(*args, **kwargs)
+        self._record_server = RecordServer(self.song)
         self._phone_mapping = Mapping(self.song, self.show_message)
         self._phone_controls = []
         self._feedback_at = 0
@@ -38,6 +40,7 @@ class PhoneBar(ControlSurface):
 
     def update_display(self):
         super(PhoneBar, self).update_display()
+        self._record_server.poll()
         now = time.time()
         if now - self._feedback_at < .25:
             return
@@ -54,3 +57,7 @@ class PhoneBar(ControlSurface):
             os.replace(temporary, self._feedback_path)
         except (OSError, RuntimeError, AttributeError, ValueError):
             pass
+
+    def disconnect(self):
+        self._record_server.close()
+        super(PhoneBar, self).disconnect()

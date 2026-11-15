@@ -80,6 +80,7 @@
   $('crossfader').dataset.cc=1;$('crossfader').addEventListener('input',()=>cc(1,+$('crossfader').value));$('crossfader').addEventListener('change',flush);
   let octave=Math.max(-1,Math.min(7,Math.trunc(+P.get('octave',4))));if(Number.isNaN(octave))octave=4;
   const contacts=new Map(), heldKeys=new Map(), activePointers=new Set(), piano=$('piano');
+  let scaleState=null,displayMode=0;
   const noteNames=['C','C♯','D','D♯','E','F','F♯','G','G♯','A','A♯','B'];
   function noteOff(number){if(!notes.has(number))return;C.send('midiNote',{channel,number,value:0});notes.delete(number);piano.querySelector('[data-note="'+number+'"]')?.classList.remove('held');}
   function releaseContact(id){const number=contacts.get(id);contacts.delete(id);if(number!==undefined&&![...contacts.values()].includes(number))noteOff(number);}
@@ -92,11 +93,28 @@
   }
   function drawPiano(){
     piano.replaceChildren();let white=0;
-    for(let i=0;i<25;i++) {
-      const number=(octave+1)*12+i,black=[1,3,6,8,10].includes(i%12),key=document.createElement('button');
+    const degrees=scaleState?.scale_mode&&scaleState?.scale_supported?[...new Set((scaleState.scale_intervals||[]).map(i=>(scaleState.root_note+i)%12))]:[];
+    const pads=displayMode===2&&degrees.length>0;
+    const pitches=Array.from({length:25},(_,i)=>(octave+1)*12+i).filter(n=>!pads||degrees.includes(n%12));
+    piano.classList.toggle('scale-pads',pads);
+    function label(number){
+      const degree=degrees.indexOf(number%12),ch=String(pianoChannel+1);
+      let name=noteNames[number%12];
+      if(degrees.length===7&&degree>=0){
+        const natural=[0,2,4,5,7,9,11];let best=0,cost=Infinity;
+        for(let t=0;t<7;t++){let sum=0;degrees.forEach((n,i)=>{const d=(n-natural[(t+i)%7]+18)%12-6;sum+=Math.abs(d)+(Math.abs(d)>2?100:0);});if(sum<cost){best=t;cost=sum;}}
+        const letter=(best+degree)%7,d=(number%12-natural[letter]+18)%12-6;
+        if(Math.abs(d)<=2)name=['C','D','E','F','G','A','B'][letter]+(d<0?'♭'.repeat(-d):'♯'.repeat(d));
+        if(scaleState?.piano_modes?.[ch]!==undefined){const third=(degrees[(degree+2)%7]-number%12+12)%12,fifth=(degrees[(degree+4)%7]-number%12+12)%12;name+=third===3?(fifth===6?'dim':'m'):fifth===8?'aug':'';}
+      }
+      return (degree>=0?(degree+1)+' · ':'')+name;
+    }
+    for(let k=0;k<pitches.length;k++) {
+      const number=pitches[k],i=number-(octave+1)*12,black=[1,3,6,8,10].includes(i%12),key=document.createElement('button');
       key.className='piano-key '+(black?'black':'white');key.dataset.note=number;key.type='button';
       const name=noteNames[number%12]+(Math.floor(number/12)-1);key.setAttribute('aria-label',name);key.title=name;
-      if(black)key.style.left=((white-.31)/15*100)+'%';else {key.style.left=(white/15*100)+'%';white++;key.textContent=name;}
+      if(pads){key.className='piano-key white';key.style.left=(k/pitches.length*100)+'%';key.style.width=(100/pitches.length)+'%';key.textContent=label(number);}else if(black)key.style.left=((white-.31)/15*100)+'%';else {key.style.left=(white/15*100)+'%';white++;key.textContent=name;}
+      if(displayMode&&!pads)key.textContent=label(number);
       key.addEventListener('keydown',e=>{if((e.key===' '||e.key==='Enter')&&!e.repeat){e.preventDefault();const id='key:'+number;heldKeys.set(number,id);pressContact(id,number);}});
       key.addEventListener('keyup',e=>{if(e.key===' '||e.key==='Enter'){e.preventDefault();releaseContact(heldKeys.get(number));heldKeys.delete(number);}});
       key.addEventListener('blur',()=>{releaseContact(heldKeys.get(number));heldKeys.delete(number);});
@@ -137,12 +155,12 @@
   $('closeStudio').addEventListener('click',e=>{if(e.detail&&!returnPressed)return;returnPressed=false;cancel();C.release();studio.hidden=true;$('media').focus({preventScroll:true});});
   $('refreshMidi').addEventListener('click',()=>C.send('info'));
   $('midiOutput').addEventListener('change',()=>{cancel();output=-1;const select=$('midiOutput');P.set('midiOutput',+select.value>=0?select.selectedOptions[0]?.textContent||null:null);C.send('midiPort',{id:+select.value});});
-  $('midiChannel').addEventListener('change',()=>{cancel();C.send('midiPanic');channel=activeView==='midi'?Math.min(14,+$('midiChannel').value):15;if(activeView==='midi'){pianoChannel=channel;P.set('pianoChannel',channel);}});
+  $('midiChannel').addEventListener('change',()=>{cancel();C.send('midiPanic');channel=activeView==='midi'?Math.min(14,+$('midiChannel').value):15;if(activeView==='midi'){pianoChannel=channel;P.set('pianoChannel',channel);drawPiano();}});
   $('panic').addEventListener('click',()=>{cancel();C.send('midiPanic');});
-  function cancel(){window.ThreeEDJ?.cancel();epoch++;window.ThreeEDock?.cancel();clearTimeout(dirtyTimer);dirtyTimer=null;dirty.clear();for(const number of notes)C.send('midiNote',{channel,number,value:0});notes.clear();contacts.clear();heldKeys.clear();for(const id of activePointers)if(piano.hasPointerCapture(id))piano.releasePointerCapture(id);activePointers.clear();piano.querySelectorAll('.held').forEach(key=>key.classList.remove('held'));}
+  function cancel(){window.ThreeEPerformance?.cancel();window.ThreeEDJ?.cancel();epoch++;window.ThreeEDock?.cancel();clearTimeout(dirtyTimer);dirtyTimer=null;dirty.clear();for(const number of notes)C.send('midiNote',{channel,number,value:0});notes.clear();contacts.clear();heldKeys.clear();for(const id of activePointers)if(piano.hasPointerCapture(id))piano.releasePointerCapture(id);activePointers.clear();piano.querySelectorAll('.held').forEach(key=>key.classList.remove('held'));}
   function describe(info){
     if(info?.midi)midiDescription=info.midi;else if(midiDescription)info={...info,midi:midiDescription};
-    window.ThreeEDock?.describe(info);window.ThreeEDJ?.describe(info);
+    window.ThreeEPerformance?.describe(info);window.ThreeEDock?.describe(info);window.ThreeEDJ?.describe(info);
     if(!info?.midi)return;output=info.midi.selected;
     const select=$('midiOutput'),signature=JSON.stringify(info.midi.ports);
     if(select.dataset.ports!==signature){select.replaceChildren();const off=document.createElement('option');off.value=-1;off.textContent='MIDI off / choose output';select.append(off);for(const port of info.midi.ports){const item=document.createElement('option');item.value=port.id;item.textContent=port.name;select.append(item);}select.dataset.ports=signature;}
@@ -151,7 +169,11 @@
     select.value=output;$('midiStatus').textContent=output>=0?'Sending to '+info.midi.status+' · Ableton: 3E Phone Bar':info.platform==='windows'?'Choose a MIDI output. Ableton uses a loopback port such as loopMIDI.':info.midi.status;
   }
   // The MIDI controls are in use while a note is held or the studio is open.
-  window.ThreeESurface={cancel,describe,openStudio,setControl(number,value){values.set(number,value);render(number,value);},busy:()=>notes.size>0||!studio.hidden,state(ready){window.ThreeEDJ?.state(ready);if(!ready){midiDescription=null;cancel();studio.querySelectorAll('.vinyl').forEach(v=>v.classList.remove('is-spinning'));$('midiStatus').textContent='Disconnected — controls paused';}else {if(C.info)describe(C.info);if(!studio.hidden)C.send('info');}}};
+  window.ThreeESurface={cancel,describe,openStudio,pianoChannel:()=>pianoChannel,setScale(next){
+    const before=JSON.stringify([scaleState?.root_note,scaleState?.scale_intervals,scaleState?.scale_mode,scaleState?.piano_modes]);
+    const after=JSON.stringify([next?.root_note,next?.scale_intervals,next?.scale_mode,next?.piano_modes]);
+    scaleState=next;if(before!==after){cancel();drawPiano();}
+  },cycleLabels(){cancel();displayMode=(displayMode+1)%3;drawPiano();return displayMode;},setControl(number,value){values.set(number,value);render(number,value);},busy:()=>notes.size>0||!studio.hidden,state(ready){window.ThreeEPerformance?.state(ready);window.ThreeEDJ?.state(ready);if(!ready){midiDescription=null;cancel();studio.querySelectorAll('.vinyl').forEach(v=>v.classList.remove('is-spinning'));$('midiStatus').textContent='Disconnected — controls paused';}else {if(C.info)describe(C.info);if(!studio.hidden)C.send('info');}}};
   // Restore the rest of the studio as it was left: velocity, then view.
   function restore(){const velocity=+P.get('velocity',100);if(velocity>=1&&velocity<=127)$('noteVelocity').value=velocity;
     const p=Math.trunc(+P.get('pianoChannel',pianoChannel));if(p>=0&&p<=14)pianoChannel=p;

@@ -3,14 +3,20 @@
 No keyboard emulation, Accessibility prompts, or guessing at UI button names.
 The original MIDITouchbar device/parameter implementation is unchanged.
 """
-import fcntl
+try:
+    import fcntl
+except ImportError:
+    fcntl = None
+    import msvcrt
 import json
 import math
 import os
+import sys
 import time
 import uuid
 
-ROOT = os.path.expanduser("~/Library/Application Support/Strip3/AbletonRecord")
+ROOT = (os.path.expanduser("~/Library/Application Support/Strip3/AbletonRecord") if sys.platform != "win32"
+        else os.path.join(os.getenv("LOCALAPPDATA", os.path.expanduser("~")), "Strip3", "AbletonRecord"))
 TOGGLES = {"record": "record_mode", "session": "session_record",
            "punch-in": "punch_in", "punch-out": "punch_out",
            "overdub": "arrangement_overdub", "loop": "loop",
@@ -29,9 +35,13 @@ class RecordServer:
         os.makedirs(self.responses, mode=0o700, exist_ok=True)
         self.lock = open(os.path.join(root, "server.lock"), "a")
         try:
-            fcntl.flock(self.lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            if fcntl:
+                fcntl.flock(self.lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            else:
+                self.lock.seek(0)
+                msvcrt.locking(self.lock.fileno(), msvcrt.LK_NBLCK, 1)
             self.active = True
-        except BlockingIOError:
+        except OSError:
             self.active = False
         if self.active:
             self.publish()

@@ -446,7 +446,7 @@ public sealed class PhoneTrackpad : IDisposable {
             if (pairing && !CanShowPairing(request.RemoteEndPoint.Address, owner.Address)) {
                 context.Response.StatusCode = 403; context.Response.Close(); return;
             }
-            var resource = request.Url.AbsolutePath switch { "/" => "PhoneTrackpad.html", "/pad.js" => "PhoneTrackpad.js", "/surface.js" => "surface.js", "/dj.js" => "dj.js", "/dj.css" => "dj.css", "/dock.js" => "dock.js", "/clip.js" => "clip.js", "/surface.css" => "surface.css", "/host.js" => "host.js", "/pair" => "pair", "/icon.png" => "icon.png", _ => null };
+            var resource = request.Url.AbsolutePath switch { "/" => "PhoneTrackpad.html", "/pad.js" => "PhoneTrackpad.js", "/surface.js" => "surface.js", "/performance.js" => "performance.js", "/performance-catalog.js" => "performance-catalog.js", "/dj.js" => "dj.js", "/dj.css" => "dj.css", "/dock.js" => "dock.js", "/clip.js" => "clip.js", "/surface.css" => "surface.css", "/host.js" => "host.js", "/pair" => "pair", "/icon.png" => "icon.png", _ => null };
             if (resource == null) { Refuse(context.Response, 404, "Nothing here. Open the Track Phone link from the computer's QR code."); return; }
             var response = context.Response;
             response.ContentType = resource.EndsWith(".png") ? "image/png" : resource.EndsWith(".js") ? "text/javascript; charset=utf-8" : resource.EndsWith(".css") ? "text/css; charset=utf-8" : "text/html; charset=utf-8";
@@ -791,6 +791,7 @@ input{width:100%;padding:13px;border:1px solid #415260;border-radius:10px;backgr
 
     private string HostInfo(IPAddress local,bool full) {
         var fields=JsonSerializer.Deserialize<Dictionary<string,JsonElement>>(JsonSerializer.Serialize(full?input.GetInfo():input.GetConnectionInfo()));
+        fields["performance"]=JsonSerializer.SerializeToElement(PerformanceBridge.Default.Read());
         fields["connection"]=JsonSerializer.SerializeToElement(PhoneNetwork.Describe(local,port));
         return JsonSerializer.Serialize(fields);
     }
@@ -958,6 +959,7 @@ input{width:100%;padding:13px;border:1px solid #415260;border-radius:10px;backgr
             case "midiCC": sink.Midi(false,Range("channel",0,15),Range("number",0,119),Range("value",0,127)); break;
             case "midiNote": sink.Midi(true,Range("channel",0,15),Range("number",0,127),Range("value",0,127)); break;
             case "midiPanic": sink.MidiPanic(); break;
+            case "performance": PerformanceBridge.Default.Send(command); break;
             case "dj": sink.DJ(PhoneDJCommand.Parse(command)); break;
             case "shortcut": sink.Shortcut(Range("id",0,ShortcutCount-1)); break;
             case "releaseAll": sink.ReleaseAll(); break;
