@@ -1,21 +1,27 @@
 """League of Legends macro helper (Windows).
 
 Features (only active while the League game window is focused):
+  Macro keys never reach the game themselves: a quick click does one thing, holding another.
+  * N             -> click: lock / unlock the camera.
+                     hold while locked: unlock, drag the camera with the mouse, lock again on release.
+                     hold while unlocked: just drag (stays unlocked until you click N again).
+                     The real lock state is re-checked from your own (green) health bar.
+  * B             -> click: N's old League binds (recall, item 6, ...), now on RECALL_KEY.
+                     hold: open the shop.
+  * Space         -> click: Space as usual (E, attack-move, item 3).   hold: Stop every 0.35 s.
+  * Win           -> Win as usual (R, item 1, ...); the Start menu never opens in game.
+  * MB5           -> click: MB5 as usual (centre camera).
+                     hold (Kalista): kite. Attack (attack-move), one move order to the cursor
+                     during the windup (= a Martial Poise hop), wait for the hop to land and the
+                     attack timer, repeat. Uses your live attack speed and boots tier.
   * Scroll wheel  -> holds 1, next scroll releases it and holds 2, then 3, 4, back to 1.
                      Scroll up = next, scroll down = previous. Any other key/click releases it.
-  * Hold N        -> sends Stop (STOP_KEY) right away, then every 0.6 s while N is held.
-  * Hold Space    -> unlocks the camera (if locked) and pans it with the mouse right away
-                     (holds PAN_KEY); Space still does its own binds too.
-  * Hold MB2      -> (Kalista) right-clicks KITE_CLICKS times per attack at your live attack
-                     speed, so every attack windup gets a move order (= a Martial Poise hop)
-                     and the next attack starts on time. Attack speed is re-read while held.
-  * Tab + Win     -> quick tap both: locks the camera (and resets the lock guess if it drifted).
-  * Win key       -> Start menu is blocked from popping up when you tap Win in game.
   * Kalista E     -> line on the target's health bar at the HP Rend kills at (moves right
                      with more spears) + lightning around the screen when Rend kills
                      (pulsing border when one more spear would kill). See lol_execute.py.
 
-Keybinds it relies on are set by lol_settings.py (stop = v, camera lock = y, pan = h).
+Keybinds it relies on are set by lol_settings.py (stop = v, camera lock = y, pan = h,
+N's old binds = j, shop = b, attack-move = F9).
 
 Setup:  pip install pynput rapidocr_onnxruntime mss
 Run:    3£ tray menu -> LoL macros (no tray icon of its own; or: python lol.py, Ctrl+C to quit)
@@ -38,13 +44,24 @@ import lol_execute
 GAME_TITLE = "League of Legends (TM) Client"
 CYCLE_KEYS = ["1", "2", "3", "4"]
 STOP_KEY = "v"            # must match evtPlayerStopPosition
-STOP_INTERVAL = 0.6
+STOP_INTERVAL = 0.35
+HOLD_TIME = 0.18          # a macro key held longer than this is a hold, shorter is a click
+RECALL_KEY = "j"          # N's old League binds (recall, item 6, ...) live here now
+SHOP_KEY = "b"            # must match evtOpenShop
+ATTACK_KEY = "f9"         # must match evtPlayerAttackMove (attack-move at the cursor)
 CAM_LOCK_KEY = "y"        # must match evtCameraLockToggle
 PAN_KEY = "h"             # must match evtOnUIMouse4Pan
-COMBO_HOLD = 0.25         # Tab+Win released within this = lock the camera
 CAMERA_STARTS_LOCKED = True
-KITE_CLICKS = 3           # right-clicks per attack while MB2 is held (start, during windup, after)
-KITE_AS_POLL = 0.05       # how often attack speed is re-read while MB2 is held
+KITE_AS_POLL = 0.05       # how often attack speed is re-read while kiting
+# Kalista's attack and Martial Poise (League wiki: List of champions/Basic attacks and
+# Template:Data Kalista/Martial Poise).
+KAL_BASE_AS = 0.694       # base attack speed
+KAL_WINDUP = 0.36         # windup = 36% of the attack at base attack speed
+KAL_WINDUP_MOD = 0.75     # only 75% of the attack-speed change shortens the windup
+HOP_RANGE = (240, 263, 280, 300)     # max hop distance by boots tier 0-3
+HOP_SPEED = (1025, 1025, 1100, 1160)  # hop speed by boots tier (wiki lists 3 values)
+MOVE_AT = 0.6             # the move order goes in at 60% of the windup (latest move wins)
+KITE_MARGIN = 0.03        # extra wait after the hop lands before the next attack
 watcher = None
 
 # ---------------- Win32 SendInput (scan codes, games read these reliably) -------------
@@ -57,7 +74,9 @@ user32.GetWindowLongW.argtypes = [wt.HWND, ctypes.c_int]
 user32.SetWindowLongW.argtypes = [wt.HWND, ctypes.c_int, wt.LONG]
 user32.SetWindowPos.argtypes = [wt.HWND, wt.HWND, ctypes.c_int, ctypes.c_int,
                                 ctypes.c_int, ctypes.c_int, wt.UINT]
-SCAN = {"1": 0x02, "2": 0x03, "3": 0x04, "4": 0x05, "5": 0x06, "v": 0x2F, "y": 0x15, "h": 0x23}
+SCAN = {"1": 0x02, "2": 0x03, "3": 0x04, "4": 0x05, "5": 0x06, "v": 0x2F, "y": 0x15, "h": 0x23,
+        "j": 0x24, "b": 0x30, "space": 0x39, "f9": 0x43}
+KEYEVENTF_EXTENDEDKEY = 0x0001
 KEYEVENTF_KEYUP, KEYEVENTF_SCANCODE = 0x0002, 0x0008
 ULONG_PTR = ctypes.c_size_t
 
@@ -122,9 +141,11 @@ def game_focused():
 
 
 # ---------------- state ----------------
-VK_TAB, VK_LWIN, VK_N, VK_SPACE, VK_Y = 0x09, 0x5B, 0x4E, 0x20, 0x59
+VK_LWIN, VK_N, VK_B, VK_SPACE, VK_Y = 0x5B, 0x4E, 0x42, 0x20, 0x59
 WM_KEYDOWN, WM_KEYUP, WM_SYSKEYDOWN, WM_SYSKEYUP = 0x100, 0x101, 0x104, 0x105
 WM_MOUSEWHEEL = 0x020A
+WM_RBUTTONDOWN = 0x0204
+WM_XBUTTONDOWN, WM_XBUTTONUP, XBUTTON2 = 0x020B, 0x020C, 2
 MOUSE_DOWNS = {0x0201, 0x0204, 0x0207, 0x020B}  # L, R, M, X button down
 LLKHF_INJECTED, LLMHF_INJECTED = 0x10, 0x01
 
@@ -133,9 +154,8 @@ lock = threading.Lock()
 pressed = set()                  # physical keys currently down
 cycle_idx = -1                   # index into CYCLE_KEYS, -1 = none
 held_num = None                  # number key we are holding
-n_held = False
-combo = {"active": False, "start": 0.0, "panning": False}
 camera_locked = CAMERA_STARTS_LOCKED
+cam = {"dragging": False, "relock": False, "quiet_until": 0.0, "clicks": 0}
 
 
 def release_num(reset=False):
@@ -155,47 +175,68 @@ def do_scroll(direction):
     key_down(held_num)
 
 
+def mb5_click():
+    """MB5 as the game knows it (centre camera)."""
+    for f in (0x0080, 0x0100):          # MOUSEEVENTF_XDOWN, XUP; mouseData 2 = XBUTTON2 = MB5
+        inp = INPUT(type=0, u=_U(mi=MOUSEINPUT(0, 0, 2, f, 0, 0)))
+        user32.SendInput(1, ctypes.byref(inp), ctypes.sizeof(INPUT))
+        time.sleep(0.02)
+
+
+# ---- camera (N) ----
+def toggle_camera():
+    global camera_locked
+    tap(CAM_LOCK_KEY)
+    camera_locked = not camera_locked
+    cam["quiet_until"] = time.time() + 0.8   # the camera glides after a toggle: don't judge it yet
+
+
+def camera_hold_start():
+    """Locked: unlock, drag while held, lock again on release. Unlocked: just drag."""
+    cam["relock"] = camera_locked
+    if camera_locked:
+        toggle_camera()
+        time.sleep(0.05)                     # let the game unlock before the pan key goes down
+    key_down(PAN_KEY)
+    cam["dragging"] = True
+
+
+def camera_hold_end():
+    if cam["dragging"]:
+        key_up(PAN_KEY)
+        cam["dragging"] = False
+    if cam["relock"]:
+        cam["relock"] = False
+        if not camera_locked:
+            toggle_camera()
+
+
+# ---- stop (Space) ----
+stop_state = {"on": False}
+
+
 def stop_spam():
-    while n_held:
-        actions.put(lambda: tap(STOP_KEY))
+    while stop_state["on"]:
+        tap(STOP_KEY)
         time.sleep(STOP_INTERVAL)
 
 
-def pan_start():
-    global camera_locked
-    if combo["panning"]:
-        return
-    if camera_locked:
-        tap(CAM_LOCK_KEY)
-        camera_locked = False
-        time.sleep(0.05)       # let the game unlock before the pan key goes down
-    key_down(PAN_KEY)
-    combo["panning"] = True
+def stop_start():
+    if not stop_state["on"]:
+        stop_state["on"] = True
+        threading.Thread(target=stop_spam, daemon=True).start()
 
 
-def pan_end():
-    if combo["panning"]:
-        key_up(PAN_KEY)
-        combo["panning"] = False
+def stop_end():
+    stop_state["on"] = False
 
 
-def combo_end():
-    global camera_locked
-    if not combo["active"]:
-        return
-    combo["active"] = False
-    # You only tap Tab+Win to lock a camera you can see is free, so lock it even if we thought it
-    # was locked already: that also corrects our guess if it ever got out of step with the game.
-    if time.time() - combo["start"] < COMBO_HOLD:
-        tap(CAM_LOCK_KEY)
-        camera_locked = True
-
-
+# ---- kite (MB5) ----
 kite = {"held": False, "as": None}
 
 
 def kite_as_loop():
-    """Keeps kite["as"] fresh while MB2 is held (items like Rageblade change it every attack)."""
+    """Keeps kite["as"] fresh while kiting (items like Rageblade change it every attack)."""
     while kite["held"]:
         a = lol_execute.read_attack_speed()
         if a:
@@ -203,22 +244,140 @@ def kite_as_loop():
         time.sleep(KITE_AS_POLL)
 
 
+def windup_time(attack_speed):
+    """League's windup rule: base windup + (windup at this speed - base windup) * modifier."""
+    base = KAL_WINDUP / KAL_BASE_AS
+    return base + (KAL_WINDUP / attack_speed - base) * KAL_WINDUP_MOD
+
+
+def _wait_until(when_fn):
+    """Sleep until when_fn() (re-evaluated, so a new attack speed counts at once) or release."""
+    while kite["held"] and time.perf_counter() < when_fn():
+        time.sleep(0.003)
+    return kite["held"]
+
+
 def kite_loop():
-    """Right-click now, then every 1/(attack speed * KITE_CLICKS) s, re-checking the speed in
-    small steps so a faster attack speed takes effect within the same attack."""
+    """attack -> move order inside the windup (hop) -> hop lands + attack ready -> attack ..."""
     while kite["held"]:
+        t0 = time.perf_counter()
+        tap(ATTACK_KEY)
+        cam["clicks"] += 1
+        AS = lambda: kite["as"] or 1.0
+        if not _wait_until(lambda: t0 + MOVE_AT * windup_time(AS())):
+            break
         right_click()
-        last = time.perf_counter()
-        while kite["held"]:
-            a = kite["as"] or 1.0
-            if time.perf_counter() - last >= 1.0 / (a * KITE_CLICKS):
-                break
-            time.sleep(0.004)
+        tier = ((watcher.me or {}).get("boots_tier") or 0) if watcher else 0
+        hop = HOP_RANGE[tier] / HOP_SPEED[tier]
+        if not _wait_until(lambda: t0 + max(1.0 / AS(), windup_time(AS()) + hop + KITE_MARGIN)):
+            break
 
 
-def kite_on():
+def kite_start():
+    if kite["held"]:
+        return
     me = watcher.me if watcher else None
-    return bool(me and me.get("kalista"))
+    if not (me and me.get("kalista")):
+        return
+    kite["held"] = True
+    kite["as"] = me.get("attack_speed") or kite["as"]
+    threading.Thread(target=kite_as_loop, daemon=True).start()
+    threading.Thread(target=kite_loop, daemon=True).start()
+
+
+def kite_end():
+    kite["held"] = False
+
+
+# Every macro key: a quick click does one thing, holding does another, and the key itself never
+# reaches the game (so its own League binds can't fire on top of the macro).
+#   key: (on click, on hold start, on hold end)
+MACRO_KEYS = {
+    VK_N: (toggle_camera, camera_hold_start, camera_hold_end),
+    VK_B: (lambda: tap(RECALL_KEY), lambda: tap(SHOP_KEY), None),
+    VK_SPACE: (lambda: tap("space"), stop_start, stop_end),
+    "MB5": (mb5_click, kite_start, kite_end),
+}
+macro_down = {}                  # vk -> {"t": press time, "hold": hold started}
+
+
+def _hold_timer(vk, t0):
+    time.sleep(HOLD_TIME)
+    st = macro_down.get(vk)
+    if st and st["t"] == t0 and not st["hold"]:
+        st["hold"] = True
+        if MACRO_KEYS[vk][1]:
+            actions.put(MACRO_KEYS[vk][1])
+
+
+def macro_press(vk):
+    t0 = time.perf_counter()
+    macro_down[vk] = {"t": t0, "hold": False}
+    threading.Thread(target=_hold_timer, args=(vk, t0), daemon=True).start()
+
+
+def macro_release(vk):
+    st = macro_down.pop(vk, None)
+    if not st:
+        return
+    click, _, hold_end = MACRO_KEYS[vk]
+    if st["hold"]:
+        if hold_end:
+            if vk == "MB5":
+                kite_end()           # stop at once, not after queued actions
+            actions.put(hold_end)
+    elif click:
+        actions.put(click)
+
+
+# ---- camera lock check: your own (green) health bar sits still in the middle when locked ----
+def camera_watch():
+    """Corrects `camera_locked` from the screen, so a missed toggle can never leave N backwards.
+    Unlocked for sure: your bar is far from the middle, or it moved while we thought it locked.
+    Locked: your bar stays dead centre for 2.5 s while you keep giving move orders."""
+    global camera_locked
+    import mss
+    import numpy as np
+    grabber = getattr(mss, "MSS", mss.mss)()
+    hist = []
+    while True:
+        time.sleep(0.12)
+        try:
+            if not game_focused() or cam["dragging"] or time.time() < cam["quiet_until"]:
+                hist.clear()
+                continue
+            r = lol_execute.game_rect()
+            if not r:
+                continue
+            w, h = r[2] - r[0], r[3] - r[1]
+            shot = grabber.grab({"left": r[0], "top": r[1] + int(h * 0.05),
+                                 "width": w, "height": int(h * 0.77)})
+            a = np.frombuffer(shot.bgra, np.uint8).reshape(shot.height, shot.width, 4)[::2, ::2]
+            b_, g_, r_ = (a[..., i].astype(np.int16) for i in range(3))
+            green = (g_ > 140) & (g_ - r_ > 60) & (g_ - b_ > 60)
+            good = np.nonzero(green.sum(axis=1) > w * 0.01)[0]   # rows with a bar-wide green run
+            if len(good) < 3 or (good[-1] - good[0]) * 2 > h * 0.02:  # none, or not one bar
+                hist.clear()
+                continue
+            xs = np.nonzero(green[good].any(axis=0))[0]
+            left = xs.min() * 2 / w                              # bar's left end (HP doesn't move it)
+            cx = left + 0.054                                     # ~half a full bar: your champion
+            top = (good[0] * 2 + h * 0.05) / h
+            now = time.time()
+            hist.append((now, cx, top, cam["clicks"]))
+            hist[:] = [p for p in hist if now - p[0] <= 2.5]
+            if camera_locked:
+                moved = len(hist) >= 2 and (abs(hist[-1][1] - hist[-2][1]) > 0.01
+                                            or abs(hist[-1][2] - hist[-2][2]) > 0.01)
+                if abs(cx - 0.5) > 0.08 or moved:
+                    camera_locked = False
+            elif (len(hist) >= 15 and now - hist[0][0] >= 2.3 and hist[-1][3] - hist[0][3] >= 2
+                  and all(abs(p[1] - 0.5) < 0.03 for p in hist)
+                  and max(p[2] for p in hist) - min(p[2] for p in hist) < 0.004):
+                camera_locked = True
+        except Exception as e:
+            print("camera watch:", e)
+            time.sleep(1)
 
 
 def worker():
@@ -231,11 +390,8 @@ def worker():
 
 
 # ---------------- hooks ----------------
-game_hwnd = None
-
-
 def kb_filter(msg, data):
-    global n_held, camera_locked, game_hwnd
+    global camera_locked
     if data.flags & LLKHF_INJECTED:
         return True  # our own SendInput events
     vk = data.vkCode
@@ -249,57 +405,51 @@ def kb_filter(msg, data):
 
     # key-up handling always runs (even if focus changed) so nothing gets stuck
     if up:
-        if vk == VK_N:
-            n_held = False
-        if vk in (VK_TAB, VK_LWIN):
-            actions.put(combo_end)
-        if vk == VK_SPACE:
-            actions.put(pan_end)
+        if vk in macro_down:
+            macro_release(vk)
+            kb_listener.suppress_event()
         return True
 
     if not game_focused():
         return True
-    hwnd = user32.GetForegroundWindow()
-    if hwnd != game_hwnd:      # new game window = new game, which starts with the camera locked
-        game_hwnd = hwnd
-        camera_locked = CAMERA_STARTS_LOCKED
+
+    if vk in MACRO_KEYS:
+        if first_down:
+            if held_num:
+                actions.put(lambda: release_num(reset=True))
+            macro_press(vk)
+        if vk in macro_down:
+            kb_listener.suppress_event()     # the game only sees what the macro sends
+        return True
 
     if first_down:
         if vk == VK_Y:         # you toggled the camera lock yourself
             camera_locked = not camera_locked
+            cam["quiet_until"] = time.time() + 0.8
         if held_num:
             actions.put(lambda: release_num(reset=True))  # any other key releases the number
         if vk == VK_LWIN:
             actions.put(mask_win)
-        if vk == VK_N and not n_held:
-            n_held = True
-            threading.Thread(target=stop_spam, daemon=True).start()
-        if vk == VK_SPACE:
-            actions.put(pan_start)
-        if vk in (VK_TAB, VK_LWIN) and VK_TAB in pressed and VK_LWIN in pressed and not combo["active"]:
-            combo.update(active=True, start=time.time())
     return True
-
-
-WM_RBUTTONDOWN, WM_RBUTTONUP = 0x0204, 0x0205
 
 
 def mouse_filter(msg, data):
     if data.flags & LLMHF_INJECTED:
         return True
-    if msg == WM_RBUTTONUP and kite["held"]:   # always end the kite, even if focus moved
-        kite["held"] = False
+    mb5 = msg in (WM_XBUTTONDOWN, WM_XBUTTONUP) and (data.mouseData >> 16) == XBUTTON2
+    if mb5 and msg == WM_XBUTTONUP and "MB5" in macro_down:   # always finish, even if focus moved
+        macro_release("MB5")
         mouse_listener.suppress_event()
     if not game_focused():
         return True
-    if msg == WM_RBUTTONDOWN and not kite["held"] and kite_on():
-        if held_num:
-            actions.put(lambda: release_num(reset=True))
-        kite["held"] = True
-        kite["as"] = (watcher.me or {}).get("attack_speed") or kite["as"]
-        threading.Thread(target=kite_as_loop, daemon=True).start()
-        threading.Thread(target=kite_loop, daemon=True).start()
-        mouse_listener.suppress_event()        # the game gets our timed clicks instead
+    if mb5 and msg == WM_XBUTTONDOWN:
+        if "MB5" not in macro_down:
+            if held_num:
+                actions.put(lambda: release_num(reset=True))
+            macro_press("MB5")
+        mouse_listener.suppress_event()          # the game only sees what the macro sends
+    if msg == WM_RBUTTONDOWN:
+        cam["clicks"] += 1
     if msg == WM_MOUSEWHEEL:
         delta = ctypes.c_short(data.mouseData >> 16).value
         actions.put(lambda d=(1 if delta > 0 else -1): do_scroll(d))
@@ -311,8 +461,9 @@ def mouse_filter(msg, data):
 
 def cleanup():
     kite["held"] = False
+    stop_state["on"] = False
     release_num()
-    if combo["panning"]:
+    if cam["dragging"]:
         key_up(PAN_KEY)
 
 
@@ -514,6 +665,7 @@ if __name__ == "__main__":
     with open(PID_FILE, "w") as f:
         f.write(str(os.getpid()))
     threading.Thread(target=worker, daemon=True).start()
+    threading.Thread(target=camera_watch, daemon=True).start()
     kb_listener = keyboard.Listener(win32_event_filter=kb_filter)
     mouse_listener = mouse.Listener(win32_event_filter=mouse_filter)
     kb_listener.start()

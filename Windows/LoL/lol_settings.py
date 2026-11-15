@@ -10,7 +10,9 @@ CFG = Path(r"C:\Riot Games\League of Legends\Config")
 INI = CFG / "input.ini"
 JSON = CFG / "PersistedSettings.json"
 
-# 1) Key swaps applied to every binding (simultaneously, so B->N doesn't then become N->Win)
+# 1) Key swaps applied to every binding (simultaneously, so B->N doesn't then become N->Win).
+#    Later change: lol.py now uses N itself, so the binds on [n] were moved again to [j]
+#    (B clicks send j).
 SWAP = {"[n]": "[L Win]", "[b]": "[n]"}
 
 # 2) Explicit bindings set after the swap
@@ -23,10 +25,11 @@ SET = {
     "evtCameraSnap": "[Button 5]",                # MB5 = center camera
     "evtChatHistory": "[Alt][k],[Button 3]",      # MB3 = chat history
     "evtHoldShowScoreBoard": "[Alt][k],[Button 3]",  # MB3 = scoreboard
-    "evtPlayerStopPosition": "[v]",               # stop (sent by lol.py while holding N)
-    "evtCameraLockToggle": "[y]",                 # sent by lol.py (Space unlocks, Tab+Win tap locks)
+    "evtPlayerStopPosition": "[v]",               # stop (sent by lol.py while holding Space)
+    "evtPlayerAttackMove": "[space],[F9]",        # F9: attack-move sent by the MB5 kite
+    "evtCameraLockToggle": "[y]",                 # sent by lol.py (N click toggles, N hold drags)
     "FreeDynamicCameraToggle": "",                # off: on h it flipped camera modes on every Space pan
-    "evtOnUIMouse4Pan": "[h]",                    # lol.py holds h while Space is held
+    "evtOnUIMouse4Pan": "[h]",                    # lol.py holds h while N is held
 }
 
 

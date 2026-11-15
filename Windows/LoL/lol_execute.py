@@ -106,6 +106,28 @@ def read_attack_speed():
         return None
 
 
+BOOTS_T1 = {1001}                                            # Boots
+BOOTS_T2 = {3006, 3009, 3020, 3047, 3111, 3117, 3158, 2422}  # Berserker's ... Lucidity, Magical
+BOOTS_T2_NAMES = ("greaves", "boots", "shoes", "treads", "steelcaps", "soles", "souls")
+
+
+def boots_tier(items):
+    """0 no boots, 1 Boots, 2 finished boots, 3 upgraded (tier 3) boots. Tier 3 boots are told
+    apart by not being a known tier 1/2 item while still being boots-like by name."""
+    tier = 0
+    for it in items:
+        iid, name = it.get("itemID"), (it.get("displayName") or "").lower()
+        if iid in BOOTS_T1:
+            tier = max(tier, 1)
+        elif iid in BOOTS_T2:
+            tier = max(tier, 2)
+        elif any(n in name for n in BOOTS_T2_NAMES) or name in (
+                "swiftmarch", "armored advance", "chainlaced crushers", "forever forward",
+                "gunmetal greaves", "spellslinger's shoes", "crimson lucidity"):
+            tier = max(tier, 3)
+    return tier
+
+
 def read_me():
     """Your stats from the game, or None if not in game / not Kalista."""
     try:
@@ -114,8 +136,8 @@ def read_me():
     except Exception:
         return None
     me_id = ap.get("riotId") or ap.get("summonerName")
-    champ = next((p.get("rawChampionName", "") for p in players
-                  if (p.get("riotId") or p.get("summonerName")) == me_id), "")
+    mine = next((p for p in players if (p.get("riotId") or p.get("summonerName")) == me_id), {})
+    champ = mine.get("rawChampionName", "")
     s = ap["championStats"]
     pct = s.get("armorPenetrationPercent", 1.0)
     pen_pct = 0.0 if pct in (0, 1) else (1 - pct if pct < 1 else 0.0)  # API gives a multiplier
@@ -127,6 +149,7 @@ def read_me():
         "flat_pen": max(s.get("armorPenetrationFlat", 0.0), s.get("physicalLethality", 0.0)),
         "magic_pen": s.get("magicPenetrationFlat", 0.0),
         "attack_speed": s.get("attackSpeed", 0.0),
+        "boots_tier": boots_tier(mine.get("items", [])),
         "e_level": ap.get("abilities", {}).get("E", {}).get("abilityLevel", 0),
         "coup": any(r.get("id") == COUP_DE_GRACE
                     for r in ap.get("fullRunes", {}).get("generalRunes", [])),
