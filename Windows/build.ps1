@@ -3,6 +3,8 @@ param([switch]$SkipBuild)
 $ErrorActionPreference = 'Stop'
 $repository = Split-Path -Parent $PSScriptRoot
 $version = (Get-Content (Join-Path $PSScriptRoot 'version.json') -Raw | ConvertFrom-Json).version
+& powershell.exe -NoProfile -File (Join-Path $PSScriptRoot 'Tests\AppOnlyUpdate.Tests.ps1')
+if ($LASTEXITCODE -ne 0) { throw 'App-only installer preservation checks failed.' }
 dotnet run --project (Join-Path $PSScriptRoot 'DragTests')
 if ($LASTEXITCODE -ne 0) { throw 'Three-finger drag recovery checks failed.' }
 if ($version -notmatch '^\d+\.\d+\.\d+$') { throw 'Invalid Windows release version.' }
@@ -113,6 +115,7 @@ Unregister-ScheduledTask -TaskName '3£Windows Kiro Theme' -Confirm:$false -Erro
 $installer = [IO.File]::ReadAllText((Join-Path $PSScriptRoot 'Installer.template.ps1'))
 $installer = $installer.Replace('{{CLICKS_ACCENTS_SHA256}}',(Get-FileHash -LiteralPath (Join-Path $build 'keyboard\ClicksAccents.exe') -Algorithm SHA256).Hash)
 $installer = $installer.Replace('{{LAUNCHER}}',[IO.File]::ReadAllText((Join-Path $PSScriptRoot 'Launcher.ps1')))
+$installer = $installer.Replace('{{APP_ONLY_FUNCTIONS}}',[IO.File]::ReadAllText((Join-Path $PSScriptRoot 'AppOnlyUpdate.ps1')))
 $installer = $installer.Replace('{{CLICKS_FUNCTIONS}}',[IO.File]::ReadAllText((Join-Path $PSScriptRoot 'Keyboard\ClicksScopedFunctions.ps1'))).Replace('{{CLICKS_ASSETS}}',($assetLines -join "`r`n"))
 $installer = $installer.Replace('{{VERSION}}',$version).Replace('{{POWERTOYS_CONFIG}}',[IO.File]::ReadAllText((Join-Path $PSScriptRoot 'PowerToys.json'))).Replace('{{KEYBOARD_CONFIG}}',[IO.File]::ReadAllText((Join-Path $PSScriptRoot 'Keyboard.template.kbd')))
 $installer = $installer.Replace('{{APP_X64}}',$payloads.x64).Replace('{{APP_ARM64}}',$payloads.arm64).Replace('{{KIRO_TASK}}',$kiroTemplate)

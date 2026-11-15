@@ -25,13 +25,20 @@ Legacy switch: use the Mac keyboard layout tray toggle instead.
 .PARAMETER RepairKeyboard
 Restore the Clicks-only Command/Ctrl mapping and double-tap voice shortcut.
 .PARAMETER AppOnly
-Update the app and startup integration without changing keyboard, touchpad or
-PowerToys module preferences. Used by the built-in updater.
+Replace app files only in an existing installation. Preserve network permissions,
+startup registrations, launchers, drivers and user preferences. No dependency
+installers run. Restart only when -RestartApp is also specified.
+.PARAMETER RestartApp
+Start the updated app after a successful -AppOnly update. Does not register startup tasks.
 #>
 [CmdletBinding()]
-param([switch]$Down, [switch]$KeyboardOnly, [switch]$AppOnly, [switch]$Install, [switch]$RepairKeyboard)
+param([switch]$Down, [switch]$KeyboardOnly, [switch]$AppOnly, [switch]$Install, [switch]$RepairKeyboard, [switch]$RestartApp)
 $ErrorActionPreference = 'Stop'
 $Version = '{{VERSION}}'
+if ($AppOnly -and ($Down -or $KeyboardOnly -or $Install -or $RepairKeyboard)) {
+    throw '-AppOnly cannot be combined with setup, removal or repair switches.'
+}
+if ($RestartApp -and -not $AppOnly) { throw '-RestartApp requires -AppOnly.' }
 # Existing installations launch without rerunning setup. Use -Install to reinstall.
 $EmbeddedLauncher = @'
 {{LAUNCHER}}
@@ -68,13 +75,14 @@ $EmbeddedAppArm64 = @'
 
 $principal = [Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()
 if (-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
-    $arguments = '-NoProfile -ExecutionPolicy Bypass -File "' + $PSCommandPath + '"'
+    $arguments = '-NoProfile -File "' + $PSCommandPath + '"'
     if ($Down) { $arguments += ' -Down' }
     if ($KeyboardOnly) { $arguments += ' -KeyboardOnly' }
     if ($AppOnly) { $arguments += ' -AppOnly' }
+    if ($RestartApp) { $arguments += ' -RestartApp' }
     if ($Install) { $arguments += ' -Install' }
     if ($RepairKeyboard) { $arguments += ' -RepairKeyboard' }
-    Start-Process powershell.exe -Verb RunAs -WindowStyle Hidden -ArgumentList $arguments
+    Start-Process powershell.exe -Verb RunAs -WindowStyle Normal -ArgumentList $arguments
     exit
 }
 $root = Join-Path $env:ProgramFiles '3EWindows'
@@ -84,6 +92,20 @@ $backupPath = Join-Path $data 'input-backup.clixml'
 $scanKey = 'HKLM:\SYSTEM\CurrentControlSet\Control\Keyboard Layout'
 $touchpadKey = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\PrecisionTouchPad'
 $gestureNames = @('ThreeFingerSlideEnabled','ThreeFingerTapEnabled','FourFingerSlideEnabled','FourFingerTapEnabled')
+
+{{APP_ONLY_FUNCTIONS}}
+
+# Exit before every full-setup path, including Stop-Suite's firewall cleanup.
+# The restricted in-app update gate is intentionally unchanged; this is the
+# explicit, reviewed manual app update path for existing installations.
+if ($AppOnly) {
+    $updateArchitecture = [Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString()
+    if ($updateArchitecture -notin @('X64','Arm64')) { throw '3£ supports x64 and ARM64 Windows.' }
+    $updatePayload = if ($updateArchitecture -eq 'Arm64') { $EmbeddedAppArm64 } else { $EmbeddedAppX64 }
+    Invoke-ThreeEAppOnlyUpdate -Root $root -Payload $updatePayload -Version $Version -InstallerPath $PSCommandPath
+    if ($RestartApp) { Start-Process -FilePath $appExe -WorkingDirectory $root -WindowStyle Hidden }
+    exit
+}
 
 function Stop-Suite {
     param([switch]$RemoveTasks)

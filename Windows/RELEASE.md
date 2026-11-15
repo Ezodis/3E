@@ -1,3 +1,13 @@
+3£ app-only updates preserve the host's deployment settings.
+
+- `-AppOnly` now takes a separate file-update path before full setup. It preserves firewall rules, HTTP URL permissions, scheduled tasks, Run entries, startup launchers, drivers and preferences. It installs no dependencies.
+- The payload is staged and validated before stopping application processes; file hashes and the installed version are checked, with file rollback on failure.
+- Manual elevation follows the existing Windows execution policy. The restricted/USB-only in-app update gate is unchanged.
+- Manual app-only updates leave the app stopped for verification. The built-in updater explicitly requests a normal app restart after success.
+- Includes the LoL timing, digit-cache and rendering fixes below.
+
+Previous release:
+
 3£ improves LoL macro timing and Rend display stability.
 
 - Tap/hold controls use actual press duration, cancel on focus loss, and cannot revive an older hold after a rapid re-press. A delayed MB5 timer no longer turns a hold into a Flash tap.

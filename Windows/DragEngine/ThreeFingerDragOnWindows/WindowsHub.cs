@@ -708,12 +708,12 @@ public sealed class WindowsHub : IDisposable {
         await File.WriteAllBytesAsync(installer, contents);
         if (Elevated()) {
             // Inherits this process's administrator token: no prompt, no window.
-            Process.Start(new ProcessStartInfo("powershell.exe", "-NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File \"" + installer + "\" -AppOnly") { UseShellExecute = false, CreateNoWindow = true })?.Dispose();
+            Process.Start(new ProcessStartInfo("powershell.exe", "-NoProfile -NonInteractive -WindowStyle Hidden -File \"" + installer + "\" -AppOnly -RestartApp") { UseShellExecute = false, CreateNoWindow = true })?.Dispose();
             return;
         }
         // Only reached without administrator rights: installing into Program
         // Files requires them, so this is the one case that asks.
-        Process.Start(new ProcessStartInfo("powershell.exe", "-NoProfile -ExecutionPolicy Bypass -File \"" + installer + "\" -AppOnly") { UseShellExecute = true, Verb = "runas" })?.Dispose();
+        Process.Start(new ProcessStartInfo("powershell.exe", "-NoProfile -File \"" + installer + "\" -AppOnly -RestartApp") { UseShellExecute = true, Verb = "runas" })?.Dispose();
     }
 
     private static async Task<byte[]> ReadVerifiedInstallerAsync(JsonElement release) {
