@@ -556,10 +556,11 @@ class ExecuteWatcher:
                     f"{tgt['stacks']},{me['ad']:.0f},{me['ap']:.0f},{me['pen_pct']:.2f},{me['flat_pen']:.0f},"
                     f"{me['e_level']},{int(bool(me.get('coup')))},{res['mult']:.3f},{res['dmg']:.0f},"
                     f"{res['state'] or ''}\n")
-        if res["state"] == "kill":
+        if res["state"] in ("kill", "kill-bar"):
             d = DATA / "lol_debug"
             d.mkdir(exist_ok=True)
-            frame.save(d / f"kill_{time.strftime('%H%M%S')}_{tgt['hp']}hp_{tgt['stacks']}sp.png")
+            # date first, so the "keep the newest 40" cleanup below really keeps the newest
+            frame.save(d / f"kill_{time.strftime('%Y%m%d-%H%M%S')}_{res['state']}_{tgt['hp']}hp_{tgt['stacks']}sp.png")
             for old in sorted(d.glob("kill_*.png"))[:-40]:
                 old.unlink()
 
@@ -668,24 +669,46 @@ class ExecuteWatcher:
         fill = bar_fill(frame, scale)
         if fill is None:
             return                     # bar not readable this frame: keep the last result
-        if self._stats_sig(frame, scale) != ocr_sig:
-            self.result = None         # armor/MR pixels changed: maybe another target, wait for OCR
+        prev, self._fast_fill = self._fast_fill, fill
+        px = (HEALTH_BAR[2] - HEALTH_BAR[0]) * scale        # bar width in pixels
+        # Same target? Armor/MR, max-HP digits and spear-count digits must look exactly as they did
+        # in the OCR'd frame, and the bar must not jump (a switch to a same-looking minion or camp
+        # usually does). Otherwise wait for OCR instead of mixing two targets.
+        if (self._ident(frame, scale) != ocr_sig or (fill - ocr_fill) * px > 2
+                or (prev is not None and abs(fill - prev) > 0.15)):
+            self.result = None
+            self._kill_streak = 0
             return
-        if abs(fill - ocr_fill) * (HEALTH_BAR[2] - HEALTH_BAR[0]) * scale >= 1:   # bar moved >= 1 px
+        if abs(fill - ocr_fill) * px >= 1:                      # bar moved >= 1 px since OCR
             tgt = dict(tgt, hp=round(fill * tgt["max_hp"]), hp_estimated=True)
         res = evaluate(me, tgt)
-        # lightning: exact OCR HP lights it at once; a bar estimate must agree on two frames (40 ms)
+        # The bar itself must agree with a kill too (catches a misread HP number).
+        if res["state"] == "kill" and fill * tgt["max_hp"] > res["dmg"] + 0.01 * tgt["max_hp"]:
+            res["state"] = "close"
+        # lightning: exact OCR HP lights it at once; a bar estimate must agree on 3 frames (60 ms)
         self._kill_streak = self._kill_streak + 1 if res["state"] == "kill" else 0
-        if res["state"] == "kill" and tgt.get("hp_estimated") and self._kill_streak < 2:
+        if res["state"] == "kill" and tgt.get("hp_estimated") and self._kill_streak < 3:
             res["state"] = "close"
         self.result = res
+        if res["state"] == "kill" and tgt.get("hp_estimated"):
+            self._log(me, tgt, dict(res, state="kill-bar"), frame)
+
+    _fast_fill = None
 
     @staticmethod
-    def _stats_sig(frame, scale):
-        """Pixels of the armor + MR numbers: same target -> same pixels (cheap identity check)."""
-        x0, y0, _, y1 = REGIONS["armor"]
-        x1 = REGIONS["mr"][2]
-        return hash(frame.crop((int(x0 * scale), int(y0 * scale), int(x1 * scale), int(y1 * scale))).tobytes())
+    def _ident(frame, scale):
+        """Cheap 'same target' fingerprint: armor + MR pixels, the max-HP digits (right half of
+        the HP text) and the spear-count digits, thresholded so glow/animation doesn't change it."""
+        def bits(box, cut=150):
+            x0, y0, x1, y1 = (int(v * scale) for v in box)
+            g = np.array(frame.crop((x0, y0, x1, y1)).convert("L"))
+            return np.packbits(g > cut).tobytes()
+        ax0, ay0, _, ay1 = REGIONS["armor"]
+        hx0, hy0, hx1, hy1 = REGIONS["health"]
+        icon = find_spear_slot(frame, scale)
+        stack = bits((icon[0] - 3, icon[1] + 20, icon[2] + 6, icon[3] + 4)) if icon else b""
+        return hash((bits((ax0, ay0, REGIONS["mr"][2], ay1)),
+                     bits(((hx0 + hx1) / 2 + 12, hy0, hx1, hy1)), stack))
 
     def _ocr_loop(self):
         while True:
@@ -702,7 +725,8 @@ class ExecuteWatcher:
                     if not tgt:
                         self._tgt = None
                     continue
-                self._tgt = (tgt, obs["fill"], self._stats_sig(frame, scale))
+                self._tgt = (tgt, obs["fill"], self._ident(frame, scale))
+                self._fast_fill = obs["fill"]
                 stable = tgt == self._prev
                 self._prev = tgt
                 me = self.me
