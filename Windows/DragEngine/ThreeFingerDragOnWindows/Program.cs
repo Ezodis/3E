@@ -15,6 +15,8 @@ public class Program {
     private static bool openPhoneTrackpad;
     [STAThread]
     static Task<int> Main(string[] args){
+        if (args.Length == 2 && args[0] == "--verify-tray-commands")
+            return Task.FromResult(TrayCommandChecks.Run(args[1]));
         openPhoneTrackpad = Array.Exists(args, arg => arg == "--phone-trackpad");
         if (args.Length == 2 && args[0] == "--verify-menu-rendering")
             return Task.FromResult(NativeHubMenu.CheckRendering(args[1]) ? 0 : 1);
@@ -117,7 +119,8 @@ public class Program {
             var context = new DispatcherQueueSynchronizationContext(
                 DispatcherQueue.GetForCurrentThread());
             SynchronizationContext.SetSynchronizationContext(context);
-            new App();
+            try { new App(); }
+            catch (Exception error) { Logger.Fatal(error); throw; }
             if (openPhoneTrackpad) App.Instance.Hub.OpenPhoneTrackpad();
         });
     }

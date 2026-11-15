@@ -20,9 +20,15 @@ public partial class App {
     public HandlerWindow HandlerWindow;
     public WindowsHub Hub;
 
-    public App(){
+    public App(string trayCommandReport = null){
         Instance = this;
         DispatcherQueue = DispatcherQueue.GetForCurrentThread();
+        UnhandledException += (_, e) => Logger.Fatal(e.Exception);
+        if (trayCommandReport != null) {
+            InitializeComponent();
+            TrayCommandChecks.Check(this, trayCommandReport);
+            return;
+        }
         SettingsData = SettingsData.load();
 
         // Without administrator rights, hand over to the installed elevated

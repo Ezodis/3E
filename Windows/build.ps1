@@ -92,6 +92,10 @@ if ($LASTEXITCODE -ne 0) { throw 'Native keyboard test harness failed to compile
 $report = Join-Path $build 'self-test.json'
 $testProcess = Start-Process -FilePath (Join-Path $build 'framework-x64\3£.exe') -ArgumentList ('--self-test "' + $report + '"') -Wait -PassThru -WindowStyle Hidden
 if ($testProcess.ExitCode -ne 0 -or -not (Test-Path -LiteralPath $report) -or -not (Get-Content -LiteralPath $report -Raw | ConvertFrom-Json).passed) { throw 'Release self-test failed.' }
+$trayReport = Join-Path $build 'tray-command-test.json'
+$trayTest = Start-Process -FilePath (Join-Path $build 'framework-x64\3£.exe') -ArgumentList ('--verify-tray-commands "' + $trayReport + '"') -PassThru -WindowStyle Hidden
+if (-not $trayTest.WaitForExit(30000)) { $trayTest.Kill(); throw 'Tray window check timed out.' }
+if ($trayTest.ExitCode -ne 0 -or -not (Test-Path -LiteralPath $trayReport) -or -not (Get-Content -LiteralPath $trayReport -Raw | ConvertFrom-Json).passed) { throw 'Packaged tray window/command check failed.' }
 dotnet run --project (Join-Path $PSScriptRoot 'PhoneTrackpadTests')
 if ($LASTEXITCODE -ne 0) { throw 'Phone trackpad network/disconnect tests failed.' }
 node (Join-Path $PSScriptRoot 'PhoneTrackpadTests\gestures.test.cjs')

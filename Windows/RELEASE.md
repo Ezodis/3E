@@ -1,5 +1,6 @@
 3£ corrects Rend's current-health coverage and target readings, and repairs tray-menu lifetimes.
 
+- Uses two persistent native WinUI command adapters at the tray boundary, while menu snapshots remain managed data. Adds a packaged tray-window startup and command check, plus bounded crash diagnostics.
 - Rend's line moves right with damage/current HP: 300 damage against 600 HP is halfway; lethal damage reaches the right edge immediately.
 - Lightning appears only for a fresh confirmed lethal reading. Almost-lethal borders, stale results and carried-over unreadable spear counts are removed.
 - Recognizes ordinary and epic monster portraits locally instead of guessing from HP. Gromp no longer gets the epic damage reduction. Obscured or invalid spear badges no longer become one spear.

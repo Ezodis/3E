@@ -18,6 +18,7 @@ public sealed partial class HandlerWindow : Window {
     public TrackTabWindows TrackTab { get; private set; }
     private readonly DispatcherTimer _iconTimer = new() { Interval = TimeSpan.FromSeconds(2) };
     private System.Drawing.Icon _trayArtwork;
+    private readonly Microsoft.UI.Xaml.Input.XamlUICommand _leftCommand, _rightCommand;
     private bool? _lightTaskbar;
     public string TrayIconForeground => _lightTaskbar == true ? "black" : "white";
 
@@ -25,16 +26,18 @@ public sealed partial class HandlerWindow : Window {
     public bool TouchpadExists;
     public bool InputReceiverInstalled;
 
-    public HandlerWindow(App app){
+    public HandlerWindow(App app, bool verifyTrayOnly = false){
         Logger.Log("Starting HandlerWindow...");
         InitializeComponent();
 
         _app = app;
-        // Native tray actions use managed commands; no hidden XamlUICommand/flyout
-        // participates in the Win32 popup's nested callback lifetime.
-        TaskbarIcon.LeftClickCommand = new HubMenuCommand(() =>
+        // Keep the two WinRT command adapters rooted for the window's lifetime.
+        // Native menu rows themselves are plain data and never own XAML controls.
+        _leftCommand = TrayCommandBridge.Create(() =>
             _app.DispatcherQueue.TryEnqueue(() => _app.Hub?.OpenPhoneTrackpad()));
-        TaskbarIcon.RightClickCommand = new HubMenuCommand(ShowAllControls);
+        _rightCommand = TrayCommandBridge.Create(ShowAllControls);
+        TaskbarIcon.LeftClickCommand = _leftCommand;
+        TaskbarIcon.RightClickCommand = _rightCommand;
         UpdateTrayIcon();
         TaskbarIcon.ForceCreate(false);
         Microsoft.Win32.SystemEvents.UserPreferenceChanged += OnUserPreferenceChanged;
@@ -47,6 +50,7 @@ public sealed partial class HandlerWindow : Window {
             TaskbarIcon.Dispose();
             _trayArtwork?.Dispose();
         };
+        if (verifyTrayOnly) return;
         _contactsManager = new ContactsManager(this);
         _threeFingersDrag = new ThreeFingerDrag();
         TrackTab = new TrackTabWindows();
