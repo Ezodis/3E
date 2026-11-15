@@ -207,7 +207,7 @@ def camera_hold_end():
         cam["dragging"] = False
     if cam["relock"]:
         cam["relock"] = False
-        if not camera_locked:
+        if not camera_locked and game_focused():   # never type into another app
             toggle_camera()
 
 
@@ -217,6 +217,9 @@ stop_state = {"on": False}
 
 def stop_spam():
     while stop_state["on"]:
+        if not game_focused():                      # left League: stop for good
+            stop_state["on"] = False
+            break
         tap(STOP_KEY)
         time.sleep(STOP_INTERVAL)
 
@@ -260,11 +263,17 @@ def _wait_until(when_fn):
 def kite_loop():
     """attack -> move order inside the windup (hop) -> hop lands + attack ready -> attack ..."""
     while kite["held"]:
+        if not game_focused():                      # left League: stop for good
+            kite["held"] = False
+            break
         t0 = time.perf_counter()
         tap(ATTACK_KEY)
         cam["clicks"] += 1
         AS = lambda: kite["as"] or 1.0
         if not _wait_until(lambda: t0 + MOVE_AT * windup_time(AS())):
+            break
+        if not game_focused():
+            kite["held"] = False
             break
         right_click()
         tier = ((watcher.me or {}).get("boots_tier") or 0) if watcher else 0
@@ -326,7 +335,7 @@ def macro_release(vk):
             if vk == "MB5":
                 kite_end()           # stop at once, not after queued actions
             actions.put(hold_end)
-    elif click:
+    elif click and game_focused():                  # a click only ever goes to League
         actions.put(click)
 
 
@@ -641,8 +650,14 @@ def make_indicator():
         root.after(30, animate)
 
     def tick():
-        c.itemconfig("spear", fill=SPEAR_ON if game_focused() else SPEAR_IDLE)
-        user32.SetWindowPos(hwnd, HWND_TOPMOST, 0, 0, 0, 0, SWP_KEEP)  # stay above the game
+        # the spear only shows while League's game window is the active window
+        if game_focused():
+            if root.state() == "withdrawn":
+                root.deiconify()
+            c.itemconfig("spear", fill=SPEAR_ON)
+            user32.SetWindowPos(hwnd, HWND_TOPMOST, 0, 0, 0, 0, SWP_KEEP)  # stay above the game
+        elif root.state() != "withdrawn":
+            root.withdraw()
         root.after(500, tick)
 
     tick()
