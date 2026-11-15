@@ -69,7 +69,7 @@ public partial class App {
         // This bundled helper is configured by 3£Windows.ps1 and runs
         // headlessly. Avoid Store-only startup APIs in the settings UI.
         HandlerWindow = new HandlerWindow(this);
-        Hub = new WindowsHub(HandlerWindow.HubMenu);
+        Hub = new WindowsHub();
     }
 
 

@@ -9,43 +9,10 @@
 
     <Grid>
 
-        <Grid.Resources>
-            <XamlUICommand x:Key="LauncherCommand" ExecuteRequested="OpenLauncher" Label="iPhone trackpad QR" />
-            <XamlUICommand x:Key="AllControlsCommand" ExecuteRequested="OpenAllControls" Label="All controls" />
-            <XamlUICommand
-                x:Uid="Taskbar_Menu_QuitApp"
-                x:Key="QuitAppCommand"
-                ExecuteRequested="QuitApp"
-                Label="Quit App">
-                <XamlUICommand.IconSource>
-                    <SymbolIconSource Symbol="Cancel" />
-                </XamlUICommand.IconSource>
-            </XamlUICommand>
-            <XamlUICommand
-                x:Uid="Taskbar_Menu_OpenSettingsWindow"
-                x:Key="OpenSettingsWindowCommand"
-                ExecuteRequested="OpenSettingsWindow"
-                Label="Open Settings Window">
-                <XamlUICommand.IconSource>
-                    <SymbolIconSource Symbol="Setting" />
-                </XamlUICommand.IconSource>
-            </XamlUICommand>
-        </Grid.Resources>
-
         <tb:TaskbarIcon
             x:Name="TaskbarIcon"
             ToolTipText="3£ — left: iPhone QR · right: all controls"
             MenuActivation="None"
-            NoLeftClickDelay="True"
-            LeftClickCommand="{StaticResource LauncherCommand}"
-            RightClickCommand="{StaticResource AllControlsCommand}">
-
-            <tb:TaskbarIcon.ContextFlyout>
-                <MenuFlyout x:Name="MenuFlyout1" AreOpenCloseAnimationsEnabled="True">
-                    <MenuFlyoutItem Command="{StaticResource OpenSettingsWindowCommand}" />
-                    <MenuFlyoutItem Command="{StaticResource QuitAppCommand}" />
-                </MenuFlyout>
-            </tb:TaskbarIcon.ContextFlyout>
-        </tb:TaskbarIcon>
+            NoLeftClickDelay="True" />
     </Grid>
 </Window>

@@ -16,9 +16,9 @@ Features (only active while the League game window is focused):
                      attack timer, repeat. Uses your live attack speed and boots tier.
   * Scroll wheel  -> holds 1, next scroll releases it and holds 2, then 3, 4, back to 1.
                      Scroll up = next, scroll down = previous. Any other key/click releases it.
-  * Kalista E     -> line on the target's health bar at the HP left after Rend (moves left
-                     with damage, reaching zero on a lethal hit) + lightning when Rend kills
-                     (pulsing border when one more spear would kill). See lol_execute.py.
+  * Kalista E     -> current-health coverage line (moves right with damage/current HP,
+                     reaching the right edge when lethal). Lightning only for a fresh,
+                     confirmed lethal reading. See lol_execute.py.
 
 Keybinds it relies on are set by lol_settings.py (stop = v, camera lock = y, pan = h,
 N's old binds = j, shop = b, attack-move = F9, MB5's old binds = F10).
@@ -519,20 +519,20 @@ BOLT_COLORS = [(16, "#0b4f44"), (9, "#1fd1a0"), (3, "#eafff9")]  # glow -> core
 
 
 def draw_rend_marker(canvas, res, origin, dpi):
-    """Draw remaining HP after Rend, in the same coordinates as the current health fill.
+    """Draw Rend's coverage of current HP: empty left, lethal at the far right.
 
     Use the latest HP/damage pair directly: smoothing can leave a lethal marker to the
-    right of zero, or carry the previous target's marker into the next target.
+    wrong position, or carry the previous target's marker into the next target.
     Returns the rendered position for diagnostics; creates no windows or input hooks.
     """
     bar = res.get("bar")
-    if not bar or res["max_hp"] <= 0:
+    if not bar or res["max_hp"] <= 0 or res["hp"] <= 0:
         return None
     ox, oy = origin
     x0, y0, x1, y1 = bar[0] - ox, bar[1] - oy, bar[2] - ox, bar[3] - oy
     hp = max(0, min(res["hp"], res["max_hp"]))
-    remaining = max(0, hp - max(0, res["dmg"]))
-    x = x0 + remaining / res["max_hp"] * (x1 - x0)
+    coverage = min(1, max(0, res["dmg"]) / hp)
+    x = x0 + coverage * (x1 - x0)
     kill = res["state"] == "kill"
     core = "#ffffff" if kill else "#eafff9"
     glow = "#ff3b5c" if kill else "#1fd1a0"
@@ -548,7 +548,17 @@ def draw_rend_marker(canvas, res, origin, dpi):
     canvas.create_text(x, y0 - ext - t - 2 * dpi, anchor="s",
                        text=f"{res['stacks']}" + ("…" if res.get("pending") else ""),
                        fill=glow, font=("Segoe UI", 9, "bold"))
-    return {"remaining_hp": remaining, "x": x, "bar_left": x0, "bar_right": x1}
+    return {"coverage": coverage, "x": x, "bar_left": x0, "bar_right": x1}
+
+
+def show_lethal_lightning(res, now=None):
+    """Do not animate an almost-kill, stale frame, or unconfirmed reading."""
+    if not res:
+        return False
+    now = time.monotonic() if now is None else now
+    return (res.get("state") == "kill" and not res.get("pending")
+            and 0 < res["hp"] <= res["dmg"] and res["stacks"] > 0
+            and 0 <= now - res.get("observed_at", float("-inf")) <= .25)
 
 
 def make_indicator():
@@ -612,18 +622,13 @@ def make_indicator():
             pts += [x0 + (x1 - x0) * t + inward[0] * off, y0 + (y1 - y0) * t + inward[1] * off]
         return pts
 
-    def draw_lightning(w, h, state):
+    def draw_lightning(w, h):
         oc.delete("all")
         d = dpi
         edges = [  # (start, end, inward direction)
             ((0, 4), (w, 4), (0, 1)), ((0, h - 4), (w, h - 4), (0, -1)),
             ((4, 0), (4, h), (1, 0)), ((w - 4, 0), (w - 4, h), (-1, 0)),
         ]
-        if state == "close":  # pulsing thin border: one more spear kills
-            on = (ov_state["frame"] // 6) % 2 == 0
-            oc.create_rectangle(3, 3, w - 3, h - 3, outline="#1fd1a0" if on else "#0b4f44",
-                                width=int(5 * d))
-            return
         for (a, b, inward) in edges:
             main = bolt(*a, *b, inward, 28 * d, 45 * d)
             for width, color in BOLT_COLORS:
@@ -641,7 +646,8 @@ def make_indicator():
 
     def render():
         res = watcher.result if macros_active() else None
-        state = res["state"] if res else None
+        if res and time.monotonic() - res.get("observed_at", 0) > .25:
+            res = None
         if res:
             c.itemconfig(label, text=f"E {res['dmg']:.0f} / {res['hp']}")
         else:
@@ -653,8 +659,8 @@ def make_indicator():
                 ov.deiconify()
                 ov_state["shown"] = True
             ov_state["frame"] += 1
-            if state:
-                draw_lightning(w, h, state)  # clears the canvas itself
+            if show_lethal_lightning(res):
+                draw_lightning(w, h)  # clears the canvas itself
             else:
                 oc.delete("all")
             ov_state["marker"] = draw_rend_marker(oc, res, ov_state["rect"][:2], dpi)

@@ -1,0 +1,381 @@
+{
+  "retrieved": "2026-11-15",
+  "attribution": "Portrait artwork belongs to Riot Games, distributed by CommunityDragon. Used for local HUD recognition. No runtime downloads.",
+  "entries": [
+    {
+      "name": "sru_atakhan",
+      "box": [
+        0,
+        0,
+        128,
+        128
+      ],
+      "source": "https://raw.communitydragon.org/latest/game/assets/characters/sru_atakhan/hud/atakhan_r_square_128.png",
+      "sha256": "b9e5707aece1c05a379f9945f172bb3be843ada031a82fcea219eeecbcadbc0d",
+      "epic": true,
+      "tags": "Monster | Monster_Epic | Monster_Camp | Monster_Large | Monster_Atakhan",
+      "classification_source": "https://raw.communitydragon.org/latest/game/data/characters/sru_atakhan/sru_atakhan.bin.json",
+      "classification_sha256": "32fae2fd408b389d4fc9d64d229494d588fead0239f3d76292c60859b03ea135"
+    },
+    {
+      "name": "sru_atakhan",
+      "box": [
+        128,
+        0,
+        256,
+        128
+      ],
+      "source": "https://raw.communitydragon.org/latest/game/assets/characters/sru_atakhan/hud/atakhan_t_circle_128.png",
+      "sha256": "277bc2515c2ce6ac40f93f5f72c32fb79d14f1109fa083eed963b87d81746345",
+      "epic": true,
+      "tags": "Monster | Monster_Epic | Monster_Camp | Monster_Large | Monster_Atakhan",
+      "classification_source": "https://raw.communitydragon.org/latest/game/data/characters/sru_atakhan/sru_atakhan.bin.json",
+      "classification_sha256": "32fae2fd408b389d4fc9d64d229494d588fead0239f3d76292c60859b03ea135"
+    },
+    {
+      "name": "sru_atakhan",
+      "box": [
+        256,
+        0,
+        384,
+        128
+      ],
+      "source": "https://raw.communitydragon.org/latest/game/assets/characters/sru_atakhan/hud/atakhan_v_square_128.png",
+      "sha256": "30cafb2fcd34a1f992438ef42c7fe5c45b58ab63b0d0c01cc4f385827e4e9c3d",
+      "epic": true,
+      "tags": "Monster | Monster_Epic | Monster_Camp | Monster_Large | Monster_Atakhan",
+      "classification_source": "https://raw.communitydragon.org/latest/game/data/characters/sru_atakhan/sru_atakhan.bin.json",
+      "classification_sha256": "32fae2fd408b389d4fc9d64d229494d588fead0239f3d76292c60859b03ea135"
+    },
+    {
+      "name": "sru_baron",
+      "box": [
+        384,
+        0,
+        512,
+        128
+      ],
+      "source": "https://raw.communitydragon.org/latest/game/assets/characters/sru_baron/hud/baron_square.png",
+      "sha256": "0b7806b9458f8a1120d3f6df8d6af664fd851d2ecbd9ebdd79da0287bdd7a666",
+      "epic": true,
+      "tags": "Monster | Monster_Epic | Special_Void | Monster_Camp | Monster_Baron",
+      "classification_source": "https://raw.communitydragon.org/latest/game/data/characters/sru_baron/sru_baron.bin.json",
+      "classification_sha256": "2c686038939d3533b87f8cab9af398c881cbc7321d5555e8a553451cfa5876f1"
+    },
+    {
+      "name": "sru_blue",
+      "box": [
+        512,
+        0,
+        640,
+        128
+      ],
+      "source": "https://raw.communitydragon.org/latest/game/assets/characters/sru_blue/hud/bluesentinel_square.png",
+      "sha256": "0cec2bc219460c1a9d777e1a0020b3205f7e105d572d105d2c556b9f55942994",
+      "epic": false,
+      "tags": "Monster | Monster_Large | Monster_Blue | Monster_Camp | Monster_Buff",
+      "classification_source": "https://raw.communitydragon.org/latest/game/data/characters/sru_blue/sru_blue.bin.json",
+      "classification_sha256": "117f241374ac5931357ddd69b6b58ff04510f2a1c90e529d7d0b955d7aa86ff3"
+    },
+    {
+      "name": "sru_crab",
+      "box": [
+        640,
+        0,
+        768,
+        128
+      ],
+      "source": "https://raw.communitydragon.org/latest/game/assets/characters/sru_crab/hud/crab_square_0.png",
+      "sha256": "e59c7b3c1473bdce8747dabe4619463e36cd5e416a0a4e563454c0f0afbdf181",
+      "epic": false,
+      "tags": "Monster | Monster_Large | Monster_Crab | Special_Peaceful | Monster_Camp",
+      "classification_source": "https://raw.communitydragon.org/latest/game/data/characters/sru_crab/sru_crab.bin.json",
+      "classification_sha256": "2b3b7cf88de6838f053c4f71fc7d2697dd657f683af31ab3ba32bfe74b8fceae"
+    },
+    {
+      "name": "sru_dragon",
+      "box": [
+        768,
+        0,
+        896,
+        128
+      ],
+      "source": "https://raw.communitydragon.org/latest/game/assets/characters/sru_dragon/hud/dragon_square.png",
+      "sha256": "d5b49a87eed890c3e3a1c60a17228d90a6512335f7ad3494601fd9a4c6d470cc",
+      "epic": true,
+      "tags": "Monster | Monster_Epic | Monster_Dragon | Monster_Camp",
+      "classification_source": "https://raw.communitydragon.org/latest/game/data/characters/sru_dragon/sru_dragon.bin.json",
+      "classification_sha256": "c46d15037e81d188111c0110a007d25fc2be52ae68240ea042b8df439beeb9ba"
+    },
+    {
+      "name": "sru_dragon_air",
+      "box": [
+        896,
+        0,
+        1024,
+        128
+      ],
+      "source": "https://raw.communitydragon.org/latest/game/assets/characters/sru_dragon_air/hud/dragon_air_square.png",
+      "sha256": "4a2550059efa02e6b620c229acc32a90e32ff0356f5f532acbfce8158f2583fc",
+      "epic": true,
+      "tags": "Monster | Monster_Epic | Monster_Dragon | Monster_Camp",
+      "classification_source": "https://raw.communitydragon.org/latest/game/data/characters/sru_dragon_air/sru_dragon_air.bin.json",
+      "classification_sha256": "a74c241ca4c0ace5bc8ec0d847246f15b04e206c2449f9472464992d8e249113"
+    },
+    {
+      "name": "sru_dragon_chemtech",
+      "box": [
+        0,
+        128,
+        128,
+        256
+      ],
+      "source": "https://raw.communitydragon.org/latest/game/assets/characters/sru_dragon_chemtech/hud/icons2d/dragon_square_chemtech.png",
+      "sha256": "a9e1339346a9882fdaae836ceefbf32f2edb97c0efdc40518ba3328cda9edc9f",
+      "epic": true,
+      "tags": "Monster | Monster_Epic | Monster_Dragon | Monster_Camp",
+      "classification_source": "https://raw.communitydragon.org/latest/game/data/characters/sru_dragon_chemtech/sru_dragon_chemtech.bin.json",
+      "classification_sha256": "da0c393c4d4bcea5aa42cc874da64aaf14a0b169c78a940fc554b170f5568c58"
+    },
+    {
+      "name": "sru_dragon_earth",
+      "box": [
+        128,
+        128,
+        256,
+        256
+      ],
+      "source": "https://raw.communitydragon.org/latest/game/assets/characters/sru_dragon_earth/hud/dragon_square_earth.png",
+      "sha256": "e9869688175e426e7cda2f12deca6146d2d34d2fe0ad9415e03d9e1b6f70403f",
+      "epic": true,
+      "tags": "Monster | Monster_Epic | Monster_Dragon | Monster_Camp",
+      "classification_source": "https://raw.communitydragon.org/latest/game/data/characters/sru_dragon_earth/sru_dragon_earth.bin.json",
+      "classification_sha256": "2447e8fcc38276ac28f5806bc2d6b847f01ffcc3633c51fd5d86e327979dc77e"
+    },
+    {
+      "name": "sru_dragon_elder",
+      "box": [
+        256,
+        128,
+        384,
+        256
+      ],
+      "source": "https://raw.communitydragon.org/latest/game/assets/characters/sru_dragon_elder/hud/dragon_square_elder.png",
+      "sha256": "b6f8d818b03663b7633fe1f68f84f1669359e87c6f4496ad87af5254ced73a41",
+      "epic": true,
+      "tags": "Monster | Monster_Epic | Monster_Dragon | Monster_Camp",
+      "classification_source": "https://raw.communitydragon.org/latest/game/data/characters/sru_dragon_elder/sru_dragon_elder.bin.json",
+      "classification_sha256": "bb463ab8ac4df2899b8a55e4aad846a2d4552e5c2beb48550938c6f27a9f184d"
+    },
+    {
+      "name": "sru_dragon_fire",
+      "box": [
+        384,
+        128,
+        512,
+        256
+      ],
+      "source": "https://raw.communitydragon.org/latest/game/assets/characters/sru_dragon_fire/hud/dragon_square_fire.png",
+      "sha256": "ba8e2ca9909d944fdf0f84415906bfcaddd7bf8f9eede21375066800bee5e9af",
+      "epic": true,
+      "tags": "Monster | Monster_Epic | Monster_Dragon | Monster_Camp",
+      "classification_source": "https://raw.communitydragon.org/latest/game/data/characters/sru_dragon_fire/sru_dragon_fire.bin.json",
+      "classification_sha256": "21d0cb285977fe44cefc2e62057c568f6d768bb816142dbc070c14be174c48d9"
+    },
+    {
+      "name": "sru_dragon_hextech",
+      "box": [
+        512,
+        128,
+        640,
+        256
+      ],
+      "source": "https://raw.communitydragon.org/latest/game/assets/characters/sru_dragon_hextech/hud/icons2d/dragon_square_hextech.png",
+      "sha256": "35225158505624bd8cb74462cde55f18ec9025911d7b3762ff6e3de309c1504d",
+      "epic": true,
+      "tags": "Monster | Monster_Epic | Monster_Dragon | Monster_Camp",
+      "classification_source": "https://raw.communitydragon.org/latest/game/data/characters/sru_dragon_hextech/sru_dragon_hextech.bin.json",
+      "classification_sha256": "e84af13da2235b1e57014b5791173ffa491bdf8b0e512f23719640fbeef9c880"
+    },
+    {
+      "name": "sru_dragon_water",
+      "box": [
+        640,
+        128,
+        768,
+        256
+      ],
+      "source": "https://raw.communitydragon.org/latest/game/assets/characters/sru_dragon_water/hud/dragon_square_water.png",
+      "sha256": "2185fb521514828481050e74aa41881d3a821e516c9f31c0b4b500f211f911ad",
+      "epic": true,
+      "tags": "Monster | Monster_Epic | Monster_Dragon | Monster_Camp",
+      "classification_source": "https://raw.communitydragon.org/latest/game/data/characters/sru_dragon_water/sru_dragon_water.bin.json",
+      "classification_sha256": "d79e11b8e775e7d578526ac4dd06eb83df861d0f40f28dd5101503ef3a80dc9f"
+    },
+    {
+      "name": "sru_gromp",
+      "box": [
+        768,
+        128,
+        896,
+        256
+      ],
+      "source": "https://raw.communitydragon.org/latest/game/assets/characters/sru_gromp/hud/gromp_square.png",
+      "sha256": "059bb3db5ccb92a6df66b04dc6b44aff1a263e246008625a432f6868c5fa8fb0",
+      "epic": false,
+      "tags": "Monster | Monster_Large | Monster_Gromp | Monster_Camp",
+      "classification_source": "https://raw.communitydragon.org/latest/game/data/characters/sru_gromp/sru_gromp.bin.json",
+      "classification_sha256": "2a31c5393dd046a8f0736ae60672d579b95635c1c097d50f4406c71ec8e087bd"
+    },
+    {
+      "name": "sru_horde",
+      "box": [
+        896,
+        128,
+        1024,
+        256
+      ],
+      "source": "https://raw.communitydragon.org/latest/game/assets/characters/sru_horde/hud/sru_voidgrub_square.png",
+      "sha256": "a9a38e9c70f8cc196c96718a573e1047fcae684b557bfedc19331ae754ac6287",
+      "epic": true,
+      "tags": "Monster | Monster_Large | Monster_Epic | Special_Void | Monster_Camp | Monster_Horde",
+      "classification_source": "https://raw.communitydragon.org/latest/game/data/characters/sru_horde/sru_horde.bin.json",
+      "classification_sha256": "7503a15c99a5bb24b1efa058481bf13ec017824035fd4ba1d0ca7ceed69c79d0"
+    },
+    {
+      "name": "sru_horde_mini",
+      "box": [
+        0,
+        256,
+        128,
+        384
+      ],
+      "source": "https://raw.communitydragon.org/latest/game/assets/characters/sru_horde_mini/hud/sru_voidmite_square.png",
+      "sha256": "9a9eb98c9330fcbec075cb2a30597fb01cb71ab89daed613b79a1d47019e1e42",
+      "epic": false,
+      "tags": "Monster | Monster_Horde | Special_Void |",
+      "classification_source": "https://raw.communitydragon.org/latest/game/data/characters/sru_horde_mini/sru_horde_mini.bin.json",
+      "classification_sha256": "0b0f830f3120c59c6cd1c55b7a6e87d872c47bf77293194a6461faffe3d989e3"
+    },
+    {
+      "name": "sru_krug",
+      "box": [
+        128,
+        256,
+        256,
+        384
+      ],
+      "source": "https://raw.communitydragon.org/latest/game/assets/characters/sru_krug/hud/ancientkrug_square.png",
+      "sha256": "3ca20754efdddaa4673ab9fdeac20f913a0f94a372aa1ad10989c7fe2c6a9839",
+      "epic": false,
+      "tags": "Monster | Monster_Large | Monster_Krug | Monster_Camp",
+      "classification_source": "https://raw.communitydragon.org/latest/game/data/characters/sru_krug/sru_krug.bin.json",
+      "classification_sha256": "9d5f8c52997c2f48bb9f681b5ceaf2b53cba9699a28ec0d9e0efd98b0370782a"
+    },
+    {
+      "name": "sru_krugmini",
+      "box": [
+        256,
+        256,
+        384,
+        384
+      ],
+      "source": "https://raw.communitydragon.org/latest/game/assets/characters/sru_krugmini/hud/krug_square.png",
+      "sha256": "c740ebcaedd96e09cb053f00866883f2bd9b4722ee9c0db7c1289cc9d77770be",
+      "epic": false,
+      "tags": "Monster | Monster_Krug | Monster_Camp | Monster_Medium",
+      "classification_source": "https://raw.communitydragon.org/latest/game/data/characters/sru_krugmini/sru_krugmini.bin.json",
+      "classification_sha256": "6738f7d87f0d22e11f30b7768a1cda455de0cb9fc8a2ae658d5a9ca39372cb06"
+    },
+    {
+      "name": "sru_murkwolf",
+      "box": [
+        384,
+        256,
+        512,
+        384
+      ],
+      "source": "https://raw.communitydragon.org/latest/game/assets/characters/sru_murkwolf/hud/greatermurkwolf_square.png",
+      "sha256": "80ccf524f386c19ac3fba5c17ee4376ee0e2a7a65c750b21835311e33bbf4ebb",
+      "epic": false,
+      "tags": "Monster | Monster_Large | Monster_Wolf | Monster_Camp",
+      "classification_source": "https://raw.communitydragon.org/latest/game/data/characters/sru_murkwolf/sru_murkwolf.bin.json",
+      "classification_sha256": "4aeb03329977d6d34c6ce8fbb542e68199c5d8302a13cd36047de1adf42c7511"
+    },
+    {
+      "name": "sru_murkwolfmini",
+      "box": [
+        512,
+        256,
+        640,
+        384
+      ],
+      "source": "https://raw.communitydragon.org/latest/game/assets/characters/sru_murkwolfmini/hud/murkwolf_square.png",
+      "sha256": "69e4f2a65d361a8d276e3731c9625a4e864fdcd79ba66426e5ce80581bdd2832",
+      "epic": false,
+      "tags": "Monster | Monster_Wolf | Monster_Camp | Monster_Small",
+      "classification_source": "https://raw.communitydragon.org/latest/game/data/characters/sru_murkwolfmini/sru_murkwolfmini.bin.json",
+      "classification_sha256": "d301e1208141b666f7c1b2db253f2bcf0693e3e555de586b34116cbff732cbe3"
+    },
+    {
+      "name": "sru_razorbeak",
+      "box": [
+        640,
+        256,
+        768,
+        384
+      ],
+      "source": "https://raw.communitydragon.org/latest/game/assets/characters/sru_razorbeak/hud/razorbeak_square.png",
+      "sha256": "9b4c912c1893873af8d2aa3600f59f96d3b23ef102ec060eaef7130c1389e1ac",
+      "epic": false,
+      "tags": "Monster | Monster_Large | Monster_Raptor | Monster_Camp",
+      "classification_source": "https://raw.communitydragon.org/latest/game/data/characters/sru_razorbeak/sru_razorbeak.bin.json",
+      "classification_sha256": "4dac3b7e75c0d8b4a0cb69d29dc04a3195d359188dac90bb8b53988f54a48ad0"
+    },
+    {
+      "name": "sru_razorbeakmini",
+      "box": [
+        768,
+        256,
+        896,
+        384
+      ],
+      "source": "https://raw.communitydragon.org/latest/game/assets/characters/sru_razorbeakmini/hud/razorbeakmini_square.png",
+      "sha256": "a0e086a57434fdfa51d6df53678f6dab174fc2f4520590e7d9bbc6afb7d36b89",
+      "epic": false,
+      "tags": "Monster | Monster_Raptor | Monster_Camp | Monster_Small",
+      "classification_source": "https://raw.communitydragon.org/latest/game/data/characters/sru_razorbeakmini/sru_razorbeakmini.bin.json",
+      "classification_sha256": "4776cc0825cc0c00b211cdafa8196f98d2aa746ddadf071f552a3ab5acce5f26"
+    },
+    {
+      "name": "sru_red",
+      "box": [
+        896,
+        256,
+        1024,
+        384
+      ],
+      "source": "https://raw.communitydragon.org/latest/game/assets/characters/sru_red/hud/brambleback_square.png",
+      "sha256": "aa8b5d9caf2e6d6cb0b4f9c92c0609aefad176c8af611777159bce58c9114391",
+      "epic": false,
+      "tags": "Monster | Monster_Large | Monster_Red | Monster_Camp | Monster_Buff",
+      "classification_source": "https://raw.communitydragon.org/latest/game/data/characters/sru_red/sru_red.bin.json",
+      "classification_sha256": "7c929abdf966651bb0feb5a066d5bc7fd568f4ad7ae65d1100fd42fd4f021371"
+    },
+    {
+      "name": "sru_riftherald",
+      "box": [
+        0,
+        384,
+        128,
+        512
+      ],
+      "source": "https://raw.communitydragon.org/latest/game/assets/characters/sru_riftherald/hud/sruriftherald_square.png",
+      "sha256": "b7be2bde72162588517ba06e765cf4dc21ec6e5322b4a07cfe2c0f213a52c1bf",
+      "epic": true,
+      "tags": "Monster | Monster_Large | Monster_Epic | Special_Void | Monster_Camp | Monster_RiftHerald",
+      "classification_source": "https://raw.communitydragon.org/latest/game/data/characters/sru_riftherald/sru_riftherald.bin.json",
+      "classification_sha256": "b76bd0a9c51b8abbed1a9ab0b358fdd0d8d7915f4bac59ddf311f7b443932132"
+    }
+  ]
+}

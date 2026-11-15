@@ -15,25 +15,32 @@ refuses to run while League or its client is open, and can be rerun without
 moving bindings again. League must restart to load changed bindings; an in-memory
 MB5 → Flash binding cannot be suppressed reliably by a Windows mouse hook.
 
-The Rend line previews **remaining health after E**: `max(current HP - damage, 0)`
-on the target frame's full health scale. It follows HP changes as well as spear
-changes, immediately reaches the left edge for a lethal hit, and never lags behind
-the current reading through position smoothing. Lightning still requires a confirmed
-kill calculation. For example, 600/1000 HP with 200 damage puts the line at 400 HP;
-1/1000 HP with 730 damage puts it at zero.
+The Rend line shows **current-health coverage**: `damage / current HP`, capped at
+100%. It moves right as damage rises or HP falls. Halfway means Rend removes half
+of the selected target's current HP; the far right means it covers all of it.
+For example, 600/1000 HP with 300 damage puts the line halfway across;
+1/1000 HP with 730 damage puts it at the far right. Positions are never smoothed
+across target switches. This is a coverage gauge, not the underlying bar's HP scale.
 
-Rend uses cached whole numbers and learned individual digit shapes. On a briefly
-unreadable number for the same portrait, the preview stays muted for at most
-300 ms; lightning is withheld until a new reading confirms the kill. Green ally
+Rend uses cached whole numbers and learned individual digit shapes. An unreadable
+spear count clears the result immediately, including identical portraits: two
+dummies or minions can look the same. It never guesses one spear from an obscured
+badge. Lightning requires a fresh, confirmed lethal calculation; there is no
+almost-lethal flashing border. Readings older than 250 ms are hidden. Green ally
 bars are excluded. An almost empty bar requires enemy evidence (a red bar or a
-Rend debuff). The existing HP-based epic-monster classification remains a
-heuristic; this release does not add target-name or shield recognition.
+Rend debuff). Local portrait matching identifies standard jungle monsters using
+the artwork and epic-monster tags documented in `lol_monsters.json`. An unrecognized
+monster hides the estimate instead of inferring its class from maximum HP. The
+25 portrait references are bundled: no network downloads happen during play.
+The reader does not detect shields, invulnerability or every temporary damage
+modifier; its lethal indication is based on the readable HP, armor, spears and
+supported damage modifiers. It never casts Rend automatically.
 
 Diagnostics:
 
 - `lol_runtime.log`: bounded, rotating launcher, thread and rendering errors.
 - `lol_status.json`: active state, camera state, current result, rendered marker position
-  and remaining HP, and rendered frame count.
+  and current-health coverage, and rendered frame count.
 - `lol_execute_log.csv`: results used by the overlay, rather than a separate OCR estimate.
 - `lol_debug/kill_*.png`: bounded target snapshots; unchanged kills are throttled.
 

@@ -13,7 +13,6 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Threading.Tasks;
 using Microsoft.UI.Xaml;
-using Microsoft.UI.Xaml.Controls;
 using Microsoft.Win32;
 using ThreeFingerDragOnWindows.utils;
 
@@ -26,7 +25,7 @@ public sealed class WindowsHub : IDisposable {
     private readonly string root = AppContext.BaseDirectory;
     private readonly string data = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "3EWindows");
     private readonly DispatcherTimer timer = new() { Interval = TimeSpan.FromSeconds(20) };
-    private readonly MenuFlyout menu;
+    private readonly HubMenuModel menu = new();
     private readonly PhoneBarModule phoneBar = new();
     private readonly CarViewWindows carView=new();
     private readonly MacKeyboardLayout macKeyboard = MacKeyboardLayout.Create();
@@ -72,13 +71,11 @@ public sealed class WindowsHub : IDisposable {
         public string LolScript { get; set; }
     }
 
-    public WindowsHub(MenuFlyout menu) {
-        this.menu = menu;
+    public WindowsHub() {
         carView.Changed+=RefreshMenu;
         Directory.CreateDirectory(data);
         try { settings = JsonSerializer.Deserialize<HubSettings>(File.ReadAllText(Path.Combine(data, "settings.json"))) ?? new(); }
         catch { settings = new(); }
-        menu.Opening += (_, _) => RefreshMenu();
         RefreshMenu();
         timer.Tick += (_, _) => Tick();
         SystemEvents.SessionSwitch += OnSessionSwitch;
@@ -301,8 +298,9 @@ public sealed class WindowsHub : IDisposable {
                 phoneTrackpadRunning = phoneBar.Running, phoneTrackpadStatus = phoneBar.Status,
                 phoneBarNetworkAllowed = phoneBar.NetworkAllowed,
                 menu = menu.Items.Select(item => item switch {
-                    ToggleMenuFlyoutItem toggle => toggle.Text,
-                    MenuFlyoutItem command => command.Text,
+                    HubMenuSeparator => "—",
+                    HubMenuToggleItem toggle => toggle.Text,
+                    HubMenuItem command => command.Text,
                     _ => "—"
                 }).ToArray()
             }, new JsonSerializerOptions { WriteIndented = true }));
@@ -342,23 +340,15 @@ public sealed class WindowsHub : IDisposable {
 
     // Native menu selections invoke commands after the popup has closed.
     // Toggle commands own their checked state, including accessory actions.
-    private sealed class MenuCommand : System.Windows.Input.ICommand {
-        private readonly Action action;
-        public MenuCommand(Action action) => this.action = action;
-        public event EventHandler CanExecuteChanged { add { } remove { } }
-        public bool CanExecute(object parameter) => true;
-        public void Execute(object parameter) => action();
-    }
-
-    private MenuFlyoutItem ActionMenuItem(string label, Action click) => new() {
+    private HubMenuItem ActionMenuItem(string label, Action click) => new() {
         Text = label,
-        Command = new MenuCommand(() => { try { click(); } catch (Exception ex) { Log(ex); MessageBox(IntPtr.Zero, ex.Message, "3£", 0x10); } })
+        Command = new HubMenuCommand(() => { try { click(); } catch (Exception ex) { Log(ex); MessageBox(IntPtr.Zero, ex.Message, "3£", 0x10); } })
     };
 
-    private ToggleMenuFlyoutItem ToggleMenuItem(string label, bool value, Action<bool> change, Action openSettings = null, string slot = IconSlot) {
+    private HubMenuToggleItem ToggleMenuItem(string label, bool value, Action<bool> change, Action openSettings = null, string slot = IconSlot) {
         // Keep accessory metadata on the row; the native painter allocates its column.
-        var item = new ToggleMenuFlyoutItem { Text = openSettings == null ? label : label + slot, IsChecked = value };
-        item.Command = new MenuCommand(() => {
+        var item = new HubMenuToggleItem { Text = openSettings == null ? label : label + slot, IsChecked = value };
+        item.Command = new HubMenuCommand(() => {
             if (openSettings != null && ClickedGear()) {
                 try { openSettings(); } catch (Exception ex) { Log(ex); MessageBox(IntPtr.Zero, ex.Message, "3£", 0x10); }
                 return;
@@ -373,19 +363,24 @@ public sealed class WindowsHub : IDisposable {
     public static string MenuGlyph(string text) => text.EndsWith(MirrorSlot, StringComparison.Ordinal) ? MirrorGlyph : text.EndsWith(RotateSlot, StringComparison.Ordinal) ? RotateGlyph : text.EndsWith(IconSlot, StringComparison.Ordinal) ? SettingsGlyph : null;
 
     public void ShowControlsMenu(IntPtr owner, System.Drawing.Point point) {
-        try { ShowControlsMenuCore(owner, point); }
-        catch (Exception ex) { Log(ex); MessageBox(IntPtr.Zero, "Could not open the controls menu.\n\n" + ex.Message, "3£", 0x10 | ForegroundDialog); }
+        // Return from the tray/XamlUICommand callback before entering Win32's nested
+        // menu loop, and always create/use UI resources on their owning dispatcher.
+        App.Instance.DispatcherQueue.TryEnqueue(() => {
+            if (disposed) return;
+            try { ShowControlsMenuCore(owner, point); }
+            catch (Exception ex) { Log(ex); MessageBox(IntPtr.Zero, "Could not open the controls menu.\n\n" + ex.Message, "3£", 0x10 | ForegroundDialog); }
+        });
     }
 
     private void ShowControlsMenuCore(IntPtr owner, System.Drawing.Point point) {
         RefreshMenu();
         var items = menu.Items.ToArray();
         var rows = items.Select(item => {
-            if (item is MenuFlyoutSeparator) return new NativeHubMenu.Row("", Separator: true);
-            var command = (MenuFlyoutItem)item;
+            if (item is HubMenuSeparator) return new NativeHubMenu.Row("", Separator: true);
+            var command = (HubMenuItem)item;
             string icon = MenuGlyph(command.Text);
             return new NativeHubMenu.Row(command.Text.Split('\t')[0], command.IsEnabled,
-                command is ToggleMenuFlyoutItem toggle && toggle.IsChecked,
+                command is HubMenuToggleItem toggle && toggle.IsChecked,
                 icon, icon == MirrorGlyph && carView.Mirrored);
         }).ToArray();
         using var preferences = Registry.CurrentUser.OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize");
@@ -393,10 +388,16 @@ public sealed class WindowsHub : IDisposable {
         using var popup = new NativeHubMenu(rows, NativeHubMenu.DpiAt(point, owner), dark, NativeHubMenu.MaxWidthAt(point));
         var choice = popup.Show(owner, point);
         if (choice == null) return;
-        var selected = (MenuFlyoutItem)items[choice.Value.Index];
-        accessoryInvoked = choice.Value.Accessory;
-        try { if (selected.Command?.CanExecute(selected.CommandParameter) == true) selected.Command.Execute(selected.CommandParameter); }
-        finally { accessoryInvoked = false; }
+        var selected = (HubMenuItem)items[choice.Value.Index];
+        // Dispose the native popup and unwind its callback before an action can open
+        // another window, await, refresh controls, or close/restart the application.
+        App.Instance.DispatcherQueue.TryEnqueue(() => {
+            if (disposed) return;
+            accessoryInvoked = choice.Value.Accessory;
+            try { if (selected.Command?.CanExecute(selected.CommandParameter) == true) selected.Command.Execute(selected.CommandParameter); }
+            catch (Exception ex) { Log(ex); }
+            finally { accessoryInvoked = false; }
+        });
     }
 
     private void Item(string label, Action click) => menu.Items.Add(ActionMenuItem(label, click));
@@ -409,12 +410,12 @@ public sealed class WindowsHub : IDisposable {
     }
 
     private bool keyboardChanging;
-    private MenuFlyoutItem MacKeyboardToggle() {
-        var item = new ToggleMenuFlyoutItem {
+    private HubMenuItem MacKeyboardToggle() {
+        var item = new HubMenuToggleItem {
             Text = macKeyboard.HasLease && !macKeyboard.Active ? "Mac keyboard layout — recovery pending" : "Mac keyboard layout",
             IsChecked = settings.MacKeyboard || macKeyboard.HasLease, IsEnabled = !keyboardChanging
         };
-        item.Command = new MenuCommand(async () => {
+        item.Command = new HubMenuCommand(async () => {
             if (keyboardChanging) return;
             keyboardChanging = true;
             bool enable = !item.IsChecked;
@@ -504,7 +505,7 @@ public sealed class WindowsHub : IDisposable {
 
     private void RefreshMenu() {
         menu.Items.Clear();
-        menu.Items.Add(new MenuFlyoutItem { Text = "3£ " + Version, IsEnabled = false });
+        menu.Items.Add(new HubMenuItem { Text = "3£ " + Version, IsEnabled = false });
         // One Track Phone row: click to turn it on or off; its icon makes a new link.
         // Left-clicking the tray icon shows the QR.
         Toggle(phoneBar.NetworkAllowed ? "Track Phone" : phoneBar.UsbOnly ? "Track Phone — USB cable only" : "Track Phone — network restricted", phoneBar.Running, enabled => {
@@ -535,7 +536,7 @@ public sealed class WindowsHub : IDisposable {
             settings.LolMacros = enabled;
             if (enabled) StartLol(); else _ = StopLolAsync();
         }, () => Process.Start(new ProcessStartInfo("explorer.exe", "/select,\"" + LolScript + "\"") { UseShellExecute = true })?.Dispose());
-        menu.Items.Add(new MenuFlyoutSeparator());
+        menu.Items.Add(new HubMenuSeparator());
         Toggle("Dynamic wallpaper", settings.Wallpaper, enabled => {
             settings.Wallpaper = enabled;
             if (enabled) _ = EnsureComponentsAsync(); else Stop("WinDynamicDesktop");
@@ -546,45 +547,15 @@ public sealed class WindowsHub : IDisposable {
             () => { settings.SsmsTheme = true; UpdateSsmsTheme(true); Save(); }, RotateSlot);
         Item("Use light theme", () => { settings.AutoDark = false; Save(); SetTheme(1); });
         Item("Use dark theme", () => { settings.AutoDark = false; Save(); SetTheme(0); });
-        menu.Items.Add(new MenuFlyoutSeparator());
+        menu.Items.Add(new HubMenuSeparator());
         Item("Restart", Restart);
         // Automatic updates make a manual check redundant; it returns only when they are off.
         if (!settings.AutoUpdate) Item(updateTag == null ? "Check for updates…" : "Update available: " + updateTag + "…", () => _ = CheckUpdatesAsync(true));
         if (phoneBar.NetworkAllowed)
             Toggle("Install updates automatically", settings.AutoUpdate, enabled => { settings.AutoUpdate = enabled; if (!enabled) pendingUpdate = null; else settings.LastUpdateCheckUtc = default; });
-        else menu.Items.Add(new MenuFlyoutItem { Text = "Updates require IT review", IsEnabled = false });
+        else menu.Items.Add(new HubMenuItem { Text = "Updates require IT review", IsEnabled = false });
         Item("Open portable installer", () => Process.Start(new ProcessStartInfo("explorer.exe", "/select,\"" + Path.Combine(root, "3£Windows.ps1") + "\"") { UseShellExecute = true }));
         Item("Quit 3£", () => App.Instance.Quit());
-    }
-
-    public MenuFlyout CreateLauncher(Action showAllControls) {
-        var launcher = new MenuFlyout();
-        launcher.Items.Add(new MenuFlyoutItem { Text = "3£ — choose controls", IsEnabled = false });
-        MenuFlyoutItem ActionItem(string text, Action action) => ActionMenuItem(text, action);
-        ToggleMenuFlyoutItem Switch(string text, bool value, Action<bool> change) => ToggleMenuItem(text, value, change);
-        void OpenPowerToys() => OpenPowerToysSettings();
-        launcher.Items.Add(ActionItem("Drag settings…", () => App.Instance.OpenSettingsWindow()));
-        launcher.Items.Add(ActionItem("Track Phone…", OpenPhoneTrackpad));
-        launcher.Items.Add(ActionItem("PowerToys settings…", OpenPowerToys));
-        var keyboard = new MenuFlyoutSubItem { Text = "Keyboard controls" };
-        keyboard.Items.Add(MacKeyboardToggle());
-        keyboard.Items.Add(Switch("Enable Clicks keyboard mapping", settings.Keyboard, enabled => {
-            settings.Keyboard = enabled;
-            if (enabled) _ = EnsureComponentsAsync(); else StopKeyboard();
-        }));
-        keyboard.Items.Add(ActionItem("Keyboard shortcuts…", OpenPowerToys));
-        launcher.Items.Add(keyboard);
-        var themes = new MenuFlyoutSubItem { Text = "Theme controls" };
-        themes.Items.Add(Switch("Auto light/dark schedule", settings.AutoDark, enabled => { settings.AutoDark = enabled; lastTheme = -1; ApplyTheme(); }));
-        themes.Items.Add(ActionItem("Use light theme", () => { settings.AutoDark = false; Save(); SetTheme(1); }));
-        themes.Items.Add(ActionItem("Use dark theme", () => { settings.AutoDark = false; Save(); SetTheme(0); }));
-        themes.Items.Add(Switch("Rotate themes", settings.SsmsTheme, enabled => { settings.SsmsTheme = enabled; if (enabled) UpdateSsmsTheme(true); }));
-        themes.Items.Add(ActionItem("Rotate themes now", () => { settings.SsmsTheme = true; UpdateSsmsTheme(true); Save(); }));
-        launcher.Items.Add(themes);
-        launcher.Items.Add(ActionItem("Wallpaper controls…", () => Start(WallpaperPath, "", true)));
-        launcher.Items.Add(new MenuFlyoutSeparator());
-        launcher.Items.Add(ActionItem("All controls…", showAllControls));
-        return launcher;
     }
 
     // Windows has its own release prefix; /latest could select a macOS release.

@@ -24,6 +24,7 @@ from pathlib import Path
 
 import numpy as np
 from PIL import Image, ImageDraw, ImageGrab, ImageOps
+from lol_monsters import identify_monster
 
 # 3£ installs these scripts read-only under Program Files; logs, snapshots and the pid file go here.
 import os
@@ -48,7 +49,6 @@ HEALTH_BAR = (317, 61, 540, 91)   # target-frame health bar (left edge = 0 HP, r
 FILL_TOLERANCE = 0.06             # OCR'd HP must match how full the bar looks (rejects misreads)
 COUP_DE_GRACE = 8014     # rune id: +8% damage to targets below 40% max HP
 CUT_DOWN = 8017          # rune id: +8% damage to targets above 60% max HP
-EPIC_MIN_HP = 2800       # a monster (no gold/KDA row in its frame) this big = epic: Rend does 50%
 KDA_ROW = (325, 22, 560, 56)  # yellow gold/KDA text above the bar: champions, minions, dummy
 REGION_SCALE = None   # set a number to override the automatic scale if boxes are off
 
@@ -247,6 +247,11 @@ def _group_masks(crop, name, scale, cut=150):
         scale = 1.0
     g = np.array(crop.convert("L"))
     b = (g > cut).astype(np.uint8)
+    if name == "stacks":
+        # Game announcements can overlap the badge. Gold announcement letters are
+        # not white stack digits, even when their luminance passes the OCR cutoff.
+        rgb = np.array(crop.convert("RGB")).astype(int)
+        b &= (rgb.max(axis=2) - rgb.min(axis=2) < 65).astype(np.uint8)
     n, lab, st, _ = cv2.connectedComponentsWithStats(b, 8)
     H = DIGIT_H[name] * scale
     comps = [(i, *st[i][:4]) for i in range(1, n)
@@ -287,6 +292,15 @@ def read_numbers(crop, name, scale, cut=150):
 def known_numbers(crop, name, scale, cut=150):
     """Like read_numbers but never runs OCR: numbers not seen before come back as None."""
     return [_known_text(name, key, mask) for key, mask in _group_masks(crop, name, scale, cut)]
+
+
+def spear_count(texts):
+    """One complete numeric badge, never a guessed spear or a fragment of other text."""
+    if len(texts) == 1 and texts[0] and re.fullmatch(r"[0-9]{1,3}", texts[0]):
+        value = int(texts[0])
+        if 0 < value < 1000:
+            return value
+    return None
 
 
 def quick_read(frame, scale):
@@ -340,16 +354,13 @@ def quick_read(frame, scale):
     mr = first_int(known_numbers(crop(REGIONS["mr"]), "mr", scale))
     out["mr"] = mr or 0
     out["monster"] = not has_kda_row(frame, scale)
+    out["monster_kind"] = identify_monster(frame, scale) if out["monster"] else None
     if not icon:
         out["stacks"] = 0
     else:
         x0, y0, x1, y1 = icon
         st = known_numbers(crop((x0 - 3, y0 + 20, x1 + 6, y1 + 4)), "stacks", scale)
-        if None in st:
-            out["stacks"] = None
-        else:
-            vals = [int(v) for t in st for v in re.findall(r"\d+", t) if 0 < int(v) < 1000]
-            out["stacks"] = vals[-1] if vals else 1   # icon without a number = 1 spear
+        out["stacks"] = spear_count(st)
     return out
 
 
@@ -532,13 +543,13 @@ def read_target(frame, scale):
         obs["ally"] = raw["ally"] = True
         return obs, raw
     obs["monster"] = raw["monster"] = not has_kda_row(frame, scale)
+    obs["monster_kind"] = identify_monster(frame, scale) if obs["monster"] else None
     raw["icon"] = icon
     if icon:
         x0, y0, x1, y1 = icon
         # stack number sits on the lower half of the icon (the spear art is on the upper half)
         raw["stacks"] = read_numbers(crop((x0 - 3, y0 + 20, x1 + 6, y1 + 4)), "stacks", scale)
-        st = [v for v in nums(raw["stacks"]) if 0 < v < 1000]
-        obs["stacks"] = st[-1] if st else 1  # icon without a number = 1 spear
+        obs["stacks"] = spear_count(raw["stacks"])
     return obs, raw
 
 
@@ -754,8 +765,6 @@ class ExecuteWatcher:
         self.result = None
         self._q_key = None
         self._kill_streak = 0
-        self._confirmed_at = 0
-        self._portrait = None
 
     def _observe(self, me, q):
         # Never carry a kill or spear count through an unreadable/new target or a vanished
@@ -763,28 +772,21 @@ class ExecuteWatcher:
         if q["ally"] or not q["present"] or q["fill"] is None:
             self._clear_result()
             return None
-        now = time.monotonic()
-        if not q["max_hp"] or q["armor"] is None or q["stacks"] is None:
-            same = (q.get("identity") is not None and q["identity"] == self._portrait
-                    and self.result and now - self._confirmed_at < .3
-                    and (q["max_hp"] is None or q["max_hp"] == self.result["max_hp"])
-                    and (q["armor"] is None or q["armor"] == self._q_key[1]))
-            self._kill_streak = 0
-            if same and q["stacks"] != 0:
-                # Retain only the line (muted), never an unconfirmed kill/close animation.
-                self.result = dict(self.result, state=None, pending=True,
-                                   hp=q["hp"] if q["hp"] is not None else round(q["fill"] * self.result["max_hp"]))
-            else:
-                self._clear_result()
+        kind = q.get("monster_kind")
+        if (not q["max_hp"] or q["armor"] is None or q["stacks"] is None
+                or (q["monster"] and kind is None)):
+            # A portrait cannot distinguish two identical dummies/minions. Never
+            # borrow the previous target's count while its new badge is being read.
+            self._clear_result()
             return None
         max_hp = q["max_hp"]
-        key = (max_hp, q["armor"], q["mr"])           # same target
+        key = (q.get("identity"), max_hp, q["armor"], q["mr"], q["stacks"], kind)
         if key != self._q_key:
             self._q_key, self._kill_streak = key, 0
         est = q["hp"] is None
         tgt = {"hp": round(q["fill"] * max_hp) if est else q["hp"], "max_hp": max_hp,
                "armor": q["armor"], "mr": q["mr"], "stacks": q["stacks"], "hp_estimated": est,
-               "epic": q["monster"] and max_hp >= EPIC_MIN_HP}
+               "epic": bool(kind and kind[1])}
         res = evaluate(me, tgt)
         # The bar itself must agree with a kill too (catches a misread HP number).
         if res["state"] == "kill" and q["fill"] * max_hp > res["dmg"] + 0.01 * max_hp:
@@ -795,13 +797,12 @@ class ExecuteWatcher:
             res["state"] = "close"
         # Publish the calculation and its bar together. The renderer must never
         # observe a new result before its coordinates have been attached.
-        self.result = dict(res, bar=self.bar_on_screen())
-        self._portrait, self._confirmed_at = q.get("identity"), now
+        self.result = dict(res, bar=self.bar_on_screen(),
+                           monster=kind[0] if kind else None, hp_estimated=est,
+                           observed_at=time.monotonic())
         return tgt
 
     _q_key = None
-    _portrait = None
-    _confirmed_at = 0.0
 
     def _ocr_loop(self):
         while True:

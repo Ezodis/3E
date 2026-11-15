@@ -26,40 +26,40 @@ class MarkerTest(unittest.TestCase):
                 self.assertEqual(call.args[2], marker["x"])
         return marker, canvas
 
-    def test_reported_one_hp_target_draws_at_empty_edge(self):
+    def test_reported_one_hp_target_draws_at_lethal_right_edge(self):
         marker, canvas = self.draw(1, 730.4, state="kill")
-        self.assertEqual(marker["remaining_hp"], 0)
-        self.assertEqual(marker["x"], 317)
+        self.assertEqual(marker["coverage"], 1)
+        self.assertEqual(marker["x"], 540)
         self.assertEqual(canvas.create_line.call_args_list[1].kwargs["fill"], "#ff3b5c")
 
-    def test_falling_health_moves_left_with_same_damage(self):
-        for hp, expected in [(1000, 800), (600, 400), (201, 1), (200, 0), (1, 0)]:
+    def test_falling_health_moves_right_with_same_damage(self):
+        for hp, expected in [(1000, .2), (600, 1/3), (201, 200/201), (200, 1), (1, 1)]:
             with self.subTest(hp=hp):
                 marker, _ = self.draw(hp, 200)
-                self.assertEqual(marker["remaining_hp"], expected)
-                self.assertAlmostEqual(marker["x"], 317 + expected * 223 / 1000)
+                self.assertEqual(marker["coverage"], expected)
+                self.assertAlmostEqual(marker["x"], 317 + expected * 223)
 
-    def test_added_spears_move_left_without_waiting_for_hp_change(self):
+    def test_added_spears_move_right_without_waiting_for_hp_change(self):
         first, _ = self.draw(900, 100)
         second, _ = self.draw(900, 500)
-        self.assertLess(second["x"], first["x"])
+        self.assertGreater(second["x"], first["x"])
 
-    def test_damage_over_maximum_never_pushes_marker_right(self):
+    def test_overkill_clamps_to_right_edge(self):
         marker, _ = self.draw(1, 10000, state="kill")
-        self.assertEqual(marker["x"], marker["bar_left"])
+        self.assertEqual(marker["x"], marker["bar_right"])
 
-    def test_no_spears_aligns_with_current_fill(self):
+    def test_no_spears_resets_to_left_edge(self):
         marker, _ = self.draw(500, 0, stacks=0)
-        self.assertEqual(marker["x"], (317 + 540) / 2)
+        self.assertEqual(marker["x"], 317)
 
     def test_target_switch_and_healing_have_no_previous_position(self):
         self.draw(1, 900, state="kill")
         marker, _ = self.draw(800, 100)
-        self.assertAlmostEqual(marker["x"], 317 + .7 * 223)
+        self.assertAlmostEqual(marker["x"], 317 + .125 * 223)
 
     def test_pending_read_updates_hp_but_stays_muted(self):
         marker, canvas = self.draw(100, 200, pending=True)
-        self.assertEqual(marker["remaining_hp"], 0)
+        self.assertEqual(marker["coverage"], 1)
         self.assertEqual(canvas.create_line.call_args_list[1].kwargs["fill"], "#91a5a0")
 
     def test_window_offsets_and_hud_scales(self):
@@ -67,13 +67,28 @@ class MarkerTest(unittest.TestCase):
             for origin in ((0, 0), (500, 100), (-2048, -300)):
                 with self.subTest(scale=scale, origin=origin):
                     marker, _ = self.draw(750, 250, scale=scale, origin=origin)
-                    self.assertAlmostEqual(marker["x"], (317 + 223 * .5) * scale)
+                    self.assertAlmostEqual(marker["x"], (317 + 223 / 3) * scale)
 
     def test_invalid_or_missing_bar_draws_nothing(self):
         for changes in (dict(max_hp=0), dict(bar=None)):
             marker, canvas = self.draw(1, 100, **changes)
             self.assertIsNone(marker)
             canvas.create_line.assert_not_called()
+        marker, canvas = self.draw(0, 100)
+        self.assertIsNone(marker)
+        canvas.create_line.assert_not_called()
+
+    def test_requested_600_hp_300_damage_example_is_halfway(self):
+        marker, _ = self.draw(600, 300)
+        self.assertEqual(marker["coverage"], .5)
+        self.assertEqual(marker["x"], (317 + 540) / 2)
+
+    def test_lightning_requires_fresh_confirmed_lethal_hit(self):
+        res = dict(hp=100, dmg=100, stacks=1, state="kill", observed_at=10)
+        self.assertTrue(lol.show_lethal_lightning(res, 10.1))
+        for changes in (dict(state="close"), dict(state=None), dict(pending=True),
+                        dict(hp=101), dict(hp=0), dict(stacks=0), dict(observed_at=9)):
+            self.assertFalse(lol.show_lethal_lightning(dict(res, **changes), 10.1), changes)
 
 
 if __name__ == "__main__":

@@ -1,3 +1,14 @@
+3£ corrects Rend's current-health coverage and target readings, and repairs tray-menu lifetimes.
+
+- Rend's line moves right with damage/current HP: 300 damage against 600 HP is halfway; lethal damage reaches the right edge immediately.
+- Lightning appears only for a fresh confirmed lethal reading. Almost-lethal borders, stale results and carried-over unreadable spear counts are removed.
+- Recognizes ordinary and epic monster portraits locally instead of guessing from HP. Gromp no longer gets the epic damage reduction. Obscured or invalid spear badges no longer become one spear.
+- Stores native menu rows and toggle state as plain managed data, removing the unused hidden XAML flyout and its controls.
+- Dispatches menu opening and selection actions on the UI queue after the original callbacks unwind. Toggles, settings, and Quit retain their existing actions.
+- Adds native menu lifetime checks, actual target-frame OCR replays, portrait checks, and renderer regressions. Uses the settings-preserving app-only installer.
+
+Previous release:
+
 3£ fixes the Rend line's direction and relationship to current health.
 
 - The line now previews HP remaining after Rend, so it moves left as health drops or spear damage rises. A lethal hit places it immediately at the empty edge, including a 1 HP target.

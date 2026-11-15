@@ -5,7 +5,6 @@ using System.Linq;
 using System.Runtime.InteropServices;
 using System.Timers;
 using Microsoft.UI.Xaml;
-using Microsoft.UI.Xaml.Input;
 using ThreeFingerDragEngine.utils;
 using ThreeFingerDragOnWindows.threefingerdrag;
 using ThreeFingerDragOnWindows.utils;
@@ -13,7 +12,6 @@ using ThreeFingerDragOnWindows.utils;
 namespace ThreeFingerDragOnWindows.touchpad;
 
 public sealed partial class HandlerWindow : Window {
-    public Microsoft.UI.Xaml.Controls.MenuFlyout HubMenu => MenuFlyout1;
     private readonly App _app;
     private readonly ContactsManager _contactsManager;
     private readonly ThreeFingerDrag _threeFingersDrag;
@@ -32,6 +30,11 @@ public sealed partial class HandlerWindow : Window {
         InitializeComponent();
 
         _app = app;
+        // Native tray actions use managed commands; no hidden XamlUICommand/flyout
+        // participates in the Win32 popup's nested callback lifetime.
+        TaskbarIcon.LeftClickCommand = new HubMenuCommand(() =>
+            _app.DispatcherQueue.TryEnqueue(() => _app.Hub?.OpenPhoneTrackpad()));
+        TaskbarIcon.RightClickCommand = new HubMenuCommand(ShowAllControls);
         UpdateTrayIcon();
         TaskbarIcon.ForceCreate(false);
         Microsoft.Win32.SystemEvents.UserPreferenceChanged += OnUserPreferenceChanged;
@@ -59,12 +62,6 @@ public sealed partial class HandlerWindow : Window {
     // TaskbarIcon Actions
     [DllImport("user32.dll")] private static extern bool GetCursorPos(out System.Drawing.Point point);
 
-    private void OpenLauncher(object sender, ExecuteRequestedEventArgs e) {
-        _app.Hub?.OpenPhoneTrackpad();
-    }
-
-    private void OpenAllControls(object sender, ExecuteRequestedEventArgs e) => ShowAllControls();
-
     private void ShowAllControls() {
         GetCursorPos(out var point);
         _app.Hub?.ShowControlsMenu(WinRT.Interop.WindowNative.GetWindowHandle(this), point);
@@ -85,16 +82,6 @@ public sealed partial class HandlerWindow : Window {
         _trayArtwork = artwork;
         _lightTaskbar = light;
         previous?.Dispose();
-    }
-
-    private void OpenSettingsWindow(object sender, ExecuteRequestedEventArgs e){
-        Logger.Log("Opening SettingsWindow from HandlerWindow TaskbarIcon");
-        _app.OpenSettingsWindow();
-    }
-
-    private void QuitApp(object sender, ExecuteRequestedEventArgs e){
-        Logger.Log("Quitting App from HandlerWindow TaskbarIcon");
-        _app.Quit();
     }
 
 

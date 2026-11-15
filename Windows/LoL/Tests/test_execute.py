@@ -87,16 +87,32 @@ class ExecuteTest(unittest.TestCase):
         ImageDraw.Draw(frame).rectangle(e.HEALTH_BAR, fill="#20aa20")
         self.assertFalse(e.target_is_enemy(frame, 1, (504, 198, 551, 245)))
 
-    def test_unknown_digit_keeps_only_muted_line_on_same_target(self):
-        with patch.object(e.time, "monotonic", return_value=10):
-            result = self.observe(identity=b"enemy1")
-        with patch.object(e.time, "monotonic", return_value=10.1):
-            pending = self.observe(identity=b"enemy1", stacks=None)
-        self.assertEqual(pending["dmg"], result["dmg"])
-        self.assertTrue(pending["pending"])
-        self.assertIsNone(pending["state"])
-        with patch.object(e.time, "monotonic", return_value=10.31):
-            self.assertIsNone(self.observe(identity=b"enemy1", stacks=None))
+    def test_identical_portrait_never_borrows_unreadable_spears(self):
+        self.observe(identity=b"dummy", stacks=60)
+        self.assertIsNone(self.observe(identity=b"dummy", stacks=None))
+        result = self.observe(identity=b"dummy", stacks=1)
+        self.assertEqual(result["stacks"], 1)
+        self.assertEqual(result["dmg"], 185)
+
+    def test_monster_portrait_not_hp_determines_damage(self):
+        normal = self.observe(monster=True, monster_kind=("sru_gromp", False),
+                              hp=2695, max_hp=2870, fill=2695/2870, armor=42)
+        self.assertAlmostEqual(normal["dmg"], 185 * 100/142)
+        epic = self.observe(monster=True, monster_kind=("sru_baron", True),
+                            hp=2695, max_hp=2870, fill=2695/2870, armor=42)
+        self.assertAlmostEqual(epic["dmg"], normal["dmg"] / 2)
+        self.assertIsNone(self.observe(monster=True, monster_kind=None))
+
+    def test_unreadable_badges_never_default_to_one(self):
+        for texts in ([], [None], ["■"], ["1x"], ["1", "7"], ["0"], ["1000"]):
+            self.assertIsNone(e.spear_count(texts), texts)
+        for value in (1, 17, 60, 254):
+            self.assertEqual(e.spear_count([str(value)]), value)
+
+    def test_target_or_stack_switch_resets_estimated_kill_confirmation(self):
+        for _ in range(3): self.observe(identity=b"a", hp=None, stacks=4)
+        self.assertEqual(self.w.result["state"], "kill")
+        self.assertEqual(self.observe(identity=b"b", hp=None, stacks=1)["state"], "close")
 
     def test_unknown_digit_after_switch_never_retains_line(self):
         self.observe(identity=b"enemy1")
