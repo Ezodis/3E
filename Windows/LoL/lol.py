@@ -16,8 +16,8 @@ Features (only active while the League game window is focused):
                      attack timer, repeat. Uses your live attack speed and boots tier.
   * Scroll wheel  -> holds 1, next scroll releases it and holds 2, then 3, 4, back to 1.
                      Scroll up = next, scroll down = previous. Any other key/click releases it.
-  * Kalista E     -> line on the target's health bar at the HP Rend kills at (moves right
-                     with more spears) + lightning around the screen when Rend kills
+  * Kalista E     -> line on the target's health bar at the HP left after Rend (moves left
+                     with damage, reaching zero on a lethal hit) + lightning when Rend kills
                      (pulsing border when one more spear would kill). See lol_execute.py.
 
 Keybinds it relies on are set by lol_settings.py (stop = v, camera lock = y, pan = h,
@@ -518,6 +518,39 @@ KEY_COLOR = "#010101"  # painted pixels of this colour are fully transparent
 BOLT_COLORS = [(16, "#0b4f44"), (9, "#1fd1a0"), (3, "#eafff9")]  # glow -> core
 
 
+def draw_rend_marker(canvas, res, origin, dpi):
+    """Draw remaining HP after Rend, in the same coordinates as the current health fill.
+
+    Use the latest HP/damage pair directly: smoothing can leave a lethal marker to the
+    right of zero, or carry the previous target's marker into the next target.
+    Returns the rendered position for diagnostics; creates no windows or input hooks.
+    """
+    bar = res.get("bar")
+    if not bar or res["max_hp"] <= 0:
+        return None
+    ox, oy = origin
+    x0, y0, x1, y1 = bar[0] - ox, bar[1] - oy, bar[2] - ox, bar[3] - oy
+    hp = max(0, min(res["hp"], res["max_hp"]))
+    remaining = max(0, hp - max(0, res["dmg"]))
+    x = x0 + remaining / res["max_hp"] * (x1 - x0)
+    kill = res["state"] == "kill"
+    core = "#ffffff" if kill else "#eafff9"
+    glow = "#ff3b5c" if kill else "#1fd1a0"
+    if res.get("pending"):
+        glow = core = "#91a5a0"
+    ext = 5 * dpi
+    canvas.create_line(x, y0 - ext, x, y1 + ext, fill="#06332a", width=max(1, int(7 * dpi)))
+    canvas.create_line(x, y0 - ext, x, y1 + ext, fill=glow, width=max(1, int(4 * dpi)))
+    canvas.create_line(x, y0 - ext, x, y1 + ext, fill=core, width=max(1, int(1.5 * dpi)))
+    t = 5 * dpi
+    canvas.create_polygon(x - t, y0 - ext - t, x + t, y0 - ext - t, x, y0 - ext, fill=glow)
+    canvas.create_polygon(x - t, y1 + ext + t, x + t, y1 + ext + t, x, y1 + ext, fill=glow)
+    canvas.create_text(x, y0 - ext - t - 2 * dpi, anchor="s",
+                       text=f"{res['stacks']}" + ("…" if res.get("pending") else ""),
+                       fill=glow, font=("Segoe UI", 9, "bold"))
+    return {"remaining_hp": remaining, "x": x, "bar_left": x0, "bar_right": x1}
+
+
 def make_indicator():
     """Click-through, always-on-top spear in the bottom-left corner + E damage label.
     Green = game focused (macros active), grey = script running but idle."""
@@ -557,7 +590,7 @@ def make_indicator():
     # the reader looks at. Side effect: screenshots won't show the line/lightning either.
     user32.SetWindowDisplayAffinity(ov_hwnd, 0x11)
     ov.withdraw()
-    ov_state = {"shown": False, "rect": None, "frame": 0}
+    ov_state = {"shown": False, "rect": None, "frame": 0, "marker": None}
     last_status = 0.0
 
     def place_overlay():
@@ -606,36 +639,6 @@ def make_indicator():
                 for width, color in BOLT_COLORS[1:]:
                     oc.create_line(br, fill=color, width=max(1, int(width * d * 0.4)))
 
-    def draw_marker(res):
-        """Line on the target's health bar at the HP where Rend kills; slides right as spears add up."""
-        bar = res.get("bar")
-        if not bar or not res["max_hp"]:
-            return
-        ox, oy = ov_state["rect"][0], ov_state["rect"][1]
-        x0, y0, x1, y1 = bar[0] - ox, bar[1] - oy, bar[2] - ox, bar[3] - oy
-        frac = min(res["dmg"] / res["max_hp"], 1.0)
-        target_x = x0 + frac * (x1 - x0)
-        cur = ov_state.get("lx")
-        identity = (res["max_hp"], res["mult"], res["stacks"] == 0)
-        cur = target_x if cur is None or identity != ov_state.get("target") else cur + (target_x - cur) * 0.65
-        ov_state["target"] = identity
-        ov_state["lx"] = cur
-        d = dpi
-        kill = res["state"] == "kill"
-        core = "#ffffff" if kill else "#eafff9"
-        glow = "#ff3b5c" if kill else "#1fd1a0"
-        if res.get("pending"):
-            glow = core = "#91a5a0"
-        ext = 5 * d
-        oc.create_line(cur, y0 - ext, cur, y1 + ext, fill="#06332a", width=int(7 * d))
-        oc.create_line(cur, y0 - ext, cur, y1 + ext, fill=glow, width=int(4 * d))
-        oc.create_line(cur, y0 - ext, cur, y1 + ext, fill=core, width=max(1, int(1.5 * d)))
-        t = 5 * d  # little arrow heads above and below the bar
-        oc.create_polygon(cur - t, y0 - ext - t, cur + t, y0 - ext - t, cur, y0 - ext, fill=glow)
-        oc.create_polygon(cur - t, y1 + ext + t, cur + t, y1 + ext + t, cur, y1 + ext, fill=glow)
-        oc.create_text(cur, y0 - ext - t - 2 * d, anchor="s", text=f"{res['stacks']}" + ("…" if res.get("pending") else ""),
-                       fill=glow, font=("Segoe UI", 9, "bold"))
-
     def render():
         res = watcher.result if macros_active() else None
         state = res["state"] if res else None
@@ -643,7 +646,7 @@ def make_indicator():
             c.itemconfig(label, text=f"E {res['dmg']:.0f} / {res['hp']}")
         else:
             c.itemconfig(label, text="")
-            ov_state["lx"] = None
+            ov_state["marker"] = None
         if res:
             w, h = place_overlay()
             if not ov_state["shown"]:
@@ -654,7 +657,7 @@ def make_indicator():
                 draw_lightning(w, h, state)  # clears the canvas itself
             else:
                 oc.delete("all")
-            draw_marker(res)
+            ov_state["marker"] = draw_rend_marker(oc, res, ov_state["rect"][:2], dpi)
             user32.SetWindowPos(ov_hwnd, HWND_TOPMOST, 0, 0, 0, 0, SWP_KEEP)
         elif ov_state["shown"]:
             oc.delete("all")
@@ -686,7 +689,8 @@ def make_indicator():
                 status = {"pid": os.getpid(), "updated": time.time(), "active": macros_active(),
                           "kalista": bool(watcher and watcher.me and watcher.me.get("kalista")),
                           "camera_locked": camera_locked, "overlay_shown": ov_state["shown"],
-                          "overlay_frames": ov_state["frame"], "result": watcher.result if watcher else None}
+                          "overlay_frames": ov_state["frame"], "marker": ov_state["marker"],
+                          "result": watcher.result if watcher else None}
                 tmp = lol_execute.DATA / "lol_status.tmp"
                 tmp.write_text(json.dumps(status), encoding="utf-8")
                 tmp.replace(lol_execute.DATA / "lol_status.json")

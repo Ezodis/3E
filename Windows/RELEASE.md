@@ -1,3 +1,12 @@
+3£ fixes the Rend line's direction and relationship to current health.
+
+- The line now previews HP remaining after Rend, so it moves left as health drops or spear damage rises. A lethal hit places it immediately at the empty edge, including a 1 HP target.
+- Removes position smoothing that could carry an old target or health reading into the next frame. The existing confirmed-kill and muted uncertain-reading rules remain in effect.
+- Adds nine renderer regressions covering the reported 1 HP case, changing health/damage, healing, target switches, and window/HUD scaling. Diagnostics include the position actually drawn.
+- Uses the reviewed app-only installer below, preserving network and startup settings.
+
+Previous release:
+
 3£ app-only updates preserve the host's deployment settings.
 
 - `-AppOnly` now takes a separate file-update path before full setup. It preserves firewall rules, HTTP URL permissions, scheduled tasks, Run entries, startup launchers, drivers and preferences. It installs no dependencies.

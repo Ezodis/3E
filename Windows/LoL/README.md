@@ -15,8 +15,15 @@ refuses to run while League or its client is open, and can be rerun without
 moving bindings again. League must restart to load changed bindings; an in-memory
 MB5 → Flash binding cannot be suppressed reliably by a Windows mouse hook.
 
+The Rend line previews **remaining health after E**: `max(current HP - damage, 0)`
+on the target frame's full health scale. It follows HP changes as well as spear
+changes, immediately reaches the left edge for a lethal hit, and never lags behind
+the current reading through position smoothing. Lightning still requires a confirmed
+kill calculation. For example, 600/1000 HP with 200 damage puts the line at 400 HP;
+1/1000 HP with 730 damage puts it at zero.
+
 Rend uses cached whole numbers and learned individual digit shapes. On a briefly
-unreadable number for the same portrait, the threshold stays muted for at most
+unreadable number for the same portrait, the preview stays muted for at most
 300 ms; lightning is withheld until a new reading confirms the kill. Green ally
 bars are excluded. An almost empty bar requires enemy evidence (a red bar or a
 Rend debuff). The existing HP-based epic-monster classification remains a
@@ -25,7 +32,8 @@ heuristic; this release does not add target-name or shield recognition.
 Diagnostics:
 
 - `lol_runtime.log`: bounded, rotating launcher, thread and rendering errors.
-- `lol_status.json`: active state, camera state, current result and rendered frame count.
+- `lol_status.json`: active state, camera state, current result, rendered marker position
+  and remaining HP, and rendered frame count.
 - `lol_execute_log.csv`: results used by the overlay, rather than a separate OCR estimate.
 - `lol_debug/kill_*.png`: bounded target snapshots; unchanged kills are throttled.
 
