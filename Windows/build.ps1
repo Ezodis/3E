@@ -49,6 +49,11 @@ foreach ($arch in @('x64','arm64')) {
     Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'DragEngine\LICENSE') -Destination (Join-Path $output 'THIRD-PARTY-LICENSE-ThreeFingerDragOnWindows.txt') -Force
     Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'PhoneTrackpad-QRCoder-LICENSE.txt') -Destination (Join-Path $output 'THIRD-PARTY-LICENSE-QRCoder.txt') -Force
     Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'PowerToys.json') -Destination (Join-Path $output 'MacKeyboard.json') -Force
+    # LoL macros: Python scripts the tray toggle runs as the signed-in user.
+    $lolOutput = Join-Path $output 'LoL'
+    New-Item -ItemType Directory -Path $lolOutput -Force | Out-Null
+    Get-ChildItem -LiteralPath (Join-Path $PSScriptRoot 'LoL') -File | Copy-Item -Destination $lolOutput -Force
+    if (-not (Test-Path -LiteralPath (Join-Path $lolOutput 'lol.pyw'))) { throw "Missing $arch LoL macros script." }
     $phoneSource = Join-Path $output 'PhoneTrackpadSource'
     New-Item -ItemType Directory -Path $phoneSource -Force | Out-Null
     Get-ChildItem -LiteralPath (Join-Path $PSScriptRoot 'PhoneBar') -File | Copy-Item -Destination $phoneSource -Force

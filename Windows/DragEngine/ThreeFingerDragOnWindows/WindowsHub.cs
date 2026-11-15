@@ -1,4 +1,4 @@
-﻿using ThreeE.PhoneBar.Windows;
+using ThreeE.PhoneBar.Windows;
 using ThreeE.CarView;
 using ThreeE.Brand;
 using System;
@@ -67,7 +67,7 @@ public sealed class WindowsHub : IDisposable {
         public bool AutoUpdate { get; set; } = true;
         public string AutoUpdateTag { get; set; }
         public int AutoUpdateAttempts { get; set; }
-        // LoL macros: the user's own script, lol.pyw in Documents unless LolScript names another file.
+        // LoL macros: the bundled LoL\lol.pyw unless LolScript names another file.
         public bool LolMacros { get; set; } = false;
         public string LolScript { get; set; }
     }
@@ -135,13 +135,14 @@ public sealed class WindowsHub : IDisposable {
         })?.Dispose();
     }
 
-    // LoL macros run the user's script through an on-demand task with the signed-in user's
-    // limited token, so it never inherits 3£'s administrator rights (the script lives in a
-    // user-writable folder). The script writes lol.pid next to itself and quits when lol.stop
-    // appears there.
+    // LoL macros run the Python scripts 3£ ships in LoL\ through an on-demand task with the
+    // signed-in user's limited token, so they never inherit 3£'s administrator rights. The
+    // scripts keep lol.pid, logs and snapshots in %LOCALAPPDATA%EWindows\LoL and quit when
+    // lol.stop appears there.
     private string LolScript => string.IsNullOrWhiteSpace(settings.LolScript)
-        ? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), "lol.pyw") : settings.LolScript;
-    private string LolFile(string name) => Path.Combine(Path.GetDirectoryName(LolScript) ?? "", name);
+        ? Path.Combine(root, "LoL", "lol.pyw") : settings.LolScript;
+    private static string LolFile(string name) => Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "3EWindows", "LoL", name);
 
     private Process LolProcess() {
         try {
@@ -179,7 +180,8 @@ public sealed class WindowsHub : IDisposable {
         definition.Settings.StopIfGoingOnBatteries = false;
         definition.Settings.ExecutionTimeLimit = TimeSpan.Zero;
         definition.Settings.MultipleInstances = Microsoft.Win32.TaskScheduler.TaskInstancesPolicy.IgnoreNew;
-        definition.Actions.Add(new Microsoft.Win32.TaskScheduler.ExecAction(PythonWindowless(), "\"" + LolScript + "\"", Path.GetDirectoryName(LolScript)));
+        Directory.CreateDirectory(Path.GetDirectoryName(LolFile("lol.pid")));
+        definition.Actions.Add(new Microsoft.Win32.TaskScheduler.ExecAction(PythonWindowless(), "\"" + LolScript + "\"", Path.GetDirectoryName(LolFile("lol.pid"))));
         service.RootFolder.RegisterTaskDefinition("3£ LoL macros", definition, Microsoft.Win32.TaskScheduler.TaskCreation.CreateOrUpdate,
             null, null, Microsoft.Win32.TaskScheduler.TaskLogonType.InteractiveToken).Run();
     }
@@ -529,7 +531,7 @@ public sealed class WindowsHub : IDisposable {
             if (enabled) _ = EnsureComponentsAsync(); else { Stop("PowerToys"); if (settings.MacKeyboard) _ = macKeyboard.EnsureAsync(); }
         }, OpenPowerToysSettings);
         // The check mark means the script is running; its icon shows the script in Explorer.
-        Toggle(File.Exists(LolScript) ? "LoL macros" : "LoL macros — put lol.pyw in Documents", LolRunning(), enabled => {
+        Toggle(File.Exists(LolScript) ? "LoL macros" : "LoL macros — script missing", LolRunning(), enabled => {
             settings.LolMacros = enabled;
             if (enabled) StartLol(); else _ = StopLolAsync();
         }, () => Process.Start(new ProcessStartInfo("explorer.exe", "/select,\"" + LolScript + "\"") { UseShellExecute = true })?.Dispose());
