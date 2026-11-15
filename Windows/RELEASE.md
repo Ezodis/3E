@@ -1,3 +1,12 @@
+3£ improves LoL macro timing and Rend display stability.
+
+- Tap/hold controls use actual press duration, cancel on focus loss, and cannot revive an older hold after a rapid re-press. A delayed MB5 timer no longer turns a hold into a Flash tap.
+- Rend learns individual digits for faster changing spear counts. Briefly unreadable values keep a muted threshold on the same target, without unconfirmed lightning. Vanished spears clear immediately; green allies remain excluded.
+- Keybind migration keeps MB5 actions on F10, is safe to repeat, and refuses to edit League configuration while the client is open.
+- Adds rotating error logs, an overlay status file, and 30 automated regressions. In-game validation of this release remains pending installation under the host's update policy.
+
+Previous release:
+
 - LoL macros are now built into 3£: the tray toggle runs the scripts 3£ installs (no `lol.pyw` in Documents needed). They need Python 3.12 with the LoL packages, run as you without 3£'s administrator rights, keep their logs in `%LOCALAPPDATA%\3EWindows\LoL`, and the row's icon shows the scripts in Explorer.
 - Track Tab and Track Phone: with more than one desktop, the four-finger swipe now really switches desktops (one per swipe). The desktop shortcut uses right Ctrl so Ctrl+arrow remaps (like PowerToys Ctrl+→ = End) no longer swallow it, and the phone's swipe now checks desktops on the PC like the trackpad does.
 - Track Phone key bar: removed Del, reordered to Esc ⇧ Tab, and made every top-row key (including clipboard, ▲ and +) the same size with even spacing.

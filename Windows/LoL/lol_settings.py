@@ -14,7 +14,8 @@ JSON = CFG / "PersistedSettings.json"
 #    Later change: lol.py now uses N itself, so the binds on [n] were moved again to [j]
 #    (B clicks send j). MB5's binds were moved to [F10] too: League reads mouse buttons below
 #    the input hook, so only the macro (an MB5 click) may send them.
-SWAP = {"[n]": "[L Win]", "[b]": "[n]"}
+# Final migration, not a repeated key swap: running setup twice must do nothing.
+SWAP = {"[n]": "[j]", "[Button 5]": "[F10]"}
 
 # 2) Explicit bindings set after the swap
 SET = {
@@ -23,7 +24,7 @@ SET = {
     "evntPlayerPing": "[Cmd][Button 1],[m]",      # M = ping wheel too
     "evtPlayerPingRadialDanger": "[.]",           # . = danger (retreat) ping wheel
     "evntPlayerPingCursorDanger": "",
-    "evtCameraSnap": "[Button 5]",                # MB5 = center camera
+    "evtCameraSnap": "[F10]",                     # emitted only on an MB5 tap
     "evtChatHistory": "[Alt][k],[Button 3]",      # MB3 = chat history
     "evtHoldShowScoreBoard": "[Alt][k],[Button 3]",  # MB3 = scoreboard
     "evtPlayerStopPosition": "[v]",               # stop (sent by lol.py while holding Space)
@@ -39,18 +40,25 @@ def convert(name, value):
         return SET[name]
     if not value:
         return value
-    parts = value.split(",")
-    return ",".join(SWAP.get(p.strip(), p) for p in parts)
+    return re.sub(r"\[n\]|\[Button 5\]", lambda m: SWAP[m[0]], value)
 
 
 def patch_ini(text):
     out = []
+    section = None
     for line in text.splitlines():
+        if line.startswith("[") and line.endswith("]"):
+            section = line[1:-1]
         m = re.match(r"^(evt\w+|evnt\w+|FreeDynamicCameraToggle)=(.*)$", line)
-        if m:
+        if m and section in ("GameEvents", "HUDEvents"):
             line = f"{m[1]}={convert(m[1], m[2])}"
         out.append(line)
-    seen = {re.match(r"^([^=]+)=", l)[1] for l in out if re.match(r"^[^=\[]+=", l)}
+    section, seen = None, set()
+    for line in out:
+        if line.startswith("[") and line.endswith("]"):
+            section = line[1:-1]
+        elif section in ("GameEvents", "HUDEvents") and "=" in line:
+            seen.add(line.split("=", 1)[0])
     # add any SET keys missing from [GameEvents]
     missing = [k for k in SET if k not in seen]
     if missing:
@@ -77,6 +85,13 @@ def patch_json(data):
 
 
 def main():
+    import subprocess
+    for process in ("LeagueClient.exe", "LeagueClientUx.exe", "League of Legends.exe"):
+        running = subprocess.check_output(
+            ["tasklist", "/FI", f"IMAGENAME eq {process}", "/FO", "CSV", "/NH"],
+            text=True, creationflags=subprocess.CREATE_NO_WINDOW)
+        if process.lower() in running.lower():
+            raise SystemExit("Close League and its client before updating keybinds. No files changed.")
     stamp = time.strftime("%Y%m%d-%H%M%S")
     for f in (INI, JSON):
         shutil.copy2(f, f.with_name(f"{f.name}.bak-{stamp}"))

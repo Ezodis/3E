@@ -24,13 +24,16 @@ Keybinds it relies on are set by lol_settings.py (stop = v, camera lock = y, pan
 N's old binds = j, shop = b, attack-move = F9, MB5's old binds = F10).
 
 Setup:  pip install pynput rapidocr_onnxruntime mss
-Run:    3£ tray menu -> LoL macros (no tray icon of its own; or: python lol.py, Ctrl+C to quit)
+Run:    3£ tray menu -> LoL macros (no separate launcher or tray icon).
 """
 import ctypes
 import ctypes.wintypes as wt
 import threading
 import time
 import queue
+import logging
+import json
+import os
 
 ctypes.windll.shcore.SetProcessDpiAwareness(2)  # real pixels for overlays/screen reads
 
@@ -39,6 +42,7 @@ import random
 from pynput import keyboard, mouse
 
 import lol_execute
+from lol_controls import HoldController
 
 # ---------------- config ----------------
 GAME_TITLE = "League of Legends (TM) Client"
@@ -104,6 +108,8 @@ MOUSEEVENTF_RIGHTDOWN, MOUSEEVENTF_RIGHTUP = 0x0008, 0x0010
 
 
 def right_click():
+    if not macros_active():
+        return
     for f in (MOUSEEVENTF_RIGHTDOWN, MOUSEEVENTF_RIGHTUP):
         inp = INPUT(type=0, u=_U(mi=MOUSEINPUT(0, 0, 0, f, 0, 0)))
         user32.SendInput(1, ctypes.byref(inp), ctypes.sizeof(INPUT))
@@ -115,7 +121,10 @@ def _send(vk=0, scan=0, flags=0):
 
 
 def key_down(k):
+    if not macros_active():
+        return False
     _send(scan=SCAN[k], flags=KEYEVENTF_SCANCODE)
+    return True
 
 
 def key_up(k):
@@ -123,13 +132,17 @@ def key_up(k):
 
 
 def tap(k):
-    key_down(k)
+    if not key_down(k):
+        return False
     time.sleep(0.02)
     key_up(k)
+    return True
 
 
 def mask_win():
     """Send an unassigned VK while Win is down so releasing Win won't open Start."""
+    if not macros_active():
+        return
     _send(vk=0xE8)
     _send(vk=0xE8, flags=KEYEVENTF_KEYUP)
 
@@ -139,6 +152,10 @@ def game_focused():
     buf = ctypes.create_unicode_buffer(256)
     user32.GetWindowTextW(hwnd, buf, 256)
     return buf.value == GAME_TITLE
+
+
+def macros_active():
+    return bool(game_focused() and watcher and watcher.me and watcher.me.get("kalista"))
 
 
 # ---------------- state ----------------
@@ -153,6 +170,7 @@ LLKHF_INJECTED, LLMHF_INJECTED = 0x10, 0x01
 actions = queue.Queue()          # hook callbacks must be fast -> do the work on a worker
 lock = threading.Lock()
 pressed = set()                  # physical keys currently down
+captured = set()                 # suppressed presses still need a suppressed release after Alt+Tab
 cycle_idx = -1                   # index into CYCLE_KEYS, -1 = none
 held_num = None                  # number key we are holding
 camera_locked = CAMERA_STARTS_LOCKED
@@ -171,6 +189,8 @@ def release_num(reset=False):
 def do_scroll(direction):
     global cycle_idx, held_num
     release_num()
+    if not macros_active():
+        return
     cycle_idx = (cycle_idx + direction) % len(CYCLE_KEYS) if cycle_idx >= 0 else (0 if direction > 0 else len(CYCLE_KEYS) - 1)
     held_num = CYCLE_KEYS[cycle_idx]
     key_down(held_num)
@@ -186,19 +206,19 @@ def mb5_click():
 # ---- camera (N) ----
 def toggle_camera():
     global camera_locked
-    tap(CAM_LOCK_KEY)
-    camera_locked = not camera_locked
-    cam["quiet_until"] = time.time() + 0.8   # the camera glides after a toggle: don't judge it yet
+    if tap(CAM_LOCK_KEY):
+        camera_locked = not camera_locked
+        cam["quiet_until"] = time.monotonic() + 0.25
 
 
-def camera_hold_start():
+def camera_hold_start(held):
     """Locked: unlock, drag while held, lock again on release. Unlocked: just drag."""
     cam["relock"] = camera_locked
     if camera_locked:
         toggle_camera()
         time.sleep(0.05)                     # let the game unlock before the pan key goes down
-    key_down(PAN_KEY)
-    cam["dragging"] = True
+    if held() and key_down(PAN_KEY):
+        cam["dragging"] = True
 
 
 def camera_hold_end():
@@ -207,42 +227,32 @@ def camera_hold_end():
         cam["dragging"] = False
     if cam["relock"]:
         cam["relock"] = False
-        if not camera_locked and game_focused():   # never type into another app
+        if not camera_locked and macros_active():
             toggle_camera()
 
 
 # ---- stop (Space) ----
-stop_state = {"on": False}
 
 
-def stop_spam():
-    while stop_state["on"]:
-        if not game_focused():                      # left League: stop for good
-            stop_state["on"] = False
-            break
+def stop_spam(held):
+    while held():
         tap(STOP_KEY)
         time.sleep(STOP_INTERVAL)
 
 
-def stop_start():
-    if not stop_state["on"]:
-        stop_state["on"] = True
-        threading.Thread(target=stop_spam, daemon=True).start()
-
-
-def stop_end():
-    stop_state["on"] = False
+def stop_start(held):
+    threading.Thread(target=stop_spam, args=(held,), daemon=True).start()
 
 
 # ---- kite (MB5) ----
-kite = {"held": False, "as": None}
+kite = {"as": None}
 
 
-def kite_as_loop():
+def kite_as_loop(held):
     """Keeps kite["as"] fresh while kiting (items like Rageblade change it every attack)."""
-    while kite["held"]:
+    while held():
         a = lol_execute.read_attack_speed()
-        if a:
+        if a and held():
             kite["as"] = a
         time.sleep(KITE_AS_POLL)
 
@@ -253,49 +263,38 @@ def windup_time(attack_speed):
     return base + (KAL_WINDUP / attack_speed - base) * KAL_WINDUP_MOD
 
 
-def _wait_until(when_fn):
+def _wait_until(when_fn, held):
     """Sleep until when_fn() (re-evaluated, so a new attack speed counts at once) or release."""
-    while kite["held"] and time.perf_counter() < when_fn():
+    while held() and time.perf_counter() < when_fn():
         time.sleep(0.003)
-    return kite["held"]
+    return held()
 
 
-def kite_loop():
+def kite_loop(held):
     """attack -> move order inside the windup (hop) -> hop lands + attack ready -> attack ..."""
-    while kite["held"]:
-        if not game_focused():                      # left League: stop for good
-            kite["held"] = False
-            break
+    while held():
         t0 = time.perf_counter()
         tap(ATTACK_KEY)
         cam["clicks"] += 1
         AS = lambda: kite["as"] or 1.0
-        if not _wait_until(lambda: t0 + MOVE_AT * windup_time(AS())):
+        if not _wait_until(lambda: t0 + MOVE_AT * windup_time(AS()), held):
             break
-        if not game_focused():
-            kite["held"] = False
+        if not held():
             break
         right_click()
         tier = ((watcher.me or {}).get("boots_tier") or 0) if watcher else 0
         hop = HOP_RANGE[tier] / HOP_SPEED[tier]
-        if not _wait_until(lambda: t0 + max(1.0 / AS(), windup_time(AS()) + hop + KITE_MARGIN)):
+        if not _wait_until(lambda: t0 + max(1.0 / AS(), windup_time(AS()) + hop + KITE_MARGIN), held):
             break
 
 
-def kite_start():
-    if kite["held"]:
-        return
+def kite_start(held):
     me = watcher.me if watcher else None
     if not (me and me.get("kalista")):
         return
-    kite["held"] = True
     kite["as"] = me.get("attack_speed") or kite["as"]
-    threading.Thread(target=kite_as_loop, daemon=True).start()
-    threading.Thread(target=kite_loop, daemon=True).start()
-
-
-def kite_end():
-    kite["held"] = False
+    threading.Thread(target=kite_as_loop, args=(held,), daemon=True).start()
+    threading.Thread(target=kite_loop, args=(held,), daemon=True).start()
 
 
 # Every macro key: a quick click does one thing, holding does another, and the key itself never
@@ -303,40 +302,14 @@ def kite_end():
 #   key: (on click, on hold start, on hold end)
 MACRO_KEYS = {
     VK_N: (toggle_camera, camera_hold_start, camera_hold_end),
-    VK_B: (lambda: tap(RECALL_KEY), lambda: tap(SHOP_KEY), None),
-    VK_SPACE: (lambda: tap("space"), stop_start, stop_end),
-    "MB5": (mb5_click, kite_start, kite_end),
+    VK_B: (lambda: tap(RECALL_KEY), lambda held: tap(SHOP_KEY) if held() else None, None),
+    VK_SPACE: (lambda: tap("space"), stop_start, None),
+    "MB5": (mb5_click, kite_start, None),
 }
-macro_down = {}                  # vk -> {"t": press time, "hold": hold started}
-
-
-def _hold_timer(vk, t0):
-    time.sleep(HOLD_TIME)
-    st = macro_down.get(vk)
-    if st and st["t"] == t0 and not st["hold"]:
-        st["hold"] = True
-        if MACRO_KEYS[vk][1]:
-            actions.put(MACRO_KEYS[vk][1])
-
-
-def macro_press(vk):
-    t0 = time.perf_counter()
-    macro_down[vk] = {"t": t0, "hold": False}
-    threading.Thread(target=_hold_timer, args=(vk, t0), daemon=True).start()
-
-
-def macro_release(vk):
-    st = macro_down.pop(vk, None)
-    if not st:
-        return
-    click, _, hold_end = MACRO_KEYS[vk]
-    if st["hold"]:
-        if hold_end:
-            if vk == "MB5":
-                kite_end()           # stop at once, not after queued actions
-            actions.put(hold_end)
-    elif click and game_focused():                  # a click only ever goes to League
-        actions.put(click)
+controls = HoldController(MACRO_KEYS, actions.put, macros_active, HOLD_TIME)
+macro_down = controls.down
+macro_press = controls.press
+macro_release = controls.release
 
 
 # ---- camera lock check: read from the HUD's camera button ----
@@ -359,7 +332,7 @@ def camera_watch():
     while True:
         time.sleep(0.05)
         try:
-            if not game_focused():
+            if not macros_active() or time.monotonic() < cam["quiet_until"]:
                 continue
             r = lol_execute.game_rect()
             if not r:
@@ -410,11 +383,16 @@ def camera_watch():
 
 def worker():
     while True:
-        fn = actions.get()
         try:
+            controls.poll()
+            if not macros_active():
+                release_num(reset=True)
+            fn = actions.get(timeout=0.01)
             fn()
-        except Exception as e:  # keep the macro alive
-            print("action error:", e)
+        except queue.Empty:
+            pass
+        except Exception:
+            logging.exception("Macro action failed")
 
 
 # ---------------- hooks ----------------
@@ -433,12 +411,17 @@ def kb_filter(msg, data):
 
     # key-up handling always runs (even if focus changed) so nothing gets stuck
     if up:
-        if vk in macro_down:
+        if vk in captured:
+            captured.discard(vk)
             macro_release(vk)
             kb_listener.suppress_event()
         return True
 
-    if not game_focused():
+    if down and vk in captured:
+        kb_listener.suppress_event()
+        return True
+
+    if not macros_active():
         return True
 
     if vk in MACRO_KEYS:
@@ -447,13 +430,14 @@ def kb_filter(msg, data):
                 actions.put(lambda: release_num(reset=True))
             macro_press(vk)
         if vk in macro_down:
+            captured.add(vk)
             kb_listener.suppress_event()     # the game only sees what the macro sends
         return True
 
     if first_down:
         if vk == VK_Y:         # you toggled the camera lock yourself
             camera_locked = not camera_locked
-            cam["quiet_until"] = time.time() + 0.8
+            cam["quiet_until"] = time.monotonic() + 0.25
         if held_num:
             actions.put(lambda: release_num(reset=True))  # any other key releases the number
         if vk == VK_LWIN:
@@ -465,16 +449,18 @@ def mouse_filter(msg, data):
     if data.flags & LLMHF_INJECTED:
         return True
     mb5 = msg in (WM_XBUTTONDOWN, WM_XBUTTONUP) and (data.mouseData >> 16) == XBUTTON2
-    if mb5 and msg == WM_XBUTTONUP and "MB5" in macro_down:   # always finish, even if focus moved
+    if mb5 and msg == WM_XBUTTONUP and "MB5" in captured:
+        captured.discard("MB5")
         macro_release("MB5")
         mouse_listener.suppress_event()
-    if not game_focused():
+    if not macros_active():
         return True
     if mb5 and msg == WM_XBUTTONDOWN:
         if "MB5" not in macro_down:
             if held_num:
                 actions.put(lambda: release_num(reset=True))
             macro_press("MB5")
+            captured.add("MB5")
         mouse_listener.suppress_event()          # the game only sees what the macro sends
     if msg == WM_RBUTTONDOWN:
         cam["clicks"] += 1
@@ -488,8 +474,7 @@ def mouse_filter(msg, data):
 
 
 def cleanup():
-    kite["held"] = False
-    stop_state["on"] = False
+    controls.cancel()
     release_num()
     if cam["dragging"]:
         key_up(PAN_KEY)
@@ -519,10 +504,12 @@ def spear_polys(size, pad=2):
 def _click_through(win):
     """Make a Tk window click-through, topmost-capable and hidden from taskbar/Alt+Tab."""
     GWL_EXSTYLE, WS_EX_LAYERED, WS_EX_TRANSPARENT, WS_EX_TOOLWINDOW = -20, 0x80000, 0x20, 0x80
+    WS_EX_NOACTIVATE = 0x08000000
     win.update_idletasks()
     hwnd = user32.GetParent(win.winfo_id())
     style = user32.GetWindowLongW(hwnd, GWL_EXSTYLE)
-    user32.SetWindowLongW(hwnd, GWL_EXSTYLE, style | WS_EX_LAYERED | WS_EX_TRANSPARENT | WS_EX_TOOLWINDOW)
+    user32.SetWindowLongW(hwnd, GWL_EXSTYLE,
+                         style | WS_EX_LAYERED | WS_EX_TRANSPARENT | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE)
     return hwnd
 
 
@@ -539,6 +526,8 @@ def make_indicator():
     size, margin = int(48 * dpi), int(6 * dpi)
     label_w = int(110 * dpi)
     root = tk.Tk()
+    root.report_callback_exception = lambda kind, value, tb: logging.error(
+        "Overlay callback failed", exc_info=(kind, value, tb))
     root.overrideredirect(True)
     root.attributes("-topmost", True)
     root.config(bg=KEY_COLOR)
@@ -569,6 +558,7 @@ def make_indicator():
     user32.SetWindowDisplayAffinity(ov_hwnd, 0x11)
     ov.withdraw()
     ov_state = {"shown": False, "rect": None, "frame": 0}
+    last_status = 0.0
 
     def place_overlay():
         r = lol_execute.game_rect() or (0, 0, user32.GetSystemMetrics(0), user32.GetSystemMetrics(1))
@@ -618,7 +608,7 @@ def make_indicator():
 
     def draw_marker(res):
         """Line on the target's health bar at the HP where Rend kills; slides right as spears add up."""
-        bar = watcher.bar_on_screen()
+        bar = res.get("bar")
         if not bar or not res["max_hp"]:
             return
         ox, oy = ov_state["rect"][0], ov_state["rect"][1]
@@ -626,12 +616,16 @@ def make_indicator():
         frac = min(res["dmg"] / res["max_hp"], 1.0)
         target_x = x0 + frac * (x1 - x0)
         cur = ov_state.get("lx")
-        cur = target_x if cur is None or abs(cur - target_x) > (x1 - x0) * 0.5 else cur + (target_x - cur) * 0.45
+        identity = (res["max_hp"], res["mult"], res["stacks"] == 0)
+        cur = target_x if cur is None or identity != ov_state.get("target") else cur + (target_x - cur) * 0.65
+        ov_state["target"] = identity
         ov_state["lx"] = cur
         d = dpi
         kill = res["state"] == "kill"
         core = "#ffffff" if kill else "#eafff9"
         glow = "#ff3b5c" if kill else "#1fd1a0"
+        if res.get("pending"):
+            glow = core = "#91a5a0"
         ext = 5 * d
         oc.create_line(cur, y0 - ext, cur, y1 + ext, fill="#06332a", width=int(7 * d))
         oc.create_line(cur, y0 - ext, cur, y1 + ext, fill=glow, width=int(4 * d))
@@ -639,11 +633,11 @@ def make_indicator():
         t = 5 * d  # little arrow heads above and below the bar
         oc.create_polygon(cur - t, y0 - ext - t, cur + t, y0 - ext - t, cur, y0 - ext, fill=glow)
         oc.create_polygon(cur - t, y1 + ext + t, cur + t, y1 + ext + t, cur, y1 + ext, fill=glow)
-        oc.create_text(cur, y0 - ext - t - 2 * d, anchor="s", text=f"{res['stacks']}",
+        oc.create_text(cur, y0 - ext - t - 2 * d, anchor="s", text=f"{res['stacks']}" + ("…" if res.get("pending") else ""),
                        fill=glow, font=("Segoe UI", 9, "bold"))
 
-    def animate():
-        res = watcher.result if watcher else None
+    def render():
+        res = watcher.result if macros_active() else None
         state = res["state"] if res else None
         if res:
             c.itemconfig(label, text=f"E {res['dmg']:.0f} / {res['hp']}")
@@ -666,18 +660,39 @@ def make_indicator():
             oc.delete("all")
             ov.withdraw()
             ov_state["shown"] = False
-        root.after(30, animate)
+
+    def animate():
+        try:
+            render()
+        except Exception:
+            logging.exception("Overlay frame failed")
+        finally:
+            root.after(30, animate)
 
     def tick():
+        nonlocal last_status
         # the spear only shows while League's game window is the active window
-        if game_focused():
+        if macros_active():
             if root.state() == "withdrawn":
                 root.deiconify()
             c.itemconfig("spear", fill=SPEAR_ON)
             user32.SetWindowPos(hwnd, HWND_TOPMOST, 0, 0, 0, 0, SWP_KEEP)  # stay above the game
         elif root.state() != "withdrawn":
             root.withdraw()
-        root.after(500, tick)
+        now = time.monotonic()
+        if now - last_status >= 1:
+            last_status = now
+            try:
+                status = {"pid": os.getpid(), "updated": time.time(), "active": macros_active(),
+                          "kalista": bool(watcher and watcher.me and watcher.me.get("kalista")),
+                          "camera_locked": camera_locked, "overlay_shown": ov_state["shown"],
+                          "overlay_frames": ov_state["frame"], "result": watcher.result if watcher else None}
+                tmp = lol_execute.DATA / "lol_status.tmp"
+                tmp.write_text(json.dumps(status), encoding="utf-8")
+                tmp.replace(lol_execute.DATA / "lol_status.json")
+            except OSError:
+                logging.exception("Could not write macro status")
+        root.after(100, tick)
 
     tick()
     animate()

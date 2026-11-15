@@ -18,6 +18,7 @@ import ssl
 import sys
 import threading
 import time
+import logging
 import urllib.request
 from pathlib import Path
 
@@ -87,7 +88,9 @@ def evaluate(me, tgt):
     one_more = rend_damage(tgt["stacks"] + 1, me["e_level"], me["ad"], me["ap"]) * mult
     hp = tgt["hp"]
     margin = tgt["max_hp"] * 0.006 if tgt.get("hp_estimated") else 0  # bar is ~0.5% per pixel
-    state = "kill" if dmg >= hp + margin else ("close" if one_more >= hp else None)
+    state = None
+    if hp > 0 and tgt["stacks"] > 0 and me["e_level"] > 0:
+        state = "kill" if dmg >= hp + margin else ("close" if one_more >= hp else None)
     return {"dmg": dmg, "hp": hp, "max_hp": tgt["max_hp"], "stacks": tgt["stacks"],
             "pct": dmg / hp if hp else 0, "state": state, "mult": mult}
 
@@ -196,7 +199,41 @@ def _fix(t):
              .replace("I", "1").replace("|", "1").replace("i", "1").replace("S", "5"))
 
 
-_group_cache = {}
+_group_cache, _digit_cache = {}, {}
+
+
+def _glyph_keys(mask):
+    columns = np.flatnonzero(mask.any(axis=0))
+    if not len(columns):
+        return []
+    groups = np.split(columns, np.where(np.diff(columns) > 1)[0] + 1)
+    keys = []
+    for xs in groups:
+        glyph = mask[:, xs[0]:xs[-1] + 1]
+        ys = np.flatnonzero(glyph.any(axis=1))
+        glyph = glyph[ys[0]:ys[-1] + 1]
+        keys.append((glyph.shape, np.packbits(glyph).tobytes()))
+    return keys
+
+
+def _remember_digits(name, mask, text):
+    keys = _glyph_keys(mask)
+    if not re.fullmatch(r"[0-9]+", text) or len(keys) != len(text):
+        return
+    if len(_digit_cache) > 10000:
+        _digit_cache.clear()
+    for key, digit in zip(keys, text):
+        key = (name, key)
+        previous = _digit_cache.get(key, digit)
+        _digit_cache[key] = digit if previous == digit else None  # ambiguous shape: OCR must decide
+
+
+def _known_text(name, key, mask):
+    text = _group_cache.get(key)
+    if text is not None:
+        return text
+    digits = [_digit_cache.get((name, k)) for k in _glyph_keys(mask)]
+    return "".join(digits) if digits and None not in digits else None
 
 
 def _group_masks(crop, name, scale, cut=150):
@@ -232,9 +269,6 @@ def _group_masks(crop, name, scale, cut=150):
     return out
 
 
-_group_cache = {}
-
-
 def read_numbers(crop, name, scale, cut=150):
     """Find digit-height blobs, group neighbours into numbers, recognise each group (each number's
     pixel shape is recognised once, then remembered)."""
@@ -243,14 +277,16 @@ def read_numbers(crop, name, scale, cut=150):
         if key not in _group_cache:
             if len(_group_cache) > 50000:
                 _group_cache.clear()
-            _group_cache[key] = _fix(_rec(mask))
+            text = _known_text(name, key, mask)
+            _group_cache[key] = text if text is not None else _fix(_rec(mask))
+            _remember_digits(name, mask, _group_cache[key])
         texts.append(_group_cache[key])
     return texts
 
 
 def known_numbers(crop, name, scale, cut=150):
     """Like read_numbers but never runs OCR: numbers not seen before come back as None."""
-    return [_group_cache.get(key) for key, _ in _group_masks(crop, name, scale, cut)]
+    return [_known_text(name, key, mask) for key, mask in _group_masks(crop, name, scale, cut)]
 
 
 def quick_read(frame, scale):
@@ -271,7 +307,10 @@ def quick_read(frame, scale):
         return None
 
     fill = bar_fill(frame, scale)
-    out = {"present": False, "ally": False, "fill": fill, "hp": None, "max_hp": None,
+    # Portrait pixels distinguish target switches from a new, not-yet-learned number.
+    portrait = np.array(crop((224, 38, 286, 90)).resize((8, 8), Image.Resampling.BOX))
+    identity = (frame.size, np.packbits(portrait > 96).tobytes())
+    out = {"present": False, "ally": False, "identity": identity, "fill": fill, "hp": None, "max_hp": None,
            "armor": None, "mr": 0, "stacks": None, "monster": False}
     if fill is None:
         return out
@@ -291,7 +330,8 @@ def quick_read(frame, scale):
             out["max_hp"] = int(ht[-1])   # max HP known, current HP new: HP comes from the bar
     if not out["present"]:
         return out
-    if bar_is_ally(frame, scale):
+    icon = find_spear_slot(frame, scale)
+    if not target_is_enemy(frame, scale, icon):
         out["ally"] = True
         return out
     if out["max_hp"] and out["max_hp"] < 10:
@@ -300,7 +340,6 @@ def quick_read(frame, scale):
     mr = first_int(known_numbers(crop(REGIONS["mr"]), "mr", scale))
     out["mr"] = mr or 0
     out["monster"] = not has_kda_row(frame, scale)
-    icon = find_spear_slot(frame, scale)
     if not icon:
         out["stacks"] = 0
     else:
@@ -384,20 +423,31 @@ def find_spear_slot(frame, scale):
     return None
 
 
-def bar_is_ally(frame, scale):
+def bar_team(frame, scale):
     """Ally bars are green, enemy/monster bars red. Looks only at the coloured (filled) part of
     the strip above the HP text, so the empty dark-teal part can't fool it."""
     x0, y0, x1, y1 = HEALTH_BAR
     box = (int(x0 * scale), int((y0 + 3) * scale), int(x1 * scale), int((y0 + 7) * scale))
     px = np.array(frame.crop(box)).reshape(-1, 3).astype(int)
     if not len(px):
-        return False
+        return None
     mx, mn = px.max(axis=1), px.min(axis=1)
     fill = px[(mx > 55) & (mx - mn > 35)]
-    if len(fill) < 6:
-        return False  # bar (almost) empty: can't tell, treat as enemy
+    if len(fill) < max(1, round(6 * scale * scale)):
+        return None
     r, g, b = np.median(fill, axis=0)
-    return g > r and g > b * 0.9
+    if r > g * 1.15 and r > b * 1.1:
+        return "enemy"
+    if g > r and g > b * 0.9:
+        return "ally"
+    return None
+
+
+def target_is_enemy(frame, scale, spear_icon):
+    team = bar_team(frame, scale)
+    # At 1 HP the filled bar can be narrower than one pixel. A Rend debuff is
+    # additional enemy evidence in that case, but never overrides a green ally bar.
+    return team == "enemy" or (team is None and spear_icon is not None)
 
 
 def has_kda_row(frame, scale):
@@ -477,11 +527,11 @@ def read_target(frame, scale):
     }
     if not obs["present"]:
         return obs, raw
-    if bar_is_ally(frame, scale):
+    icon = find_spear_slot(frame, scale)
+    if not target_is_enemy(frame, scale, icon):
         obs["ally"] = raw["ally"] = True
         return obs, raw
     obs["monster"] = raw["monster"] = not has_kda_row(frame, scale)
-    icon = find_spear_slot(frame, scale)
     raw["icon"] = icon
     if icon:
         x0, y0, x1, y1 = icon
@@ -573,23 +623,16 @@ class ExecuteWatcher:
         self.interval = interval
         self.result = None
         self.me = None
-        self._tgt = None          # newest target from OCR (+ the fill/stats pixels it was read from)
         self._latest = None       # newest frame for the OCR thread
         self._ocr_wake = threading.Event()
         threading.Thread(target=self._api_loop, daemon=True).start()
         threading.Thread(target=self._ocr_loop, daemon=True).start()
         threading.Thread(target=self._run, daemon=True).start()
 
-    _prev = None
     _last_log = None
-    _last_ok = 0.0
-    _max_ok = None
-    _max_seen = None
-    _spears = 0
+    _snapshot_key = None
+    _snapshot_time = 0.0
     _kill_streak = 0
-    _armor = None
-    _spear_cand = None
-    _zero_since = None
     rect = None
     scale = 1.0
 
@@ -607,7 +650,7 @@ class ExecuteWatcher:
             self._layouts = {}
         known = self._layouts.get((gw, gh))
         now = time.time()
-        if known and now < self._next_locate:
+        if now < self._next_locate:
             return known
         # search the top-left quarter-ish of the window (frame + some slack)
         shot = self._mss.grab({"left": rect[0], "top": rect[1], "width": max(64, int(gw * 0.35)),
@@ -619,6 +662,7 @@ class ExecuteWatcher:
             self._next_locate = now + 5   # cheap re-check every 5 s while a target is shown
             return found[:3]
         self._next_locate = now + 0.15    # no frame visible (no target) -> look again shortly
+        self._layouts.pop((gw, gh), None)
         return None
 
     def bar_on_screen(self):
@@ -645,65 +689,18 @@ class ExecuteWatcher:
                     f"{tgt['stacks']},{me['ad']:.0f},{me['ap']:.0f},{me['pen_pct']:.2f},{me['flat_pen']:.0f},"
                     f"{me['e_level']},{int(bool(me.get('coup')))},{res['mult']:.3f},{res['dmg']:.0f},"
                     f"{res['state'] or ''}\n")
-        if res["state"] in ("kill", "kill-bar"):
+        snapshot_key = (tgt["max_hp"], tgt["stacks"])
+        now = time.monotonic()
+        if res["state"] not in ("kill", "kill-bar"):
+            self._snapshot_key = None
+        elif snapshot_key != self._snapshot_key or now - self._snapshot_time >= 1:
+            self._snapshot_key, self._snapshot_time = snapshot_key, now
             d = DATA / "lol_debug"
             d.mkdir(exist_ok=True)
             # date first, so the "keep the newest 40" cleanup below really keeps the newest
             frame.save(d / f"kill_{time.strftime('%Y%m%d-%H%M%S')}_{res['state']}_{tgt['hp']}hp_{tgt['stacks']}sp.png")
             for old in sorted(d.glob("kill_*.png"))[:-40]:
                 old.unlink()
-
-    def _reset(self):
-        self.result, self._prev = None, None
-        self._max_ok = self._max_seen = self._armor = None
-        self._spears, self._spear_cand, self._zero_since, self._kill_streak = 0, None, None, 0
-
-    def _track(self, obs):
-        """Fuse this frame's reading with what we already know about the same target, so one
-        unreadable digit never hides or moves the line. Returns the target dict to use, or None."""
-        now = time.time()
-        if obs["ally"] or not obs["present"]:
-            if obs["ally"] or now - self._last_ok > 0.25:
-                self._reset()
-            return None
-        self._last_ok = now
-        # target identity = max HP. read_target only returns an HP/max pair that matches the bar's
-        # fill, so one read is enough: a new target shows at once even when switching quickly.
-        mx = obs["max_hp"]
-        if mx is not None and mx != self._max_ok:
-            self._reset()
-            self._max_ok = mx
-            self._spears = obs["stacks"]
-            self._spear_cand = obs["stacks"]
-        if self._max_ok is None:
-            return None
-        max_hp = self._max_ok
-        if obs["hp"] is not None and obs["max_hp"] == max_hp:
-            hp, est = obs["hp"], False
-        elif obs["fill"] is not None:
-            hp, est = round(obs["fill"] * max_hp), True   # digits unreadable: read the bar instead
-        else:
-            return None
-        if obs["armor"] is not None:
-            self._armor = obs["armor"]
-        if self._armor is None:
-            return None
-        # spear count: a change must be read twice in a row; dropping to 0 needs 0.2 s of no icon
-        v = obs["stacks"]
-        if v == self._spears:
-            self._zero_since = None
-        elif v == 0:
-            self._zero_since = self._zero_since or now
-            if now - self._zero_since >= 0.2:
-                self._spears = 0
-        else:
-            self._zero_since = None
-            if v == self._spears + 1 or v == self._spear_cand:   # one more spear: show it at once
-                self._spears = v
-        self._spear_cand = v
-        return {"hp": hp, "max_hp": max_hp, "armor": self._armor, "mr": obs["mr"],
-                "stacks": self._spears, "hp_estimated": est,
-                "epic": obs["monster"] and max_hp >= EPIC_MIN_HP}
 
     def _api_loop(self):  # own thread so a slow API call never delays the screen reads
         while True:
@@ -716,14 +713,14 @@ class ExecuteWatcher:
                 self._step()
             except Exception as e:
                 self.result = None
-                print("execute watcher:", e)
+                logging.exception("Execute watcher failed")
                 time.sleep(1)
             time.sleep(self.interval)
 
     def _step(self):
         me = self.me
         if not me or not me["kalista"] or me["e_level"] < 1 or not self.focused():
-            self.result = None
+            self._clear_result()
             time.sleep(0.2)
             return
         rect = game_rect()
@@ -736,10 +733,8 @@ class ExecuteWatcher:
         gw, gh = rect[2] - rect[0], rect[3] - rect[1]
         layout = self._layout(rect, gw, gh)
         if not layout:
-            self._tgt = None
             self._latest = None
-            self.result = None
-            self._track({"ally": False, "present": False})
+            self._clear_result()
             return
         scale, ox, oy = layout
         self.rect, self.scale, self.origin = rect, scale, (ox, oy)
@@ -750,30 +745,43 @@ class ExecuteWatcher:
         frame = Image.frombytes("RGB", shot.size, shot.bgra, "raw", "BGRX")
         self._latest = (frame, scale)
         self._ocr_wake.set()
-        now = time.time()
         q = quick_read(frame, scale)
-        if q["ally"] or (not q["present"] and now - self._q_ok > 0.1):
-            self.result = None               # ally, or no target any more
-            self._q_key = None
-            return
-        if not q["present"] or not q["max_hp"] or q["armor"] is None or q["stacks"] is None:
-            # a number this frame shows hasn't been read yet (OCR is on it, ~0.1 s): keep the
-            # last line briefly instead of blinking
-            if now - self._q_ok > 0.3:
-                self.result = None
-            return
+        tgt = self._observe(me, q)
+        if tgt:
+            self.result = dict(self.result, bar=self.bar_on_screen())
+            self._log(me, tgt, self.result, frame)
+
+    def _clear_result(self):
+        self.result = None
+        self._q_key = None
+        self._kill_streak = 0
+        self._confirmed_at = 0
+        self._portrait = None
+
+    def _observe(self, me, q):
+        # Never carry a kill or spear count through an unreadable/new target or a vanished
+        # Rend icon. Consecutive minions can have identical HP/armor/MR.
+        if q["ally"] or not q["present"] or q["fill"] is None:
+            self._clear_result()
+            return None
+        now = time.monotonic()
+        if not q["max_hp"] or q["armor"] is None or q["stacks"] is None:
+            same = (q.get("identity") is not None and q["identity"] == self._portrait
+                    and self.result and now - self._confirmed_at < .3
+                    and (q["max_hp"] is None or q["max_hp"] == self.result["max_hp"])
+                    and (q["armor"] is None or q["armor"] == self._q_key[1]))
+            self._kill_streak = 0
+            if same and q["stacks"] != 0:
+                # Retain only the line (muted), never an unconfirmed kill/close animation.
+                self.result = dict(self.result, state=None, pending=True,
+                                   hp=q["hp"] if q["hp"] is not None else round(q["fill"] * self.result["max_hp"]))
+            else:
+                self._clear_result()
+            return None
         max_hp = q["max_hp"]
         key = (max_hp, q["armor"], q["mr"])           # same target
         if key != self._q_key:
-            self._q_key, self._q_stacks, self._q_zero, self._kill_streak = key, q["stacks"], None, 0
-        elif q["stacks"] == 0 and self._q_stacks > 0:  # spear icon can blink for a frame
-            self._q_zero = self._q_zero or now
-            if now - self._q_zero < 0.2:
-                q["stacks"] = self._q_stacks
-            else:
-                self._q_stacks = 0
-        else:
-            self._q_zero, self._q_stacks = None, q["stacks"]
+            self._q_key, self._kill_streak = key, 0
         est = q["hp"] is None
         tgt = {"hp": round(q["fill"] * max_hp) if est else q["hp"], "max_hp": max_hp,
                "armor": q["armor"], "mr": q["mr"], "stacks": q["stacks"], "hp_estimated": est,
@@ -787,31 +795,12 @@ class ExecuteWatcher:
         if res["state"] == "kill" and est and self._kill_streak < 3:
             res["state"] = "close"
         self.result = res
-        self._q_ok = now
-        if res["state"] == "kill":
-            self._log(me, tgt, dict(res, state="kill-bar" if est else "kill"), frame)
+        self._portrait, self._confirmed_at = q.get("identity"), now
+        return tgt
 
-    _q_ok = 0.0
     _q_key = None
-    _q_stacks = 0
-    _q_zero = None
-
-    _fast_fill = None
-
-    @staticmethod
-    def _ident(frame, scale):
-        """Cheap 'same target' fingerprint: armor + MR pixels, the max-HP digits (right half of
-        the HP text) and the spear-count digits, thresholded so glow/animation doesn't change it."""
-        def bits(box, cut=150):
-            x0, y0, x1, y1 = (int(v * scale) for v in box)
-            g = np.array(frame.crop((x0, y0, x1, y1)).convert("L"))
-            return np.packbits(g > cut).tobytes()
-        ax0, ay0, _, ay1 = REGIONS["armor"]
-        hx0, hy0, hx1, hy1 = REGIONS["health"]
-        icon = find_spear_slot(frame, scale)
-        stack = bits((icon[0] - 3, icon[1] + 20, icon[2] + 6, icon[3] + 4)) if icon else b""
-        return hash((bits((ax0, ay0, REGIONS["mr"][2], ay1)),
-                     bits(((hx0 + hx1) / 2 + 12, hy0, hx1, hy1)), stack))
+    _portrait = None
+    _confirmed_at = 0.0
 
     def _ocr_loop(self):
         while True:
@@ -822,17 +811,11 @@ class ExecuteWatcher:
                 continue
             frame, scale = latest
             try:
-                obs, raw = read_target(frame, scale)   # teaches the number memory
-                tgt = self._track(obs)
-                if not tgt or obs["fill"] is None:
-                    continue
-                stable = tgt == self._prev
-                self._prev = tgt
-                me = self.me
-                if stable and me:
-                    self._log(me, tgt, evaluate(me, tgt), frame)
+                # Only teach number shapes here. The fast loop alone owns result/state and
+                # logs exactly what the overlay uses, never an older OCR frame's kill.
+                read_target(frame, scale)
             except Exception as e:
-                print("execute OCR:", e)
+                logging.exception("Execute OCR failed")
                 time.sleep(0.5)
 
 
