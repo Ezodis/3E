@@ -142,6 +142,20 @@ public sealed class MouseCapabilities {
     public int MacroMaxDelayMs { get; init; }
     public int MacroBytes { get; init; }
 
+    // ---- Vendor-style window (device-specific artwork and layout) ----
+    /// Buttons shown in the key list and on the picture (vendor apps hide unused slots).
+    public int VisibleSlots { get; init; }
+    /// Skin file proving a vendor skin folder is complete (e.g. "main_nr.png").
+    public string SkinProbe { get; init; }
+    /// Folder or zip names of the vendor app, searched on this PC to import its skin.
+    public string[] SkinSources { get; init; } = Array.Empty<string>();
+    /// Mouse picture inside the skin folder (e.g. "mouse/mouse_nr.png") and its size.
+    public string MousePicture { get; init; }
+    public int MousePictureWidth { get; init; } = 280;
+    public int MousePictureHeight { get; init; } = 440;
+    /// Centre of each slot's number on the mouse picture, in picture pixels (index = slot-1; null = not on the picture).
+    public (int X, int Y)?[] ButtonHotspots { get; init; } = Array.Empty<(int, int)?>();
+
     public bool HasButtons => Slots > 0;
     public bool HasDpi => DpiStages > 0;
     public bool HasLighting => LightingEffects.Length > 0;
@@ -198,6 +212,29 @@ public static class HidKeys {
         foreach (var (u, n) in All) if (u == usage) return n;
         return $"0x{usage:X2}";
     }
+
+    /// Windows virtual-key code → HID keyboard usage (0 = unknown). Used for key capture and macro recording.
+    public static byte FromVirtualKey(int vk) {
+        if (vk >= 0x41 && vk <= 0x5A) return (byte)(0x04 + vk - 0x41);
+        if (vk >= 0x31 && vk <= 0x39) return (byte)(0x1E + vk - 0x31);
+        if (vk == 0x30) return 0x27;
+        if (vk >= 0x70 && vk <= 0x7B) return (byte)(0x3A + vk - 0x70);   // F1–F12
+        if (vk >= 0x7C && vk <= 0x87) return (byte)(0x68 + vk - 0x7C);   // F13–F24
+        if (vk >= 0x61 && vk <= 0x69) return (byte)(0x59 + vk - 0x61);   // numpad 1–9
+        return vk switch {
+            0x0D => 0x28, 0x1B => 0x29, 0x08 => 0x2A, 0x09 => 0x2B, 0x20 => 0x2C, 0xBD => 0x2D, 0xBB => 0x2E, 0xDB => 0x2F,
+            0xDD => 0x30, 0xDC => 0x31, 0xBA => 0x33, 0xDE => 0x34, 0xC0 => 0x35, 0xBC => 0x36, 0xBE => 0x37, 0xBF => 0x38,
+            0x14 => 0x39, 0x2C => 0x46, 0x91 => 0x47, 0x13 => 0x48, 0x2D => 0x49, 0x24 => 0x4A, 0x21 => 0x4B, 0x2E => 0x4C,
+            0x23 => 0x4D, 0x22 => 0x4E, 0x27 => 0x4F, 0x25 => 0x50, 0x28 => 0x51, 0x26 => 0x52, 0x90 => 0x53, 0x6F => 0x54,
+            0x6A => 0x55, 0x6D => 0x56, 0x6B => 0x57, 0x60 => 0x62, 0x6E => 0x63, 0x5D => 0x65,
+            0x11 or 0xA2 => 0xE0, 0x10 or 0xA0 => 0xE1, 0x12 or 0xA4 => 0xE2, 0x5B => 0xE3,
+            0xA3 => 0xE4, 0xA1 => 0xE5, 0xA5 => 0xE6, 0x5C => 0xE7,
+            _ => 0,
+        };
+    }
+
+    /// HID usage of a modifier key → its bit in the modifier byte (0 if not a modifier).
+    public static byte ModifierBit(byte usage) => usage is >= 0xE0 and <= 0xE7 ? (byte)(1 << (usage - 0xE0)) : (byte)0;
 
     public static string ComboName(byte mods, byte key, byte key2) {
         var parts = new List<string>();

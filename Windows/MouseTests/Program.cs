@@ -79,6 +79,11 @@ Check(partial.Buttons.Count == PC205.Capabilities.Modes && partial.Buttons.All(r
 Check(PC205.Capabilities.ExtraSideSlot == 8 && PC205.DefaultProfile().Buttons.All(r => r[7] == ButtonAction.KeyPress(HidKeys.F13)), "default side button = F13");
 Check(PC205.Capabilities.HasButtons && PC205.Capabilities.HasDpi && PC205.Capabilities.HasLighting && PC205.Capabilities.HasPolling && PC205.Capabilities.HasMacros, "PC205 capabilities");
 
+// Key capture / macro recording: Windows virtual keys → HID usages; vendor skin layout for the PC205.
+Check(HidKeys.FromVirtualKey(0x41) == 0x04 && HidKeys.FromVirtualKey(0x7C) == HidKeys.F13 && HidKeys.FromVirtualKey(0x13) == HidKeys.Pause && HidKeys.FromVirtualKey(0x30) == 0x27 && HidKeys.FromVirtualKey(0xA0) == 0xE1, "virtual key mapping");
+Check(HidKeys.ModifierBit(0xE0) == 0x01 && HidKeys.ModifierBit(0xE3) == 0x08 && HidKeys.ModifierBit(0x04) == 0, "modifier bits");
+Check(PC205.Capabilities.VisibleSlots == 8 && PC205.Capabilities.ButtonHotspots[PC205.Capabilities.ExtraSideSlot - 1] is (46, 132) && PC205.Capabilities.SkinProbe == "main_nr.png", "PC205 vendor layout");
+
 if (failures > 0) { Console.Error.WriteLine($"{failures} PC205 check(s) failed."); return 1; }
 Console.WriteLine("3£ Mouse model and PC205 protocol checks passed.");
 return 0;

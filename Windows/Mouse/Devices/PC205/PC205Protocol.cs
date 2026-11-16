@@ -43,6 +43,12 @@ public static class PC205 {
         MacroCount = MacroCount,
         MacroMaxDelayMs = MacroMaxDelay,
         MacroBytes = MacroSize,
+        VisibleSlots = 8, // KM=16 → 8 physical keys; slots 9–10 exist in the matrix but not on the mouse
+        SkinProbe = "main_nr.png",
+        SkinSources = new[] { "Wired Gaming Mouse", "PC205", "Thunderbird", "BY-COMBO" },
+        MousePicture = "mouse/mouse_nr.png",
+        // Numbers printed on the vendor's mouse_nr.png (280×440); 8 is the extra side button above 4/5.
+        ButtonHotspots = new (int, int)?[] { (91, 78), (183, 78), (138, 108), (50, 176), (55, 230), (163, 169), (163, 203), (46, 132), null, null },
     };
 
     public static byte DpiCode(int dpi) {
