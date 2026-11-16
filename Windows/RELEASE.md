@@ -1,3 +1,10 @@
+3£ renames LoL macros to Kalista and adds Mouse to the tray.
+
+- **Kalista** (was LoL macros): a plain on/off row, with no gear because there is nothing to configure.
+- **Mouse**: on/off row with a gear that opens the gaming-mouse settings (PC205 first).
+
+Previous release:
+
 3£ turns the mouse settings into a general **Mouse…** feature.
 
 - The tray row is now **Mouse…**. It finds supported mice by their USB ID and shows only the settings the connected mouse has. The Thunderbird PC205 is the first supported mouse, and more can be added later without changing the window.

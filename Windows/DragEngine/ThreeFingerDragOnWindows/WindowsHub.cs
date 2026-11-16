@@ -69,6 +69,8 @@ public sealed class WindowsHub : IDisposable {
         // LoL macros: the bundled LoL\lol.pyw unless LolScript names another file.
         public bool LolMacros { get; set; } = false;
         public string LolScript { get; set; }
+        // Mouse: gaming-mouse configuration (PC205 first). Off hides nothing but disables the settings.
+        public bool Mouse { get; set; } = true;
     }
 
     public WindowsHub() {
@@ -531,13 +533,17 @@ public sealed class WindowsHub : IDisposable {
             settings.PowerToys = enabled;
             if (enabled) _ = EnsureComponentsAsync(); else { Stop("PowerToys"); if (settings.MacKeyboard) _ = macKeyboard.EnsureAsync(); }
         }, OpenPowerToysSettings);
-        // The check mark means the script is running; its icon shows the script in Explorer.
-        Toggle(File.Exists(LolScript) ? "LoL macros" : "LoL macros — script missing", LolRunning(), enabled => {
+        // Kalista macros (LoL). The check mark means the script is running; nothing to configure.
+        Toggle(File.Exists(LolScript) ? "Kalista" : "Kalista — script missing", LolRunning(), enabled => {
             settings.LolMacros = enabled;
             if (enabled) StartLol(); else _ = StopLolAsync();
-        }, () => Process.Start(new ProcessStartInfo("explorer.exe", "/select,\"" + LolScript + "\"") { UseShellExecute = true })?.Dispose());
-        // Gaming-mouse settings for supported mice (Windows/Mouse/Devices; first: PC205). Side button → F13 for the LoL kite.
-        Item("Mouse…", ThreeE.Mouse.MouseWindow.Show);
+        });
+        // Gaming-mouse settings for supported mice (Windows/Mouse/Devices; first: PC205); the gear opens
+        // them. Side button → F13 for the Kalista kite.
+        Toggle("Mouse", settings.Mouse, enabled => {
+            settings.Mouse = enabled;
+            if (enabled) ThreeE.Mouse.MouseWindow.Show();
+        }, () => { if (settings.Mouse) ThreeE.Mouse.MouseWindow.Show(); });
         menu.Items.Add(new HubMenuSeparator());
         Toggle("Dynamic wallpaper", settings.Wallpaper, enabled => {
             settings.Wallpaper = enabled;
