@@ -2,6 +2,7 @@
 
 - Closing the Mouse or Settings window no longer closes all of 3£. The tray app has no visible main window, so closing the last open window shut it down silently; now only Quit 3£ exits.
 - Clicking a gear opens its menu whether the row is checked or not. It used to toggle a checked row off instead.
+- On IT-restricted PCs, Check for updates… now installs the update when you confirm it, updating only the app files (app-only) so the IT restrictions stay as they are. Nothing updates in the background or on Restart.
 
 Previous release:
 

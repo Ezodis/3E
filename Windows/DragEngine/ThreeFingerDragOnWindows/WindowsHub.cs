@@ -608,7 +608,7 @@ public sealed class WindowsHub : IDisposable {
         if (!settings.AutoUpdate) Item(updateTag == null ? "Check for updates…" : "Update available: " + updateTag + "…", () => _ = CheckUpdatesAsync(true));
         if (phoneBar.NetworkAllowed)
             Toggle("Install updates automatically", settings.AutoUpdate, enabled => { settings.AutoUpdate = enabled; if (!enabled) pendingUpdate = null; else settings.LastUpdateCheckUtc = default; });
-        else menu.Items.Add(new HubMenuItem { Text = "Updates require IT review", IsEnabled = false });
+        else menu.Items.Add(new HubMenuItem { Text = "No automatic updates (IT restricted)", IsEnabled = false });
         Item("Open portable installer", () => Process.Start(new ProcessStartInfo("explorer.exe", "/select,\"" + Path.Combine(root, "3£Windows.ps1") + "\"") { UseShellExecute = true }));
         Item("Quit 3£", () => App.Instance.Quit());
     }
@@ -620,14 +620,11 @@ public sealed class WindowsHub : IDisposable {
     private const uint ForegroundDialog = 0x10000 | 0x40000;
     // Returns the newest newer Windows release, or null when up to date or offline.
     public async Task<JsonElement?> CheckUpdatesAsync(bool interactive) {
-        // Older public installers recreate unrestricted firewall rules and
-        // logon tasks. A restricted deployment must be updated by its owner
-        // after the installer has been reviewed, including on Restart.
-        if (!phoneBar.NetworkAllowed) {
-            pendingUpdate = null;
-            if (interactive) MessageBox(IntPtr.Zero, "On this computer 3£ doesn't update itself, because of the IT restrictions it was installed with (no incoming connections, no extra startup tasks).\n\nTo update, run the new release's 3£Windows.ps1 with -AppOnly and approve the admin prompt. That updates only the app files and keeps those restrictions.", "3£ updates", 0x40 | ForegroundDialog);
-            return null;
-        }
+        // Restricted deployment (IT): never update in the background or on Restart. Only when its
+        // owner clicks "Check for updates…" and confirms, and then only the app files (-AppOnly),
+        // which keeps the firewall rules, startup tasks and other IT settings exactly as they are.
+        bool restricted = !phoneBar.NetworkAllowed;
+        if (restricted && !interactive) { pendingUpdate = null; return null; }
         try {
             JsonElement? newest = null;
             var newestVersion = System.Version.Parse(Version);
@@ -645,10 +642,13 @@ public sealed class WindowsHub : IDisposable {
             settings.LastUpdateCheckUtc = DateTime.UtcNow;
             Save();
             updateTag = newest?.GetProperty("tag_name").GetString();
-            pendingUpdate = settings.AutoUpdate && newest != null ? newest.Value.Clone() : null;
+            pendingUpdate = settings.AutoUpdate && !restricted && newest != null ? newest.Value.Clone() : null;
             if (!interactive) { RefreshMenu(); return newest; }
             if (newest == null) { MessageBox(IntPtr.Zero, "3£ " + Version + " is up to date.", "3£", 0x40 | ForegroundDialog); return null; }
-            if (MessageBox(IntPtr.Zero, "Install 3£ " + newestVersion + "?\n\nThe portable installer will be downloaded, its SHA-256 checksum verified, and Windows will request administrator approval.", "3£ update", 0x24 | ForegroundDialog) != 6) return newest;
+            string how = restricted
+                ? "Only the app files are updated; this PC's IT restrictions (no incoming connections, no extra startup tasks) stay as they are. The installer is downloaded and its SHA-256 checksum verified first."
+                : "The portable installer will be downloaded, its SHA-256 checksum verified, and Windows will request administrator approval.";
+            if (MessageBox(IntPtr.Zero, "Install 3£ " + newestVersion + "?\n\n" + how, "3£ update", 0x24 | ForegroundDialog) != 6) return newest;
             await InstallUpdateAsync(newest.Value);
             return newest;
         } catch (Exception ex) {
