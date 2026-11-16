@@ -1,4 +1,8 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup><OutputType>Exe</OutputType><TargetFramework>net10.0</TargetFramework><ImplicitUsings>enable</ImplicitUsings><Nullable>disable</Nullable></PropertyGroup>
-  <ItemGroup><Compile Include="../Mouse/PC205Protocol.cs" Link="PC205Protocol.cs" /></ItemGroup>
+  <!-- Device-independent model plus each device's pure protocol code (no HID or UI). -->
+  <ItemGroup>
+    <Compile Include="../Mouse/MouseModel.cs" Link="MouseModel.cs" />
+    <Compile Include="../Mouse/Devices/*/*Protocol.cs" />
+  </ItemGroup>
 </Project>

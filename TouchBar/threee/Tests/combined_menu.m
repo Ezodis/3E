@@ -95,9 +95,9 @@ int main(void) { @autoreleasepool {
     NSMenu *base=StripBaseMenu(delegate,YES);
     NSCAssert([base.itemArray[0].identifier isEqual:@"local.musicstrip.phone"] && [base.itemArray[1].identifier isEqual:@"local.musicstrip.carView"] && [base.itemArray[2].identifier isEqual:@"local.musicstrip.touchTabToggle"],@"Car View is available without Touch Bar interfaces");
     NSCAssert(!base.itemArray[4].enabled,@"Only the unavailable Touch Bar module is disabled");
-    NSCAssert([base.itemArray[5].identifier isEqual:ThreeEMouseMenuIdentifier] && base.itemArray[5].target==ThreeEMouseActions.class && base.itemArray[5].action==@selector(openMouse:),@"Mouse (PC205) opens the bundled helper from the base menu");
+    NSCAssert([base.itemArray[5].identifier isEqual:ThreeEMouseMenuIdentifier] && base.itemArray[5].target==ThreeEMouseActions.class && base.itemArray[5].action==@selector(openMouse:),@"Mouse… opens the bundled helper from the base menu");
     NSUInteger mice=0;for(NSMenuItem *item in delegate.theItem.menu.itemArray)if([item.identifier isEqual:ThreeEMouseMenuIdentifier]&&item.target==ThreeEMouseActions.class)mice++;
-    NSCAssert(mice==1,@"Mouse (PC205) appears exactly once in the full menu");
+    NSCAssert(mice==1,@"Mouse… appears exactly once in the full menu");
     NSMenuItem *car=nil;for(NSMenuItem *item in delegate.theItem.menu.itemArray)if([item.identifier isEqual:@"local.musicstrip.carView"])car=item;
     NSCAssert(car.target==ThreeEMidiBridge.class && car.action==NSSelectorFromString(@"toggleCarView:") && [car.view isKindOfClass:ThreeECarMenuRow.class],@"Car View toggles in the menu through the parent pipe");
     carViewEnabled=YES;[ThreeEMidiBridge validateMenuItem:car];NSCAssert(car.state==NSControlStateValueOn,@"Car View check follows the host");carViewEnabled=NO;

@@ -1,6 +1,14 @@
+3£ turns the mouse settings into a general **Mouse…** feature.
+
+- The tray row is now **Mouse…**. It finds supported mice by their USB ID and shows only the settings the connected mouse has. The Thunderbird PC205 is the first supported mouse, and more can be added later without changing the window.
+- PC205 settings are unchanged: DPI, polling rate, lighting, all 10 buttons in 3 modes (Side button → F13 for the LoL kite), macros and Identify buttons.
+- Mouse settings are now saved per mouse. Settings saved with 3.0.230 are not carried over. The defaults already map the side button to F13; press Apply once.
+
+Previous release:
+
 3£ adds a mouse configurator for the Thunderbird PC205.
 
-- New tray row **Mouse (PC205)…** opens a window with everything the vendor app does: DPI stages and colours, polling rate, lighting, button mapping for all 10 buttons in 3 modes, and macros. It talks to the mouse directly over HID; the vendor installer is no longer needed.
+- New tray row **Mouse (PC205)…** (now **Mouse…**) opens a window with everything the vendor app does: DPI stages and colours, polling rate, lighting, button mapping for all 10 buttons in 3 modes, and macros. It talks to the mouse directly over HID; the vendor installer is no longer needed.
 - Every button can do anything, including the extra side button the vendor app limits to macros. **Side button → F13** sets it to the LoL Kalista kite key in one click (Pause also works). **Identify buttons** shows which slot a physical button is.
 - Settings are applied only when you press Apply. Nothing is installed: no driver, service or firmware update.
 

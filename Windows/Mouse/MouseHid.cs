@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
-// HID transport for the PC205: the same SetupDi + HidD_SetFeature/HidD_GetFeature calls the
-// vendor's Lowerdev.dll makes. Uses only the in-box hid.dll/setupapi.dll (no driver, no service).
+// Generic HID access for 3£ Mouse device drivers, plus the device registry.
+// Uses only the in-box hid.dll / setupapi.dll (no driver, no service).
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -11,75 +11,39 @@ using Microsoft.Win32.SafeHandles;
 
 namespace ThreeE.Mouse;
 
+/// A supported mouse model: matched by USB VID/PID, created on demand.
+public sealed record MouseDeviceEntry(string Id, string Name, ushort VendorId, ushort ProductId, Func<IMouseDriver> Create);
+
+public static class MouseDevices {
+    /// Every supported mouse. Adding a mouse = adding its Devices/<Name>/ module and one line here.
+    public static readonly MouseDeviceEntry[] Supported = {
+        Devices.PC205.PC205Driver.Entry,
+    };
+
+    /// Supported mice that are currently plugged in.
+    public static List<MouseDeviceEntry> Detect() {
+        var present = HidDevices.PresentVidPids();
+        return Supported.Where(e => present.Contains((e.VendorId, e.ProductId))).ToList();
+    }
+}
+
 public sealed record HidCollection(string Path, ushort UsagePage, ushort Usage, int InputLength, int OutputLength, int FeatureLength) {
     public override string ToString() => $"UsagePage=0x{UsagePage:X4} Usage=0x{Usage:X2} in={InputLength} out={OutputLength} feature={FeatureLength}";
 }
 
-public sealed class PC205Device {
-    public HidCollection General { get; private set; }
-    public HidCollection Matrix { get; private set; }
-    public HidCollection Mode { get; private set; }
-    public List<HidCollection> Collections { get; private set; } = new();
-    public Action<string> Log { get; set; } = _ => { };
-    public bool Ready => General != null && Matrix != null;
-
-    /// Enumerates 258A:1007 collections and picks them by feature length, like CDrv8832::FindDev.
-    public bool Connect() {
-        Collections = Enumerate().ToList();
-        foreach (var c in Collections) Log("found " + c);
-        var vendor = Collections.Where(c => c.UsagePage == PC205.VendorUsagePage).ToList();
-        if (vendor.Count == 0) vendor = Collections;
-        General = vendor.FirstOrDefault(c => c.FeatureLength == PC205.GeneralPayload + 1);
-        Matrix = vendor.FirstOrDefault(c => c.FeatureLength == PC205.MatrixPayload + 1);
-        Mode = vendor.FirstOrDefault(c => c.FeatureLength == PC205.ModePayload + 1);
-        Log($"general: {General?.ToString() ?? "none"}\nmatrix:  {Matrix?.ToString() ?? "none"}\nmode:    {Mode?.ToString() ?? "none"}");
-        return Ready;
-    }
-
-    public GeneralReport ReadGeneral() => GeneralReport.FromFeature(GetFeature(General ?? throw new IOException("PC205 not connected"), PC205.GeneralReportId, PC205.GeneralPayload + 1));
-    public ModeReport ReadMode() => Mode == null ? null : ModeReport.FromFeature(GetFeature(Mode, PC205.ModeReportId, PC205.ModePayload + 1));
-
-    [Flags] public enum Parts { General = 1, Mode = 2, Matrix = 4, All = 7 }
-
-    /// Vendor order (Apply_M_AJ_8832_3): GetFeature(4) → SetFeature(4) → mode (8) → SetFeature(6), 20 ms apart.
-    public void Apply(MouseProfile p, Parts parts = Parts.All) {
-        if (!Ready) throw new IOException("PC205 configuration interface not found.");
-        if (parts.HasFlag(Parts.General)) {
-            var g = ReadGeneral();
-            if (!g.SignatureOk) Log("warning: general report signature is not FR2763 – writing anyway");
-            p.ApplyTo(g);
-            Thread.Sleep(20);
-            SetFeature(General, g.Feature);
-            Log("SetFeature(4) ok");
-        }
-        if (parts.HasFlag(Parts.Mode) && Mode != null) {
-            Thread.Sleep(20);
-            var m = ReadMode();
-            p.ApplyTo(m);
-            Thread.Sleep(20);
-            SetFeature(Mode, m.Feature);
-            Log("SetFeature(8) ok");
-        }
-        if (parts.HasFlag(Parts.Matrix)) {
-            Thread.Sleep(20);
-            SetFeature(Matrix, p.MatrixFeature());
-            Log("SetFeature(6) ok");
-        }
-    }
-
-    // ---- Win32 ----
-
+public static class HidDevices {
     static SafeFileHandle Open(string path) {
         var h = CreateFile(path, 0xC0000000 /* GENERIC_READ|WRITE */, 3, IntPtr.Zero, 3, 0, IntPtr.Zero);
         if (h.IsInvalid) {
             h.Dispose();
             h = CreateFile(path, 0, 3, IntPtr.Zero, 3, 0, IntPtr.Zero); // feature reports work without read/write access
         }
-        if (h.IsInvalid) throw new IOException($"Cannot open PC205 HID collection (error {Marshal.GetLastWin32Error()}).");
+        if (h.IsInvalid) throw new IOException($"Cannot open the mouse's HID collection (error {Marshal.GetLastWin32Error()}).");
         return h;
     }
 
-    static void SetFeature(HidCollection c, byte[] report) {
+    /// `report[0]` is the report ID. Retries 3× with 200 ms between tries, like the vendor tools.
+    public static void SetFeature(HidCollection c, byte[] report) {
         var buf = new byte[Math.Max(report.Length, c.FeatureLength)];
         Array.Copy(report, buf, report.Length);
         using var h = Open(c.Path);
@@ -90,7 +54,8 @@ public sealed class PC205Device {
         }
     }
 
-    static byte[] GetFeature(HidCollection c, byte id, int length) {
+    /// Returns `length` bytes starting with the report ID.
+    public static byte[] GetFeature(HidCollection c, byte id, int length) {
         var buf = new byte[Math.Max(length, c.FeatureLength)];
         using var h = Open(c.Path);
         for (int attempt = 0; ; attempt++) {
@@ -101,27 +66,48 @@ public sealed class PC205Device {
         }
     }
 
-    public static IEnumerable<HidCollection> Enumerate() {
+    public static HashSet<(ushort, ushort)> PresentVidPids() {
+        var set = new HashSet<(ushort, ushort)>();
+        foreach (var path in Paths()) {
+            int v = path.IndexOf("vid_", StringComparison.OrdinalIgnoreCase), p = path.IndexOf("pid_", StringComparison.OrdinalIgnoreCase);
+            if (v >= 0 && p >= 0 && v + 8 <= path.Length && p + 8 <= path.Length &&
+                ushort.TryParse(path.AsSpan(v + 4, 4), System.Globalization.NumberStyles.HexNumber, null, out var vid) &&
+                ushort.TryParse(path.AsSpan(p + 4, 4), System.Globalization.NumberStyles.HexNumber, null, out var pid))
+                set.Add((vid, pid));
+        }
+        return set;
+    }
+
+    public static IEnumerable<HidCollection> Enumerate(ushort vid, ushort pid) {
+        string tag = $"vid_{vid:x4}&pid_{pid:x4}";
+        foreach (var path in Paths()) {
+            if (path.IndexOf(tag, StringComparison.OrdinalIgnoreCase) < 0) continue;
+            var c = Describe(path);
+            if (c != null) yield return c;
+        }
+    }
+
+    static List<string> Paths() {
+        var list = new List<string>();
         HidD_GetHidGuid(out var guid);
         var set = SetupDiGetClassDevs(ref guid, null, IntPtr.Zero, 0x12 /* PRESENT|DEVICEINTERFACE */);
-        if (set == new IntPtr(-1)) yield break;
+        if (set == new IntPtr(-1)) return list;
         try {
             var data = new SP_DEVICE_INTERFACE_DATA { cbSize = Marshal.SizeOf<SP_DEVICE_INTERFACE_DATA>() };
             for (uint i = 0; SetupDiEnumDeviceInterfaces(set, IntPtr.Zero, ref guid, i, ref data); i++) {
                 SetupDiGetDeviceInterfaceDetail(set, ref data, IntPtr.Zero, 0, out int size, IntPtr.Zero);
                 if (size <= 0) continue;
                 var detail = Marshal.AllocHGlobal(size);
-                string path;
                 try {
                     Marshal.WriteInt32(detail, IntPtr.Size == 8 ? 8 : 6);
-                    if (!SetupDiGetDeviceInterfaceDetail(set, ref data, detail, size, out _, IntPtr.Zero)) continue;
-                    path = Marshal.PtrToStringUni(detail + 4);
+                    if (SetupDiGetDeviceInterfaceDetail(set, ref data, detail, size, out _, IntPtr.Zero)) {
+                        var path = Marshal.PtrToStringUni(detail + 4);
+                        if (path != null) list.Add(path);
+                    }
                 } finally { Marshal.FreeHGlobal(detail); }
-                if (path == null || path.IndexOf("vid_258a&pid_1007", StringComparison.OrdinalIgnoreCase) < 0) continue;
-                var c = Describe(path);
-                if (c != null) yield return c;
             }
         } finally { SetupDiDestroyDeviceInfoList(set); }
+        return list;
     }
 
     static HidCollection Describe(string path) {

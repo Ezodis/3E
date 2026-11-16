@@ -1,9 +1,9 @@
-// "Mouse (PC205)…" opens the bundled 3£ Mouse helper (TouchBar/threee/PC205), which
-// configures the Thunderbird PC205 over HID feature reports (Shared/PC205/PROTOCOL.md).
+// "Mouse…" opens the bundled 3£ Mouse helper (TouchBar/threee/Mouse): gaming-mouse settings for
+// every supported mouse (first device: Thunderbird PC205, Shared/PC205/PROTOCOL.md).
 // Used by both the base menu (main process) and the full menu (MIDI helper process).
 #import <AppKit/AppKit.h>
 
-static NSString *const ThreeEMouseMenuIdentifier=@"local.musicstrip.pc205Mouse";
+static NSString *const ThreeEMouseMenuIdentifier=@"local.musicstrip.mouse";
 
 // Finds Contents/Helpers/3£ Mouse.app in the enclosing 3£ bundle, whichever
 // nested helper app this code is running from.
@@ -28,7 +28,7 @@ static NSURL *ThreeEMouseHelperURL(void) {
     NSURL *helper=ThreeEMouseHelperURL();
     if(!helper) {
         NSAlert *alert=[NSAlert new];alert.messageText=@"3£ Mouse is not installed";
-        alert.informativeText=@"Reinstall 3£ to add the PC205 mouse configurator.";[alert runModal];return;
+        alert.informativeText=@"Reinstall 3£ to add the mouse settings.";[alert runModal];return;
     }
     NSWorkspaceOpenConfiguration *configuration=[NSWorkspaceOpenConfiguration configuration];
     configuration.activates=YES;
@@ -37,8 +37,8 @@ static NSURL *ThreeEMouseHelperURL(void) {
 @end
 
 static NSMenuItem *ThreeEMouseMenu(void) {
-    NSMenuItem *item=[[NSMenuItem alloc] initWithTitle:@"Mouse (PC205)…" action:@selector(openMouse:) keyEquivalent:@""];
+    NSMenuItem *item=[[NSMenuItem alloc] initWithTitle:@"Mouse…" action:@selector(openMouse:) keyEquivalent:@""];
     item.identifier=ThreeEMouseMenuIdentifier;item.target=ThreeEMouseActions.class;
-    item.toolTip=@"DPI, polling rate, lighting, buttons (side button → F13) and macros";
+    item.toolTip=@"Gaming-mouse settings: DPI, polling rate, lighting, buttons (side button → F13) and macros";
     return item;
 }

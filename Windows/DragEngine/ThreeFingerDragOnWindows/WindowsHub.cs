@@ -536,8 +536,8 @@ public sealed class WindowsHub : IDisposable {
             settings.LolMacros = enabled;
             if (enabled) StartLol(); else _ = StopLolAsync();
         }, () => Process.Start(new ProcessStartInfo("explorer.exe", "/select,\"" + LolScript + "\"") { UseShellExecute = true })?.Dispose());
-        // PC205 configurator (DPI, polling, lighting, buttons, macros); side button → F13 for the LoL kite.
-        Item("Mouse (PC205)…", ThreeE.Mouse.MouseWindow.Show);
+        // Gaming-mouse settings for supported mice (Windows/Mouse/Devices; first: PC205). Side button → F13 for the LoL kite.
+        Item("Mouse…", ThreeE.Mouse.MouseWindow.Show);
         menu.Items.Add(new HubMenuSeparator());
         Toggle("Dynamic wallpaper", settings.Wallpaper, enabled => {
             settings.Wallpaper = enabled;

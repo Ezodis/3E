@@ -55,10 +55,4 @@ public enum HIDKey {
         if n.lowercased().hasPrefix("0x"), let v = UInt8(n.dropFirst(2), radix: 16) { return v }
         return nil
     }
-
-    /// Usages the vendor's own VK→HID table can produce (0x005c6b10). Others may or may not be
-    /// accepted by the host depending on the keyboard descriptor's logical maximum.
-    public static func vendorTableContains(_ usage: UInt8) -> Bool {
-        (0x04...0x65).contains(usage) || usage == 0x85 || usage == 0x87 || (0xE0...0xE7).contains(usage)
-    }
 }

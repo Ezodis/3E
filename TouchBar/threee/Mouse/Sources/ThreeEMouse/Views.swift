@@ -1,96 +1,80 @@
 import SwiftUI
 import AppKit
 import UniformTypeIdentifiers
-import PC205Core
+import MouseCore
+
+// Every page is built from model.caps (MouseCapabilities), so a new mouse needs no view changes.
 
 // MARK: - Buttons
 
 struct ButtonsView: View {
     @EnvironmentObject var model: AppModel
     var body: some View {
+        let caps = model.caps
+        let mode = min(model.editingMode, max(0, model.profile.buttons.count - 1))
         VStack(alignment: .leading, spacing: 8) {
             HStack {
-                Picker("Key mode", selection: $model.editingMode) {
-                    ForEach(0..<PC205.modes, id: \.self) { Text("Mode \($0 + 1)").tag($0) }
+                if caps.modes > 1 {
+                    Picker("Key mode", selection: $model.editingMode) {
+                        ForEach(0..<caps.modes, id: \.self) { Text("Mode \($0 + 1)").tag($0) }
+                    }
+                    .pickerStyle(.segmented).frame(width: 280)
+                    Button("Copy this mode to all modes") {
+                        let row = model.profile.buttons[mode]
+                        for m in model.profile.buttons.indices { model.profile.buttons[m] = row }
+                    }
                 }
-                .pickerStyle(.segmented).frame(width: 280)
                 Spacer()
-                Button("Copy this mode to all modes") {
-                    let row = model.profile.buttons[model.editingMode]
-                    for m in 0..<PC205.modes { model.profile.buttons[m] = row }
-                }
-                Button("Vendor defaults") { model.profile.buttons = Profile.vendorDefault.buttons }
+                Button("Defaults") { if let d = model.driver { model.profile.buttons = d.defaultProfile().buttons } }
             }
-            Text("Each slot can do anything, including the extra side button the Windows app only allows macros on. For 3£ LoL kiting set that button to Key → F13 (or Pause). Not sure which slot it is? Use Identify buttons.")
-                .font(.caption).foregroundStyle(.secondary)
+            if caps.extraSideSlot > 0 {
+                Text("Every slot can do anything, including the extra side button (\(caps.slotName(caps.extraSideSlot))) the vendor app limits to macros. For 3£ LoL kiting set it to Key → F13 (or Pause). Not sure which slot a button is? Use Identify buttons.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
             List {
-                ForEach(0..<PC205.slots, id: \.self) { s in
+                ForEach(0..<caps.slots, id: \.self) { s in
                     HStack(alignment: .top) {
-                        Text(Profile.slotNames[s]).frame(width: 190, alignment: .leading)
-                        ActionEditor(action: $model.profile.buttons[model.editingMode][s], macros: model.profile.macros)
+                        Text(caps.slotName(s + 1)).frame(width: 190, alignment: .leading)
+                        ActionEditor(action: $model.profile.buttons[mode][s], caps: caps, macros: model.profile.macros)
                     }
                     .padding(.vertical, 2)
                 }
             }
             HStack {
-                if model.identifying {
-                    Button("Stop identifying & restore") { model.stopIdentify() }.buttonStyle(.borderedProminent)
-                } else {
-                    Button("Identify buttons…") { model.startIdentify() }.disabled(!model.connected)
+                if !caps.identifySlots.isEmpty && caps.actions.contains(.key) {
+                    if model.identifying {
+                        Button("Stop identifying & restore") { model.stopIdentify() }.buttonStyle(.borderedProminent)
+                    } else {
+                        Button("Identify buttons…") { model.startIdentify() }.disabled(!model.connected)
+                    }
+                    if let r = model.identifyResult { Text(r).font(.callout) }
                 }
-                if let r = model.identifyResult { Text(r).font(.callout) }
                 Spacer()
-                Button("Apply buttons & macros") { model.apply(.matrix) }.disabled(!model.connected)
+                Button(caps.hasMacros ? "Apply buttons & macros" : "Apply buttons") { model.apply(.buttons) }.disabled(!model.connected)
             }
         }
         .padding(6)
     }
 }
 
-enum ActionKind: String, CaseIterable, Identifiable {
-    case mouse = "Mouse button", double = "Double click", triple = "Triple click", key = "Key / combo",
-         fire = "Fire key (auto-repeat)", media = "Multimedia", dpiUp = "DPI +", dpiDown = "DPI −",
-         dpiLoop = "DPI loop", dpiLock = "DPI lock", rate = "Switch polling rate",
-         lighting = "Switch lighting effect", macro = "Macro", disabled = "Disabled", raw = "Raw value"
-    var id: String { rawValue }
-
-    init(_ a: ButtonAction) {
-        switch a {
-        case .mouse: self = .mouse
-        case .doubleClick: self = .double
-        case .tripleClick: self = .triple
-        case .key: self = .key
-        case .fire: self = .fire
-        case .media: self = .media
-        case .dpiUp: self = .dpiUp
-        case .dpiDown: self = .dpiDown
-        case .dpiLoop: self = .dpiLoop
-        case .dpiLock: self = .dpiLock
-        case .switchPollingRate: self = .rate
-        case .switchLighting: self = .lighting
-        case .macro: self = .macro
-        case .disabled: self = .disabled
-        case .raw: self = .raw
-        }
-    }
-
-    var defaultAction: ButtonAction {
+extension ActionKind {
+    func defaultAction(_ caps: MouseCapabilities) -> ButtonAction {
         switch self {
         case .mouse: return .mouse(.left)
-        case .double: return .doubleClick
-        case .triple: return .tripleClick
+        case .doubleClick: return .doubleClick
+        case .tripleClick: return .tripleClick
         case .key: return .keyPress(HIDKey.f13)
         case .fire: return .fire(key: 0xF0, intervalMs: 50, count: 3)
-        case .media: return .media(.playPause)
+        case .media: return .media(caps.mediaKeys.first ?? .playPause)
         case .dpiUp: return .dpiUp
         case .dpiDown: return .dpiDown
         case .dpiLoop: return .dpiLoop
-        case .dpiLock: return .dpiLock(dpi: 800)
-        case .rate: return .switchPollingRate
-        case .lighting: return .switchLighting
+        case .dpiLock: return .dpiLock(dpi: caps.dpiValues.first ?? 800)
+        case .switchPollingRate: return .switchPollingRate
+        case .switchLighting: return .switchLighting
         case .macro: return .macro(index: 1, mode: .count)
         case .disabled: return .disabled
-        case .raw: return .raw(0x0150)
+        case .raw: return .raw(0)
         }
     }
 }
@@ -102,9 +86,7 @@ struct KeyPicker: View {
     var body: some View {
         Picker(title, selection: $usage) {
             if allowNone { Text("—").tag(UInt8(0)) }
-            ForEach(HIDKey.all) { k in
-                Text(k.name + (HIDKey.vendorTableContains(k.usage) ? "" : " *")).tag(k.usage)
-            }
+            ForEach(HIDKey.all) { k in Text(k.name).tag(k.usage) }
         }
         .frame(maxWidth: 220)
     }
@@ -112,16 +94,18 @@ struct KeyPicker: View {
 
 struct ActionEditor: View {
     @Binding var action: ButtonAction
+    let caps: MouseCapabilities
     let macros: [Macro]
 
+    var kinds: [ActionKind] { caps.actions.contains(action.kind) ? caps.actions : caps.actions + [action.kind] }
     var kind: Binding<ActionKind> {
-        Binding(get: { ActionKind(action) }, set: { if $0 != ActionKind(action) { action = $0.defaultAction } })
+        Binding(get: { action.kind }, set: { if $0 != action.kind { action = $0.defaultAction(caps) } })
     }
 
     var body: some View {
         HStack(alignment: .center, spacing: 8) {
             Picker("", selection: kind) {
-                ForEach(ActionKind.allCases) { Text($0.rawValue).tag($0) }
+                ForEach(kinds) { Text($0.name).tag($0) }
             }
             .labelsHidden().frame(width: 190)
             details
@@ -133,7 +117,7 @@ struct ActionEditor: View {
         switch action {
         case .mouse(let b):
             Picker("", selection: Binding(get: { b }, set: { action = .mouse($0) })) {
-                ForEach(MouseButton.allCases) { Text($0.name).tag($0) }
+                ForEach(caps.mouseButtons) { Text($0.name).tag($0) }
             }.labelsHidden().frame(width: 160)
         case let .key(m, k, k2):
             ModifierToggles(mods: Binding(get: { m }, set: { action = .key(modifiers: $0, key: k, key2: k2) }))
@@ -146,15 +130,15 @@ struct ActionEditor: View {
             Stepper("\(i) ms", value: Binding(get: { Int(i) }, set: { action = .fire(key: k, intervalMs: UInt8($0), count: c) }), in: 5...255)
         case .media(let mk):
             Picker("", selection: Binding(get: { mk }, set: { action = .media($0) })) {
-                ForEach(MediaKey.allCases) { Text($0.name).tag($0) }
+                ForEach(caps.mediaKeys) { Text($0.name).tag($0) }
             }.labelsHidden().frame(width: 180)
         case .dpiLock(let d):
             Picker("", selection: Binding(get: { d }, set: { action = .dpiLock(dpi: $0) })) {
-                ForEach(PC205.dpiTable, id: \.self) { Text("\($0) DPI").tag($0) }
+                ForEach(caps.dpiValues, id: \.self) { Text("\($0) DPI").tag($0) }
             }.labelsHidden().frame(width: 140)
         case let .macro(i, mode):
             Picker("", selection: Binding(get: { i }, set: { action = .macro(index: $0, mode: mode) })) {
-                ForEach(1...PC205.macroCount, id: \.self) { n in
+                ForEach(1...max(1, caps.macroCount), id: \.self) { n in
                     Text(n <= macros.count ? "\(n): \(macros[n - 1].name)" : "Macro \(n)").tag(n)
                 }
             }.labelsHidden().frame(width: 180)
@@ -193,39 +177,40 @@ struct ModifierToggles: View {
 struct DPIView: View {
     @EnvironmentObject var model: AppModel
     var body: some View {
+        let caps = model.caps
+        let xy = caps.dpiXY && model.profile.xyIndependent
         Form {
-            Toggle("Independent X / Y DPI", isOn: $model.profile.xyIndependent)
+            if caps.dpiXY { Toggle("Independent X / Y DPI", isOn: $model.profile.xyIndependent) }
             Picker("Current stage", selection: $model.profile.currentStage) {
-                ForEach(0..<PC205.dpiStages, id: \.self) { Text("Stage \($0 + 1)").tag($0) }
+                ForEach(0..<caps.dpiStages, id: \.self) { Text("Stage \($0 + 1)").tag($0) }
             }
-            ForEach(0..<PC205.dpiStages, id: \.self) { i in
+            ForEach(0..<caps.dpiStages, id: \.self) { i in
                 HStack {
                     Toggle("Stage \(i + 1)", isOn: $model.profile.stages[i].enabled).frame(width: 110, alignment: .leading)
-                    Picker(model.profile.xyIndependent ? "X" : "DPI", selection: $model.profile.stages[i].x) {
-                        ForEach(PC205.dpiTable, id: \.self) { Text("\($0)").tag($0) }
+                    Picker(xy ? "X" : "DPI", selection: Binding(
+                        get: { model.profile.stages[i].x },
+                        set: { model.profile.stages[i].x = $0; if !xy { model.profile.stages[i].y = $0 } })) {
+                        ForEach(caps.dpiValues, id: \.self) { Text("\($0)").tag($0) }
                     }.frame(width: 160)
-                    if model.profile.xyIndependent {
+                    if xy {
                         Picker("Y", selection: $model.profile.stages[i].y) {
-                            ForEach(PC205.dpiTable, id: \.self) { Text("\($0)").tag($0) }
+                            ForEach(caps.dpiValues, id: \.self) { Text("\($0)").tag($0) }
                         }.frame(width: 140)
                     }
-                    Picker("Colour", selection: $model.profile.stages[i].color) {
-                        ForEach(DPIColor.allCases) { c in
-                            Text(c.name).tag(c)
+                    if !caps.dpiColorNames.isEmpty {
+                        Picker("Colour", selection: $model.profile.stages[i].color) {
+                            ForEach(caps.dpiColorNames.indices, id: \.self) { Text(caps.dpiColorNames[$0]).tag($0) }
+                        }.frame(width: 170)
+                        let c = model.profile.stages[i].color
+                        if c < caps.dpiColorValues.count {
+                            Circle().fill(Color(rgb: caps.dpiColorValues[c])).frame(width: 14, height: 14)
                         }
-                    }.frame(width: 170)
-                    Circle().fill(Color(rgb: model.profile.stages[i].color.rgb)).frame(width: 14, height: 14)
-                }
-                .onChange(of: model.profile.stages[i].x) { v in
-                    if !model.profile.xyIndependent { model.profile.stages[i].y = v }
+                    }
                 }
             }
             HStack {
                 Spacer()
-                Button("Apply DPI & lighting") {
-                    if !model.profile.stages.contains(where: \.enabled) { model.profile.stages[0].enabled = true }
-                    model.apply(.general)
-                }.disabled(!model.connected)
+                Button("Apply DPI") { model.apply(.dpi) }.disabled(!model.connected)
             }
         }
         .formStyle(.grouped)
@@ -237,28 +222,28 @@ struct DPIView: View {
 struct LightingView: View {
     @EnvironmentObject var model: AppModel
     var body: some View {
+        let caps = model.caps
         Form {
             Picker("Effect", selection: $model.profile.effect) {
-                ForEach(LightingEffect.allCases) { e in
-                    Text(e.name + (e.hiddenByVendor ? " (hidden in vendor app)" : "")).tag(e)
+                ForEach(caps.lightingEffects.indices, id: \.self) { i in
+                    Text(caps.lightingEffects[i] + (caps.lightingEffectsHidden.contains(i) ? " (hidden in vendor app)" : "")).tag(i)
                 }
             }
-            Stepper("\(model.profile.effect == .steady ? "Brightness" : "Speed") level: \(model.profile.level)",
-                    value: $model.profile.level, in: 1...8)
-            Toggle("Random / colourful variant", isOn: Binding(
-                get: { model.profile.lightingFlags & 0x80 != 0 },
-                set: { model.profile.lightingFlags = ($0 ? 0x80 : 0) | (model.profile.lightingFlags & 0x7F) }))
-            Stepper("Colours used: \(model.profile.lightingFlags & 0x07)", value: Binding(
-                get: { Int(model.profile.lightingFlags & 0x07) },
-                set: { model.profile.lightingFlags = (model.profile.lightingFlags & 0xF8) | UInt8($0) }), in: 0...7)
-            ForEach(0..<7, id: \.self) { i in
+            if caps.lightingLevelMax > 0 {
+                Stepper("Speed / brightness level: \(model.profile.level)", value: $model.profile.level, in: 1...caps.lightingLevelMax)
+            }
+            if caps.lightingRandom { Toggle("Random / colourful variant", isOn: $model.profile.lightingRandom) }
+            if caps.lightingColors > 0 {
+                Stepper("Colours used: \(model.profile.lightingColorCount)", value: $model.profile.lightingColorCount, in: 0...caps.lightingColors)
+            }
+            ForEach(0..<min(caps.lightingColors, model.profile.colors.count), id: \.self) { i in
                 ColorPicker("Colour \(i + 1)", selection: Binding(
                     get: { Color(rgb: model.profile.colors[i]) },
                     set: { model.profile.colors[i] = $0.rgb }), supportsOpacity: false)
             }
             HStack {
                 Spacer()
-                Button("Apply DPI & lighting") { model.apply(.general) }.disabled(!model.connected)
+                Button("Apply lighting") { model.apply(.lighting) }.disabled(!model.connected)
             }
         }
         .formStyle(.grouped)
@@ -270,22 +255,21 @@ struct LightingView: View {
 struct PerformanceView: View {
     @EnvironmentObject var model: AppModel
     var body: some View {
+        let caps = model.caps
         Form {
-            Picker("Active key mode", selection: $model.profile.activeMode) {
-                ForEach(0..<PC205.modes, id: \.self) { Text("Mode \($0 + 1)").tag($0) }
-            }
-            ForEach(0..<PC205.modes, id: \.self) { m in
-                Picker("Polling rate – mode \(m + 1)", selection: $model.profile.rates[m]) {
-                    ForEach(PollingRate.allCases) { Text("\($0.hz) Hz").tag($0) }
+            if caps.modes > 1 {
+                Picker("Active key mode", selection: $model.profile.activeMode) {
+                    ForEach(0..<caps.modes, id: \.self) { Text("Mode \($0 + 1)").tag($0) }
                 }
             }
-            if model.device.mode == nil {
-                Text("The mode/polling-rate collection (feature report 8) was not found, so these settings can't be applied.")
-                    .foregroundStyle(.orange)
+            ForEach(0..<min(max(1, caps.modes), model.profile.ratesHz.count), id: \.self) { m in
+                Picker(caps.modes > 1 ? "Polling rate – mode \(m + 1)" : "Polling rate", selection: $model.profile.ratesHz[m]) {
+                    ForEach(caps.pollingRatesHz, id: \.self) { Text("\($0) Hz").tag($0) }
+                }
             }
             HStack {
                 Spacer()
-                Button("Apply polling rate & mode") { model.apply(.mode) }.disabled(!model.connected)
+                Button("Apply polling rate") { model.apply(.polling) }.disabled(!model.connected)
             }
         }
         .formStyle(.grouped)
@@ -298,21 +282,24 @@ struct MacrosView: View {
     @EnvironmentObject var model: AppModel
     @State private var selected = 0
     var body: some View {
+        let count = min(model.caps.macroCount, model.profile.macros.count)
         HSplitView {
             List(selection: $selected) {
-                ForEach(0..<model.profile.macros.count, id: \.self) { i in
+                ForEach(0..<count, id: \.self) { i in
                     Text("\(i + 1). \(model.profile.macros[i].name)").tag(i)
                 }
             }
             .frame(minWidth: 180, maxWidth: 220)
-            MacroEditor(macro: $model.profile.macros[selected])
-                .padding(6)
+            if selected < count {
+                MacroEditor(macro: $model.profile.macros[selected], caps: model.caps).padding(6)
+            }
         }
     }
 }
 
 struct MacroEditor: View {
     @Binding var macro: Macro
+    let caps: MouseCapabilities
     @State private var newKey: UInt8 = 0x04
     @State private var newDelay = 20
     var body: some View {
@@ -327,15 +314,14 @@ struct MacroEditor: View {
             }
             HStack {
                 KeyPicker(title: "Key", usage: $newKey)
-                Stepper("Delay \(newDelay) ms", value: $newDelay, in: 0...Macro.maxDelay, step: 10)
+                Stepper("Delay \(newDelay) ms", value: $newDelay, in: 0...max(1, caps.macroMaxDelayMs), step: 10)
                 Button("+ Tap") { macro.events += Macro.tap(newKey, holdMs: newDelay, gapMs: newDelay) }
                 Button("+ Press") { macro.events.append(MacroEvent(key: newKey, press: true, delayMs: newDelay)) }
                 Button("+ Release") { macro.events.append(MacroEvent(key: newKey, press: false, delayMs: newDelay)) }
                 Button("Remove last") { if !macro.events.isEmpty { macro.events.removeLast() } }
                 Button("Clear") { macro.events.removeAll() }
             }
-            let used = macro.encode().count
-            Text("Encoded size \(used) bytes (128 max per macro, up to 8 macros). Assign it to a button in the Buttons tab, then Apply.")
+            Text("Up to \(caps.macroCount) macros of \(caps.macroBytes) bytes. Assign a macro to a button in the Buttons tab, then Apply.")
                 .font(.caption).foregroundStyle(.secondary)
         }
     }
@@ -347,15 +333,15 @@ struct DeviceView: View {
     @EnvironmentObject var model: AppModel
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                Button("Export profile…") { exportProfile() }
-                Button("Import profile…") { importProfile() }
-                Button("Reset to vendor defaults") { model.profile = .vendorDefault }
-                Button("LoL preset (side = F13)") { model.profile = .lolDefault }
-            }
-            if let g = model.lastGeneral {
-                Text("General report (ID 4): " + g.featureBytes.map { String(format: "%02X", $0) }.joined(separator: " "))
-                    .font(.caption.monospaced()).textSelection(.enabled)
+            Text("Supported mice: " + MouseDevices.supported.map { String(format: "%@ (%04X:%04X)", $0.name, $0.vendorID, $0.productID) }.joined(separator: ", "))
+                .font(.caption).foregroundStyle(.secondary)
+            if let d = model.driver {
+                HStack {
+                    Button("Export profile…") { exportProfile() }
+                    Button("Import profile…") { importProfile() }
+                    Button("Reset to defaults") { model.resetToDefaults() }
+                }
+                ForEach(d.diagnostics(), id: \.self) { Text($0).font(.caption.monospaced()).textSelection(.enabled) }
             }
             Text("Log").font(.headline)
             ScrollView {
@@ -371,7 +357,7 @@ struct DeviceView: View {
     func exportProfile() {
         let p = NSSavePanel()
         p.allowedContentTypes = [.json]
-        p.nameFieldStringValue = "PC205-profile.json"
+        p.nameFieldStringValue = "\(model.driver?.id ?? "mouse")-profile.json"
         if p.runModal() == .OK, let url = p.url { try? model.exportProfile(to: url) }
     }
 

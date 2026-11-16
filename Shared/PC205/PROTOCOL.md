@@ -5,8 +5,10 @@ Reverse-engineered by **static analysis only** of the vendor's Windows configura
 
 Implementations in 3£:
 
-- **Windows:** tray menu → **Mouse (PC205)…** (`Windows/Mouse/`, tests in `Windows/MouseTests/`).
-- **Mac:** menu-bar menu → **Mouse (PC205)…** opens the bundled `3£ Mouse.app` helper (`TouchBar/threee/PC205/`, run `swift test` there).
+- **Windows:** tray menu → **Mouse…**. The device module is `Windows/Mouse/Devices/PC205/`, on top of the generic model and window in `Windows/Mouse/`. Tests are in `Windows/MouseTests/`.
+- **Mac:** menu-bar menu → **Mouse…** opens the bundled `3£ Mouse.app` helper. The device module is in `TouchBar/threee/Mouse/Sources/Mouse{Core,HID}/Devices/PC205/`; run `swift test` in `TouchBar/threee/Mouse`.
+
+To add another mouse, add one `Devices/<Name>` module on each platform (capabilities, encoding, driver) and one line in the registry (`MouseDevices`). The window builds itself from the device's capabilities.
 Each item below is tagged:
 
 - **[code]**: read directly from the decompiled code paths that the PC205 configuration takes.

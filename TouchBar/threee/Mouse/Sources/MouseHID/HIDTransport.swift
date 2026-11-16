@@ -1,25 +1,23 @@
 import Foundation
 import IOKit
 import IOKit.hid
-import PC205Core
+import MouseCore
 
 public enum HIDError: Error, CustomStringConvertible {
     case notFound
     case openFailed(IOReturn)
     case ioFailed(String, IOReturn)
-    case shortRead(Int)
 
     public var description: String {
         switch self {
-        case .notFound: return "PC205 (VID 0x258A / PID 0x1007) not found"
+        case .notFound: return "mouse configuration interface not found"
         case .openFailed(let r): return String(format: "IOHIDDeviceOpen failed: 0x%08x", r)
         case .ioFailed(let what, let r): return String(format: "%@ failed: 0x%08x", what, r)
-        case .shortRead(let n): return "short feature read (\(n) bytes)"
         }
     }
 }
 
-/// One HID top-level collection of the mouse (macOS exposes each collection as its own IOHIDDevice).
+/// One HID device/collection of a mouse.
 public struct HIDInterfaceInfo: CustomStringConvertible {
     public let device: IOHIDDevice
     public let usagePage: Int
@@ -34,16 +32,16 @@ public struct HIDInterfaceInfo: CustomStringConvertible {
     }
 }
 
-/// Thin IOKit HID wrapper. Only feature reports are used, exactly like the vendor's
-/// Lowerdev.dll (HidD_SetFeature / HidD_GetFeature).
+/// Thin IOKit HID wrapper for one VID/PID, used by device drivers. Never seizes the device,
+/// so the mouse keeps working while it is configured.
 public final class HIDTransport {
     private let manager: IOHIDManager
     public private(set) var interfaces: [HIDInterfaceInfo] = []
     private var opened = Set<ObjectIdentifier>()
 
-    public init() {
+    public init(vendorID: Int, productID: Int) {
         manager = IOHIDManagerCreate(kCFAllocatorDefault, IOOptionBits(kIOHIDOptionsTypeNone))
-        let match: [String: Any] = [kIOHIDVendorIDKey: PC205.vendorID, kIOHIDProductIDKey: PC205.productID]
+        let match: [String: Any] = [kIOHIDVendorIDKey: vendorID, kIOHIDProductIDKey: productID]
         IOHIDManagerSetDeviceMatching(manager, match as CFDictionary)
         IOHIDManagerOpen(manager, IOOptionBits(kIOHIDOptionsTypeNone))
     }
@@ -55,8 +53,18 @@ public final class HIDTransport {
         IOHIDManagerClose(manager, IOOptionBits(kIOHIDOptionsTypeNone))
     }
 
-    private static func intProp(_ d: IOHIDDevice, _ key: String) -> Int {
+    static func intProp(_ d: IOHIDDevice, _ key: String) -> Int {
         (IOHIDDeviceGetProperty(d, key as CFString) as? NSNumber)?.intValue ?? 0
+    }
+
+    /// VID/PID pairs of every HID device currently attached (for MouseDevices.detect()).
+    public static func presentDevices() -> Set<[Int]> {
+        let m = IOHIDManagerCreate(kCFAllocatorDefault, IOOptionBits(kIOHIDOptionsTypeNone))
+        IOHIDManagerSetDeviceMatching(m, nil)
+        IOHIDManagerOpen(m, IOOptionBits(kIOHIDOptionsTypeNone))
+        defer { IOHIDManagerClose(m, IOOptionBits(kIOHIDOptionsTypeNone)) }
+        guard let set = IOHIDManagerCopyDevices(m) as? Set<IOHIDDevice> else { return [] }
+        return Set(set.map { [intProp($0, kIOHIDVendorIDKey), intProp($0, kIOHIDProductIDKey)] })
     }
 
     @discardableResult
@@ -78,36 +86,30 @@ public final class HIDTransport {
         return interfaces
     }
 
-    public var isConnected: Bool { !interfaces.isEmpty }
-
-    /// Finds the collection that declares the given feature report ID with (at least) the given length.
-    /// Falls back to the vendor-defined page / largest feature size, which is how the Windows
-    /// driver picks its handles (it matches on FeatureReportByteLength).
-    public func interface(forFeatureLength len: Int) -> HIDInterfaceInfo? {
-        if let exact = interfaces.first(where: { $0.maxFeature == len }) { return exact }
-        return interfaces.filter { $0.maxFeature >= len }.min { $0.maxFeature < $1.maxFeature }
-    }
-
     private func ensureOpen(_ d: IOHIDDevice) throws {
         let id = ObjectIdentifier(d)
         if opened.contains(id) { return }
-        // Seize is never used: the mouse keeps working normally while we configure it.
         let r = IOHIDDeviceOpen(d, IOOptionBits(kIOHIDOptionsTypeNone))
         guard r == kIOReturnSuccess else { throw HIDError.openFailed(r) }
         opened.insert(id)
     }
 
-    /// `bytes[0]` must be the report ID (Windows HidD_SetFeature convention).
+    /// `bytes[0]` must be the report ID.
     public func setFeature(_ bytes: [UInt8], on iface: HIDInterfaceInfo) throws {
         try ensureOpen(iface.device)
         let reportID = CFIndex(bytes[0])
-        let r = bytes.withUnsafeBufferPointer { p in
-            IOHIDDeviceSetReport(iface.device, kIOHIDReportTypeFeature, reportID, p.baseAddress!, p.count)
+        var result = kIOReturnError
+        for attempt in 0..<3 {
+            result = bytes.withUnsafeBufferPointer { p in
+                IOHIDDeviceSetReport(iface.device, kIOHIDReportTypeFeature, reportID, p.baseAddress!, p.count)
+            }
+            if result == kIOReturnSuccess { return }
+            if attempt < 2 { usleep(200_000) }
         }
-        guard r == kIOReturnSuccess else { throw HIDError.ioFailed("SetFeature(0x\(String(reportID, radix: 16)))", r) }
+        throw HIDError.ioFailed("SetFeature(0x\(String(reportID, radix: 16)))", result)
     }
 
-    /// Returns the report including the leading report ID byte.
+    /// Returns `length` bytes including the leading report ID byte.
     public func getFeature(reportID: UInt8, length: Int, on iface: HIDInterfaceInfo) throws -> [UInt8] {
         try ensureOpen(iface.device)
         var buf = [UInt8](repeating: 0, count: length)
@@ -117,11 +119,24 @@ public final class HIDTransport {
             IOHIDDeviceGetReport(iface.device, kIOHIDReportTypeFeature, CFIndex(reportID), p.baseAddress!, &len)
         }
         guard r == kIOReturnSuccess else { throw HIDError.ioFailed("GetFeature(0x\(String(reportID, radix: 16)))", r) }
-        // macOS may or may not keep the report ID in the buffer depending on the driver;
-        // normalise so index 0 is always the report ID.
+        // macOS may or may not keep the report ID in the buffer; normalise so index 0 is the ID.
         var out = Array(buf.prefix(Int(len)))
         if out.first != reportID { out.insert(reportID, at: 0) }
         if out.count < length { out += [UInt8](repeating: 0, count: length - out.count) }
         return Array(out.prefix(length))
+    }
+}
+
+/// Registry of supported mice.
+public enum MouseDevices {
+    /// Every supported mouse. Adding a mouse = adding its Devices/<Name> code and one line here.
+    public static let supported: [MouseDeviceEntry] = [
+        PC205Driver.entry,
+    ]
+
+    /// Supported mice that are plugged in now.
+    public static func detect() -> [MouseDeviceEntry] {
+        let present = HIDTransport.presentDevices()
+        return supported.filter { present.contains([$0.vendorID, $0.productID]) }
     }
 }
