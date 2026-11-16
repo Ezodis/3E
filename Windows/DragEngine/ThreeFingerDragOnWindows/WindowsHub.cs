@@ -71,6 +71,8 @@ public sealed class WindowsHub : IDisposable {
         public string LolScript { get; set; }
         // Mouse: gaming-mouse configuration (PC205 first). Off hides nothing but disables the settings.
         public bool Mouse { get; set; } = true;
+        // Modules removed with the gear's "Uninstall"; "Install modules…" brings them back.
+        public System.Collections.Generic.List<string> Uninstalled { get; set; } = new();
     }
 
     public WindowsHub() {
@@ -374,7 +376,10 @@ public sealed class WindowsHub : IDisposable {
         });
     }
 
+    private IntPtr menuOwner;
+
     private void ShowControlsMenuCore(IntPtr owner, System.Drawing.Point point) {
+        menuOwner = owner;
         RefreshMenu();
         var items = menu.Items.ToArray();
         var rows = items.Select(item => {
@@ -403,6 +408,47 @@ public sealed class WindowsHub : IDisposable {
     }
 
     private void Item(string label, Action click) => menu.Items.Add(ActionMenuItem(label, click));
+
+    [DllImport("user32.dll")] private static extern bool GetCursorPos(out System.Drawing.Point point);
+
+    // A small popup in the same style as the tray menu, at the cursor. Returns the chosen index.
+    private int? PickFromMenu(params string[] labels) {
+        if (menuOwner == IntPtr.Zero || !GetCursorPos(out var point)) return null;
+        using var preferences = Registry.CurrentUser.OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize");
+        bool dark = Convert.ToInt32(preferences?.GetValue("AppsUseLightTheme", 1)) == 0;
+        using var popup = new NativeHubMenu(labels.Select(label => new NativeHubMenu.Row(label)).ToArray(),
+            NativeHubMenu.DpiAt(point, menuOwner), dark, NativeHubMenu.MaxWidthAt(point));
+        return popup.Show(menuOwner, point)?.Index;
+    }
+
+    // An installable module: click toggles it; the gear offers its settings or Uninstall.
+    // Uninstall turns it off and removes the row; "Install modules…" brings it back.
+    private void Module(string id, string label, bool value, Action<bool> change, Action open, string openLabel = "Open settings") {
+        if (settings.Uninstalled.Contains(id)) return;
+        var item = new HubMenuToggleItem { Text = label + IconSlot, IsChecked = value };
+        item.Command = new HubMenuCommand(() => {
+            if (ClickedGear()) {
+                try {
+                    switch (PickFromMenu(openLabel, "Uninstall " + id)) {
+                        case 0: open(); break;
+                        case 1:
+                            if (value) change(false);
+                            settings.Uninstalled.Add(id); Save(); RefreshMenu();
+                            break;
+                    }
+                } catch (Exception ex) { Log(ex); MessageBox(IntPtr.Zero, ex.Message, "3£", 0x10); }
+                return;
+            }
+            try { value = !value; item.IsChecked = value; change(value); Save(); } catch (Exception ex) { Log(ex); }
+        });
+        menu.Items.Add(item);
+    }
+
+    private void InstallModules() {
+        var names = settings.Uninstalled.ToArray();
+        int? pick = PickFromMenu(names.Select(name => "Install " + name).ToArray());
+        if (pick is int index) { settings.Uninstalled.Remove(names[index]); Save(); RefreshMenu(); }
+    }
 
     private void Toggle(string label, bool value, Action<bool> change, Action openSettings = null, string slot = IconSlot) => menu.Items.Add(ToggleMenuItem(label, value, change, openSettings, slot));
 
@@ -510,18 +556,18 @@ public sealed class WindowsHub : IDisposable {
         menu.Items.Add(new HubMenuItem { Text = "3£ " + Version, IsEnabled = false });
         // One Track Phone row: click to turn it on or off; its icon makes a new link.
         // Left-clicking the tray icon shows the QR.
-        Toggle(phoneBar.NetworkAllowed ? "Track Phone" : phoneBar.UsbOnly ? "Track Phone — USB cable only" : "Track Phone — network restricted", phoneBar.Running, enabled => {
-            if (ShowPhoneNetworkRestriction()) return;
+        Module("Track Phone", phoneBar.NetworkAllowed ? "Track Phone" : phoneBar.UsbOnly ? "Track Phone — USB cable only" : "Track Phone — network restricted", phoneBar.Running, enabled => {
+            if (enabled && ShowPhoneNetworkRestriction()) return;
             settings.PhoneBarAlwaysOn = enabled;
             if (enabled) phoneBar.EnsureRunning(); else phoneBar.Stop();
-        }, NewPhoneLink);
-        Toggle("Track Tab",App.Instance.HandlerWindow.TrackTab.Enabled,enabled=> {
+        }, NewPhoneLink, "New link…");
+        Module("Track Tab", "Track Tab",App.Instance.HandlerWindow.TrackTab.Enabled,enabled=> {
             var trackTab=App.Instance.HandlerWindow.TrackTab;
             if(trackTab.SetEnabled(enabled)){App.SettingsData.TrackTab=enabled;App.SettingsData.save();}
             else MessageBox(IntPtr.Zero,"Track Tab could not start: "+trackTab.Error,"3£ Track Tab",0x40 | ForegroundDialog);
-        },()=>MessageBox(IntPtr.Zero,"Four fingers:\n• Swipe left/right to switch apps; hold to browse, lift to choose.\n• Pinch in to copy; spread to paste.\n• Tap to cycle windows in the current app.\n• Swipe up for Task View; down for the desktop.\n\nTrack Phone uses the same gestures. Three-finger drag stays separate.","3£ Track Tab",0x40 | ForegroundDialog));
+        },()=>MessageBox(IntPtr.Zero,"Four fingers:\n• Swipe left/right to switch apps; hold to browse, lift to choose.\n• Pinch in to copy; spread to paste.\n• Tap to cycle windows in the current app.\n• Swipe up for Task View; down for the desktop.\n\nTrack Phone uses the same gestures. Three-finger drag stays separate.","3£ Track Tab",0x40 | ForegroundDialog), "Gestures…");
         Toggle("Car View",carView.Enabled,enabled=>carView.SetEnabled(enabled),()=>carView.ToggleMirror(),MirrorSlot);
-        Toggle("Three-finger drag", App.SettingsData.ThreeFingerDrag, enabled => { App.SettingsData.ThreeFingerDrag = enabled; App.SettingsData.save(); },
+        Module("Three-finger drag", "Three-finger drag", App.SettingsData.ThreeFingerDrag, enabled => { App.SettingsData.ThreeFingerDrag = enabled; App.SettingsData.save(); },
             () => App.Instance.OpenSettingsWindow());
         // The check mark means the keyboard engine is running; clicking an unchecked row starts it.
         Toggle(File.Exists(KeyboardPath) ? "Clicks keyboard" : "Clicks keyboard — connect and run setup", settings.Keyboard && IsRunning("3EWindows.Keyboard"), enabled => {
@@ -529,7 +575,7 @@ public sealed class WindowsHub : IDisposable {
             if (enabled) _ = EnsureComponentsAsync(); else StopKeyboard();
         });
         menu.Items.Add(MacKeyboardToggle());
-        Toggle("PowerToys", settings.PowerToys, enabled => {
+        Module("PowerToys", "PowerToys", settings.PowerToys, enabled => {
             settings.PowerToys = enabled;
             if (enabled) _ = EnsureComponentsAsync(); else { Stop("PowerToys"); if (settings.MacKeyboard) _ = macKeyboard.EnsureAsync(); }
         }, OpenPowerToysSettings);
@@ -540,12 +586,12 @@ public sealed class WindowsHub : IDisposable {
         });
         // Gaming-mouse settings for supported mice (Windows/Mouse/Devices; first: PC205); the gear opens
         // them. Side button → F13 for the Kalista kite.
-        Toggle("Mouse", settings.Mouse, enabled => {
+        Module("Mouse", "Mouse", settings.Mouse, enabled => {
             settings.Mouse = enabled;
             if (enabled) ThreeE.Mouse.MouseWindow.Show();
-        }, () => { if (settings.Mouse) ThreeE.Mouse.MouseWindow.Show(); });
+        }, ThreeE.Mouse.MouseWindow.Show);
         menu.Items.Add(new HubMenuSeparator());
-        Toggle("Dynamic wallpaper", settings.Wallpaper, enabled => {
+        Module("Dynamic wallpaper", "Dynamic wallpaper", settings.Wallpaper, enabled => {
             settings.Wallpaper = enabled;
             if (enabled) _ = EnsureComponentsAsync(); else Stop("WinDynamicDesktop");
         }, () => Start(WallpaperPath, "", true));
@@ -555,6 +601,7 @@ public sealed class WindowsHub : IDisposable {
             () => { settings.SsmsTheme = true; UpdateSsmsTheme(true); Save(); }, RotateSlot);
         Item("Use light theme", () => { settings.AutoDark = false; Save(); SetTheme(1); });
         Item("Use dark theme", () => { settings.AutoDark = false; Save(); SetTheme(0); });
+        if (settings.Uninstalled.Count > 0) Item("Install modules…", InstallModules);
         menu.Items.Add(new HubMenuSeparator());
         Item("Restart", Restart);
         // Automatic updates make a manual check redundant; it returns only when they are off.

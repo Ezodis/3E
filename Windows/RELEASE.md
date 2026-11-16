@@ -2,6 +2,7 @@
 
 - **Kalista** (was LoL macros): a plain on/off row, with no gear because there is nothing to configure.
 - **Mouse**: on/off row with a gear that opens the gaming-mouse settings (PC205 first).
+- Every module with a gear (Track Phone, Track Tab, Three-finger drag, PowerToys, Mouse, Dynamic wallpaper): the gear now offers its settings or Uninstall. Uninstall turns the module off and removes its row; Install modules… brings it back.
 
 Previous release:
 
