@@ -23,6 +23,9 @@ public partial class App {
     public App(string trayCommandReport = null){
         Instance = this;
         DispatcherQueue = DispatcherQueue.GetForCurrentThread();
+        // The tray app has no visible main window. Without this, closing the last open window
+        // (Mouse, Settings) shuts the whole app down silently. Quit() exits explicitly instead.
+        DispatcherShutdownMode = Microsoft.UI.Xaml.DispatcherShutdownMode.OnExplicitShutdown;
         UnhandledException += (_, e) => Logger.Fatal(e.Exception);
         if (trayCommandReport != null) {
             InitializeComponent();
@@ -94,6 +97,7 @@ public partial class App {
         Hub?.Dispose();
         HandlerWindow?.Close();
         SettingsWindow?.Close();
+        Exit();
     }
 
     public static bool RestartElevated(SettingsData.StartupActionType startupActionType = SettingsData.StartupActionType.NONE){

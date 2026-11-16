@@ -24,6 +24,7 @@ internal sealed class NativeHubMenu : IDisposable {
     private readonly int width;
     private bool disposed;
     private bool mouseSelection;
+    private Rectangle menuWindow;   // the open menu's window, screen pixels (for the gear column)
     private Exception paintError;
     private static readonly UIntPtr SubclassId = (UIntPtr)0x3E42;
     private int Px(float value) => (int)Math.Round(value * dpi / 96f);
@@ -101,15 +102,24 @@ internal sealed class NativeHubMenu : IDisposable {
             if (command == 0 || command > rows.Length) return null;
             int index = (int)command - 1;
             bool accessory = false;
-            if (GetCursorPos(out var cursor))
-                accessory = AccessoryHit(rows[index], cursor, rowBounds[index], mouseSelection && GetKeyState(13) >= 0 && GetKeyState(32) >= 0);
+            if (GetCursorPos(out var cursor)) {
+                bool mouse = GetKeyState(13) >= 0 && GetKeyState(32) >= 0;   // not chosen with Enter/Space
+                // Gear column = right edge of the menu window itself, whatever row or check state.
+                // (Per-row rectangles cached while drawing could be stale for some rows.)
+                accessory = mouse && rows[index].Enabled && rows[index].Icon != null &&
+                    (menuWindow.Contains(cursor) ? cursor.X >= menuWindow.Right - Px(44)
+                                                 : AccessoryHit(rows[index], cursor, rowBounds[index], mouseSelection));
+            }
             return new Choice(index, accessory);
         } finally { RemoveWindowSubclass(owner, callback, SubclassId); }
     }
 
     private IntPtr WindowMessage(IntPtr window, uint message, IntPtr wParam, IntPtr lParam, UIntPtr id, UIntPtr data) {
         try {
-            if (message == 0x0125 && lParam == menu) mouseSelection = ((wParam.ToInt64() >> 16) & 0x8000) != 0; // WM_MENUSELECT
+            if (message == 0x0125 && lParam == menu) { // WM_MENUSELECT
+                mouseSelection = ((wParam.ToInt64() >> 16) & 0x8000) != 0;
+                TrackMenuWindow();
+            }
             if (message == 0x002C) { // WM_MEASUREITEM
                 var measure = Marshal.PtrToStructure<MeasureItem>(lParam);
                 if (measure.ControlType == 1 && measure.ItemData.ToUInt64() >= 1 && measure.ItemData.ToUInt64() <= (ulong)rows.Length) {
@@ -127,11 +137,17 @@ internal sealed class NativeHubMenu : IDisposable {
                     using var target = Graphics.FromHdc(draw.Dc);
                     target.DrawImageUnscaled(buffer, rect.X, rect.Y);
                     if (GetMenuItemRect(IntPtr.Zero, menu, draw.ItemId - 1, out var screen)) rowBounds[draw.ItemId - 1] = screen.Rectangle;
+                    TrackMenuWindow();
                     return (IntPtr)1;
                 }
             }
         } catch (Exception ex) { paintError = ex; }
         return DefSubclassProc(window, message, wParam, lParam);
+    }
+
+    private void TrackMenuWindow() {
+        var window = FindWindowW("#32768", null);
+        if (window != IntPtr.Zero && GetWindowRect(window, out var rect)) menuWindow = rect.Rectangle;
     }
 
     internal static uint DpiAt(Point point, IntPtr owner) {
@@ -221,6 +237,8 @@ internal sealed class NativeHubMenu : IDisposable {
     [DllImport("comctl32.dll")] private static extern IntPtr DefSubclassProc(IntPtr window, uint message, IntPtr wParam, IntPtr lParam);
     [DllImport("user32.dll")] private static extern bool GetMenuItemRect(IntPtr window, IntPtr menu, uint item, out Rect rect);
     [DllImport("user32.dll")] private static extern bool GetCursorPos(out Point point);
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)] private static extern IntPtr FindWindowW(string className, string windowName);
+    [DllImport("user32.dll")] private static extern bool GetWindowRect(IntPtr window, out Rect rect);
     [DllImport("user32.dll")] private static extern short GetKeyState(int key);
     [DllImport("user32.dll")] private static extern bool SetForegroundWindow(IntPtr window);
     [DllImport("user32.dll")] private static extern bool PostMessageW(IntPtr window, uint message, IntPtr wParam, IntPtr lParam);

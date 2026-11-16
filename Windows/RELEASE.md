@@ -1,3 +1,10 @@
+3£ stays open and its gear icons always work.
+
+- Closing the Mouse or Settings window no longer closes all of 3£. The tray app has no visible main window, so closing the last open window shut it down silently; now only Quit 3£ exits.
+- Clicking a gear opens its menu whether the row is checked or not. It used to toggle a checked row off instead.
+
+Previous release:
+
 3£ renames LoL macros to Kalista and adds Mouse to the tray.
 
 - **Kalista** (was LoL macros): a plain on/off row, with no gear because there is nothing to configure.
