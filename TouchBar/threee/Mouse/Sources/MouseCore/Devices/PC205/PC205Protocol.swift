@@ -65,6 +65,12 @@ public enum PC205 {
         c.macroCount = macroCount
         c.macroMaxDelayMs = macroMaxDelay
         c.macroBytes = macroSize
+        c.visibleSlots = 8   // KM=16 → 8 physical keys
+        c.skinProbe = "main_nr.png"
+        c.skinSources = ["Wired Gaming Mouse", "PC205", "Thunderbird", "BY-COMBO"]
+        c.mousePicture = "mouse/mouse_nr.png"
+        // Numbers printed on the vendor's mouse_nr.png (280×440); 8 is the extra side button above 4/5.
+        c.buttonHotspots = [(91, 78), (183, 78), (138, 108), (50, 176), (55, 230), (163, 169), (163, 203), (46, 132), nil, nil]
         return c
     }()
 

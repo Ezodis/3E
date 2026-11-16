@@ -208,3 +208,28 @@ The vendor app reads it to see on-mouse DPI or mode changes. The configuration d
   modes" (matrix rows) with their own polling rate. 3£ saves its profile as JSON in
   `%LOCALAPPDATA%\3EWindows\Mouse\profile.json` (Windows) or
   `~/Library/Application Support/3E Mouse/profile.json` (Mac).
+
+## 8. Vendor window layout (used by the 3£ Mouse window)
+
+The 3£ Mouse window on Windows and on Mac copies the vendor window's layout, so later changes can start from
+the same design. Positions come from `OemDrv.exe` (skinned-button calls `FUN_0045a190`, panel classes) and
+`Cfg.ini`. **[code]**/**[cfg]**
+
+| Element | Position (window px) | Vendor images |
+|---|---|---|
+| Window | 1030×662, borderless | `main_nr.png` |
+| Minimise / close | (940,21) / (965,21) | `min_*.png`, `exit_*.png` |
+| Key list (8 keys) | panel (30,40)–(270,300); key *i* at (75, 50+31·*i*), 179×25 | `button2_nr/ov.png` |
+| Mouse picture | (340,80), 280×440; numbered buttons at the digit centres measured on the picture (1 (91,78), 2 (183,78), 3 (138,108), 4 (50,176), 5 (55,230), 6 (163,169), 7 (163,203), **8 (46,132)**, i.e. the extra side button) | `mouse/mouse_nr.png` |
+| Accordion: DPI, Lighting, Mouse Parameter, Polling Rate | headers at (743, 41+30·*i*), 245×25; the open panel sits below its header | `header_nr/ov/ov2.png` |
+| Mode buttons | `ProfileGpY`=500 | `btn_nr/ov.png` |
+| Driver buttons (Macro, Restore, Apply, …) | `DrvGpY`=570, 92×27 | `button3_nr/ov.png` |
+| Function picker popup | 540×340 | `pickfundlg.png` |
+| Macro editor | 767×418 (record button 128×30) | `macro_nr.png`, `recbtn_*.png` |
+
+Text colours (Cfg.ini): normal 180,180,180; hover white; pressed 230,0,18; list background 39,39,39,
+list selection 0,218,233; selected text 255,232,6; popup background 6,6,7 with frame 100,100,100.
+
+3E is a public repo, so it doesn't contain the vendor's images. 3£ copies them from the user's own copy of the
+vendor app, either found automatically (for example the vendor zip in `~/source/eduu`) or picked once with
+Info → Import skin. Without them the window draws the same layout itself.

@@ -270,6 +270,20 @@ public struct MouseCapabilities {
     public var macroMaxDelayMs = 0
     public var macroBytes = 0
 
+    // Vendor-style window (device-specific artwork and layout).
+    /// Buttons shown in the key list and on the picture (vendor apps hide unused slots). 0 = all.
+    public var visibleSlots = 0
+    /// Skin file proving a vendor skin folder is complete (e.g. "main_nr.png").
+    public var skinProbe: String?
+    /// Folder or zip names of the vendor app, searched on this Mac to import its skin.
+    public var skinSources: [String] = []
+    /// Mouse picture inside the skin folder and its size.
+    public var mousePicture: String?
+    public var mousePictureSize = (width: 280.0, height: 440.0)
+    /// Centre of each slot's number on the mouse picture (index = slot-1; nil = not on the picture).
+    public var buttonHotspots: [(x: Double, y: Double)?] = []
+    public var shownSlots: Int { visibleSlots > 0 ? min(visibleSlots, slots) : slots }
+
     public init() {}
 
     public var hasButtons: Bool { slots > 0 }

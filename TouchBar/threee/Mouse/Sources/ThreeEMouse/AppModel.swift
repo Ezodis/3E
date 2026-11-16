@@ -17,6 +17,12 @@ final class AppModel: ObservableObject {
     @Published var editingMode = 0
     @Published var identifyResult: String?
     @Published var identifying = false
+    @Published var skin: VendorSkin?
+    @Published var selectedSlot: Int?
+    @Published var pickerSlot: Int?
+    @Published var showMacroEditor = false
+    @Published var showInfo = false
+    @Published var openPanel = 0
 
     private let folder: URL
     private var monitor: Any?
@@ -60,13 +66,29 @@ final class AppModel: ObservableObject {
         } else {
             profile = defaults.normalized(d.capabilities, defaults: defaults)
         }
-        editingMode = 0
+        editingMode = min(profile.activeMode, max(0, profile.buttons.count - 1))
+        selectedSlot = nil
+        skin = loadSkin(d)
         if d.connect() {
             status = "\(d.displayName) connected"
             readFromMouse()
         } else {
             status = "\(d.displayName) found, but its configuration interface did not answer (see Device tab)"
         }
+    }
+
+    private func loadSkin(_ d: MouseDriver) -> VendorSkin? {
+        guard let probe = d.capabilities.skinProbe else { return nil }
+        if let s = VendorSkin.load(d.id, probe: probe) { return s }
+        let s = VendorSkin.autoImport(d.id, probe: probe, sources: d.capabilities.skinSources)
+        if s != nil { appendLog("vendor skin imported automatically") }
+        return s
+    }
+
+    func importSkin(from url: URL) {
+        guard let d = driver, let probe = caps.skinProbe else { return }
+        do { skin = try VendorSkin.importFrom(url, deviceID: d.id, probe: probe); status = "Vendor skin imported." }
+        catch { status = "Import failed: \(error.localizedDescription)" }
     }
 
     func readFromMouse() {

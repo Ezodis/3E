@@ -99,4 +99,16 @@ final class MouseCoreTests: XCTestCase {
         let back = try JSONDecoder().decode(Profile.self, from: JSONEncoder().encode(full))
         XCTAssertEqual(PC205Codec.matrixPayload(back), PC205Codec.matrixPayload(full))
     }
+
+    /// Key capture / macro recording on the Mac and the PC205 vendor layout data.
+    func testMacKeyCodesAndLayout() {
+        XCTAssertEqual(HIDKey.fromMacKeyCode(0), 0x04)      // A
+        XCTAssertEqual(HIDKey.fromMacKeyCode(105), HIDKey.f13)
+        XCTAssertEqual(HIDKey.fromMacKeyCode(56), 0xE1)     // left shift
+        XCTAssertEqual(HIDKey.modifierBit(0xE3), 0x08)
+        let caps = PC205.capabilities
+        XCTAssertEqual(caps.shownSlots, 8)
+        XCTAssertEqual(caps.buttonHotspots[caps.extraSideSlot - 1]?.x, 46)
+        XCTAssertEqual(caps.skinProbe, "main_nr.png")
+    }
 }
