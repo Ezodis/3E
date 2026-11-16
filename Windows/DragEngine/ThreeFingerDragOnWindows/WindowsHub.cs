@@ -625,7 +625,7 @@ public sealed class WindowsHub : IDisposable {
         // after the installer has been reviewed, including on Restart.
         if (!phoneBar.NetworkAllowed) {
             pendingUpdate = null;
-            if (interactive) MessageBox(IntPtr.Zero, "This computer uses a restricted 3£ installation. Ask IT to review an update before installing it; the public installer may enable incoming connections and startup tasks.", "3£ updates", 0x40 | ForegroundDialog);
+            if (interactive) MessageBox(IntPtr.Zero, "On this computer 3£ doesn't update itself, because of the IT restrictions it was installed with (no incoming connections, no extra startup tasks).\n\nTo update, run the new release's 3£Windows.ps1 with -AppOnly and approve the admin prompt. That updates only the app files and keeps those restrictions.", "3£ updates", 0x40 | ForegroundDialog);
             return null;
         }
         try {
