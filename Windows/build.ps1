@@ -7,6 +7,8 @@ $version = (Get-Content (Join-Path $PSScriptRoot 'version.json') -Raw | ConvertF
 if ($LASTEXITCODE -ne 0) { throw 'App-only installer preservation checks failed.' }
 dotnet run --project (Join-Path $PSScriptRoot 'MenuTests')
 if ($LASTEXITCODE -ne 0) { throw 'Native menu state/lifetime checks failed.' }
+dotnet run --project (Join-Path $PSScriptRoot 'MouseTests')
+if ($LASTEXITCODE -ne 0) { throw 'PC205 mouse protocol checks failed.' }
 dotnet run --project (Join-Path $PSScriptRoot 'DragTests')
 if ($LASTEXITCODE -ne 0) { throw 'Three-finger drag recovery checks failed.' }
 if ($version -notmatch '^\d+\.\d+\.\d+$') { throw 'Invalid Windows release version.' }

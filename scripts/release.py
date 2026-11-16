@@ -105,6 +105,7 @@ def required_module_files(edition):
     if edition in ("combined", "touchbar"):
         files.append("Contents/Helpers/MIDI Touchbar.app/Contents/MacOS/MIDI Touchbar")
         files.append("Contents/Helpers/ThreeE Apps.app/Contents/MacOS/ThreeEApps")
+        files.append("Contents/Helpers/3£ Mouse.app/Contents/MacOS/ThreeEMouse")
     if edition in ("combined", "phone"):
         for arch in ("arm64", "x64"):
             for name in ("ThreeE.PhoneHost", "ThreeE.PhoneHost.dll", "ThreeE.PhoneControl.dll", "libThreeEPhoneNative.dylib"):

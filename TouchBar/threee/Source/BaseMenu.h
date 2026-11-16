@@ -2,6 +2,7 @@
 #import "../../../Shared/PhoneControl/MacHost/PhoneBarMenu.h"
 #import "CarViewMenu.h"
 #import "ModuleMenu.h"
+#import "MouseMenu.h"
 static NSMenu *StripBaseMenu(id target,BOOL gestures) {
     NSMenu *menu=[NSMenu new];
     NSMenuItem *phone=ThreeEPhoneBarMenu(target);
@@ -15,6 +16,7 @@ static NSMenu *StripBaseMenu(id target,BOOL gestures) {
     [menu addItem:NSMenuItem.separatorItem];
     NSMenuItem *touchBar=[[NSMenuItem alloc] initWithTitle:StripHasModule(@"touchbar")?@"Touch Bar unavailable on this Mac":@"Touch Bar — Install…" action:StripHasModule(@"touchbar")?nil:NSSelectorFromString(@"installBaseTouchBar:") keyEquivalent:@""];
     touchBar.target=target; touchBar.enabled=!StripHasModule(@"touchbar");StripAttachModuleGear(touchBar,@"touchbar",@"Touch Bar",StripHasModule(@"touchbar"));[menu addItem:touchBar];
+    [menu addItem:ThreeEMouseMenu()];
     [menu addItem:NSMenuItem.separatorItem];
     NSMenuItem *automatic=[[NSMenuItem alloc] initWithTitle:@"Automatically Install Updates" action:NSSelectorFromString(@"toggleBaseAutomaticUpdates:") keyEquivalent:@""];
     automatic.target=target; automatic.state=StripAutomaticUpdatesEnabled()?NSControlStateValueOn:NSControlStateValueOff; [menu addItem:automatic];

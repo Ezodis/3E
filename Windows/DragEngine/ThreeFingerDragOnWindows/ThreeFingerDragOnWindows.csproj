@@ -126,6 +126,9 @@
     <Compile Include="../../../Shared/Brand/MenuIcons.cs" />
     <EmbeddedResource Include="../../../Shared/Brand/menu-icons.json" LogicalName="ThreeE.Brand.menu-icons.json" />
     <Compile Include="../../CarView/CarViewWindows.cs" />
+    <Compile Include="../../Mouse/PC205Protocol.cs" />
+    <Compile Include="../../Mouse/PC205Hid.cs" />
+    <Compile Include="../../Mouse/MouseWindow.cs" />
   </ItemGroup>
   <!--
       Defining the "Msix" ProjectCapability here allows the Single-project MSIX Packaging

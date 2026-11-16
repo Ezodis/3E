@@ -79,6 +79,8 @@ case "$strip_edition" in
   --touchtab-only) strip_modules=touchtab ;;
   --phone-only) strip_modules=phone ;;
 esac
+# PC205 mouse configurator opened from the 3£ menu ("Mouse (PC205)…").
+zsh "$strip_repo/threee/PC205/build-helper.sh" "$strip_app/Contents/Helpers/3£ Mouse.app"
 xattr -cr "$strip_app"
 codesign --force --sign - "$strip_framework"
 codesign --force --sign - "$strip_midi/Contents/Frameworks/ThreeEMidiBridge.dylib"

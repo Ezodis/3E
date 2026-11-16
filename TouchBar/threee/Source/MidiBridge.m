@@ -8,6 +8,7 @@
 #import <math.h>
 #import <CoreMIDI/CoreMIDI.h>
 #import "ReleaseUpdates.h"
+#import "MouseMenu.h"
 #import "DJSurface.h"
 #import "CarViewMenu.h"
 #import "ModuleMenu.h"
@@ -790,7 +791,7 @@ static void CleanMenu(NSMenu *menu) {
         if(item.submenu) CleanMenu(item.submenu);
     }
     if(menu==statusItem.menu) {
-        NSMenuItem *version=nil,*trackTab=nil,*phone=nil,*car=nil,*apps=nil,*midi=nil,*surface=nil,*downloads=nil,*automatic=nil;
+        NSMenuItem *version=nil,*trackTab=nil,*phone=nil,*car=nil,*apps=nil,*midi=nil,*surface=nil,*downloads=nil,*automatic=nil,*mouse=nil;
         NSMenuItem *reset=nil,*restart=nil,*quit=nil;NSMutableArray<NSMenuItem *> *remaining=[NSMutableArray array];
         for(NSMenuItem *item in menu.itemArray.copy) {
             NSString *title=item.title.lowercaseString;
@@ -803,6 +804,7 @@ static void CleanMenu(NSMenu *menu) {
             else if(item.action==NSSelectorFromString(@"toggleSurfaceMode:"))surface=item;
             else if([item.identifier isEqual:@"local.musicstrip.downloads"])downloads=item;
             else if([item.identifier isEqual:@"local.musicstrip.automaticUpdates"])automatic=item;
+            else if([item.identifier isEqual:ThreeEMouseMenuIdentifier])mouse=item;
             else if([item.identifier isEqual:@"local.musicstrip.modules"]) continue;
             else if([title containsString:@"check for update"] || item.isSeparatorItem || [item.identifier hasPrefix:@"local.musicstrip.section."]) continue;
             else if([item.identifier isEqual:@"local.musicstrip.restart"])restart=item;
@@ -824,6 +826,7 @@ static void CleanMenu(NSMenu *menu) {
             automatic=[[NSMenuItem alloc] initWithTitle:@"Automatically Install Updates" action:NSSelectorFromString(@"toggleAutomaticUpdates:") keyEquivalent:@""];
             automatic.identifier=@"local.musicstrip.automaticUpdates";automatic.target=NSClassFromString(@"ThreeEMidiBridge");
         }
+        if(!mouse)mouse=ThreeEMouseMenu();
         if(!restart) {
             restart=[[NSMenuItem alloc] initWithTitle:@"Restart" action:NSSelectorFromString(@"restartAll:") keyEquivalent:@""];
             restart.identifier=@"local.musicstrip.restart";restart.target=NSClassFromString(@"ThreeEMidiBridge");
@@ -848,7 +851,7 @@ static void CleanMenu(NSMenu *menu) {
         [menu addItem:MenuSeparator()];
         for(NSMenuItem *item in remaining)[menu addItem:item];
         [menu addItem:MenuSeparator()];
-        [menu addItem:downloads];[menu addItem:automatic];
+        [menu addItem:downloads];[menu addItem:mouse];[menu addItem:automatic];
         [menu addItem:MenuSeparator()];
         if(reset)[menu addItem:reset];[menu addItem:restart];if(quit)[menu addItem:quit];
     }

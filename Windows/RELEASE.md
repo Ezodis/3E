@@ -1,3 +1,11 @@
+3£ adds a mouse configurator for the Thunderbird PC205.
+
+- New tray row **Mouse (PC205)…** opens a window with everything the vendor app does: DPI stages and colours, polling rate, lighting, button mapping for all 10 buttons in 3 modes, and macros. It talks to the mouse directly over HID; the vendor installer is no longer needed.
+- Every button can do anything, including the extra side button the vendor app limits to macros. **Side button → F13** sets it to the LoL Kalista kite key in one click (Pause also works). **Identify buttons** shows which slot a physical button is.
+- Settings are applied only when you press Apply. Nothing is installed: no driver, service or firmware update.
+
+Previous release:
+
 3£ moves the Kalista kite to the mouse's extra side button.
 
 - Set the macro-only side button in the mouse app to send F13 (or Pause). Holding it kites in League, starting the instant it's pressed. Outside League, or with the macros off, it's a normal key.

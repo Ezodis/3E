@@ -58,6 +58,8 @@ jobs:
           esac
       - name: Test maintained functionality without live app control
         run: |
+          swift test --package-path TouchBar/threee/PC205
+          xcrun lipo -archs "TouchBar/build/threee/3E.app/Contents/Helpers/3£ Mouse.app/Contents/MacOS/ThreeEMouse"
           node Windows/PhoneTrackpadTests/pinch.test.cjs
           node Windows/PhoneTrackpadTests/trackpad.test.cjs
           arch=$(uname -m); if [[ "$arch" == x86_64 ]]; then arch=x64; fi
