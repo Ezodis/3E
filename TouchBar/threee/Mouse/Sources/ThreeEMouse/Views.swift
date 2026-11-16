@@ -2,6 +2,7 @@ import SwiftUI
 import AppKit
 import UniformTypeIdentifiers
 import MouseCore
+import MouseHID
 
 // Every page is built from model.caps (MouseCapabilities), so a new mouse needs no view changes.
 
