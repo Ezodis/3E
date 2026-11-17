@@ -1,5 +1,14 @@
 #define STRIP3_RECORD_TESTING 1
 #import "../Source/MidiBridge.m"
+// Work the gestures queue onto the next main-queue turn. Wait for that turn
+// (up to 2 s, with a timer attached so the run loop never returns at once)
+// instead of a fixed 20 ms, which busy CI runners did not always reach.
+static void WaitFor(BOOL (^done)(void)) {
+    NSTimer *tick=[NSTimer scheduledTimerWithTimeInterval:.005 repeats:YES block:^(NSTimer *t){}];
+    for(NSDate *deadline=[NSDate dateWithTimeIntervalSinceNow:2];!done() && deadline.timeIntervalSinceNow>0;)
+        [NSRunLoop.mainRunLoop runMode:NSDefaultRunLoopMode beforeDate:[NSDate dateWithTimeIntervalSinceNow:.02]];
+    [tick invalidate];
+}
 @interface TestRecordController : StripRecordController
 @property NSMutableArray *commands;
 @property NSInteger holds;
@@ -36,6 +45,9 @@ int main(void) {
         [NSApplication sharedApplication];
         NSCAssert([RecordTrackNameFromAXTitle(@"20-Bandøledu, Armed") isEqual:@"20-Bandøledu"],@"Armed accessibility labels match their stable Live track names");
         TestRecordController *controller=[TestRecordController new];
+        // The checks set Live's state by hand. The real 0.2 s Live poll (no
+        // Live here) would overwrite it whenever a check waits.
+        [controller.pollTimer invalidate];
         StripRecordButton *button=controller.button;
         button.frame=NSMakeRect(0,0,32,30);
         MidiNavigationButton *navigation=[[MidiNavigationButton alloc] initWithFrame:NSMakeRect(0,0,44,30)];
@@ -86,10 +98,7 @@ int main(void) {
         // too short on busy CI runners (and a run loop with no timer can return
         // at once without draining the queue), so keep a timer attached and
         // wait up to 2 s for the menu.
-        NSTimer *tick=[NSTimer scheduledTimerWithTimeInterval:.005 repeats:YES block:^(NSTimer *t){}];
-        for(NSDate *deadline=[NSDate dateWithTimeIntervalSinceNow:2];!controller.menus.count && deadline.timeIntervalSinceNow>0;)
-            [NSRunLoop.mainRunLoop runMode:NSDefaultRunLoopMode beforeDate:[NSDate dateWithTimeIntervalSinceNow:.02]];
-        [tick invalidate];
+        WaitFor(^{ return (BOOL)(controller.menus.count>0); });
         [loop finishAt:NSMakePoint(22,15)];
         NSCAssert(([controller.menus isEqual:@[@"loop"]]),@"Loop hold opens lengths once");
         NSCAssert(!controller.commands.count,@"Releasing a Loop hold must not toggle Loop");
@@ -120,7 +129,7 @@ int main(void) {
         NSCAssert(([controller.commands isEqual:@[@"tap-tempo"]]) && ([controller.menus isEqual:@[@"loop"]]),@"BPM tap must issue Tap Tempo, never open the tempo menu");
         [controller.commands removeAllObjects];
         [tempo beginAt:NSMakePoint(22,15) identity:nil]; [tempo fireHold];
-        [NSRunLoop.mainRunLoop runUntilDate:[NSDate dateWithTimeIntervalSinceNow:.02]]; [tempo finishAt:NSMakePoint(22,15)];
+        WaitFor(^{ return (BOOL)(controller.menus.count>1); }); [tempo finishAt:NSMakePoint(22,15)];
         NSCAssert(([controller.menus isEqual:@[@"loop",@"tempo"]]) && !controller.commands.count,@"BPM hold preserves optional fine/coarse controls without a Tap Tempo on release");
         tempo.enabled=NO; [tempo beginAt:NSMakePoint(10,15) identity:nil]; [tempo moveAt:NSMakePoint(40,15)]; [tempo finishAt:NSMakePoint(40,15)];
         NSCAssert(!controller.commands.count,@"Disabled performance controls cannot send Live commands");
@@ -195,7 +204,7 @@ int main(void) {
         [button moveAt:vocal];
         NSCAssert(midiWorkspaceChooser.selected==1 && !button.pendingSwipeDirection,@"Sliding a held Record highlights Clip Settings without arming tracks");
         [button finishAt:vocal];
-        [NSRunLoop.mainRunLoop runUntilDate:[NSDate dateWithTimeIntervalSinceNow:.02]];
+        WaitFor(^{ return (BOOL)(controller.menus.count>0); });
         NSCAssert(!midiWorkspaceChooser && [controller.menus isEqual:@[@1]] && !controller.commands.count,@"Release opens exactly the highlighted workspace without a Record command");
         [button beginAt:NSMakePoint(16,15) identity:nil]; [button fireHold];
         [button cancelGesture];
@@ -214,7 +223,7 @@ int main(void) {
         NSCAssert(midiWorkspaceChooser.choices.count==3,@"Arrow hold lists every actual MIDI preset");
         NSPoint preset=[navigation convertPoint:NSMakePoint(250,15) fromView:midiWorkspaceChooser];
         [navigation moveAt:preset]; [navigation finishAt:preset];
-        [NSRunLoop.mainRunLoop runUntilDate:[NSDate dateWithTimeIntervalSinceNow:.02]];
+        WaitFor(^{ return (BOOL)(delegate.chosenPreset!=nil); });
         NSCAssert([delegate.chosenPreset isEqual:@2] && !midiWorkspaceChooser,@"Arrow release invokes the real preset selector with the highlighted index");
         originalOpen=(IMP)TestWorkspaceOpen; originalClose=(IMP)TestWorkspaceClose;
         presentation=[NSTouchBar new];
