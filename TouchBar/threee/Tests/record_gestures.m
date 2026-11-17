@@ -82,9 +82,18 @@ int main(void) {
         NSCAssert(([controller.commands isEqual:@[@"loop"]]),@"Loop tap must toggle the real loop");
         [controller.commands removeAllObjects];
         [loop beginAt:NSMakePoint(22,15) identity:nil]; [loop fireHold]; [loop fireHold];
-        [NSRunLoop.mainRunLoop runUntilDate:[NSDate dateWithTimeIntervalSinceNow:.02]];
+        // The menu opens on the next main-queue turn. A fixed 20 ms wait was
+        // too short on busy CI runners (and a run loop with no timer can return
+        // at once without draining the queue), so keep a timer attached and
+        // wait up to 2 s for the menu.
+        NSTimer *tick=[NSTimer scheduledTimerWithTimeInterval:.005 repeats:YES block:^(NSTimer *t){}];
+        for(NSDate *deadline=[NSDate dateWithTimeIntervalSinceNow:2];!controller.menus.count && deadline.timeIntervalSinceNow>0;)
+            [NSRunLoop.mainRunLoop runMode:NSDefaultRunLoopMode beforeDate:[NSDate dateWithTimeIntervalSinceNow:.02]];
+        [NSRunLoop.mainRunLoop runUntilDate:[NSDate dateWithTimeIntervalSinceNow:.05]]; // a second menu would show up here
+        [tick invalidate];
         [loop finishAt:NSMakePoint(22,15)];
-        NSCAssert(([controller.menus isEqual:@[@"loop"]]) && !controller.commands.count,@"Loop hold opens lengths once and release must not toggle Loop");
+        NSCAssert(([controller.menus isEqual:@[@"loop"]]),@"Loop hold opens lengths once");
+        NSCAssert(!controller.commands.count,@"Releasing a Loop hold must not toggle Loop");
         for(NSNumber *direction in @[@(-1),@1]) {
             NSPoint start=NSMakePoint(direction.intValue>0 ? 10 : 50,15),end=NSMakePoint(direction.intValue>0 ? 50 : 10,15);
             [loop beginAt:start identity:nil]; [loop moveAt:end]; [loop finishAt:end];
