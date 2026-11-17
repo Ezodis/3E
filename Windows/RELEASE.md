@@ -1,3 +1,5 @@
+- Mac keyboard layout stays on: turning it on no longer records 'off' first (a failed or interrupted switch used to leave it off for good), a failed switch keeps retrying every minute, a momentary settings read failure no longer resets choices, and on/off and recoveries are now logged in hub.log.
+
 3£ stays open and its gear icons always work.
 
 - Closing the Mouse or Settings window no longer closes all of 3£. The tray app has no visible main window, so closing the last open window shut it down silently; now only Quit 3£ exits.

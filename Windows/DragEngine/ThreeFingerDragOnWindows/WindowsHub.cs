@@ -78,8 +78,7 @@ public sealed class WindowsHub : IDisposable {
     public WindowsHub() {
         carView.Changed+=RefreshMenu;
         Directory.CreateDirectory(data);
-        try { settings = JsonSerializer.Deserialize<HubSettings>(File.ReadAllText(Path.Combine(data, "settings.json"))) ?? new(); }
-        catch { settings = new(); }
+        settings = LoadSettings();
         RefreshMenu();
         timer.Tick += (_, _) => Tick();
         SystemEvents.SessionSwitch += OnSessionSwitch;
@@ -95,8 +94,26 @@ public sealed class WindowsHub : IDisposable {
         return client;
     }
 
+    // A momentary read failure (another 3£ replacing the file, antivirus) must not
+    // reset every choice to defaults and then save those defaults over the file:
+    // that silently turned options like the Mac keyboard layout off.
+    private bool settingsUnreadable;
+    private HubSettings LoadSettings() {
+        var path = Path.Combine(data, "settings.json");
+        for (int attempt = 0; ; attempt++) {
+            try { return File.Exists(path) ? JsonSerializer.Deserialize<HubSettings>(File.ReadAllText(path)) ?? new() : new(); }
+            catch (Exception ex) when (attempt < 20) { if (attempt == 0) Log(ex); System.Threading.Thread.Sleep(100); }
+            catch (Exception ex) { Log(ex); settingsUnreadable = true; return new(); }
+        }
+    }
+
+    private void Note(string message) {
+        try { File.AppendAllText(Path.Combine(data, "hub.log"), DateTime.Now.ToString("s") + " " + message + Environment.NewLine); } catch { }
+    }
+
     private void Save() {
         var path = Path.Combine(data, "settings.json");
+        if (settingsUnreadable) { settingsUnreadable = false; try { File.Copy(path, path + ".unreadable-" + DateTime.Now.ToString("yyyyMMddHHmmss"), true); } catch { } }
         File.WriteAllText(path + ".tmp", JsonSerializer.Serialize(settings, new JsonSerializerOptions { WriteIndented = true }));
         File.Move(path + ".tmp", path, true);
     }
@@ -224,7 +241,8 @@ public sealed class WindowsHub : IDisposable {
         }
         if (disposed) return;
         if (settings.MacKeyboard && !keyboardChanging) {
-            try { await macKeyboard.EnsureAsync(); } catch (Exception ex) { Log(ex); }
+            bool wasActive = macKeyboard.Active;
+            try { await macKeyboard.EnsureAsync(); if (!wasActive) Note("Mac keyboard layout was not active; re-applied"); } catch (Exception ex) { Log(ex); }
         }
         if (disposed) return;
         if (settings.Keyboard && File.Exists(Path.Combine(root, "Keyboard", "3EWindows.kbd")) && !IsRunning("3EWindows.Keyboard"))
@@ -267,6 +285,7 @@ public sealed class WindowsHub : IDisposable {
     private void OnKeyboardHookLost() {
         App.Instance.DispatcherQueue.TryEnqueue(() => {
             if (disposed || !settings.MacKeyboard) return;
+            Note("Keyboard Manager hook lost; restarting the Mac keyboard layout");
             keyboardRefreshRequested = true;
             Tick();
         });
@@ -467,11 +486,17 @@ public sealed class WindowsHub : IDisposable {
             if (keyboardChanging) return;
             keyboardChanging = true;
             bool enable = !item.IsChecked;
-            settings.MacKeyboard = false; // Prevent recovery from racing an OFF request.
+            // Record the choice first and keep it: keyboardChanging already holds
+            // recovery off during the switch. A failed ON stays ON so recovery keeps
+            // retrying every minute, instead of the layout silently staying off.
+            settings.MacKeyboard = enable; Save();
+            Note("Mac keyboard layout turned " + (enable ? "on" : "off") + " from the menu");
             try {
                 if (enable) await macKeyboard.EnableAsync(); else await macKeyboard.DisableAsync();
-                settings.MacKeyboard = enable;
-            } catch (Exception ex) { Log(ex); MessageBox(IntPtr.Zero, ex.Message, "3£ keyboard", 0x10); }
+            } catch (Exception ex) {
+                Log(ex);
+                MessageBox(IntPtr.Zero, ex.Message + (enable ? "\n\n3£ keeps the Mac keyboard layout on and retries automatically." : ""), "3£ keyboard", 0x10);
+            }
             finally { keyboardChanging = false; Save(); RefreshMenu(); WriteDiagnostics(); }
         });
         return item;
