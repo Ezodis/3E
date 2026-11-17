@@ -96,11 +96,15 @@ int main(void) {
         // Swipe across the button's real width (it is sized by its title), so
         // a narrower layout on another machine cannot put a start point outside.
         CGFloat left=NSMinX(loop.bounds)+4,right=MIN(NSMaxX(loop.bounds)-4,left+40);
+        // Waiting for the menu runs the run loop, where the controller's own
+        // Live-state refresh may mark the bar disconnected (no Live in tests)
+        // and disable Loop. Re-enable it, as the tap check above does.
+        loop.enabled=YES;
         for(NSNumber *direction in @[@(-1),@1]) {
             NSPoint start=NSMakePoint(direction.intValue>0 ? left : right,15),end=NSMakePoint(direction.intValue>0 ? right : left,15);
             [loop beginAt:start identity:nil]; [loop moveAt:end]; [loop finishAt:end];
         }
-        NSCAssert(([controller.commands isEqual:@[@"punch-in",@"punch-out"]]),@"Combined loop swipes toggle Punch In and Punch Out without also toggling Loop (sent %@, button %@, tracking %d)",controller.commands,NSStringFromRect(loop.bounds),loop.tracking);
+        NSCAssert(([controller.commands isEqual:@[@"punch-in",@"punch-out"]]),@"Combined loop swipes toggle Punch In and Punch Out without also toggling Loop (sent %@, button %@, enabled %d)",controller.commands,NSStringFromRect(loop.bounds),loop.enabled);
         [controller.commands removeAllObjects];
         StripPerformanceButton *tempo=(StripPerformanceButton *)controller.options[@"tempo"];
         controller.state=@{@"tempo":@120.5};
