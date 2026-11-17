@@ -18,10 +18,10 @@ namespace ThreeE.PhoneControl;
 // Clicks, presses and every other command first apply all pending motion, so
 // a click never lands before the motion that preceded it.
 public sealed class MotionPacer : IDisposable {
-    public const double MaxPlayout = 40, ResetGap = 300;
+    public const double MaxPlayout = 28, ResetGap = 300;
     // First touch: the late first clump may replay at most CatchUp faster than
     // the finger moved (never all at once), and never lags over MaxResumeLag.
-    public const double CatchUp = 0.25, MaxResumeLag = 120;
+    public const double CatchUp = 0.25, MaxResumeLag = 60;
     private const int MaxQueued = 64;
 
     // Pure scheduling (no threads, injectable times) so it can be tested.

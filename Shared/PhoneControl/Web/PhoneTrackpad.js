@@ -89,7 +89,16 @@
   // 3. Every move carries the phone's timestamp, so the computer can replay
   //    motion at the finger's own pace when Wi-Fi delivers packets in clumps.
   const SETTLE_PX = 3;
-  let settle = null, smoothedSpeed = 0, lastMotionAt = 0;
+  let settle = null, smoothedSpeed = 0, lastMotionAt = 0, sampleAt = 0, motionAt = 0;
+  // The time the phone measured a touch sample. Coalesced 120 Hz samples are
+  // handled together in one frame; timing them by handling time made them
+  // look ~1 ms apart (a speed spike: the pointer lurched, mostly on the
+  // first touch) and stamped moves with clumped times the computer replayed
+  // unevenly.
+  function sampleTime(e) {
+    const now = performance.now(), t = Number(e?.timeStamp);
+    return Number.isFinite(t) && t > 0 && t <= now + 1 && now - t < 1000 ? t : now;
+  }
   accelerate = Prefs.get('acceleration', true) !== false;
   function hint() { $('padHint').textContent = scrollMode ? 'Swipe to scroll' : 'Swipe to move · tap to click'; }
   hint();
@@ -361,19 +370,19 @@
         const samples = e.getCoalescedEvents?.() || [];
         for (const sample of samples.slice(0, -1)) {
           contacts.set(e.pointerId, snapshotContact(sample));
-          contactHandlers.touchmove({touches:Array.from(contacts.values()),preventDefault:()=>{}});
+          contactHandlers.touchmove({touches:Array.from(contacts.values()),timeStamp:sample.timeStamp,preventDefault:()=>{}});
         }
         contacts.set(e.pointerId, snapshotContact(e));
       }
       else if (type === 'touchcancel') contacts.clear();
       else contacts.delete(e.pointerId);
     }
-    contactHandlers[type]({touches:Array.from(contacts.values()),preventDefault:()=>e.preventDefault()});
+    contactHandlers[type]({touches:Array.from(contacts.values()),timeStamp:e.timeStamp,preventDefault:()=>e.preventDefault()});
   }
   for (const [pointer, touch] of [['pointerdown','touchstart'],['pointermove','touchmove'],['pointerup','touchend'],['pointercancel','touchcancel']])
     pad.addEventListener(pointer, e => pointerContact(touch,e), {passive:false});
   onContact('touchstart', e => {
-    e.preventDefault(); lastTouchAt = performance.now(); touching = e.touches.length; if (!e.touches.length) return;
+    e.preventDefault(); lastTouchAt = performance.now(); sampleAt = sampleTime(e); touching = e.touches.length; if (!e.touches.length) return;
     // Keep the gesture even while (re)connecting; flush() holds its motion.
     if (!ready) wake();
     // After a pause the radios doze; a tiny packet now wakes the path before
@@ -395,7 +404,7 @@
     }
     if (!mode) {
       started = performance.now(); distance = 0; offset = 0; peak = 0; cancelled = false; motionHistory = []; lastMotionSent = -Infinity;
-      settle = { x: 0, y: 0, done: false }; smoothedSpeed = 0; lastMotionAt = started;
+      settle = { x: 0, y: 0, done: false }; smoothedSpeed = 0; lastMotionAt = sampleAt;
       if (Math.abs(dx) < 1) dx = 0; if (Math.abs(dy) < 1) dy = 0; if (Math.abs(sx) < 1) sx = 0; if (Math.abs(sy) < 1) sy = 0; // drop sub-unit leftovers from the last gesture
       gestureOrigin = point; four = null;
       tapCandidate = count === 1 && !dragging && !scrollMode && lastTap && started - lastTap.time < SECOND_TAP && Math.hypot(point.x-lastTap.x,point.y-lastTap.y) < SECOND_TAP_DISTANCE;
@@ -421,7 +430,7 @@
     }
   }, { passive: false });
   onContact('touchmove', e => {
-    e.preventDefault(); lastTouchAt = performance.now(); touching = e.touches.length; if (cancelled || !e.touches.length) return;
+    e.preventDefault(); lastTouchAt = performance.now(); sampleAt = sampleTime(e); touching = e.touches.length; if (cancelled || !e.touches.length) return;
     const point = center(e.touches), count = e.touches.length;
     if (peak >= 4) {
       if (count === 4) moveFour(e.touches);
@@ -457,7 +466,7 @@
           settle.done = true; const keep = (away - SETTLE_PX) / away; x = settle.x * keep; y = settle.y * keep;
         }
         const gain = Number(speed.value) * acceleration(x, y);
-        dx = limited(dx+x*gain); dy = limited(dy+y*gain);
+        dx = limited(dx+x*gain); dy = limited(dy+y*gain); motionAt = sampleAt;
       }
     }
     last = point; mode = e.touches.length;
@@ -525,10 +534,13 @@
   // Finger speed is smoothed (about 50 ms) so one noisy sample never makes
   // the pointer lurch, then mapped through pointerGain.
   function acceleration(x, y) {
-    const now = performance.now(), dt = Math.max(1, Math.min(100, now - lastMotionAt));
+    const now = sampleAt || performance.now(), first = smoothedSpeed === 0;
+    const dt = Math.max(4, Math.min(100, now - lastMotionAt));
     lastMotionAt = now;
     const instant = Math.hypot(x, y) / dt; // phone px per ms
-    smoothedSpeed += (instant - smoothedSpeed) * Math.min(1, dt / 50);
+    // The first sample past the wobble gate seeds the speed outright, so a
+    // quick start is not first crawled at the precision gain, then lurched.
+    smoothedSpeed = first ? instant : smoothedSpeed + (instant - smoothedSpeed) * Math.min(1, dt / 40);
     motionHistory.push({ t: now, d: Math.hypot(x, y) });
     while (motionHistory.length && now-motionHistory[0].t > 150) motionHistory.shift();
     return accelerate ? pointerGain(smoothedSpeed) : 1;
@@ -636,7 +648,7 @@
     const bounded = n => Math.max(-1000, Math.min(1000, Math.trunc(n)));
     const x = Math.trunc(dx), y = Math.trunc(dy);
     dx -= x; dy -= y;
-    if (x || y) { lastMotionSent = now; send('move', {x,y,t:Math.round(now)}); }
+    if (x || y) { lastMotionSent = now; send('move', {x,y,t:Math.round((motionAt || now)*10)/10}); }
     for (let i=0; i<(all ? 8 : 1); i++) {
       const a = bounded(sx), b = bounded(sy);
       sx -= a; sy -= b;

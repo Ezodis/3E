@@ -101,4 +101,11 @@ const pointerWakeSocket=ws;pointerWakeSocket.onopen();sent.length=0;pointerWakeS
 assert.deepEqual(sent,[{type:'move',x:3,y:0}],'a pointer contact that wakes the connection is retained and delivered (beyond the 3 px wobble gate)');
 pointer('pointercancel',7,24,20);sent.length=0;checks++;
 
+// Moves carry the time the phone measured the touch, not the time it was
+// handled: coalesced 120 Hz samples handled in one frame keep their spacing.
+{const stamps=[],send=ws.send;ws.send=function(text){const c=JSON.parse(text);if(c.type==='move')stamps.push(c.t);return send.call(this,text);};
+const at=(type,x,stamp)=>element('pad').handlers[type]({pointerType:'touch',pointerId:9,clientX:x,clientY:10,timeStamp:stamp,preventDefault(){}});
+time=50000;at('pointerdown',10,49990);at('pointermove',30,49998.3);time+=20;frame();at('pointermove',50,50006.6);time+=20;frame();at('pointerup',50,50010);ws.send=send;sent.length=0;
+assert.deepEqual(stamps,[49998.3,50006.6],'moves are stamped with the phone\'s touch sample times');checks++;time+=700;}
+
 ws.onmessage({data:'{"error":"pairing"}'});assert.equal(element('connect').textContent,'Connect');assert.ok(![...timers.values()].some(t=>t.ms===250));checks++;console.log('PASS: '+checks+' shared gesture and connection checks.');
