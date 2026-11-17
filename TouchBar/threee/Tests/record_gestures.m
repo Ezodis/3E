@@ -89,16 +89,18 @@ int main(void) {
         NSTimer *tick=[NSTimer scheduledTimerWithTimeInterval:.005 repeats:YES block:^(NSTimer *t){}];
         for(NSDate *deadline=[NSDate dateWithTimeIntervalSinceNow:2];!controller.menus.count && deadline.timeIntervalSinceNow>0;)
             [NSRunLoop.mainRunLoop runMode:NSDefaultRunLoopMode beforeDate:[NSDate dateWithTimeIntervalSinceNow:.02]];
-        [NSRunLoop.mainRunLoop runUntilDate:[NSDate dateWithTimeIntervalSinceNow:.05]]; // a second menu would show up here
         [tick invalidate];
         [loop finishAt:NSMakePoint(22,15)];
         NSCAssert(([controller.menus isEqual:@[@"loop"]]),@"Loop hold opens lengths once");
         NSCAssert(!controller.commands.count,@"Releasing a Loop hold must not toggle Loop");
+        // Swipe across the button's real width (it is sized by its title), so
+        // a narrower layout on another machine cannot put a start point outside.
+        CGFloat left=NSMinX(loop.bounds)+4,right=MIN(NSMaxX(loop.bounds)-4,left+40);
         for(NSNumber *direction in @[@(-1),@1]) {
-            NSPoint start=NSMakePoint(direction.intValue>0 ? 10 : 50,15),end=NSMakePoint(direction.intValue>0 ? 50 : 10,15);
+            NSPoint start=NSMakePoint(direction.intValue>0 ? left : right,15),end=NSMakePoint(direction.intValue>0 ? right : left,15);
             [loop beginAt:start identity:nil]; [loop moveAt:end]; [loop finishAt:end];
         }
-        NSCAssert(([controller.commands isEqual:@[@"punch-in",@"punch-out"]]),@"Combined loop swipes toggle Punch In and Punch Out without also toggling Loop");
+        NSCAssert(([controller.commands isEqual:@[@"punch-in",@"punch-out"]]),@"Combined loop swipes toggle Punch In and Punch Out without also toggling Loop (sent %@, button %@, tracking %d)",controller.commands,NSStringFromRect(loop.bounds),loop.tracking);
         [controller.commands removeAllObjects];
         StripPerformanceButton *tempo=(StripPerformanceButton *)controller.options[@"tempo"];
         controller.state=@{@"tempo":@120.5};
