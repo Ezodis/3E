@@ -35,6 +35,9 @@ jobs:
     runs-on: macos-latest
     strategy:
       fail-fast: false
+      # macOS runners are scarce; jobs left waiting for one were cancelled
+      # after 15 minutes. Ask for two at a time; the rest wait here instead.
+      max-parallel: 2
       matrix:
         edition: ${{ fromJSON(needs.plan.outputs.mac) }}
     steps:
