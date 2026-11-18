@@ -9,7 +9,8 @@ Features (only active while the League game window is focused):
                      release turns it into the click. The Start menu never opens in game.
                      The real lock state is read from the HUD camera button (crossed = locked).
   * N             -> untouched: League's own binds (R, summoner 2, item 1), moved from Win.
-  * B             -> click: Recall (RECALL_KEY).   hold: open the shop.
+  * B             -> click: B as usual (Recall, role quest teleport, item 1, item 6 smart
+                     cast, "my bad").   hold: open the shop (SHOP_KEY), without B's binds.
   * Space         -> click: Space as usual (E, attack-move, item 3).   hold: Stop every 0.35 s.
   * MB5           -> untouched: League's own MB5 binds (Flash, centre camera) as always.
   * Kite button   -> the mouse's macro-only side button, set in the mouse app to send F13
@@ -24,7 +25,7 @@ Features (only active while the League game window is focused):
                      confirmed lethal reading. See lol_execute.py.
 
 Keybinds it relies on are set by lol_settings.py (stop = v, camera lock = y, pan = h,
-recall = j, shop = b, attack-move = F9, Win's binds on n). They are applied by themselves
+B's binds on b, shop = F11, attack-move = F9, Win's binds on n). They are applied by themselves
 whenever League and its client are closed.
 
 Setup:  pip install pynput rapidocr_onnxruntime mss
@@ -54,8 +55,7 @@ CYCLE_KEYS = ["1", "2", "3", "4"]
 STOP_KEY = "v"            # must match evtPlayerStopPosition
 STOP_INTERVAL = 0.35
 HOLD_TIME = 0.18          # a macro key held longer than this is a hold, shorter is a click
-RECALL_KEY = "j"          # must match evtUseItem7 (Recall)
-SHOP_KEY = "b"            # must match evtOpenShop
+SHOP_KEY = "f11"          # must match evtOpenShop (a B tap sends B itself)
 ATTACK_KEY = "f9"         # must match evtPlayerAttackMove (attack-move at the cursor)
 CAM_LOCK_KEY = "y"        # must match evtCameraLockToggle
 PAN_KEY = "h"             # must match evtOnUIMouse4Pan
@@ -83,7 +83,7 @@ user32.SetWindowLongW.argtypes = [wt.HWND, ctypes.c_int, wt.LONG]
 user32.SetWindowPos.argtypes = [wt.HWND, wt.HWND, ctypes.c_int, ctypes.c_int,
                                 ctypes.c_int, ctypes.c_int, wt.UINT]
 SCAN = {"1": 0x02, "2": 0x03, "3": 0x04, "4": 0x05, "5": 0x06, "v": 0x2F, "y": 0x15, "h": 0x23,
-        "j": 0x24, "b": 0x30, "space": 0x39, "f9": 0x43, "f10": 0x44}
+        "j": 0x24, "b": 0x30, "space": 0x39, "f9": 0x43, "f10": 0x44, "f11": 0x57}
 KEYEVENTF_EXTENDEDKEY = 0x0001
 KEYEVENTF_KEYUP, KEYEVENTF_SCANCODE = 0x0002, 0x0008
 ULONG_PTR = ctypes.c_size_t
@@ -326,7 +326,7 @@ MACRO_KEYS = {
     # hold-only with a click: the drag starts at once, a quick release (or one before the
     # worker started it) is the click
     VK_LWIN: (toggle_camera, camera_hold_start, camera_hold_end, True),
-    VK_B: (lambda: tap(RECALL_KEY), lambda held: tap(SHOP_KEY) if held() else None, None),
+    VK_B: (lambda: tap("b"), lambda held: tap(SHOP_KEY) if held() else None, None),
     VK_SPACE: (lambda: tap("space"), stop_start, None),
 }
 # The mouse's macro-only side button sends one of these keys (set in the mouse app).

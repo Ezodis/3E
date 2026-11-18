@@ -19,7 +19,7 @@ SWAP = {"[L Win]": "[n]"}
 
 # 2) Explicit bindings set after the move ("" = unbound)
 SET = {
-    "evtOpenShop": "[b]",                         # B hold = shop (sent by lol.py)
+    "evtOpenShop": "[F11]",                       # B hold = shop (lol.py sends F11; a B tap stays B)
     "evtRadialEmoteOpen": "",                     # M opens the quick emote wheel below instead
     "evtRadialEmoteInstantOpen": "[m],[Cmd][Button 2]",  # M = quick emote wheel
     "evntPlayerPing": "[Cmd][Button 1],[m]",      # M = quick ping wheel too
@@ -32,12 +32,12 @@ SET = {
     "FreeDynamicCameraToggle": "",                # off: on h it flipped camera modes on every pan
     "evtOnUIMouse4Pan": "[h]",                    # lol.py holds h while Win is held
     # Everything a key did at once still happens at once:
-    # B tap (sends J): Recall, role quest teleport, item 1, item 6 smart cast and "my bad".
-    "evtUseItem7": "[j]",                         # Recall
-    "evtCastRoleBound": "[j]",                    # role quest teleport
-    "evtSmartCastItem6": "[j]",                   # item 6 smart cast
-    "evtReciprocityMyBadTrigger": "[j]",          # "my bad" (was on Win)
-    "evtUseItem1": "[j],[n]",                     # item 1 on B and N
+    # B tap: Recall, role quest teleport, item 1, item 6 smart cast and "my bad".
+    "evtUseItem7": "[b]",                         # Recall
+    "evtCastRoleBound": "[b]",                    # role quest teleport
+    "evtSmartCastItem6": "[b]",                   # item 6 smart cast
+    "evtReciprocityMyBadTrigger": "[b]",          # "my bad" (was on Win)
+    "evtUseItem1": "[b],[n]",                     # item 1 on B and N
     # N (Win's old key): R, summoner 2, item 1, plus R smart cast, item 6 and taunt.
     "evtSmartCastSpell4": "[n],[o]",              # R smart cast
     "evtUseItem6": "[n]",                         # item 6
@@ -49,9 +49,10 @@ SET = {
 }
 
 # What lol.py logs once the binds are written.
-SUMMARY = ("B (J): Recall, role quest teleport, item 1, item 6 smart cast, my bad; "
+SUMMARY = ("B tap: Recall, role quest teleport, item 1, item 6 smart cast, my bad; "
            "N: R, R smart cast, summoner 2, item 1, item 6, taunt; "
-           "M: quick ping and quick emote wheels; Win: camera; MB5: League's binds + mastery badge")
+           "B hold: shop (F11); M: quick ping and quick emote wheels; Win: camera; "
+           "MB5: League's binds + mastery badge")
 
 
 def convert(name, value):

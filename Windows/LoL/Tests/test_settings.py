@@ -11,7 +11,7 @@ class SettingsTest(unittest.TestCase):
     def test_win_binds_move_to_n_in_chords(self):
         self.assertEqual(s.convert("evtCastSpell4", "[L Win]"), "[n]")
         self.assertEqual(s.convert("evtCastAvatarSpell2", "[L Win],[Alt][L Win]"), "[n],[Alt][n]")
-        self.assertEqual(s.convert("evtUseItem1", "[j],[L Win]"), "[j],[n]")
+        self.assertEqual(s.convert("evtUseItem1", "[j],[L Win]"), "[b],[n]")
 
     def test_mb5_stays_on_league(self):
         self.assertEqual(s.convert("evtCastAvatarSpell1", "[Button 5]"), "[Button 5]")
@@ -22,7 +22,8 @@ class SettingsTest(unittest.TestCase):
              "evtReciprocityMyBadTrigger"}
         n = {"evtSmartCastSpell4", "evtUseItem1", "evtUseItem6", "evtEmoteTaunt"}
         for name in b:
-            self.assertIn("[j]", s.convert(name, ""), name)
+            self.assertIn("[b]", s.convert(name, ""), name)
+        self.assertEqual(s.convert("evtOpenShop", "[b]"), "[F11]")   # a B tap never opens the shop
         for name in n | {"evtCastSpell4", "evtCastAvatarSpell2", "evtSmartCastAvatarSpell2"}:
             self.assertIn("[n]", s.convert(name, "[L Win]"), name)
         self.assertEqual(s.convert("evtChampMasteryDisplay", ""), "[Button 5]")

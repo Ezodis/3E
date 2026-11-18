@@ -6,17 +6,16 @@ Do not run another copy alongside it. Runtime files go in
 
 The controls activate only for Kalista while the League game has focus. Win toggles
 camera lock on tap and pans on hold; the pan starts the instant Win goes down and a
-quick release counts as the tap. N reaches League untouched. B taps J (Recall) and
-holds to open the shop; Space taps Space and holds Stop; the kite button (F13/Pause)
-kites while held. Scroll cycles the held number keys. Release, focus loss, or leaving
-Kalista cancels a hold permanently.
+quick release counts as the tap. N reaches League untouched. A B tap sends B; holding
+B opens the shop by sending F11 (so B's own binds don't fire); Space taps Space and
+holds Stop; the kite button (F13/Pause) kites while held. Scroll cycles the held number
+keys. Release, focus loss, or leaving Kalista cancels a hold permanently.
 
-`lol_settings.py` moves Win bindings to N (including modified chords), makes M open
-both quick wheels (ping and emote), and removes binds nothing uses: J's item 6, item 6
-smart cast, R smart cast, item 1, role quest teleport and taunt (J is only Recall),
-Win's "my bad", MB5's mastery badge, the normal emote wheel, and smart-cast duplicates
-of keys that already quick cast (Tab, Space, Win summoner 2). MB5 stays on League.
-lol.py applies it by itself whenever League and its client are closed, backing up
+`lol_settings.py` moves Win bindings to N (including modified chords), puts the shop on
+F11, and keeps every bind a key fired at once: B = Recall, role quest teleport, item 1,
+item 6 smart cast and "my bad"; N = R, R smart cast, summoner 2, item 1, item 6 and the
+taunt; MB5 = League's binds plus the mastery badge. M opens both quick wheels (ping and
+emote) instead of the normal emote wheel. lol.py applies it by itself whenever League and its client are closed, backing up
 both configuration files before writing; applying it again changes nothing. League
 loads the new binds on its next start.
 

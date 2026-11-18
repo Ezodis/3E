@@ -77,6 +77,16 @@ class HookTest(unittest.TestCase):
             self.assertEqual(lol.kb_listener.suppress_event.call_count, 2)
         lol.MACRO_KEYS[lol.VK_LWIN] = (lol.toggle_camera, lol.camera_hold_start, lol.camera_hold_end, True)
 
+    def test_b_tap_sends_b_and_hold_opens_the_shop(self):
+        click, start, _ = lol.MACRO_KEYS[lol.VK_B]
+        with patch.object(lol, "tap", return_value=True) as tap:
+            click()
+            tap.assert_called_once_with("b")
+            tap.reset_mock()
+            start(lambda: True)
+            tap.assert_called_once_with(lol.SHOP_KEY)
+        self.assertEqual(lol.SHOP_KEY, "f11")
+
     def test_n_reaches_league(self):
         key = SimpleNamespace(flags=0, vkCode=0x4E)
         lol.kb_filter(lol.WM_KEYDOWN, key)
