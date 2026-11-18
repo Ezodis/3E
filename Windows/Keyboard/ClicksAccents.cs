@@ -8,7 +8,9 @@ using System.Threading;
 
 // All state is transient. No typed text is logged and the clipboard is not used.
 public sealed class AccentEngine {
- public const ulong ClicksTag=0x3345434c, OutputTag=0x33454143;
+ // Both tags keep bit 0 clear: PowerToys Keyboard Manager ignores any event with that bit set as its
+ // own output, so a sticky release with it would never reach the Mac layout and Ctrl would stay down.
+ public const ulong ClicksTag=0x3345434c, OutputTag=0x33454142;
  public const int HoldMs=650, ChoiceMs=6000;
  public static readonly Dictionary<int,string[]> ChoicesByKey=MakeChoices();
  public static readonly string[] NumberCategories={"Emoji","Currencies","Math","Useful + fun","Arrows","Punctuation","Brackets","Symbols","Superscripts","Subscripts"};

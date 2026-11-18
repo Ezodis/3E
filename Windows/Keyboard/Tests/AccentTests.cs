@@ -6,6 +6,7 @@ public static class AccentTests {
  static void Check(bool value,string message) {if(!value)throw new Exception(message);Console.WriteLine("PASS "+message);}
  static bool Key(AccentEngine e,int vk,bool down,int ms,bool upper=false,bool blocked=false,ulong tag=AccentEngine.ClicksTag) { return e.Key(vk,down,tag,ms,window,blocked,upper); }
  public static void Main() {
+  Check((AccentEngine.OutputTag&1)==0 && (AccentEngine.ClicksTag&1)==0,"tags never look like PowerToys Keyboard Manager's own output (bit 0)");
   var e=New();Check(!Key(e,65,true,0),"normal letter is immediate");Key(e,65,false,80);e.Tick(700,window,false);Check(shown==0,"quick tap has no picker");
   e=New();Key(e,65,true,0);Check(Key(e,65,true,300),"typematic is suppressed only for an eligible Clicks letter");e.Tick(650,window,false);Check(shown==1 && e.Active,"holding opens choices");Key(e,65,false,700);Check(e.Active,"release leaves picker available for one-handed choice");Check(Key(e,49,true,800) && inserted=="á","number 1 chooses acute a");Check(Key(e,49,false,850),"selection key-up is consumed");Check(!Key(e,49,true,900),"next number types normally");
   e=New();Key(e,78,true,0,true);e.Tick(700,window,false);Key(e,78,false,710);Key(e,49,true,800);Check(inserted=="Ñ","uppercase n accents");
