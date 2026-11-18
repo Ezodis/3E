@@ -1,5 +1,5 @@
 (defcfg
-  ;; All Clicks key events must reach one-shot processing so any next key consumes it.
+  ;; All Clicks key events go through Kanata, so ClicksAccents sees every one (tagged).
   process-unmapped-keys yes
   windows-interception-keyboard-hwids (
     "{{POWER_KEYBOARD_HWID}}"
