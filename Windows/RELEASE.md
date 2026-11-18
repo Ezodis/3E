@@ -3,6 +3,7 @@
 - Kalista: the Rend reader now reads the real HP every time instead of filtering bad reads. It finds the "/" by shape, removes the current-HP tick and bar edges from the digits, and checks the text against the bar's current-HP tick rather than the fading lost-HP trail. Learned digits are kept between games so new targets read at once, and the line glides on every change, including target switches.
 - Clicks keyboard: the hold-for-accents picker never opens over League or any full-screen game.
 - Clicks keyboard: sticky Command, Shift and Ctrl share one 7-second window from the first tap; a tap in its last 2 seconds adds 3 seconds, nothing else extends it. When the window ends every sticky releases, so no modifier stays stuck (Cmd+Tab always works). The labeled Ctrl key is sticky too.
+- Clicks keyboard with the Mac keyboard layout: a sticky Command's release now reaches the layout, so Ctrl no longer stays held down after the sticky window ends. The release was tagged in a way PowerToys Keyboard Manager treats as its own output and ignored.
 - Mac keyboard layout stays on: turning it on no longer records 'off' first (a failed or interrupted switch used to leave it off for good), a failed switch keeps retrying every minute, a momentary settings read failure no longer resets choices, and on/off and recoveries are now logged in hub.log.
 
 3£ stays open and its gear icons always work.
