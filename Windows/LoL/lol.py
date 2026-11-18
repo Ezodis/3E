@@ -1,17 +1,19 @@
 """League of Legends macro helper (Windows).
 
 Features (only active while the League game window is focused):
-  Macro keys never reach the game themselves: a quick click does one thing, holding another.
-  * Win           -> click: lock / unlock the camera.
+  A macro key's tap sends the key itself; holding it sends something else instead.
+  * Win           -> click: Win (League: lock / unlock the camera; Start never opens).
                      hold while locked: unlock, drag the camera with the mouse, lock again on release.
                      hold while unlocked: just drag (stays unlocked until you click Win again).
                      The drag starts the instant Win goes down (no tap/hold wait); a quick
                      release turns it into the click. The Start menu never opens in game.
                      The real lock state is read from the HUD camera button (crossed = locked).
-  * N             -> untouched: League's own binds (R, summoner 2, item 1), moved from Win.
-  * B             -> click: B as usual (Recall, role quest teleport, item 1, item 6 smart
-                     cast, "my bad").   hold: open the shop (SHOP_KEY), without B's binds.
-  * Space         -> click: Space as usual (E, attack-move, item 3).   hold: Stop every 0.35 s.
+  * M             -> click: M (R, R smart cast, summoner 2, item 1, item 6, taunt).
+                     hold: only R (R_KEY), held until release, no summoner spell.
+  * N             -> untouched: League opens the quick ping and quick emote wheels.
+  * B             -> click: B (Recall, role quest teleport, item 1, item 6 smart cast,
+                     "my bad").   hold: open the shop (V), without B's binds.
+  * Space         -> click: Space (E, attack-move, item 3).   hold: Stop (C) every 0.35 s.
   * MB5           -> untouched: League's own MB5 binds (Flash, centre camera) as always.
   * Kite button   -> the mouse's macro-only side button, set in the mouse app to send F13
                      (or Pause). Hold (Kalista, in League): kite at once. Elsewhere, or with
@@ -24,8 +26,8 @@ Features (only active while the League game window is focused):
                      left, moves right with more spears). Lightning only for a fresh,
                      confirmed lethal reading. See lol_execute.py.
 
-Keybinds it relies on are set by lol_settings.py (stop = v, camera lock = y, pan = h,
-B's binds on b, shop = F11, attack-move = F9, Win's binds on n). They are applied by themselves
+Keybinds it relies on are set by lol_settings.py (stop = c, shop = v, camera lock = Win,
+pan = h, R alone = F8, attack-move = F9, B's binds on b, Win's old binds on m, wheels on n). They are applied by themselves
 whenever League and its client are closed.
 
 Setup:  pip install pynput rapidocr_onnxruntime mss
@@ -52,12 +54,13 @@ from lol_controls import HoldController
 # ---------------- config ----------------
 GAME_TITLE = "League of Legends (TM) Client"
 CYCLE_KEYS = ["1", "2", "3", "4"]
-STOP_KEY = "v"            # must match evtPlayerStopPosition
+STOP_KEY = "c"            # must match evtPlayerStopPosition (Space hold)
 STOP_INTERVAL = 0.35
 HOLD_TIME = 0.18          # a macro key held longer than this is a hold, shorter is a click
-SHOP_KEY = "f11"          # must match evtOpenShop (a B tap sends B itself)
+SHOP_KEY = "v"            # must match evtOpenShop (B hold; a B tap sends B itself)
+R_KEY = "f8"              # must match evtCastSpell4's second bind: R alone (N hold)
 ATTACK_KEY = "f9"         # must match evtPlayerAttackMove (attack-move at the cursor)
-CAM_LOCK_KEY = "y"        # must match evtCameraLockToggle
+CAM_LOCK_KEY = "lwin"     # must match evtCameraLockToggle (a Win tap sends Win itself)
 PAN_KEY = "h"             # must match evtOnUIMouse4Pan
 CAMERA_STARTS_LOCKED = True
 KITE_AS_POLL = 0.05       # how often attack speed is re-read while kiting
@@ -83,7 +86,9 @@ user32.SetWindowLongW.argtypes = [wt.HWND, ctypes.c_int, wt.LONG]
 user32.SetWindowPos.argtypes = [wt.HWND, wt.HWND, ctypes.c_int, ctypes.c_int,
                                 ctypes.c_int, ctypes.c_int, wt.UINT]
 SCAN = {"1": 0x02, "2": 0x03, "3": 0x04, "4": 0x05, "5": 0x06, "v": 0x2F, "y": 0x15, "h": 0x23,
-        "j": 0x24, "b": 0x30, "space": 0x39, "f9": 0x43, "f10": 0x44, "f11": 0x57}
+        "j": 0x24, "b": 0x30, "c": 0x2E, "n": 0x31, "m": 0x32, "space": 0x39, "f8": 0x42, "f9": 0x43,
+        "f10": 0x44, "f11": 0x57, "lwin": 0x5B}
+EXTENDED = {"lwin"}       # sent with the E0 prefix, like the real key
 KEYEVENTF_EXTENDEDKEY = 0x0001
 KEYEVENTF_KEYUP, KEYEVENTF_SCANCODE = 0x0002, 0x0008
 ULONG_PTR = ctypes.c_size_t
@@ -123,15 +128,24 @@ def _send(vk=0, scan=0, flags=0):
     user32.SendInput(1, ctypes.byref(inp), ctypes.sizeof(INPUT))
 
 
+def _flags(k):
+    return KEYEVENTF_SCANCODE | (KEYEVENTF_EXTENDEDKEY if k in EXTENDED else 0)
+
+
 def key_down(k):
     if not macros_active():
         return False
-    _send(scan=SCAN[k], flags=KEYEVENTF_SCANCODE)
+    _send(scan=SCAN[k], flags=_flags(k))
+    if k == "lwin":
+        # An unassigned key while Win is down: releasing Win then never opens Start,
+        # so the game reads a real Win press without Windows acting on it.
+        _send(vk=0xE8)
+        _send(vk=0xE8, flags=KEYEVENTF_KEYUP)
     return True
 
 
 def key_up(k):
-    _send(scan=SCAN[k], flags=KEYEVENTF_SCANCODE | KEYEVENTF_KEYUP)
+    _send(scan=SCAN[k], flags=_flags(k) | KEYEVENTF_KEYUP)
 
 
 def tap(k):
@@ -154,7 +168,7 @@ def macros_active():
 
 
 # ---------------- state ----------------
-VK_LWIN, VK_B, VK_SPACE, VK_Y = 0x5B, 0x42, 0x20, 0x59
+VK_LWIN, VK_B, VK_SPACE, VK_M = 0x5B, 0x42, 0x20, 0x4D
 WM_KEYDOWN, WM_KEYUP, WM_SYSKEYDOWN, WM_SYSKEYUP = 0x100, 0x101, 0x104, 0x105
 WM_MOUSEWHEEL = 0x020A
 WM_RBUTTONDOWN = 0x0204
@@ -328,6 +342,9 @@ MACRO_KEYS = {
     VK_LWIN: (toggle_camera, camera_hold_start, camera_hold_end, True),
     VK_B: (lambda: tap("b"), lambda held: tap(SHOP_KEY) if held() else None, None),
     VK_SPACE: (lambda: tap("space"), stop_start, None),
+    # tap: M with all its binds; hold: R alone, held down until release
+    VK_M: (lambda: tap("m"), lambda held: key_down(R_KEY) if held() else None,
+           lambda: key_up(R_KEY)),
 }
 # The mouse's macro-only side button sends one of these keys (set in the mouse app).
 VK_F13, VK_PAUSE = 0x7C, 0x13
@@ -488,9 +505,6 @@ def kb_filter(msg, data):
         return True
 
     if first_down:
-        if vk == VK_Y:         # you toggled the camera lock yourself
-            camera_locked = not camera_locked
-            cam["quiet_until"] = time.monotonic() + 0.25
         if held_num:
             actions.put(lambda: release_num(reset=True))  # any other key releases the number
     return True

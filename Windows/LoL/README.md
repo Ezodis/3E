@@ -4,18 +4,22 @@ Run through **3£ → LoL macros** (the `3£ LoL macros` scheduled task).
 Do not run another copy alongside it. Runtime files go in
 `%LOCALAPPDATA%\3EWindows\LoL`; the installed scripts stay read-only.
 
-The controls activate only for Kalista while the League game has focus. Win toggles
-camera lock on tap and pans on hold; the pan starts the instant Win goes down and a
-quick release counts as the tap. N reaches League untouched. A B tap sends B; holding
-B opens the shop by sending F11 (so B's own binds don't fire); Space taps Space and
-holds Stop; the kite button (F13/Pause) kites while held. Scroll cycles the held number
-keys. Release, focus loss, or leaving Kalista cancels a hold permanently.
+The controls activate only for Kalista while the League game has focus. A macro key's
+tap sends the key itself; a hold sends a separate key, so the tap's binds don't fire:
 
-`lol_settings.py` moves Win bindings to N (including modified chords), puts the shop on
-F11, and keeps every bind a key fired at once: B = Recall, role quest teleport, item 1,
-item 6 smart cast and "my bad"; N = R, R smart cast, summoner 2, item 1, item 6 and the
-taunt; MB5 = League's binds plus the mastery badge. M opens both quick wheels (ping and
-emote) instead of the normal emote wheel. lol.py applies it by itself whenever League and its client are closed, backing up
+| Key   | Tap (the key itself)                                   | Hold                    |
+|-------|--------------------------------------------------------|-------------------------|
+| Win   | camera lock (Win; masked so Start never opens)         | drag the camera (H), at once |
+| B     | Recall, role quest teleport, item 1, item 6 smart cast, "my bad" | shop (V)      |
+| M     | R, R smart cast, summoner 2, item 1, item 6, taunt     | R alone (F8), held      |
+| Space | E, attack-move, item 3                                 | Stop (C) every 0.35 s   |
+
+N opens the quick ping and quick emote wheels, MB5 keeps League's binds plus the
+mastery badge, and the kite button (F13/Pause) kites while held. Scroll cycles the held
+number keys. Release, focus loss, or leaving Kalista cancels a hold permanently.
+
+`lol_settings.py` writes exactly those binds: Win's and N's old binds move to M
+(including modified chords), and the hold keys V, C, F8 get their actions. lol.py applies it by itself whenever League and its client are closed, backing up
 both configuration files before writing; applying it again changes nothing. League
 loads the new binds on its next start.
 

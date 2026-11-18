@@ -85,7 +85,32 @@ class HookTest(unittest.TestCase):
             tap.reset_mock()
             start(lambda: True)
             tap.assert_called_once_with(lol.SHOP_KEY)
-        self.assertEqual(lol.SHOP_KEY, "f11")
+        self.assertEqual(lol.SHOP_KEY, "v")
+
+    def test_m_tap_sends_m_and_hold_holds_r_alone(self):
+        click, start, end = lol.MACRO_KEYS[lol.VK_M]
+        sent = []
+        with patch.object(lol, "tap", side_effect=lambda k: sent.append(("tap", k)) or True), \
+                patch.object(lol, "key_down", side_effect=lambda k: sent.append(("down", k)) or True), \
+                patch.object(lol, "key_up", side_effect=lambda k: sent.append(("up", k))):
+            click()
+            start(lambda: True)
+            end()
+        self.assertEqual(sent, [("tap", "m"), ("down", "f8"), ("up", "f8")])
+
+    def test_injected_win_is_masked_so_start_never_opens(self):
+        with patch.object(lol, "_send") as send:
+            lol.key_down("lwin")
+        flags = [c.kwargs.get("flags", 0) for c in send.call_args_list]
+        self.assertTrue(flags[0] & lol.KEYEVENTF_EXTENDEDKEY)
+        self.assertEqual([c.kwargs.get("vk") for c in send.call_args_list[1:]], [0xE8, 0xE8])
+
+    def test_hold_keys_match_league_binds(self):
+        import lol_settings
+        self.assertEqual(lol_settings.SET["evtOpenShop"], f"[{lol.SHOP_KEY}]")
+        self.assertEqual(lol_settings.SET["evtPlayerStopPosition"], f"[{lol.STOP_KEY}]")
+        self.assertIn(f"[{lol.R_KEY.upper()}]", lol_settings.SET["evtCastSpell4"])
+        self.assertEqual(lol_settings.SET["evtCameraLockToggle"], "[L Win]")
 
     def test_n_reaches_league(self):
         key = SimpleNamespace(flags=0, vkCode=0x4E)

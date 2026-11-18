@@ -12,23 +12,26 @@ CFG = Path(r"C:\Riot Games\League of Legends\Config")
 INI = CFG / "input.ini"
 JSON = CFG / "PersistedSettings.json"
 
-# 1) Key moves applied to every binding. Win is now lol.py's camera key (tap = lock/unlock,
-#    hold = drag), so everything League had on Win (R, summoner 2, item 1) moves to N, which the
-#    macros no longer use. A move, not a swap: running setup twice must do nothing.
-SWAP = {"[L Win]": "[n]"}
+# 1) Key moves applied to every other binding: Win is the camera key, so what League had on
+#    Win (R, summoner 2, item 1) lives on M; N (where it sat before) moves to M too. A move, not
+#    a swap: running setup twice must do nothing.
+SWAP = {"[L Win]": "[m]", "[n]": "[m]"}
 
-# 2) Explicit bindings set after the move ("" = unbound)
+# 2) Explicit bindings set after the move ("" = unbound). A macro key's tap sends the key
+#    itself, so its binds sit on that key; a hold sends the separate key noted.
 SET = {
-    "evtOpenShop": "[F11]",                       # B hold = shop (lol.py sends F11; a B tap stays B)
-    "evtRadialEmoteOpen": "",                     # M opens the quick emote wheel below instead
-    "evtRadialEmoteInstantOpen": "[m],[Cmd][Button 2]",  # M = quick emote wheel
-    "evntPlayerPing": "[Cmd][Button 1],[m]",      # M = quick ping wheel too
+    "evtOpenShop": "[v]",                         # B hold = shop (lol.py sends V)
+    "evtRadialEmoteOpen": "",                     # N opens the quick emote wheel below instead
+    "evtRadialEmoteInstantOpen": "[n],[Cmd][Button 2]",  # N = quick emote wheel
+    "evntPlayerPing": "[Cmd][Button 1],[n]",      # N = quick ping wheel too
     "evntPlayerPingCursorDanger": "",
     "evtChatHistory": "[Alt][k],[Button 3]",      # MB3 = chat history
     "evtHoldShowScoreBoard": "[Alt][k],[Button 3]",  # MB3 = scoreboard
-    "evtPlayerStopPosition": "[v]",               # stop (sent by lol.py while holding Space)
+    "evtPlayerStopPosition": "[c]",               # Space hold = stop (lol.py sends C)
     "evtPlayerAttackMove": "[space],[F9]",        # F9: attack-move sent by the kite button
-    "evtCameraLockToggle": "[y]",                 # sent by lol.py (Win tap toggles, Win hold drags)
+    "evtCameraLockToggle": "[L Win]",             # Win tap = Win itself (lol.py stops Start opening)
+    "evtCastSpell4": "[m],[F8]",                  # R on M; F8 = R alone (M hold)
+    "evtCastAvatarSpell2": "[m]",                 # summoner 2 on M (a tap only)
     "FreeDynamicCameraToggle": "",                # off: on h it flipped camera modes on every pan
     "evtOnUIMouse4Pan": "[h]",                    # lol.py holds h while Win is held
     # Everything a key did at once still happens at once:
@@ -37,22 +40,22 @@ SET = {
     "evtCastRoleBound": "[b]",                    # role quest teleport
     "evtSmartCastItem6": "[b]",                   # item 6 smart cast
     "evtReciprocityMyBadTrigger": "[b]",          # "my bad" (was on Win)
-    "evtUseItem1": "[b],[n]",                     # item 1 on B and N
-    # N (Win's old key): R, summoner 2, item 1, plus R smart cast, item 6 and taunt.
-    "evtSmartCastSpell4": "[n],[o]",              # R smart cast
-    "evtUseItem6": "[n]",                         # item 6
-    "evtEmoteTaunt": "[n]",                       # taunt emote
-    "evtSmartCastAvatarSpell2": "[n]",            # summoner 2 smart cast (with N's cast)
+    "evtUseItem1": "[b],[m]",                     # item 1 on B and M
+    # M tap: R, summoner 2, item 1, plus R smart cast, item 6 and taunt.
+    "evtSmartCastSpell4": "[m],[o]",              # R smart cast
+    "evtUseItem6": "[m]",                         # item 6
+    "evtEmoteTaunt": "[m]",                       # taunt emote
+    "evtSmartCastAvatarSpell2": "[m]",            # summoner 2 smart cast (with M's cast)
     "evtSmartCastSpell1": "[Tab]",
     "evtSmartCastSpell3": "[space]",
     "evtChampMasteryDisplay": "[Button 5]",       # MB5 shows the mastery badge, as before
 }
 
 # What lol.py logs once the binds are written.
-SUMMARY = ("B tap: Recall, role quest teleport, item 1, item 6 smart cast, my bad; "
-           "N: R, R smart cast, summoner 2, item 1, item 6, taunt; "
-           "B hold: shop (F11); M: quick ping and quick emote wheels; Win: camera; "
-           "MB5: League's binds + mastery badge")
+SUMMARY = ("B tap: Recall, role quest teleport, item 1, item 6 smart cast, my bad; B hold: shop (V); "
+           "M tap: R, R smart cast, summoner 2, item 1, item 6, taunt; M hold: R alone (F8); "
+           "N: quick ping and quick emote wheels; Win tap: camera lock (Win), hold: drag; "
+           "Space hold: stop (C); MB5: League's binds + mastery badge")
 
 
 def convert(name, value):
@@ -60,7 +63,7 @@ def convert(name, value):
         return SET[name]
     if not value:
         return value
-    return re.sub(r"\[L Win\]", lambda m: SWAP[m[0]], value)
+    return re.sub(r"\[L Win\]|\[n\]", lambda m: SWAP[m[0]], value)
 
 
 def patch_ini(text):
