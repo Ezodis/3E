@@ -11,11 +11,12 @@ holds to open the shop; Space taps Space and holds Stop; the kite button (F13/Pa
 kites while held. Scroll cycles the held number keys. Release, focus loss, or leaving
 Kalista cancels a hold permanently.
 
-`lol_settings.py` moves Win bindings to N (including modified chords), makes M open
-both quick wheels (ping and emote), and removes binds nothing uses: J's item 6, item 6
-smart cast, R smart cast, item 1, role quest teleport and taunt (J is only Recall),
-Win's "my bad", MB5's mastery badge, the normal emote wheel, and smart-cast duplicates
-of keys that already quick cast (Tab, Space, Win summoner 2). MB5 stays on League.
+`lol_settings.py` moves Win bindings to N (including modified chords) and adds item 6,
+R smart cast and the taunt emote there, so N fires R, summoner 2, item 1, item 6 and
+the taunt together. J (what a B tap sends) is Recall plus "my bad". MB5 stays on League
+with its mastery badge. M opens both quick wheels (ping and emote). Removed: J's item 6
+smart cast and role quest teleport, the normal emote wheel, and smart-cast duplicates
+of keys that already quick cast (Tab, Space, summoner 2).
 lol.py applies it by itself whenever League and its client are closed, backing up
 both configuration files before writing; applying it again changes nothing. League
 loads the new binds on its next start.

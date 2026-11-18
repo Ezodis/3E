@@ -31,16 +31,17 @@ SET = {
     "evtCameraLockToggle": "[y]",                 # sent by lol.py (Win tap toggles, Win hold drags)
     "FreeDynamicCameraToggle": "",                # off: on h it flipped camera modes on every pan
     "evtOnUIMouse4Pan": "[h]",                    # lol.py holds h while Win is held
-    # J is only Recall now (B tap sends J). Its other binds fired together with Recall.
+    # N (Win's old key) fires R, summoner 2, item 1, item 6, R smart cast and the taunt together.
+    "evtUseItem1": "[n]",                         # item 1
+    "evtUseItem6": "[n]",                         # item 6
+    "evtSmartCastSpell4": "[n],[o]",              # R smart cast
+    "evtEmoteTaunt": "[n]",                       # taunt emote
+    # J = what a B tap sends: Recall and "my bad".
     "evtUseItem7": "[j]",                         # Recall
-    "evtUseItem1": "[n]",                         # item 1 (was J + Win)
-    "evtUseItem6": "",                            # item 6 on J
+    "evtReciprocityMyBadTrigger": "[j]",          # "my bad"
     "evtSmartCastItem6": "",                      # item 6 smart cast on J
-    "evtSmartCastSpell4": "[o]",                  # R smart cast on J (R stays on N, quick cast)
     "evtCastRoleBound": "",                       # role quest teleport on J
-    "evtEmoteTaunt": "",                          # taunt emote on J
-    "evtReciprocityMyBadTrigger": "",             # "my bad" on Win
-    "evtChampMasteryDisplay": "",                 # mastery badge on MB5 (every Flash)
+    "evtChampMasteryDisplay": "[Button 5]",       # MB5: mastery badge (with Flash)
     # Same key as the plain cast, which is already quick cast (Quickbinds = 1)
     "evtSmartCastAvatarSpell2": "",
     "evtSmartCastSpell1": "",
@@ -50,10 +51,7 @@ SET = {
 # What SET unbinds, for the summary lol.py logs and the README.
 REMOVED = {
     "evtRadialEmoteOpen": "M: normal emote wheel (M now opens the quick one)",
-    "evtUseItem6": "J: item 6", "evtSmartCastItem6": "J: item 6 smart cast",
-    "evtSmartCastSpell4": "J: R smart cast", "evtUseItem1": "J: item 1",
-    "evtCastRoleBound": "J: role quest teleport", "evtEmoteTaunt": "J: taunt emote",
-    "evtReciprocityMyBadTrigger": "Win: \"my bad\"", "evtChampMasteryDisplay": "MB5: mastery badge",
+    "evtSmartCastItem6": "J: item 6 smart cast", "evtCastRoleBound": "J: role quest teleport",
     "evtSmartCastAvatarSpell2": "Win: duplicate summoner 2 smart cast",
     "evtSmartCastSpell1": "Tab: duplicate Q smart cast", "evtSmartCastSpell3": "Space: duplicate E smart cast",
 }
