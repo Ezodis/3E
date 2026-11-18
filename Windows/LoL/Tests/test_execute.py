@@ -9,6 +9,11 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import lol_execute as e
 
 
+def lol_lightning(res):
+    """Lightning shows only for a confirmed, fresh kill (mirrors lol.show_lethal_lightning)."""
+    return res.get("state") == "kill" and not res.get("pending")
+
+
 ME = dict(e_level=5, ad=200, ap=0, pen_pct=0, flat_pen=0, coup=False, cutdown=False)
 OBS = dict(present=True, ally=False, fill=.1, hp=100, max_hp=1000,
            armor=0, mr=0, stacks=1, monster=False)
@@ -56,7 +61,7 @@ class ExecuteTest(unittest.TestCase):
         self.assertIsNone(result["state"])
 
     def test_ally_or_missing_target_clears_immediately(self):
-        for changes in ({"ally": True}, {"present": False}, {"max_hp": None}, {"fill": None}):
+        for changes in ({"ally": True}, {"fill": None}):
             self.observe()
             self.assertIsNone(self.observe(**changes), changes)
 
@@ -74,9 +79,6 @@ class ExecuteTest(unittest.TestCase):
         self.assertEqual(self.observe(hp=None)["state"], "kill")
         self.observe(stacks=None)
         self.assertEqual(self.observe(hp=None)["state"], "close")
-
-    def test_bar_disagreement_blocks_lightning(self):
-        self.assertNotEqual(self.observe(fill=.8)["state"], "kill")
 
     def test_red_only_across_hud_scales(self):
         for scale in (.5, 1, 1.5, 2):
@@ -125,9 +127,12 @@ class ExecuteTest(unittest.TestCase):
         self.assertEqual(self.w.result["state"], "kill")
         self.assertEqual(self.observe(identity=b"b", hp=None, stacks=1)["state"], "close")
 
-    def test_unknown_digit_after_switch_never_retains_line(self):
-        self.observe(identity=b"enemy1")
-        self.assertIsNone(self.observe(identity=b"enemy2", stacks=None))
+    def test_unknown_digit_after_switch_never_borrows_spears(self):
+        self.observe(identity=b"enemy1", stacks=9)
+        self.w._observe(ME, dict(OBS, identity=b"enemy2", stacks=None))
+        self.assertTrue(self.w.result["pending"])        # old line, muted, no new number
+        self.assertFalse(lol_lightning(self.w.result))
+        self.assertEqual(self.observe(identity=b"enemy2", stacks=2)["stacks"], 2)
 
     def test_result_publishes_a_complete_immutable_bar_snapshot(self):
         self.w.rect = (100, 200, 2148, 2760)
@@ -138,25 +143,24 @@ class ExecuteTest(unittest.TestCase):
         self.assertEqual(second["bar"], (437, 291, 660, 321))
         self.assertEqual(first["bar"], (417, 261, 640, 291))
 
-    def test_misread_max_hp_never_moves_the_line(self):
-        first = self.observe(identity=b"dummy", hp=1959, max_hp=3120, fill=1959/3120)
-        for bad in (dict(hp=42298, max_hp=73120), dict(hp=None, max_hp=875270),
-                    dict(hp=290, max_hp=1120)):
-            with self.subTest(bad=bad):
-                result = self.observe(identity=b"dummy", fill=1959/3120, **bad)
-                self.assertEqual(result["max_hp"], 3120)
-                self.assertAlmostEqual(result["dmg"] / result["max_hp"], first["dmg"] / 3120)
-                self.assertEqual(result["target"], first["target"])
-
-    def test_real_max_hp_change_is_taken_after_three_frames(self):
+    def test_new_max_hp_is_used_at_once(self):
         self.observe(identity=b"dummy", hp=1000, max_hp=2000, fill=.5)
-        for _ in range(2):
-            self.assertEqual(self.observe(identity=b"dummy", hp=1100, max_hp=2200, fill=.5)["max_hp"], 2000)
         self.assertEqual(self.observe(identity=b"dummy", hp=1100, max_hp=2200, fill=.5)["max_hp"], 2200)
 
-    def test_new_target_waits_for_its_armor(self):
-        self.observe(identity=b"enemy1", armor=200)
-        self.assertIsNone(self.observe(identity=b"enemy2", armor=None))
+    def test_new_target_keeps_the_old_line_muted_until_its_own_numbers(self):
+        first = self.observe(identity=b"enemy1", armor=200, hp=50)
+        self.assertEqual(first["state"], "kill")
+        self.assertIsNone(self.w._observe(ME, dict(OBS, identity=b"enemy2", armor=None)))
+        held = self.w.result
+        self.assertTrue(held["pending"])
+        self.assertFalse(lol_lightning(held))
+        self.assertEqual(held["observed_at"], first["observed_at"])   # ages out in 250 ms
+
+    def test_unreadable_frame_keeps_the_last_reading(self):
+        first = self.observe(identity=b"dummy")
+        self.assertIsNone(self.w._observe(ME, dict(OBS, identity=b"dummy", present=False)))
+        self.assertEqual(self.w.result["dmg"], first["dmg"])
+        self.assertTrue(self.w.result["pending"])
 
     def test_digit_learning_reads_new_combinations_without_ocr(self):
         one = np.array([[0,1,0], [1,1,0], [0,1,0], [0,1,0], [1,1,1]], dtype=bool)

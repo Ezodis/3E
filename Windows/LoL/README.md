@@ -26,11 +26,18 @@ keys in game stay game input.
 The Rend line marks **the HP where Rend kills**: `damage / max HP` along the bar,
 capped at 100%. It starts at the left edge and moves right as spears add up; the
 red fill shrinks toward it and Rend kills once the fill reaches the line.
-A target's max HP stays fixed across OCR misreads (a glued "/" turned 3120 into
-73120 and threw the line left): values above 30,000 are rejected, and a different
-max on the same portrait counts only after three consecutive matching reads. A new
-target waits for its own armor instead of borrowing 0. Within one target the line
-glides to its new position (~80 ms at 60 fps); a target switch or a kill snaps it.
+HP is read as exactly *digits / digits*: the slash is found by its shape (never OCR'd,
+so it can't turn into a 7 or 1), digits are trimmed to the text's own rows, the cyan
+current-HP tick and bar edge lines are removed before reading, and a number OCR
+can't read as one digit per glyph is unknown rather than guessed. The bar position
+comes from League's bright current-HP tick, not the red fill, which still includes
+the fading lost-HP trail right after a hit; the HP text must match that tick within
+2%, or (with no tick drawn) be no more than the red. Learned digit shapes are saved
+in `lol_digits.pkl`, so new targets read instantly from the first second of a game.
+A new target never borrows numbers from the last one; until its own are read (or
+while a frame is unreadable) the last line stays, muted, no lightning, for at most
+250 ms. The line glides to every new position (~80 ms at 60 fps): more spears, a
+different target, anything; it only appears in place.
 For example, 300 damage on a 1000 max HP target puts the line 30% across.
 Positions are never smoothed across target switches.
 

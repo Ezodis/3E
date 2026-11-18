@@ -568,11 +568,12 @@ MARKER_EASE = 0.45   # share of the remaining distance the line moves per frame 
 
 
 def eased_coverage(prev, res):
-    """Glide the line within one target; jump on a new target, a kill, or no previous frame."""
+    """Glide the line to its new place: more spears, another target, anything. It only jumps
+    when it first appears (no previous position)."""
     target = rend_coverage(res)
-    if not prev or prev[0] != res.get("target") or res.get("state") == "kill":
+    if prev is None:
         return target
-    shown = prev[1] + (target - prev[1]) * MARKER_EASE
+    shown = prev + (target - prev) * MARKER_EASE
     return target if abs(target - shown) < 0.002 else shown
 
 
@@ -723,9 +724,8 @@ def make_indicator():
             else:
                 oc.delete("all")
             if res["max_hp"] > 0:
-                ov_state["eased"] = (res.get("target"), eased_coverage(ov_state["eased"], res))
-            ov_state["marker"] = draw_rend_marker(oc, res, ov_state["rect"][:2], dpi,
-                                                  ov_state["eased"][1] if ov_state["eased"] else None)
+                ov_state["eased"] = eased_coverage(ov_state["eased"], res)
+            ov_state["marker"] = draw_rend_marker(oc, res, ov_state["rect"][:2], dpi, ov_state["eased"])
             user32.SetWindowPos(ov_hwnd, HWND_TOPMOST, 0, 0, 0, 0, SWP_KEEP)
         elif ov_state["shown"]:
             oc.delete("all")

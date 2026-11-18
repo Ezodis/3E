@@ -1,6 +1,6 @@
 - Kalista: Win is the camera key (tap = lock/unlock, hold = drag) and N gets Win's League binds (R, summoner 2, item 1). The camera drag starts the instant Win goes down instead of after a hold delay.
 - Kalista: M opens both quick wheels (ping and emote). Unused binds are removed: J is only Recall (no item 6, R smart cast, role quest teleport or taunt), Win's "my bad", MB5's mastery badge and duplicate smart casts. Binds apply by themselves while League is closed.
-- Kalista: the Rend line no longer jumps. Misread max HP (3120 read as 73120) is ignored, a new target waits for its armor instead of guessing 0, and the line glides at 60 fps; lightning and line use the same position.
+- Kalista: the Rend reader now reads the real HP every time instead of filtering bad reads. It finds the "/" by shape, removes the current-HP tick and bar edges from the digits, and checks the text against the bar's current-HP tick rather than the fading lost-HP trail. Learned digits are kept between games so new targets read at once, and the line glides on every change, including target switches.
 - Clicks keyboard: the hold-for-accents picker never opens over League or any full-screen game.
 - Mac keyboard layout stays on: turning it on no longer records 'off' first (a failed or interrupted switch used to leave it off for good), a failed switch keeps retrying every minute, a momentary settings read failure no longer resets choices, and on/off and recoveries are now logged in hub.log.
 

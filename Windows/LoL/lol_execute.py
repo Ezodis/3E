@@ -46,7 +46,7 @@ REGIONS = {
     "buffs":  (150, 195, 600, 256),   # buff row under the frame (searched for the spear icon)
 }
 HEALTH_BAR = (317, 61, 540, 91)   # target-frame health bar (left edge = 0 HP, right = max HP)
-FILL_TOLERANCE = 0.06             # OCR'd HP must match how full the bar looks (rejects misreads)
+FILL_TOLERANCE = 0.02             # OCR'd HP must match the bar's current-HP tick (within ~4 px)
 COUP_DE_GRACE = 8014     # rune id: +8% damage to targets below 40% max HP
 CUT_DOWN = 8017          # rune id: +8% damage to targets above 60% max HP
 KDA_ROW = (325, 22, 560, 56)  # yellow gold/KDA text above the bar: champions, minions, dummy
@@ -216,16 +216,48 @@ def _glyph_keys(mask):
     return keys
 
 
+DIGITS_FILE = DATA / "lol_digits.pkl"   # learned digit shapes, kept between games
+_digits_dirty = False
+
+
+def load_digits():
+    """Digit shapes learned in earlier games: new targets then read at once, without OCR."""
+    import pickle
+    try:
+        with DIGITS_FILE.open("rb") as f:
+            saved = pickle.load(f)
+        if isinstance(saved, dict):
+            _digit_cache.update(saved)
+    except (OSError, EOFError, pickle.UnpicklingError, AttributeError, ValueError):
+        pass
+
+
+def save_digits():
+    global _digits_dirty
+    if not _digits_dirty:
+        return
+    import pickle
+    _digits_dirty = False
+    tmp = DIGITS_FILE.with_suffix(".tmp")
+    with tmp.open("wb") as f:
+        pickle.dump(dict(_digit_cache), f)
+    tmp.replace(DIGITS_FILE)
+
+
 def _remember_digits(name, mask, text):
+    global _digits_dirty
     keys = _glyph_keys(mask)
     if not re.fullmatch(r"[0-9]+", text) or len(keys) != len(text):
         return
-    if len(_digit_cache) > 10000:
+    if len(_digit_cache) > 20000:
         _digit_cache.clear()
     for key, digit in zip(keys, text):
         key = (name, key)
         previous = _digit_cache.get(key, digit)
-        _digit_cache[key] = digit if previous == digit else None  # ambiguous shape: OCR must decide
+        value = digit if previous == digit else None  # ambiguous shape: OCR must decide
+        if _digit_cache.get(key, "?") != value:
+            _digit_cache[key] = value
+            _digits_dirty = True
 
 
 def _known_text(name, key, mask):
@@ -274,24 +306,121 @@ def _group_masks(crop, name, scale, cut=150):
     return out
 
 
+SLASH = ("slash",)   # key of the "/" between current and max HP (found by shape, never OCR'd)
+
+
+def _is_slash(m, H):
+    """The HP slash: a thin stroke whose top sits at the right edge and bottom at the left.
+    No digit has that ("7" tops out in the middle, "4" leans the other way)."""
+    h, w = m.shape
+    if not (0.82 * H <= h <= 1.35 * H and 0.35 * H <= w <= 0.85 * H):
+        return False
+    q = max(1, h // 4)
+    cols = np.arange(w)
+    top, bot = m[:q], m[-q:]
+    if not top.any() or not bot.any():
+        return False
+    tx = (top * cols).sum() / top.sum() / max(1, w - 1)
+    bx = (bot * cols).sum() / bot.sum() / max(1, w - 1)
+    return tx >= 0.68 and bx <= 0.32
+
+
+def _health_masks(crop, scale, cut):
+    """'1528 / 2660' -> [(key, hp mask), (SLASH, None), (key, max mask)], or [] if the text
+    isn't exactly digits, one slash, digits. The slash is found by its shape, digits are
+    trimmed to the text's own rows (bar lines touching them made 6 read as b, or dropped
+    digits), and only digits chained to the slash count (bar edges on the left read as [ or 1)."""
+    import cv2
+    if scale < 0.98:
+        k = 1.0 / scale
+        crop = crop.resize((max(1, round(crop.width * k)), max(1, round(crop.height * k))), Image.LANCZOS)
+        scale = 1.0
+    H = DIGIT_H["health"] * scale
+    b = (np.array(crop.convert("L")) > cut).astype(np.uint8)
+    # The current-HP tick is a cyan-white line through the text; digits are neutral white.
+    # Left in, it glues onto whichever digit it crosses.
+    rgb = np.array(crop.convert("RGB")).astype(int)
+    b[(rgb[..., 2] - rgb[..., 0] > 22) & (rgb[..., 1] - rgb[..., 0] > 12)] = 0
+    n, lab, st, _ = cv2.connectedComponentsWithStats(b, 8)
+    clean = [st[i] for i in range(1, n) if 0.82 * H <= st[i][3] <= 1.1 * H and 0.3 * H <= st[i][2] <= 1.0 * H]
+    if len(clean) < 3:
+        return []
+    top = int(np.median([s[1] for s in clean]))
+    bottom = int(np.median([s[1] + s[3] for s in clean]))
+    b[:max(0, top - 1)] = 0
+    b[bottom + 1:] = 0
+    n, lab, st, _ = cv2.connectedComponentsWithStats(b, 8)
+    comps = sorted((st[i][0], st[i][1], st[i][2], st[i][3], i) for i in range(1, n)
+                   if st[i][3] >= 0.82 * H and st[i][2] <= 1.2 * st[i][3])
+    slashes = [c for c in comps if _is_slash(lab[c[1]:c[1] + c[3], c[0]:c[0] + c[2]] == c[4], H)]
+    if len(slashes) != 1:
+        return []
+    s = slashes[0]
+    digit = lambda c: c is not s and 0.82 * H <= c[3] <= 1.15 * H and 0.25 * H <= c[2] <= 1.0 * H
+    # the tick's white core: a hairline between glyphs (a "1" is still twice as wide)
+    hairline = lambda c: c[2] <= 0.25 * H
+    gap = 0.65 * H
+    left, edge = [], s[0]
+    for c in reversed([c for c in comps if c[0] < s[0]]):
+        if hairline(c) and edge - (c[0] + c[2]) <= gap:
+            edge = c[0]
+            continue
+        if not digit(c) or edge - (c[0] + c[2]) > gap:
+            break
+        left.insert(0, c)
+        edge = c[0]
+    right, edge = [], s[0] + s[2]
+    for c in [c for c in comps if c[0] > s[0]]:
+        if hairline(c) and c[0] - edge <= gap:
+            edge = c[0] + c[2]
+            continue
+        if not digit(c) or c[0] - edge > gap:
+            break
+        right.append(c)
+        edge = c[0] + c[2]
+    if not left or not right or len(left) > len(right):
+        return []
+
+    def group(cs):
+        x0 = min(c[0] for c in cs); x1 = max(c[0] + c[2] for c in cs)
+        y0 = min(c[1] for c in cs); y1 = max(c[1] + c[3] for c in cs)
+        mask = np.isin(lab[y0:y1, x0:x1], [c[4] for c in cs])
+        return (mask.shape, np.packbits(mask).tobytes()), mask
+    return [group(left), (SLASH, None), group(right)]
+
+
+def _masks(crop, name, scale, cut):
+    return _health_masks(crop, scale, cut) if name == "health" else _group_masks(crop, name, scale, cut)
+
+
 def read_numbers(crop, name, scale, cut=150):
     """Find digit-height blobs, group neighbours into numbers, recognise each group (each number's
-    pixel shape is recognised once, then remembered)."""
+    pixel shape is recognised once, then remembered). A health group OCR can't read as exactly
+    one digit per glyph reads as "" (unknown), never as a guess."""
     texts = []
-    for key, mask in _group_masks(crop, name, scale, cut):
+    for key, mask in _masks(crop, name, scale, cut):
+        if key == SLASH:
+            texts.append("/")
+            continue
         if key not in _group_cache:
             if len(_group_cache) > 50000:
                 _group_cache.clear()
             text = _known_text(name, key, mask)
-            _group_cache[key] = text if text is not None else _fix(_rec(mask))
-            _remember_digits(name, mask, _group_cache[key])
+            if text is None:
+                text = _fix(_rec(mask))
+                if name == "health" and not (text.isdigit() and len(text) == len(_glyph_keys(mask))):
+                    text = re.sub(r"\D", "", text)
+                    text = text if len(text) == len(_glyph_keys(mask)) else ""
+            _group_cache[key] = text
+            _remember_digits(name, mask, text)
         texts.append(_group_cache[key])
     return texts
 
 
 def known_numbers(crop, name, scale, cut=150):
     """Like read_numbers but never runs OCR: numbers not seen before come back as None."""
-    return [_known_text(name, key, mask) for key, mask in _group_masks(crop, name, scale, cut)]
+    return ["/" if key == SLASH else _known_text(name, key, mask)
+            for key, mask in _masks(crop, name, scale, cut)]
 
 
 def spear_count(texts):
@@ -304,11 +433,6 @@ def spear_count(texts):
 
 
 EPIC_MIN_HP = 2800   # unrecognised monster portrait this big: treat as epic (Rend does 50%)
-# No target Kalista can hit has more max HP than this. OCR that glues the "/" or a stray glyph
-# onto the number (3120 -> 73120) produces far bigger values, which threw the line to the left.
-MAX_PLAUSIBLE_HP = 30000
-MAX_CONFIRM_FRAMES = 3   # a new max HP on the same target must be read this many frames in a row
-
 
 def _same_portrait(a, b, bits=6):
     """Portrait fingerprints of the same target (allows a few flickering pixels)."""
@@ -352,16 +476,16 @@ def quick_read(frame, scale):
     # same brightness cut-offs as read_target, so whatever OCR read is recognised here
     for cut in (150, 120, 180, 100):
         ht = known_numbers(hcrop, "health", scale, cut)
-        if len(ht) < 2:
+        if len(ht) != 3:
             continue
         out["present"] = True
         if None not in ht:
             pair = parse_health(ht)
-            if pair and abs(pair[0] / pair[1] - fill) <= FILL_TOLERANCE:
+            if health_agrees(pair, frame, scale, fill):
                 out["max_hp"], out["hp"] = pair[1], pair[0]
                 break
-        if not out["max_hp"] and ht[-1] and ht[-1].isdigit():
-            out["max_hp"] = int(ht[-1])   # max HP known, current HP new: HP comes from the bar
+        if not out["max_hp"] and len(ht) == 3 and ht[1] == "/" and ht[2] and ht[2].isdigit():
+            out["max_hp"] = int(ht[2])    # max HP known, current HP new: HP comes from the bar
     if not out["present"]:
         return out
     icon = find_spear_slot(frame, scale)
@@ -500,17 +624,11 @@ def has_kda_row(frame, scale):
 
 
 def parse_health(groups):
-    """'590 / 1000' -> (590, 1000). The slash is often read as '1', so with 3+ separate groups
-    the first is current HP and the last is max HP."""
-    joined = " ".join(groups)
-    m = re.search(r"(\d+)\s*/\s*(\d+)", joined)
-    if m:
-        hp, mx = int(m[1]), int(m[2])
-    else:
-        nums = [g for g in groups if g.isdigit()]
-        if len(groups) < 3 or not groups[0].isdigit() or not groups[-1].isdigit():
-            return None
-        hp, mx = int(groups[0]), int(groups[-1])
+    """['590', '/', '1000'] -> (590, 1000): exactly current digits, the slash, max digits."""
+    if (len(groups) != 3 or groups[1] != "/" or not groups[0] or not groups[2]
+            or not groups[0].isdigit() or not groups[2].isdigit()):
+        return None
+    hp, mx = int(groups[0]), int(groups[2])
     if mx <= 0 or hp > mx:
         return None
     return hp, mx
@@ -527,8 +645,39 @@ def bar_fill(frame, scale):
     filled = ((mx > 55) & (mx - mn > 35)).mean(axis=0) > 0.5   # per column
     if not filled.any():
         return 0.0
+    # League draws a bright white-cyan tick at the current HP. After a hit, the lost HP stays
+    # as a darker red trail that fades out; counting it as fill made correct HP text look wrong.
+    tick = _hp_tick(frame, scale)
+    if tick is not None:
+        return tick
     # rightmost filled column (fill grows from the left)
     return float((np.where(filled)[0].max() + 1) / filled.size)
+
+
+def health_agrees(pair, frame, scale, fill):
+    """Does the HP text agree with the bar? With the current-HP tick drawn, it must match it.
+    Without it, the red can include the fading lost-HP trail, so HP can only be at most that."""
+    if not pair or fill is None:
+        return False
+    ratio = pair[0] / pair[1]
+    if _hp_tick(frame, scale) is not None:
+        return abs(ratio - fill) <= FILL_TOLERANCE
+    return ratio <= fill + FILL_TOLERANCE
+
+
+def _hp_tick(frame, scale):
+    """Position (0..1) of the bright current-HP tick on the bar, or None if none is drawn."""
+    x0, y0, x1, y1 = HEALTH_BAR
+    box = (int(x0 * scale), int((y0 + 1) * scale), int(x1 * scale), int((y0 + 6) * scale))
+    px = np.array(frame.crop(box)).astype(int)
+    if px.size == 0:
+        return None
+    r, g, b = px[..., 0], px[..., 1], px[..., 2]
+    bright = ((g >= 170) & (b >= 170) & (r >= 120)).mean(axis=0) >= 0.4
+    cols = np.where(bright)[0]
+    if not len(cols) or cols.max() - cols.min() > max(3, 6 * scale):
+        return None             # none, or several bright spots: not a single clean tick
+    return float((cols.mean() + 1) / px.shape[1])
 
 
 def read_target(frame, scale):
@@ -550,7 +699,7 @@ def read_target(frame, scale):
         groups = read_numbers(crop(REGIONS["health"]), "health", scale, cut)
         raw["health"] = " ".join(groups)
         pair = parse_health(groups)
-        if pair and fill is not None and abs(pair[0] / pair[1] - fill) <= FILL_TOLERANCE:
+        if health_agrees(pair, frame, scale, fill):
             hp, max_hp = pair
             break
         if pair:
@@ -806,14 +955,14 @@ class ExecuteWatcher:
         # Never carry a kill or spear count to another target. Within the same target, a
         # number that changed (new spear count, new armor) keeps the last value for a moment
         # while it is read, shown muted and never lightning, instead of hiding the line.
-        if q["ally"] or not q["present"] or q["fill"] is None or not q["max_hp"]:
+        if q["ally"] or q["fill"] is None:
             self._clear_result()
             return None
+        if not q["present"] or not q["max_hp"]:
+            # A target is shown but its text didn't read cleanly this frame: keep the last
+            # real reading (the overlay drops it after 250 ms) rather than guess or blink.
+            return self._hold_last()
         now = time.monotonic()
-        q["max_hp"] = self._stable_max(q, now)
-        if not q["max_hp"]:
-            self._clear_result()
-            return None
         kind = q.get("monster_kind")
         same = (self._held and _same_portrait(self._held["identity"], q.get("identity"))
                 and self._held["max_hp"] == q["max_hp"] and now - self._held["t"] < 1.5)
@@ -823,13 +972,11 @@ class ExecuteWatcher:
             # A new target waits for its own armor (~0.1 s): guessing 0 drew the line far
             # too far right and then jumped it back.
             if not same:
-                self._clear_result()
-                return None
+                return self._hold_last()
             q["armor"], q["mr"], pending = self._held["armor"], self._held["mr"], True
         if q["stacks"] is None:
             if not same:
-                self._clear_result()
-                return None
+                return self._hold_last()
             q["stacks"], pending = self._held["stacks"], True
         if q["monster"] and kind is None:
             kind = self._held["kind"] if same and self._held["kind"] else None
@@ -849,9 +996,7 @@ class ExecuteWatcher:
                "armor": q["armor"], "mr": q["mr"], "stacks": q["stacks"], "hp_estimated": est,
                "epic": bool(kind and kind[1])}
         res = evaluate(me, tgt)
-        # The bar itself must agree with a kill too (catches a misread HP number).
-        if res["state"] == "kill" and q["fill"] * max_hp > res["dmg"] + 0.01 * max_hp:
-            res["state"] = "close"
+        # Exact HP was already checked against the bar's current-HP tick by quick_read.
         # exact HP lights it at once; an HP taken from the bar must agree on 3 frames (60 ms)
         self._kill_streak = self._kill_streak + 1 if res["state"] == "kill" and not pending else 0
         if res["state"] == "kill" and (pending or (est and self._kill_streak < 3)):
@@ -860,46 +1005,33 @@ class ExecuteWatcher:
         # observe a new result before its coordinates have been attached.
         self.result = dict(res, bar=self.bar_on_screen(), pending=pending,
                            monster=kind[0] if kind else None, hp_estimated=est,
-                           target=self._max["n"], observed_at=time.monotonic())
+                           observed_at=time.monotonic())
         return None if pending else tgt
 
     _held = None
     _q_key = None
-    _max = None
-    _targets = 0
 
-    def _stable_max(self, q, now):
-        """The target's max HP, steady across OCR misreads. A different value on the same
-        portrait replaces it only when read with a matching HP on several frames in a row (a
-        level-up or item); a one-frame misread keeps the known max and takes HP from the bar."""
-        m = q["max_hp"]
-        if m is not None and not 10 <= m <= MAX_PLAUSIBLE_HP:
-            m = None
-        st = self._max
-        if st and now - st["t"] < 1.5 and _same_portrait(st["identity"], q.get("identity")):
-            st["t"] = now
-            if m == st["value"]:
-                st["cand"], st["count"] = None, 0
-                return m
-            if m is not None and q["hp"] is not None:
-                st["count"] = st["count"] + 1 if st["cand"] == m else 1
-                st["cand"] = m
-                if st["count"] >= MAX_CONFIRM_FRAMES:
-                    st.update(value=m, cand=None, count=0)
-                    return m
-            q["hp"] = None          # this frame's HP text came with a misread max
-            return st["value"]
-        if m is None:
-            return None
-        self._targets += 1
-        self._max = {"identity": q.get("identity"), "value": m, "cand": None, "count": 0,
-                     "t": now, "n": self._targets}
-        return m
+    def _hold_last(self):
+        """New target or unreadable frame: nothing new is known yet. The last line stays, muted
+        and never lightning, and keeps its time so the overlay drops it within 250 ms; the
+        next real reading glides it to the new place. No number is borrowed for the new target."""
+        if self.result:
+            self.result = dict(self.result, pending=True)
+        self._kill_streak = 0
+        return None
 
     def _ocr_loop(self):
+        load_digits()
+        saved_at = time.monotonic()
         while True:
-            self._ocr_wake.wait()
+            self._ocr_wake.wait(timeout=5)
             self._ocr_wake.clear()
+            if time.monotonic() - saved_at > 30:
+                saved_at = time.monotonic()
+                try:
+                    save_digits()
+                except OSError:
+                    logging.exception("Could not save learned digits")
             latest, self._latest = self._latest, None
             if not latest:
                 continue
