@@ -1,37 +1,27 @@
-# Clicks keyboard bridge (nice!nano)
+# Clicks → Apple Watch bridge (nice!nano)
 
-Firmware for a nice!nano (nRF52840) that sits between the Clicks Power Keyboard and your
-devices. The keyboard pairs with the nano; the nano pairs with up to five devices plus an
-Apple Watch app and forwards every key.
+Firmware for a nice!nano (nRF52840) that lets the Clicks Power Keyboard type into your own
+Apple Watch app. watchOS does not accept Bluetooth keyboards, so the nano connects to the
+keyboard, turns its keys into text, and keeps that text for the watch app, which reads it
+over a private Bluetooth service.
 
-| Device slot | What the nano sends |
-|---|---|
-| Windows (default) | Every key unchanged. The nano reports the Clicks keyboard's Bluetooth ID and a `Power Keyboard Bridge` name, so 3£ handles it like the Clicks keyboard (Command/Ctrl, sticky keys, accent picker, Mac layout). Run the 3£ installer with `-RepairKeyboard` once after pairing. |
-| Apple (Mac, iPhone, iPad) | Command, Ctrl and Shift taps are sticky for one shared 7 s window (+3 s for a tap in its last 2 s); every sticky releases when the window ends. The six-dot key sends Cmd+Space (Spotlight). |
-| Watch (slot 9) | Keys become text kept in a buffer (480 characters) that the watch app reads and clears. |
+Windows and Mac use the Clicks keyboard directly through the 3£ app. Point the keyboard at the
+nano with the keyboard's own Power + number when you want to type on the watch.
 
-sym and the mic key are handled inside the keyboard and never sent over Bluetooth, so
-they work exactly as before (sym + key types the symbol).
-
-## Bridge commands
-
-Double-tap the six-dot key, then within 3 s press:
-
-- `1`–`5`: send keys to that device
-- `9`: send keys to the watch app
-- `0`: pair a new device on the current slot (60 s)
-- `W` / `M`: the current slot is Windows / Apple
-
-An empty slot takes the first device that pairs with it.
+- Shift gives uppercase; sym + key arrives as the keyboard sends it (sym + T types "(").
+- Enter is `\n`, Backspace is `\b`, Tab is `\t`.
+- The first watch that pairs is kept. To pair a different watch: double-tap the six-dot key,
+  then press 0 within 3 s.
+- The nano keeps up to 480 characters until the watch app clears them, so text typed while
+  the app is closed or the watch is locked is waiting when the app reads it.
 
 ## Watch app service
 
 - Service `3e0b0001-c11c-4b5e-9a3e-000000000000`
 - `3e0b0002-…` text: read = everything not cleared yet; notify = each new piece of text.
-  Enter is `\n`, Backspace is `\b`.
 - `3e0b0003-…` clear: write one byte after storing the text.
 
-Both need an encrypted (paired) connection.
+Both require an encrypted (paired) connection.
 
 ## Build and flash
 
