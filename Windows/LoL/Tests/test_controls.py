@@ -102,6 +102,30 @@ class ControlsTest(unittest.TestCase):
         self.drain()
         self.assertEqual(self.events, ["hold", "end"])
 
+    def hold_only(self):
+        bindings = {"WIN": (lambda: self.events.append("click"),
+                            lambda held: self.events.append("start"),
+                            lambda: self.events.append("end"), True)}
+        return HoldController(bindings, self.queue.append, lambda: self.enabled,
+                              clock=lambda: self.now)
+
+    def test_hold_only_with_click_starts_at_press(self):
+        c = self.hold_only()
+        c.press("WIN")
+        self.drain()
+        self.assertEqual(self.events, ["start"])
+        c.release("WIN")
+        import time
+        time.sleep(.05)                       # end runs on its own thread
+        self.assertEqual(self.events, ["start", "end"])
+
+    def test_hold_only_released_before_start_is_a_click(self):
+        c = self.hold_only()
+        c.press("WIN")
+        c.release("WIN")                      # worker had not run the start yet
+        self.drain()
+        self.assertEqual(self.events, ["click"])
+
     def test_disabled_champion_does_not_capture(self):
         self.enabled = False
         self.c.press("MB5")

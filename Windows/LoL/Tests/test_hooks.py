@@ -65,6 +65,42 @@ class HookTest(unittest.TestCase):
             self.assertFalse(lol.captured)
             lol.MACRO_KEYS[lol.VK_F13] = (None, lol.kite_start, None, True)
 
+    def test_win_is_the_camera_key_and_never_reaches_windows(self):
+        key = SimpleNamespace(flags=0, vkCode=lol.VK_LWIN)
+        with patch.object(lol, "camera_hold_start") as start:
+            lol.MACRO_KEYS[lol.VK_LWIN] = (lol.toggle_camera, start, lol.camera_hold_end, True)
+            lol.kb_filter(lol.WM_KEYDOWN, key)
+            lol.actions.get_nowait()()           # starts at press time: no hold wait
+            start.assert_called_once()
+            with patch.object(lol, "camera_hold_end"):
+                lol.kb_filter(lol.WM_KEYUP, key)
+            self.assertEqual(lol.kb_listener.suppress_event.call_count, 2)
+        lol.MACRO_KEYS[lol.VK_LWIN] = (lol.toggle_camera, lol.camera_hold_start, lol.camera_hold_end, True)
+
+    def test_n_reaches_league(self):
+        key = SimpleNamespace(flags=0, vkCode=0x4E)
+        lol.kb_filter(lol.WM_KEYDOWN, key)
+        lol.kb_filter(lol.WM_KEYUP, key)
+        lol.kb_listener.suppress_event.assert_not_called()
+
+    def test_camera_click_and_hold(self):
+        sent = []
+        with patch.object(lol, "tap", side_effect=lambda k: sent.append(("tap", k)) or True), \
+                patch.object(lol, "key_down", side_effect=lambda k: sent.append(("down", k)) or True), \
+                patch.object(lol, "key_up", side_effect=lambda k: sent.append(("up", k))), \
+                patch.object(lol.time, "sleep"):
+            for locked, held_for, end_locked in ((True, .05, False), (False, .05, True),
+                                                 (True, .5, True), (False, .5, False)):
+                with self.subTest(locked=locked, held_for=held_for):
+                    sent.clear()
+                    lol.camera_locked = locked
+                    lol.camera_hold_start(lambda: True)
+                    lol.cam["t0"] -= held_for
+                    lol.camera_hold_end()
+                    self.assertEqual(lol.camera_locked, end_locked)
+                    self.assertIn(("down", lol.PAN_KEY), sent)   # the drag starts at once
+                    self.assertIn(("up", lol.PAN_KEY), sent)
+
     def test_kite_key_is_a_normal_key_outside_league(self):
         self.active.return_value = False
         key = SimpleNamespace(flags=0, vkCode=lol.VK_PAUSE)
@@ -77,7 +113,6 @@ class HookTest(unittest.TestCase):
         with patch.object(lol, "_send") as send, patch.object(lol.user32, "SendInput") as mouse:
             lol.tap("f10")
             lol.right_click()
-            lol.mask_win()
             send.assert_not_called()
             mouse.assert_not_called()
 

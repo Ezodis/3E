@@ -304,6 +304,10 @@ def spear_count(texts):
 
 
 EPIC_MIN_HP = 2800   # unrecognised monster portrait this big: treat as epic (Rend does 50%)
+# No target Kalista can hit has more max HP than this. OCR that glues the "/" or a stray glyph
+# onto the number (3120 -> 73120) produces far bigger values, which threw the line to the left.
+MAX_PLAUSIBLE_HP = 30000
+MAX_CONFIRM_FRAMES = 3   # a new max HP on the same target must be read this many frames in a row
 
 
 def _same_portrait(a, b, bits=6):
@@ -806,16 +810,22 @@ class ExecuteWatcher:
             self._clear_result()
             return None
         now = time.monotonic()
+        q["max_hp"] = self._stable_max(q, now)
+        if not q["max_hp"]:
+            self._clear_result()
+            return None
         kind = q.get("monster_kind")
         same = (self._held and _same_portrait(self._held["identity"], q.get("identity"))
                 and self._held["max_hp"] == q["max_hp"] and now - self._held["t"] < 1.5)
         pending = False
         if q["armor"] is None:
-            # new target whose armor isn't read yet (~0.1 s): draw at once with the last armor
-            # seen (or none), grey and never lightning, until the real number is in
-            q["armor"], pending = (self._held["armor"] if self._held else 0), True
-            if same:
-                q["mr"] = self._held["mr"]
+            # Armor changed on the same target: keep the last value, muted, while it is read.
+            # A new target waits for its own armor (~0.1 s): guessing 0 drew the line far
+            # too far right and then jumped it back.
+            if not same:
+                self._clear_result()
+                return None
+            q["armor"], q["mr"], pending = self._held["armor"], self._held["mr"], True
         if q["stacks"] is None:
             if not same:
                 self._clear_result()
@@ -850,11 +860,41 @@ class ExecuteWatcher:
         # observe a new result before its coordinates have been attached.
         self.result = dict(res, bar=self.bar_on_screen(), pending=pending,
                            monster=kind[0] if kind else None, hp_estimated=est,
-                           observed_at=time.monotonic())
+                           target=self._max["n"], observed_at=time.monotonic())
         return None if pending else tgt
 
     _held = None
     _q_key = None
+    _max = None
+    _targets = 0
+
+    def _stable_max(self, q, now):
+        """The target's max HP, steady across OCR misreads. A different value on the same
+        portrait replaces it only when read with a matching HP on several frames in a row (a
+        level-up or item); a one-frame misread keeps the known max and takes HP from the bar."""
+        m = q["max_hp"]
+        if m is not None and not 10 <= m <= MAX_PLAUSIBLE_HP:
+            m = None
+        st = self._max
+        if st and now - st["t"] < 1.5 and _same_portrait(st["identity"], q.get("identity")):
+            st["t"] = now
+            if m == st["value"]:
+                st["cand"], st["count"] = None, 0
+                return m
+            if m is not None and q["hp"] is not None:
+                st["count"] = st["count"] + 1 if st["cand"] == m else 1
+                st["cand"] = m
+                if st["count"] >= MAX_CONFIRM_FRAMES:
+                    st.update(value=m, cand=None, count=0)
+                    return m
+            q["hp"] = None          # this frame's HP text came with a misread max
+            return st["value"]
+        if m is None:
+            return None
+        self._targets += 1
+        self._max = {"identity": q.get("identity"), "value": m, "cand": None, "count": 0,
+                     "t": now, "n": self._targets}
+        return m
 
     def _ocr_loop(self):
         while True:

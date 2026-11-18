@@ -4,20 +4,33 @@ Run through **3£ → LoL macros** (the `3£ LoL macros` scheduled task).
 Do not run another copy alongside it. Runtime files go in
 `%LOCALAPPDATA%\3EWindows\LoL`; the installed scripts stay read-only.
 
-The controls activate only for Kalista while the League game has focus. N toggles
-camera lock on tap and pans on hold; B taps J and holds to open the shop; Space
-taps Space and holds Stop; MB5 taps F10 and holds to kite. Scroll cycles the held
-number keys. Release, focus loss, or leaving Kalista cancels a hold permanently.
+The controls activate only for Kalista while the League game has focus. Win toggles
+camera lock on tap and pans on hold; the pan starts the instant Win goes down and a
+quick release counts as the tap. N reaches League untouched. B taps J (Recall) and
+holds to open the shop; Space taps Space and holds Stop; the kite button (F13/Pause)
+kites while held. Scroll cycles the held number keys. Release, focus loss, or leaving
+Kalista cancels a hold permanently.
 
-`lol_settings.py` migrates N bindings to J and MB5 bindings to F10, including
-modified chords. It backs up both League configuration files before writing,
-refuses to run while League or its client is open, and can be rerun without
-moving bindings again. League must restart to load changed bindings; an in-memory
-MB5 → Flash binding cannot be suppressed reliably by a Windows mouse hook.
+`lol_settings.py` moves Win bindings to N (including modified chords), makes M open
+both quick wheels (ping and emote), and removes binds nothing uses: J's item 6, item 6
+smart cast, R smart cast, item 1, role quest teleport and taunt (J is only Recall),
+Win's "my bad", MB5's mastery badge, the normal emote wheel, and smart-cast duplicates
+of keys that already quick cast (Tab, Space, Win summoner 2). MB5 stays on League.
+lol.py applies it by itself whenever League and its client are closed, backing up
+both configuration files before writing; applying it again changes nothing. League
+loads the new binds on its next start.
+
+The Clicks accent picker never opens over League or any full-screen window, so held
+keys in game stay game input.
 
 The Rend line marks **the HP where Rend kills**: `damage / max HP` along the bar,
 capped at 100%. It starts at the left edge and moves right as spears add up; the
 red fill shrinks toward it and Rend kills once the fill reaches the line.
+A target's max HP stays fixed across OCR misreads (a glued "/" turned 3120 into
+73120 and threw the line left): values above 30,000 are rejected, and a different
+max on the same portrait counts only after three consecutive matching reads. A new
+target waits for its own armor instead of borrowing 0. Within one target the line
+glides to its new position (~80 ms at 60 fps); a target switch or a kill snaps it.
 For example, 300 damage on a 1000 max HP target puts the line 30% across.
 Positions are never smoothed across target switches.
 

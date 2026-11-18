@@ -43,16 +43,27 @@ class HoldController:
                     self.enqueue(lambda k=key, p=press: self._start(k, p))
 
     def _start(self, key, press):
-        if self._held(key, press):
+        with self.lock:
+            if not self._held(key, press):
+                return
             press.started = True
-            start = self.bindings[key][1]
-            if start:
-                start(lambda: self._held(key, press))
+        start = self.bindings[key][1]
+        if start:
+            start(lambda: self._held(key, press))
 
     def release(self, key):
         with self.lock:
             press = self.down.pop(key, None)
             if press is None:
+                return
+            if len(self.bindings[key]) > 3 and self.bindings[key][3]:
+                # Hold-only key: its start ran at press time, so its end decides tap vs hold.
+                # Released before the worker even started it: that is a tap.
+                if press.started:
+                    self._finish(key, press)
+                elif self.bindings[key][0]:
+                    click, epoch = self.bindings[key][0], self.epoch
+                    self.enqueue(lambda: click() if epoch == self.epoch and self.enabled() else None)
                 return
             # Measure physical duration even if the worker has not serviced its timer yet.
             # In particular, a long MB5 press must never fall through to Flash.

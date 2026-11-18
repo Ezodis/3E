@@ -41,6 +41,12 @@ public sealed class AccentEngine {
   for(int i=0;i<numbers.Length;i++)result.Add(0x30+i,numbers[i].Split(' '));
   return result;
  }
+ // Games read held keys as actions (camera pan, stop, ...): the picker never opens over League or
+ // any full-screen window. The desktop itself is the size of the screen, so it is not a game.
+ public static bool GameWindow(string title,string className,bool fullScreen) {
+  if(title=="League of Legends (TM) Client" || className=="RiotWindowClass")return true;
+  return fullScreen && className!="Progman" && className!="WorkerW" && className!="Shell_TrayWnd";
+ }
  public void Cancel() { if(Active && Hide!=null)Hide();Active=false;Choices=null;candidate=0;held=false; }
  public void Tick(long now,IntPtr currentFocus,bool blocked) {
   if(!Enabled || currentFocus!=focus || blocked) { Cancel();return; }
@@ -166,7 +172,22 @@ static class Native {
  [DllImport("user32.dll",SetLastError=true)] public static extern uint SendInput(uint count,INPUT[] inputs,int size);
  [DllImport("user32.dll")] public static extern IntPtr SetWinEventHook(uint min,uint max,IntPtr module,WinEvent cb,uint pid,uint tid,uint flags);
  [DllImport("user32.dll")] public static extern bool UnhookWinEvent(IntPtr h);
- public static bool Blocked() { return GetAsyncKeyState(0x11)<0 || GetAsyncKeyState(0x12)<0 || GetAsyncKeyState(0x5B)<0 || GetAsyncKeyState(0x5C)<0; }
+ [StructLayout(LayoutKind.Sequential)] public struct MONITORINFO {public int cbSize;public RECT rcMonitor,rcWork;public uint dwFlags;}
+ [DllImport("user32.dll",CharSet=CharSet.Unicode)] public static extern int GetWindowText(IntPtr hwnd,System.Text.StringBuilder text,int max);
+ [DllImport("user32.dll",CharSet=CharSet.Unicode)] public static extern int GetClassName(IntPtr hwnd,System.Text.StringBuilder text,int max);
+ [DllImport("user32.dll")] public static extern IntPtr MonitorFromWindow(IntPtr hwnd,uint flags);
+ [DllImport("user32.dll")] public static extern bool GetMonitorInfo(IntPtr monitor,ref MONITORINFO info);
+ public static bool InGame(IntPtr hwnd) {
+  if(hwnd==IntPtr.Zero)return false;
+  var title=new System.Text.StringBuilder(256);GetWindowText(hwnd,title,256);
+  var cls=new System.Text.StringBuilder(256);GetClassName(hwnd,cls,256);
+  bool full=false;RECT r;
+  var info=new MONITORINFO {cbSize=Marshal.SizeOf(typeof(MONITORINFO))};
+  if(GetWindowRect(hwnd,out r) && GetMonitorInfo(MonitorFromWindow(hwnd,2),ref info))
+   full=r.Left<=info.rcMonitor.Left && r.Top<=info.rcMonitor.Top && r.Right>=info.rcMonitor.Right && r.Bottom>=info.rcMonitor.Bottom;
+  return AccentEngine.GameWindow(title.ToString(),cls.ToString(),full);
+ }
+ public static bool Blocked() { return GetAsyncKeyState(0x11)<0 || GetAsyncKeyState(0x12)<0 || GetAsyncKeyState(0x5B)<0 || GetAsyncKeyState(0x5C)<0 || InGame(GetForegroundWindow()); }
  public static INPUT Input(ushort vk,ushort scan,uint flags) {return new INPUT {type=1,u=new UNION {keyboard=new KI {vk=vk,scan=scan,flags=flags,extra=new UIntPtr(AccentEngine.OutputTag)}}};}
  public static void ReplaceLetter(string text,IntPtr target) {
   if(GetForegroundWindow()!=target || Blocked())return;

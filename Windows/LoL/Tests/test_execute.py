@@ -110,7 +110,7 @@ class ExecuteTest(unittest.TestCase):
         epic = self.observe(monster=True, monster_kind=("sru_baron", True),
                             hp=2695, max_hp=2870, fill=2695/2870, armor=42)
         self.assertAlmostEqual(epic["dmg"], normal["dmg"] / 2)
-        unknown = self.observe(monster=True, monster_kind=None)
+        unknown = self.observe(monster=True, monster_kind=None, identity=b"unknown monster")
         self.assertTrue(unknown["pending"])
         self.assertNotEqual(unknown["state"], "kill")
 
@@ -137,6 +137,26 @@ class ExecuteTest(unittest.TestCase):
         second = self.observe(identity=b"enemy1")
         self.assertEqual(second["bar"], (437, 291, 660, 321))
         self.assertEqual(first["bar"], (417, 261, 640, 291))
+
+    def test_misread_max_hp_never_moves_the_line(self):
+        first = self.observe(identity=b"dummy", hp=1959, max_hp=3120, fill=1959/3120)
+        for bad in (dict(hp=42298, max_hp=73120), dict(hp=None, max_hp=875270),
+                    dict(hp=290, max_hp=1120)):
+            with self.subTest(bad=bad):
+                result = self.observe(identity=b"dummy", fill=1959/3120, **bad)
+                self.assertEqual(result["max_hp"], 3120)
+                self.assertAlmostEqual(result["dmg"] / result["max_hp"], first["dmg"] / 3120)
+                self.assertEqual(result["target"], first["target"])
+
+    def test_real_max_hp_change_is_taken_after_three_frames(self):
+        self.observe(identity=b"dummy", hp=1000, max_hp=2000, fill=.5)
+        for _ in range(2):
+            self.assertEqual(self.observe(identity=b"dummy", hp=1100, max_hp=2200, fill=.5)["max_hp"], 2000)
+        self.assertEqual(self.observe(identity=b"dummy", hp=1100, max_hp=2200, fill=.5)["max_hp"], 2200)
+
+    def test_new_target_waits_for_its_armor(self):
+        self.observe(identity=b"enemy1", armor=200)
+        self.assertIsNone(self.observe(identity=b"enemy2", armor=None))
 
     def test_digit_learning_reads_new_combinations_without_ocr(self):
         one = np.array([[0,1,0], [1,1,0], [0,1,0], [0,1,0], [1,1,1]], dtype=bool)

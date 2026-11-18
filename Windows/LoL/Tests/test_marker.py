@@ -80,6 +80,17 @@ class MarkerTest(unittest.TestCase):
         self.assertIsNone(marker)
         canvas.create_line.assert_not_called()
 
+    def test_line_glides_within_a_target_and_snaps_otherwise(self):
+        res = dict(dmg=500, max_hp=1000, target=1, state=None)
+        shown = lol.eased_coverage((1, .1), res)
+        self.assertTrue(.1 < shown < .5)
+        for _ in range(30):
+            shown = lol.eased_coverage((1, shown), res)
+        self.assertEqual(shown, .5)
+        self.assertEqual(lol.eased_coverage((2, .1), res), .5)                    # new target
+        self.assertEqual(lol.eased_coverage((1, .1), dict(res, state="kill")), .5)  # kill
+        self.assertEqual(lol.eased_coverage(None, res), .5)
+
     def test_lightning_requires_fresh_confirmed_lethal_hit(self):
         res = dict(hp=100, dmg=100, stacks=1, state="kill", observed_at=10)
         self.assertTrue(lol.show_lethal_lightning(res, 10.1))

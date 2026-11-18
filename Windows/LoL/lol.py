@@ -2,14 +2,15 @@
 
 Features (only active while the League game window is focused):
   Macro keys never reach the game themselves: a quick click does one thing, holding another.
-  * N             -> click: lock / unlock the camera.
+  * Win           -> click: lock / unlock the camera.
                      hold while locked: unlock, drag the camera with the mouse, lock again on release.
-                     hold while unlocked: just drag (stays unlocked until you click N again).
+                     hold while unlocked: just drag (stays unlocked until you click Win again).
+                     The drag starts the instant Win goes down (no tap/hold wait); a quick
+                     release turns it into the click. The Start menu never opens in game.
                      The real lock state is read from the HUD camera button (crossed = locked).
-  * B             -> click: N's old League binds (recall, item 6, ...), now on RECALL_KEY.
-                     hold: open the shop.
+  * N             -> untouched: League's own binds (R, summoner 2, item 1), moved from Win.
+  * B             -> click: Recall (RECALL_KEY).   hold: open the shop.
   * Space         -> click: Space as usual (E, attack-move, item 3).   hold: Stop every 0.35 s.
-  * Win           -> Win as usual (R, item 1, ...); the Start menu never opens in game.
   * MB5           -> untouched: League's own MB5 binds (Flash, centre camera) as always.
   * Kite button   -> the mouse's macro-only side button, set in the mouse app to send F13
                      (or Pause). Hold (Kalista, in League): kite at once. Elsewhere, or with
@@ -23,7 +24,8 @@ Features (only active while the League game window is focused):
                      confirmed lethal reading. See lol_execute.py.
 
 Keybinds it relies on are set by lol_settings.py (stop = v, camera lock = y, pan = h,
-N's old binds = j, shop = b, attack-move = F9).
+recall = j, shop = b, attack-move = F9, Win's binds on n). They are applied by themselves
+whenever League and its client are closed.
 
 Setup:  pip install pynput rapidocr_onnxruntime mss
 Run:    3£ tray menu -> LoL macros (no separate launcher or tray icon).
@@ -52,7 +54,7 @@ CYCLE_KEYS = ["1", "2", "3", "4"]
 STOP_KEY = "v"            # must match evtPlayerStopPosition
 STOP_INTERVAL = 0.35
 HOLD_TIME = 0.18          # a macro key held longer than this is a hold, shorter is a click
-RECALL_KEY = "j"          # N's old League binds (recall, item 6, ...) live here now
+RECALL_KEY = "j"          # must match evtUseItem7 (Recall)
 SHOP_KEY = "b"            # must match evtOpenShop
 ATTACK_KEY = "f9"         # must match evtPlayerAttackMove (attack-move at the cursor)
 CAM_LOCK_KEY = "y"        # must match evtCameraLockToggle
@@ -140,14 +142,6 @@ def tap(k):
     return True
 
 
-def mask_win():
-    """Send an unassigned VK while Win is down so releasing Win won't open Start."""
-    if not macros_active():
-        return
-    _send(vk=0xE8)
-    _send(vk=0xE8, flags=KEYEVENTF_KEYUP)
-
-
 def game_focused():
     hwnd = user32.GetForegroundWindow()
     buf = ctypes.create_unicode_buffer(256)
@@ -160,7 +154,7 @@ def macros_active():
 
 
 # ---------------- state ----------------
-VK_LWIN, VK_N, VK_B, VK_SPACE, VK_Y = 0x5B, 0x4E, 0x42, 0x20, 0x59
+VK_LWIN, VK_B, VK_SPACE, VK_Y = 0x5B, 0x42, 0x20, 0x59
 WM_KEYDOWN, WM_KEYUP, WM_SYSKEYDOWN, WM_SYSKEYUP = 0x100, 0x101, 0x104, 0x105
 WM_MOUSEWHEEL = 0x020A
 WM_RBUTTONDOWN = 0x0204
@@ -218,7 +212,10 @@ def do_scroll(direction):
     key_down(held_num)
 
 
-# ---- camera (N) ----
+# ---- camera (Win) ----
+cam_lock = threading.Lock()      # a release never interleaves with a start still unlocking
+
+
 def toggle_camera():
     global camera_locked
     if tap(CAM_LOCK_KEY):
@@ -227,23 +224,33 @@ def toggle_camera():
 
 
 def camera_hold_start(held):
-    """Locked: unlock, drag while held, lock again on release. Unlocked: just drag."""
-    cam["relock"] = camera_locked
-    if camera_locked:
-        toggle_camera()
-        time.sleep(0.05)                     # let the game unlock before the pan key goes down
-    if held() and key_down(PAN_KEY):
-        cam["dragging"] = True
+    """Runs the instant Win goes down. Locked: unlock and drag. Unlocked: just drag.
+    camera_hold_end then decides: a quick release was a click, a longer one a hold."""
+    with cam_lock:
+        cam["t0"] = time.monotonic()
+        cam["relock"] = camera_locked
+        if camera_locked:
+            toggle_camera()
+            time.sleep(0.02)                 # let the game unlock before the pan key goes down
+        if held() and key_down(PAN_KEY):
+            cam["dragging"] = True
 
 
 def camera_hold_end():
-    if cam["dragging"]:
-        key_up(PAN_KEY)
-        cam["dragging"] = False
-    if cam["relock"]:
-        cam["relock"] = False
-        if not camera_locked and macros_active():
-            toggle_camera()
+    with cam_lock:
+        if cam["dragging"]:
+            key_up(PAN_KEY)
+            cam["dragging"] = False
+        click = time.monotonic() - cam.get("t0", 0) < HOLD_TIME
+        was_locked, cam["relock"] = cam["relock"], False
+        if not macros_active():
+            return
+        if click:
+            # A click toggles once: locked was already unlocked at press; unlocked locks now.
+            if not was_locked:
+                toggle_camera()
+        elif was_locked and not camera_locked:
+            toggle_camera()                  # hold while locked: lock again on release
 
 
 # ---- stop (Space) ----
@@ -316,7 +323,9 @@ def kite_start(held):
 # reaches the game (so its own League binds can't fire on top of the macro).
 #   key: (on click, on hold start, on hold end)
 MACRO_KEYS = {
-    VK_N: (toggle_camera, camera_hold_start, camera_hold_end),
+    # hold-only with a click: the drag starts at once, a quick release (or one before the
+    # worker started it) is the click
+    VK_LWIN: (toggle_camera, camera_hold_start, camera_hold_end, True),
     VK_B: (lambda: tap(RECALL_KEY), lambda held: tap(SHOP_KEY) if held() else None, None),
     VK_SPACE: (lambda: tap("space"), stop_start, None),
 }
@@ -400,6 +409,22 @@ def camera_watch():
             time.sleep(1)
 
 
+def settings_keeper():
+    """Applies lol_settings' binds whenever League and its client are closed (the client
+    rewrites its config files while it runs, so they can't be changed during a session)."""
+    import lol_settings
+    while True:
+        try:
+            if lol_settings.apply():
+                logging.warning("League keybinds updated: Win's binds on N, M opens both quick "
+                                "wheels, unused binds removed (%s)",
+                                "; ".join(lol_settings.REMOVED.values()))
+        except Exception:
+            logging.exception("Could not update League keybinds")
+            time.sleep(300)
+        time.sleep(20)
+
+
 def worker():
     while True:
         try:
@@ -470,8 +495,6 @@ def kb_filter(msg, data):
             cam["quiet_until"] = time.monotonic() + 0.25
         if held_num:
             actions.put(lambda: release_num(reset=True))  # any other key releases the number
-        if vk == VK_LWIN:
-            actions.put(mask_win)
     return True
 
 
@@ -536,10 +559,27 @@ KEY_COLOR = "#010101"  # painted pixels of this colour are fully transparent
 BOLT_COLORS = [(16, "#0b4f44"), (9, "#1fd1a0"), (3, "#eafff9")]  # glow -> core
 
 
-def draw_rend_marker(canvas, res, origin, dpi):
+def rend_coverage(res):
+    """Where the line belongs: the HP Rend kills at, as a fraction of the bar."""
+    return min(1, max(0, res["dmg"]) / res["max_hp"])
+
+
+MARKER_EASE = 0.45   # share of the remaining distance the line moves per frame (~80 ms total)
+
+
+def eased_coverage(prev, res):
+    """Glide the line within one target; jump on a new target, a kill, or no previous frame."""
+    target = rend_coverage(res)
+    if not prev or prev[0] != res.get("target") or res.get("state") == "kill":
+        return target
+    shown = prev[1] + (target - prev[1]) * MARKER_EASE
+    return target if abs(target - shown) < 0.002 else shown
+
+
+def draw_rend_marker(canvas, res, origin, dpi, coverage=None):
     """Draw the execute line at the HP where Rend kills (dmg / max HP along the bar).
 
-    Uses the latest result directly so a target switch or new spear moves it at once.
+    `coverage` (the eased position) defaults to the exact one for this result.
     Returns the rendered position for diagnostics; creates no windows or input hooks.
     """
     bar = res.get("bar")
@@ -549,7 +589,8 @@ def draw_rend_marker(canvas, res, origin, dpi):
     x0, y0, x1, y1 = bar[0] - ox, bar[1] - oy, bar[2] - ox, bar[3] - oy
     # The line sits at the HP Rend kills at: left edge with no damage, sliding right as
     # spears add up. The red fill shrinks toward it; Rend kills once the fill reaches it.
-    coverage = min(1, max(0, res["dmg"]) / res["max_hp"])
+    if coverage is None:
+        coverage = rend_coverage(res)
     x = x0 + coverage * (x1 - x0)
     kill = res["state"] == "kill"
     core = "#ffffff" if kill else "#eafff9"
@@ -618,7 +659,7 @@ def make_indicator():
     # the reader looks at. Side effect: screenshots won't show the line/lightning either.
     user32.SetWindowDisplayAffinity(ov_hwnd, 0x11)
     ov.withdraw()
-    ov_state = {"shown": False, "rect": None, "frame": 0, "marker": None}
+    ov_state = {"shown": False, "rect": None, "frame": 0, "marker": None, "eased": None}
     last_status = 0.0
 
     def place_overlay():
@@ -670,7 +711,7 @@ def make_indicator():
             c.itemconfig(label, text=f"E {res['dmg']:.0f} / {res['hp']}")
         else:
             c.itemconfig(label, text="")
-            ov_state["marker"] = None
+            ov_state["marker"] = ov_state["eased"] = None
         if res:
             w, h = place_overlay()
             if not ov_state["shown"]:
@@ -681,7 +722,10 @@ def make_indicator():
                 draw_lightning(w, h)  # clears the canvas itself
             else:
                 oc.delete("all")
-            ov_state["marker"] = draw_rend_marker(oc, res, ov_state["rect"][:2], dpi)
+            if res["max_hp"] > 0:
+                ov_state["eased"] = (res.get("target"), eased_coverage(ov_state["eased"], res))
+            ov_state["marker"] = draw_rend_marker(oc, res, ov_state["rect"][:2], dpi,
+                                                  ov_state["eased"][1] if ov_state["eased"] else None)
             user32.SetWindowPos(ov_hwnd, HWND_TOPMOST, 0, 0, 0, 0, SWP_KEEP)
         elif ov_state["shown"]:
             oc.delete("all")
@@ -694,7 +738,7 @@ def make_indicator():
         except Exception:
             logging.exception("Overlay frame failed")
         finally:
-            root.after(30, animate)
+            root.after(16, animate)   # ~60 fps so the line glides instead of stepping
 
     def tick():
         nonlocal last_status
@@ -744,6 +788,7 @@ if __name__ == "__main__":
     sys.setswitchinterval(0.002)   # the input hooks get the CPU quickly even while reading the screen
     threading.Thread(target=worker, daemon=True).start()
     threading.Thread(target=camera_watch, daemon=True).start()
+    threading.Thread(target=settings_keeper, daemon=True).start()
     kb_listener = keyboard.Listener(win32_event_filter=kb_filter)
     mouse_listener = mouse.Listener(win32_event_filter=mouse_filter)
     kb_listener.start()

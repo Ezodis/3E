@@ -30,5 +30,10 @@ public static class AccentTests {
   e=New();Key(e,49,true,0,true);e.Tick(650,window,false);Key(e,49,false,700);Key(e,50,true,800);Check(inserted=="€","Shift or Caps does not change symbol choices");
   e=New();Key(e,49,true,0,false,true);e.Tick(700,window,true);Check(!e.Active,"number shortcuts cannot open picker");
   e=New();Key(e,48,true,0,false,false,0);e.Tick(700,window,false);Check(!e.Active,"other keyboards do not open emoji menus");
+  Check(AccentEngine.GameWindow("League of Legends (TM) Client","RiotWindowClass",false),"League game window blocks the picker");
+  Check(AccentEngine.GameWindow("Some game","UnityWndClass",true),"full-screen windows block the picker");
+  Check(!AccentEngine.GameWindow("Document - Word","OpusApp",false),"normal windows keep the picker");
+  Check(!AccentEngine.GameWindow("","Progman",true),"the desktop keeps the picker");
+  e=New();Key(e,78,true,0,false,true);e.Tick(700,window,true);Check(!e.Active,"held N in a game opens no picker");
  }
 }
