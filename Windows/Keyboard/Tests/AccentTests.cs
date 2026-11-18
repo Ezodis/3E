@@ -35,5 +35,28 @@ public static class AccentTests {
   Check(!AccentEngine.GameWindow("Document - Word","OpusApp",false),"normal windows keep the picker");
   Check(!AccentEngine.GameWindow("","Progman",true),"the desktop keeps the picker");
   e=New();Key(e,78,true,0,false,true);e.Tick(700,window,true);Check(!e.Active,"held N in a game opens no picker");
+  StickyTests();
+ }
+ const int CMD=0xA3,SHIFT=0xA0,ALT=0xA5,N=0x4E,TAB=0x09,WIN=0x5B;
+ static System.Collections.Generic.List<int> released=new System.Collections.Generic.List<int>();
+ static StickyEngine Sticky() {released.Clear();return new StickyEngine {Release=delegate(int[] v){released.AddRange(v);}};}
+ static bool Tap(StickyEngine s,int vk,long at) {s.Key(vk,true,at-60);return s.Key(vk,false,at);} // released at `at`
+ static void StickyTests() {
+  var s=Sticky();Check(Tap(s,CMD,0),"tapped Command stays down (its key-up is held back)");
+  Check(s.Stickies.Count==1 && s.Deadline==7000,"first sticky opens a 7 second window");
+  Tap(s,ALT,1000);Tap(s,SHIFT,2000);Check(s.Deadline==7000,"more stickies early in the window do not extend it");
+  s.Key(N,true,3000);Check(released.Count==0,"stickies stay while N is down");
+  s.Key(N,false,3060);Check(released.Count==3 && s.Stickies.Count==0,"Cmd+Alt+Shift+N: all three release after N");
+  s=Sticky();Tap(s,CMD,0);Tap(s,SHIFT,5500);Check(s.Deadline==10000,"a sticky in the last 2 seconds adds 3 seconds");
+  Tap(s,ALT,9000);Check(s.Deadline==13000,"and again in the extended window's last 2 seconds");
+  s=Sticky();Tap(s,CMD,0);Tap(s,ALT,3000);s.Tick(6990);Check(released.Count==0,"stickies hold until the window ends");
+  s.Tick(7000);Check(released.Count==2 && s.Stickies.Count==0,"window end releases every sticky: nothing stays stuck");
+  s=Sticky();Tap(s,CMD,0);s.Key(TAB,true,500);s.Tick(8000);Check(released.Count==0,"a key still held keeps its stickies past the window");
+  s.Key(TAB,false,8100);Check(released.Count==1,"Cmd+Tab releases Command right after Tab");
+  s=Sticky();s.Key(CMD,true,0);s.Key(TAB,true,200);s.Key(TAB,false,260);Check(!s.Key(CMD,false,900) && s.Stickies.Count==0,"held Command is an ordinary modifier");
+  s=Sticky();Tap(s,CMD,0);s.Key(WIN,true,300);Check(released.Count==1,"Windows key (dictation) releases stickies first");
+  s=Sticky();Tap(s,SHIFT,0);s.Key(N,true,400);s.Key(N,false,460);s.Key(N,true,600);s.Key(N,false,660);Check(released.Count==1,"a sticky applies to one key only");
+  s=Sticky();Tap(s,CMD,0);Tap(s,CMD,300);Check(s.Stickies.Count==1 && s.Deadline==7000,"tapping a sticky again keeps one sticky and the same window");
+  s=Sticky();s.Key(CMD,true,0);s.Key(CMD,true,500);s.Key(CMD,true,530);Check(s.Key(CMD,false,600),"auto-repeat before release still counts as a tap");
  }
 }

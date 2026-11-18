@@ -1,7 +1,8 @@
 """Patch League keybinds in input.ini AND PersistedSettings.json (backs both up first).
 
-lol.py applies this by itself whenever League and its client are closed (the client rewrites
-both files while it runs). It can also be run by hand, with League closed:
+lol.py applies this by itself whenever no match is running, then keeps both files read-only:
+the League client otherwise replaces them with Riot's online copy each time it opens.
+It can also be run by hand outside a match:
     python lol_settings.py
 Applying it again changes nothing.
 """
@@ -117,10 +118,26 @@ def league_running():
     return any(f'"{p.lower()}"' in out for p in LEAGUE_PROCESSES)
 
 
+def game_running():
+    import subprocess
+    out = subprocess.check_output(["tasklist", "/FO", "CSV", "/NH"], text=True,
+                                  creationflags=subprocess.CREATE_NO_WINDOW).lower()
+    return '"league of legends.exe"' in out
+
+
+def set_read_only(path, on):
+    import stat
+    mode = path.stat().st_mode
+    path.chmod(mode & ~stat.S_IWRITE if on else mode | stat.S_IWRITE)
+
+
 def apply():
-    """Writes the binds if they differ (backing both files up first). Returns True if it wrote.
-    Never writes while League or its client runs."""
-    if league_running():
+    """Writes the binds if they differ (backing both files up first), then keeps both files
+    read-only. Returns True if it wrote. The League client replaces these files with the
+    settings Riot stores online every time it opens; read-only files keep these binds. (Binds
+    changed in League's own settings then don't save: the macros' binds always win.)
+    Never writes during a match; the client may be open."""
+    if game_running():
         return False
     ini_text = INI.read_text(encoding="utf-8")
     json_text = JSON.read_text(encoding="utf-8")
@@ -129,20 +146,24 @@ def apply():
     before = json.dumps(data, sort_keys=True)
     data = patch_json(data)
     json_changed = json.dumps(data, sort_keys=True) != before
-    if new_ini == ini_text and not json_changed:
-        return False
-    stamp = time.strftime("%Y%m%d-%H%M%S")
+    wrote = False
+    if new_ini != ini_text or json_changed:
+        stamp = time.strftime("%Y%m%d-%H%M%S")
+        for f in (INI, JSON):
+            shutil.copy2(f, f.with_name(f"{f.name}.bak-{stamp}"))
+            set_read_only(f, False)
+        INI.write_text(new_ini, encoding="utf-8")
+        if json_changed:
+            JSON.write_text(json.dumps(data, indent=4), encoding="utf-8")
+        wrote = True
     for f in (INI, JSON):
-        shutil.copy2(f, f.with_name(f"{f.name}.bak-{stamp}"))
-    INI.write_text(new_ini, encoding="utf-8")
-    if json_changed:
-        JSON.write_text(json.dumps(data, indent=4), encoding="utf-8")
-    return True
+        set_read_only(f, True)
+    return wrote
 
 
 def main():
-    if league_running():
-        raise SystemExit("Close League and its client before updating keybinds. No files changed.")
+    if game_running():
+        raise SystemExit("Finish the League match before updating keybinds. No files changed.")
     print("Patched (backups *.bak-<time> in the Config folder)." if apply() else "Already up to date.")
 
 

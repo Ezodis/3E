@@ -19,9 +19,12 @@ mastery badge, and the kite button (F13/Pause) kites while held. Scroll cycles t
 number keys. Release, focus loss, or leaving Kalista cancels a hold permanently.
 
 `lol_settings.py` writes exactly those binds: Win's and N's old binds move to M
-(including modified chords), and the hold keys V, C, F8 get their actions. lol.py applies it by itself whenever League and its client are closed, backing up
-both configuration files before writing; applying it again changes nothing. League
-loads the new binds on its next start.
+(including modified chords), and the hold keys V, C, F8 get their actions. The League
+client replaces both files with Riot's online copy of your settings each time it opens,
+so after writing, both files stay read-only (binds changed inside League then don't
+save; the macros' binds always win). lol.py applies it by itself whenever no match is running (the client may be open),
+backing up both configuration files before writing; applying it again changes nothing.
+A match loads the binds when it starts.
 
 The Clicks accent picker never opens over League or any full-screen window, so held
 keys in game stay game input.

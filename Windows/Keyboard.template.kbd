@@ -14,15 +14,15 @@
 (defalias
   ctrl-key {{CTRL_AS_ALT}}
   command-key (tap-dance-eager 350 (
-    (one-shot-release 5000 {{COMMAND_AS_CTRL}})
+    {{COMMAND_AS_CTRL}}
     (multi
       (release-key {{COMMAND_AS_CTRL}})
       (release-key lsft)
       (release-key rsft)
       lmet h)
   ))
-  shift-key (one-shot-release 5000 lsft)
-  right-shift-key (one-shot-release 5000 rsft)
+  shift-key lsft
+  right-shift-key rsft
   triangle-layer (layer-while-held power-special)
 )
 
@@ -35,9 +35,10 @@
 ;; Right Alt avoids the global left-Alt shortcut remaps and scan-code swap.
 ;; Command emits right Ctrl, unaffected by the old system left Alt/Ctrl swap.
 ;; Mac keyboard layout translates it to Command shortcuts while enabled.
-;; Tap Command or Shift for the next key, or hold for normal modifier behavior.
-;; Sequential Command/Shift taps combine and restart the five-second timeout.
-;; Double-tap Command releases pending Ctrl/Shift before Windows+H dictation.
+;; Modifiers go out plain. ClicksAccents.exe (StickyEngine) makes a tapped Command, Shift or
+;; Ctrl key sticky for the next key: one shared 7 s window, +3 s for a tap in its last 2 s,
+;; and every sticky releases when the window ends. Hold for normal modifier behavior.
+;; Double-tap Command releases pending stickies before Windows+H dictation.
 
 ;; The six-dot/triangle key reports Alt+K. Emit Windows for that sequence.
 ;; An ordinary K remains K; the red Clicks key remains Tab in either layer.

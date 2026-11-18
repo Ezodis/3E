@@ -88,6 +88,65 @@ public sealed class AccentEngine {
  }
 }
 
+// Sticky Command / Shift / Alt for the Clicks keyboard. Kanata sends plain modifiers; a modifier
+// tapped on its own (down then up, nothing between) stays down as a sticky. All stickies share one
+// window: the first starts 7 s; one tapped in the last 2 s adds 3 s; nothing else extends it.
+// The next ordinary key uses every sticky, then they all release. When the window ends they
+// all release too, so a modifier can never stay stuck (Cmd+Tab always works afterwards).
+public sealed class StickyEngine {
+ public const int WindowMs=7000, LateMs=2000, ExtendMs=3000;
+ public static readonly int[] Modifiers={0xA3,0xA0,0xA1,0xA5}; // right Ctrl (Command), Shifts, right Alt (Ctrl key)
+ public Action<int[]> Release;           // inject key-ups for these modifiers (after the current event)
+ readonly List<int> stickies=new List<int>();
+ readonly HashSet<int> modsDown=new HashSet<int>(), keysDown=new HashSet<int>();
+ int tapCandidate;                       // modifier pressed with no other key since
+ bool used;                              // an ordinary key went down while stickies were on
+ long deadline;
+ public IList<int> Stickies { get {return stickies.AsReadOnly();} }
+ public long Deadline { get {return deadline;} }
+ static bool IsModifier(int vk) {return Array.IndexOf(Modifiers,vk)>=0;}
+ // Returns true when this event must be swallowed (a tap's key-up that keeps the modifier down).
+ public bool Key(int vk,bool down,long now) {
+  if(IsModifier(vk)) {
+   if(down) {
+    if(modsDown.Add(vk) && keysDown.Count==0)tapCandidate=vk; // auto-repeat keeps the first press
+    return false;
+   }
+   modsDown.Remove(vk);
+   if(tapCandidate!=vk) {
+    if(stickies.Contains(vk))return true; // held again over a sticky: it stays down until release
+    return false;                          // held with other keys: an ordinary modifier release
+   }
+   tapCandidate=0;
+   if(!stickies.Contains(vk)) {
+    if(stickies.Count==0)deadline=now+WindowMs;
+    else if(deadline-now<LateMs)deadline+=ExtendMs;
+    stickies.Add(vk);
+   }
+   return true;
+  }
+  if(down) {
+   tapCandidate=0;
+   if(vk==0x5B || vk==0x5C) { ReleaseAll();return false; } // Windows (dictation): never Ctrl/Shift+Win
+   keysDown.Add(vk);
+   if(stickies.Count>0)used=true;
+   return false;
+  }
+  keysDown.Remove(vk);
+  if(used && keysDown.Count==0)ReleaseAll();
+  return false;
+ }
+ public void Tick(long now) {
+  if(stickies.Count>0 && now>=deadline && keysDown.Count==0)ReleaseAll();
+ }
+ public void ReleaseAll() {
+  used=false;
+  if(stickies.Count==0)return;
+  int[] up=stickies.ToArray();stickies.Clear();
+  if(Release!=null)Release(up);
+ }
+}
+
 public static class AccentPlacement {
  public static Rectangle Place(Size size,Rectangle work,Rectangle target,Point? caret) {
   Rectangle anchor=Rectangle.Intersect(work,target);
@@ -189,6 +248,15 @@ static class Native {
  }
  public static bool Blocked() { return GetAsyncKeyState(0x11)<0 || GetAsyncKeyState(0x12)<0 || GetAsyncKeyState(0x5B)<0 || GetAsyncKeyState(0x5C)<0 || InGame(GetForegroundWindow()); }
  public static INPUT Input(ushort vk,ushort scan,uint flags) {return new INPUT {type=1,u=new UNION {keyboard=new KI {vk=vk,scan=scan,flags=flags,extra=new UIntPtr(AccentEngine.OutputTag)}}};}
+ [DllImport("user32.dll")] public static extern uint MapVirtualKey(uint code,uint type);
+ public static void KeyUps(int[] vks) {
+  var inputs=new List<INPUT>();
+  foreach(int vk in vks) {
+   uint extended=vk==0xA3 || vk==0xA5 ? 1u : 0u; // right Ctrl and right Alt are extended keys
+   inputs.Add(Input((ushort)vk,(ushort)MapVirtualKey((uint)vk,0),2|extended));
+  }
+  var a=inputs.ToArray();SendInput((uint)a.Length,a,Marshal.SizeOf(typeof(INPUT)));
+ }
  public static void ReplaceLetter(string text,IntPtr target) {
   if(GetForegroundWindow()!=target || Blocked())return;
   var inputs=new List<INPUT>();inputs.Add(Input(8,0,0));inputs.Add(Input(8,0,2));
@@ -198,7 +266,7 @@ static class Native {
 }
 
 sealed class AccentContext : ApplicationContext {
- readonly AccentEngine engine=new AccentEngine();readonly AccentPopup popup=new AccentPopup();readonly Control dispatcher=new Control();
+ readonly AccentEngine engine=new AccentEngine();readonly StickyEngine sticky=new StickyEngine();readonly AccentPopup popup=new AccentPopup();readonly Control dispatcher=new Control();
  readonly Stopwatch clock=Stopwatch.StartNew();readonly System.Windows.Forms.Timer timer=new System.Windows.Forms.Timer();
  readonly NotifyIcon tray=new NotifyIcon();readonly Native.Hook keyCb,mouseCb;readonly Native.WinEvent focusCb;
  IntPtr keyHook,mouseHook,focusHook;
@@ -208,12 +276,14 @@ sealed class AccentContext : ApplicationContext {
   engine.Show=delegate(string s,string[] c,IntPtr h) { dispatcher.BeginInvoke((Action)delegate {if(engine.Active)popup.Display(s,c,h);}); };
   engine.Hide=delegate {dispatcher.BeginInvoke((Action)delegate {popup.HidePicker();});};
   engine.Insert=delegate(string s,IntPtr h) {dispatcher.BeginInvoke((Action)delegate {Native.ReplaceLetter(s,h);});};
+  // Key-ups go out after the hook returns, so the ordinary key's own release comes first.
+  sticky.Release=delegate(int[] vks) {dispatcher.BeginInvoke((Action)delegate {Native.KeyUps(vks);});};
   keyCb=OnKey;mouseCb=OnMouse;focusCb=delegate {engine.Cancel();};
   keyHook=Native.SetWindowsHookEx(13,keyCb,Native.GetModuleHandle(null),0);
   mouseHook=Native.SetWindowsHookEx(14,mouseCb,Native.GetModuleHandle(null),0);
   focusHook=Native.SetWinEventHook(3,3,IntPtr.Zero,focusCb,0,0,0);
   if(keyHook==IntPtr.Zero)throw new System.ComponentModel.Win32Exception();
-  timer.Interval=30;timer.Tick+=delegate {engine.Tick(clock.ElapsedMilliseconds,Native.GetForegroundWindow(),Native.Blocked());};timer.Start();
+  timer.Interval=30;timer.Tick+=delegate {sticky.Tick(clock.ElapsedMilliseconds);engine.Tick(clock.ElapsedMilliseconds,Native.GetForegroundWindow(),Native.Blocked());};timer.Start();
   var menu=new ContextMenuStrip();var pause=new ToolStripMenuItem("Pause accent picker") {CheckOnClick=true};
   pause.CheckedChanged+=delegate {engine.Enabled=!pause.Checked;engine.Cancel();};menu.Items.Add(pause);
   menu.Items.Add("Exit accent picker",null,delegate {ExitThread();});
@@ -234,8 +304,9 @@ sealed class AccentContext : ApplicationContext {
    Native.KEY key=(Native.KEY)Marshal.PtrToStructure(lp,typeof(Native.KEY));
    bool down=wp.ToInt64()==0x100 || wp.ToInt64()==0x104;
    bool capital=(Native.GetAsyncKeyState(0x10)<0)^((Native.GetKeyState(0x14)&1)!=0);
+   if(key.extra.ToUInt64()==AccentEngine.ClicksTag && sticky.Key((int)key.vk,down,clock.ElapsedMilliseconds))return new IntPtr(1);
    if(engine.Key((int)key.vk,down,key.extra.ToUInt64(),clock.ElapsedMilliseconds,Native.GetForegroundWindow(),Native.Blocked(),capital))return new IntPtr(1);
-  }} catch {engine.Cancel();} // fail open: a UI error must never disable ordinary typing
+  }} catch {engine.Cancel();sticky.ReleaseAll();} // fail open: a UI error must never disable ordinary typing
   return Native.CallNextHookEx(keyHook,code,wp,lp);
  }
  IntPtr OnMouse(int code,IntPtr wp,IntPtr lp) {
