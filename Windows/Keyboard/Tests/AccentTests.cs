@@ -5,7 +5,7 @@ public static class AccentTests {
  static AccentEngine New() { shown=hidden=0;inserted=null;return new AccentEngine { Show=delegate{shown++;},Hide=delegate{hidden++;},Insert=delegate(string s,IntPtr p){inserted=s;} }; }
  static void Check(bool value,string message) {if(!value)throw new Exception(message);Console.WriteLine("PASS "+message);}
  static bool Key(AccentEngine e,int vk,bool down,int ms,bool upper=false,bool blocked=false,ulong tag=AccentEngine.ClicksTag) { return e.Key(vk,down,tag,ms,window,blocked,upper); }
- public static void Main() {
+ public static void Main(string[] args) {
   Check((AccentEngine.OutputTag&1)==0 && (AccentEngine.ClicksTag&1)==0,"tags never look like PowerToys Keyboard Manager's own output (bit 0)");
   var e=New();Check(!Key(e,65,true,0),"normal letter is immediate");Key(e,65,false,80);e.Tick(700,window,false);Check(shown==0,"quick tap has no picker");
   e=New();Key(e,65,true,0);Check(Key(e,65,true,300),"typematic is suppressed only for an eligible Clicks letter");e.Tick(650,window,false);Check(shown==1 && e.Active,"holding opens choices");Key(e,65,false,700);Check(e.Active,"release leaves picker available for one-handed choice");Check(Key(e,49,true,800) && inserted=="á","number 1 chooses acute a");Check(Key(e,49,false,850),"selection key-up is consumed");Check(!Key(e,49,true,900),"next number types normally");
@@ -37,6 +37,48 @@ public static class AccentTests {
   Check(!AccentEngine.GameWindow("","Progman",true),"the desktop keeps the picker");
   e=New();Key(e,78,true,0,false,true);e.Tick(700,window,true);Check(!e.Active,"held N in a game opens no picker");
   StickyTests();
+  TypeFixTests(args.Length>0 ? args[0] : null);
+ }
+ static void TypeFixTests(string promptFile) {
+  var b=new TypingBuffer();
+  foreach(char c in "hola mundo")b.Key(c==' ' ? 0x20 : char.ToUpperInvariant(c),c.ToString(),false);
+  Check(b.Paragraph()=="hola mundo","typed letters are remembered");
+  b.Key(0x08,"",false);Check(b.Text=="hola mund","backspace removes one character");
+  b.Key(0x0D,"",false);b.Key(0x41,"a",false);Check(b.Paragraph()=="a" && b.Text=="hola mund\na","Enter starts a new paragraph");
+  b.Key(0x25,"",false);Check(b.Text=="","an arrow key forgets the text (the caret moved)");
+  b.Key(0x41,"a",false);b.Key(0x43,"c",true);Check(b.Text=="","a shortcut forgets the text");
+  b.Key(0x41,"e",false);b.ReplaceLast("é");Check(b.Text=="é","an accent pick replaces the last letter");
+  b.Set("uno\ndos tres");b.ReplaceParagraph("Dos tres.");Check(b.Text=="uno\nDos tres.","a pick replaces only the current paragraph");
+  Check(TypingBuffer.Backspaces("a😀b")==3,"emoji count as one backspace");
+  Check(TypingBuffer.WithTrailingSpace("hola mundo  ","Hola, mundo.")=="Hola, mundo.  ","the reading keeps the trailing spaces");
+
+  int tabs=0;var r=new RedKeyTaps {FlushTab=delegate{tabs++;}};
+  Check(r.Key(true,0)==RedKeyTaps.Act.Swallow && r.Key(false,80)==RedKeyTaps.Act.Swallow,"red key tap waits");
+  r.Tick(200);Check(tabs==0,"no Tab before the double-tap window ends");
+  r.Tick(400);Check(tabs==1,"a single red tap sends Tab after 300 ms");
+  r.Key(true,1000);r.Key(false,1080);Check(r.Key(true,1200)==RedKeyTaps.Act.Trigger && r.Key(false,1260)==RedKeyTaps.Act.Swallow && tabs==1,"double-tap opens TypeFix and types no Tab");
+  r.Key(true,2000);Check(r.Key(true,2400)==RedKeyTaps.Act.Pass && tabs==2,"holding the red key repeats Tab");
+  r.Key(false,2500);
+
+  var o=new OptionStream();
+  Check(!o.Add("{\"options\": [\"Hola, ¿qué tal?") && o.Options.Count==0,"a reading still being written is not shown");
+  Check(o.Add("\", \"Ho") && o.Options.Count==1 && o.Options[0]=="Hola, ¿qué tal?","a finished reading appears at once");
+  o.Add("la que tal\", \"say \\\"hi\\\"\\n\"]}");Check(o.Options.Count==3 && o.Options[2]=="say \"hi\"","escaped quotes and new lines decode");
+  Check(JsonText.Content("{\"choices\":[{\"delta\":{\"content\":\"a\\u00e9\"}}]}")=="aé","streamed content decodes");
+  Check(JsonText.Quote("a\"b\n")=="\"a\\\"b\\n\"","request text is escaped");
+  string body=TypeFixPrompt.RequestBody("tyhe",new System.Collections.Generic.List<string>{"tyhe: the"});
+  Check(body.Contains("\"stream\":true") && body.Contains("Keyboard hints") && body.Contains("\"enable_thinking\":false"),"request streams JSON readings with hints");
+
+  var h=new KeyboardHints();
+  foreach(string w in new[]{"typing","the","with","being","impossible","read","want","going","tipping","quiero","merci"})h.Add(w,1000);
+  Check(h.Candidates("tyhikoloiunmg",1)[0]=="typing" || h.Candidates("tyhikoloiunmg",3).Contains("typing"),"neighbour-key mashing points to typing");
+  Check(h.Candidates("wjth",1)[0]=="with","a neighbour substitution points to with");
+  Check(h.Candidates("ikmpossib",1)[0]=="impossible","missing letters point to impossible");
+  Check(h.Known("Quiero") && !h.Known("qwiero"),"known words need no hint");
+  Check(KeyboardHints.Fold("Réunion")=="reunion","accents are folded for matching");
+  var lines=h.Hints("the wjth quiero");Check(lines.Count==1 && lines[0].StartsWith("wjth: with"),"hints only for unknown chunks");
+  if(promptFile!=null)
+   Check(System.IO.File.ReadAllText(promptFile).Replace("\r\n","\n")==TypeFixPrompt.System.Replace("\r\n","\n"),"Windows uses the shared TypeFix prompt");
  }
  const int CMD=0xA3,SHIFT=0xA0,ALT=0xA5,N=0x4E,TAB=0x09,WIN=0x5B;
  static System.Collections.Generic.List<int> released=new System.Collections.Generic.List<int>();

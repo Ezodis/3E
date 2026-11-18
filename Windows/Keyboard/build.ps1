@@ -59,9 +59,9 @@ $sticky = Join-Path $testOutput 'sticky'
 New-Item -ItemType Directory -Path $routing,$sticky -Force | Out-Null
 $accentTests = Join-Path $testOutput 'AccentTests.exe'
 Compile-CSharp $accentTests 'AccentTests' @((Join-Path $PSScriptRoot 'ClicksAccents.cs'),(Join-Path $tests 'AccentTests.cs')) 'exe'
-$results = @(& $accentTests)
+$results = @(& $accentTests (Join-Path $repository 'Shared\TypeFix\prompt.txt'))
 if ($LASTEXITCODE -ne 0) { throw ($results -join [Environment]::NewLine) }
-Write-Host "PASS: $($results.Count) accent, number, Unicode, and isolation checks."
+Write-Host "PASS: $($results.Count) accent, number, Unicode, sticky, TypeFix and isolation checks."
 Compile-Native (Join-Path $routing 'interception_upstream.dll') (Join-Path $tests 'router-test-upstream.c') -Dll
 Compile-Native (Join-Path $routing 'router-test.exe') (Join-Path $tests 'router-test.c')
 Copy-Item -LiteralPath (Join-Path $output 'interception.dll') -Destination $routing -Force

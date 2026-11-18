@@ -1,3 +1,13 @@
+TypeFix: offline AI correction for the Clicks keyboard.
+
+- Double-tap the red Clicks key: what you just typed in that paragraph is fixed by an AI that runs on this PC (Gemma 4, no internet). It understands Spanish (Mexican, Spain, Colombian), French and English mixed in one sentence, and never translates. Up to three readings appear as they are written; press 1–3 to replace your paragraph, Esc to cancel.
+- Keyboard-aware hints help with heavy mashing: for each garbled chunk, the words it most likely came from given which keys sit next to each other, and stray spaces.
+- A single tap of the red key is still Tab (sent 0.3 s later, so a double-tap can be told apart). With Command or another sticky key down, it is Tab at once.
+- Typed text is kept in memory only, never saved, and is forgotten when you click, move the cursor, use a shortcut or switch windows.
+- Setup (per user, no admin, about 16 GB): run `Windows\TypeFix\Setup-TypeFix.ps1`. Until then the red key stays plain Tab.
+
+Previous release:
+
 - Kalista: Win is the camera key (tap = lock/unlock, hold = drag). The camera drag starts the instant Win goes down instead of after a hold delay.
 - Kalista: every macro key's tap is the key itself and its hold sends a separate key. Win tap = Win (camera lock; Start never opens), hold = drag. B tap = Recall, role quest teleport, item 1, item 6 smart cast and "my bad"; hold = shop (V). M tap = R, R smart cast, summoner 2, item 1, item 6 and taunt; hold = R alone (F8). Space hold = Stop (C). N opens both quick wheels; MB5 keeps the mastery badge. Binds apply by themselves outside a match and stay: the config files are kept read-only, because the League client otherwise restores Riot's online copy every time it opens.
 - Kalista: the Rend reader now reads the real HP every time instead of filtering bad reads. It finds the "/" by shape, removes the current-HP tick and bar edges from the digits, and checks the text against the bar's current-HP tick rather than the fading lost-HP trail. Learned digits are kept between games so new targets read at once, and the line glides on every change, including target switches.
