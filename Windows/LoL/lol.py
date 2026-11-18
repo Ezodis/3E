@@ -416,10 +416,7 @@ def settings_keeper():
     while True:
         try:
             if lol_settings.apply():
-                logging.warning("League keybinds updated: Win's binds plus item 6, R smart cast "
-                                "and taunt on N, Recall and my bad on J (B tap), mastery on MB5, "
-                                "M opens both quick wheels, unused binds removed (%s)",
-                                "; ".join(lol_settings.REMOVED.values()))
+                logging.warning("League keybinds updated: %s", lol_settings.SUMMARY)
         except Exception:
             logging.exception("Could not update League keybinds")
             time.sleep(300)

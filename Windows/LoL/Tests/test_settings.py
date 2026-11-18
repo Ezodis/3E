@@ -11,25 +11,23 @@ class SettingsTest(unittest.TestCase):
     def test_win_binds_move_to_n_in_chords(self):
         self.assertEqual(s.convert("evtCastSpell4", "[L Win]"), "[n]")
         self.assertEqual(s.convert("evtCastAvatarSpell2", "[L Win],[Alt][L Win]"), "[n],[Alt][n]")
-        self.assertEqual(s.convert("evtUseItem1", "[j],[L Win]"), "[n]")
+        self.assertEqual(s.convert("evtUseItem1", "[j],[L Win]"), "[j],[n]")
 
-    def test_mb5_stays_on_league_with_the_mastery_badge(self):
+    def test_mb5_stays_on_league(self):
         self.assertEqual(s.convert("evtCastAvatarSpell1", "[Button 5]"), "[Button 5]")
         self.assertEqual(s.convert("evtCameraSnap", "[Button 5]"), "[Button 5]")
+
+    def test_b_and_n_keep_everything_they_did_at_once(self):
+        b = {"evtUseItem7", "evtCastRoleBound", "evtUseItem1", "evtSmartCastItem6",
+             "evtReciprocityMyBadTrigger"}
+        n = {"evtSmartCastSpell4", "evtUseItem1", "evtUseItem6", "evtEmoteTaunt"}
+        for name in b:
+            self.assertIn("[j]", s.convert(name, ""), name)
+        for name in n | {"evtCastSpell4", "evtCastAvatarSpell2", "evtSmartCastAvatarSpell2"}:
+            self.assertIn("[n]", s.convert(name, "[L Win]"), name)
         self.assertEqual(s.convert("evtChampMasteryDisplay", ""), "[Button 5]")
-
-    def test_n_gets_win_binds_item6_r_smart_cast_and_taunt(self):
-        for name in ("evtUseItem1", "evtUseItem6", "evtEmoteTaunt"):
-            self.assertEqual(s.convert(name, "[j]"), "[n]", name)
-        self.assertEqual(s.convert("evtSmartCastSpell4", "[j],[o]"), "[n],[o]")
-
-    def test_b_tap_recalls_and_says_my_bad(self):
-        self.assertEqual(s.convert("evtUseItem7", "[j]"), "[j]")
-        self.assertEqual(s.convert("evtReciprocityMyBadTrigger", "[L Win]"), "[j]")
-
-    def test_unused_j_binds_are_removed(self):
-        for name in ("evtSmartCastItem6", "evtCastRoleBound"):
-            self.assertEqual(s.convert(name, "[j]"), "", name)
+        self.assertEqual(s.convert("evtSmartCastSpell1", ""), "[Tab]")
+        self.assertEqual(s.convert("evtSmartCastSpell3", ""), "[space]")
 
     def test_m_opens_both_quick_wheels(self):
         self.assertIn("[m]", s.convert("evtRadialEmoteInstantOpen", "[Cmd][Button 1],[Cmd][Button 2]"))
@@ -37,12 +35,13 @@ class SettingsTest(unittest.TestCase):
         self.assertEqual(s.convert("evtRadialEmoteOpen", "[m]"), "")
 
     def test_ini_idempotent_and_wasd_untouched(self):
-        before = ("[GameEvents]\nevtCastSpell4=[L Win]\nevtCastRoleBound=[j]\nevtRadialEmoteOpen=[m]\n"
+        before = ("[GameEvents]\nevtCastSpell4=[L Win]\nevtUseItem6=[j]\nevtRadialEmoteOpen=[m]\n"
                   "[WASD]\nevtCastSpell4=[L Win]\n")
         after = s.patch_ini(before)
         self.assertEqual(s.patch_ini(after), after)
         self.assertIn("evtCastSpell4=[n]", after)
-        self.assertIn("evtCastRoleBound=\n", after)
+        self.assertIn("evtUseItem6=[n]\n", after)
+        self.assertIn("evtRadialEmoteOpen=\n", after)
         self.assertIn("[WASD]\nevtCastSpell4=[L Win]", after)
         self.assertIn("evtRadialEmoteInstantOpen=[m],[Cmd][Button 2]", after)
 
@@ -55,8 +54,8 @@ class SettingsTest(unittest.TestCase):
         self.assertEqual(after["files"][0]["sections"][1], before["files"][0]["sections"][1])
         game = {st["name"]: st["value"] for st in after["files"][0]["sections"][0]["settings"]}
         self.assertEqual(game["evtCastSpell4"], "[n]")
-        self.assertNotIn("evtCastRoleBound", game)   # unbound keys are not added
-        self.assertEqual(game["evtEmoteTaunt"], "[n]")
+        self.assertEqual(game["evtEmoteTaunt"], "[n]")          # missing binds are added
+        self.assertNotIn("evtRadialEmoteOpen", game)            # unbound keys are not added
 
 
 if __name__ == "__main__":
