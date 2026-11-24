@@ -30,6 +30,7 @@ public sealed class WindowsHub : IDisposable {
     private readonly CarViewWindows carView=new();
     private readonly MacKeyboardLayout macKeyboard = MacKeyboardLayout.Create();
     private HubSettings settings;
+    private readonly HubModules modules;
     private bool busy, disposed, keyboardRefreshRequested;
     private int lastTheme = -1;
     private DateTime nextRecovery = DateTime.MinValue;
@@ -71,7 +72,7 @@ public sealed class WindowsHub : IDisposable {
         public string LolScript { get; set; }
         // Mouse: gaming-mouse configuration (PC205 first). Off hides nothing but disables the settings.
         public bool Mouse { get; set; } = true;
-        // Modules removed with the gear's "Uninstall"; "Install modules…" brings them back.
+        // The Modules submenu manages installation independently of on/off state.
         public System.Collections.Generic.List<string> Uninstalled { get; set; } = new();
     }
 
@@ -79,6 +80,8 @@ public sealed class WindowsHub : IDisposable {
         carView.Changed+=RefreshMenu;
         Directory.CreateDirectory(data);
         settings = LoadSettings();
+        modules = new HubModules(settings.Uninstalled ??= new());
+        ApplyRemovedModuleSettings();
         RefreshMenu();
         timer.Tick += (_, _) => Tick();
         SystemEvents.SessionSwitch += OnSessionSwitch;
@@ -127,7 +130,7 @@ public sealed class WindowsHub : IDisposable {
             // Recover a lease left by an interrupted update before honoring OFF.
             if (!settings.MacKeyboard) await macKeyboard.DisableAsync();
             ConfigureHiddenIcons(); await EnsureComponentsAsync(); ApplyTheme(); KeepPhoneBar(); WriteDiagnostics();
-            if (settings.LolMacros) StartLol();
+            if (modules.IsInstalled(HubModules.Kalista) && settings.LolMacros) StartLol();
         }
         catch (Exception ex) { Log(ex); }
         if ((DateTime.UtcNow - settings.LastUpdateCheckUtc).TotalMinutes >= UpdateCheckMinutes) await CheckUpdatesAsync(false);
@@ -188,7 +191,7 @@ public sealed class WindowsHub : IDisposable {
     }
 
     private void StartLol() {
-        if (!File.Exists(LolScript) || LolRunning()) return;
+        if (!modules.IsInstalled(HubModules.Kalista) || !File.Exists(LolScript) || LolRunning()) return;
         try { File.Delete(LolFile("lol.stop")); } catch { }
         using var service = new Microsoft.Win32.TaskScheduler.TaskService();
         var definition = service.NewTask();
@@ -234,24 +237,24 @@ public sealed class WindowsHub : IDisposable {
     }
 
     private async Task EnsureComponentsAsync() {
-        if (disposed) return;
+        if (disposed || modules.Busy) return;
         UpdateSsmsTheme();
-        if (settings.PowerToys) {
+        if (modules.IsInstalled(HubModules.PowerToys) && settings.PowerToys) {
             if (!IsRunning("PowerToys")) Start(PowerToysPath);
         }
         if (disposed) return;
-        if (settings.MacKeyboard && !keyboardChanging) {
+        if (modules.IsInstalled(HubModules.Mac) && settings.MacKeyboard && !keyboardChanging) {
             bool wasActive = macKeyboard.Active;
             try { await macKeyboard.EnsureAsync(); if (!wasActive) Note("Mac keyboard layout was not active; re-applied"); } catch (Exception ex) { Log(ex); }
         }
         if (disposed) return;
-        if (settings.Keyboard && File.Exists(Path.Combine(root, "Keyboard", "3EWindows.kbd")) && !IsRunning("3EWindows.Keyboard"))
+        if (modules.IsInstalled(HubModules.Clicks) && settings.Keyboard && File.Exists(Path.Combine(root, "Keyboard", "3EWindows.kbd")) && !IsRunning("3EWindows.Keyboard"))
             Start(KeyboardPath, "--cfg \"" + Path.Combine(root, "Keyboard", "3EWindows.kbd") + "\"");
-        if (settings.Wallpaper && !IsRunning("WinDynamicDesktop")) Start(WallpaperPath);
+        if (modules.IsInstalled(HubModules.Wallpaper) && settings.Wallpaper && !IsRunning("WinDynamicDesktop")) Start(WallpaperPath);
     }
 
     private async void Tick() {
-        if (busy || disposed) return;
+        if (busy || disposed || modules.Busy) return;
         busy = true;
         try {
             var now = DateTime.Now;
@@ -261,7 +264,7 @@ public sealed class WindowsHub : IDisposable {
                 keyboardRefreshRequested = false;
                 lastKeyboardRefresh = now;
                 StopKeyboard();
-                if (settings.MacKeyboard && !keyboardChanging) {
+                if (modules.IsInstalled(HubModules.Mac) && settings.MacKeyboard && !keyboardChanging) {
                     keyboardChanging = true;
                     try { await macKeyboard.EnableAsync(); }
                     finally { keyboardChanging = false; }
@@ -320,6 +323,8 @@ public sealed class WindowsHub : IDisposable {
                 wallpaperRunning = IsRunning("WinDynamicDesktop"), autoDark = settings.AutoDark,
                 phoneTrackpadRunning = phoneBar.Running, phoneTrackpadStatus = phoneBar.Status,
                 phoneBarNetworkAllowed = phoneBar.NetworkAllowed,
+                installedModules = HubModules.All.Where(modules.IsInstalled).ToArray(),
+                moduleActions = modules.CreateMenu((_, _) => { }).Items.Select(item => item.Text).ToArray(),
                 menu = menu.Items.Select(item => item switch {
                     HubMenuSeparator => "—",
                     HubMenuToggleItem toggle => toggle.Text,
@@ -336,7 +341,7 @@ public sealed class WindowsHub : IDisposable {
     public static int ScheduledTheme(DateTime localTime) => localTime.Hour >= 12 && localTime.Hour < 20 ? 1 : 0;
 
     private void ApplyTheme() {
-        if (!settings.AutoDark) return;
+        if (!modules.IsInstalled(HubModules.AutoDark) || !settings.AutoDark) return;
         var theme = ScheduledTheme(DateTime.Now);
         using var key = Registry.CurrentUser.CreateSubKey(@"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize");
         if (lastTheme == theme && Equals(key.GetValue("AppsUseLightTheme"), theme) && Equals(key.GetValue("SystemUsesLightTheme"), theme)) return;
@@ -353,7 +358,7 @@ public sealed class WindowsHub : IDisposable {
     }
 
     private void UpdateSsmsTheme(bool rotate = false) {
-        if (!settings.SsmsTheme) return;
+        if (!modules.IsInstalled(HubModules.AutoDark) || !settings.SsmsTheme) return;
         using var preferences = Registry.CurrentUser.OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize");
         bool light = Convert.ToInt32(preferences?.GetValue("AppsUseLightTheme", ScheduledTheme(DateTime.Now))) != 0;
         string period = SsmsTheme.RotationPeriod(DateTime.Now, light);
@@ -395,20 +400,19 @@ public sealed class WindowsHub : IDisposable {
         });
     }
 
-    private IntPtr menuOwner;
-
     private void ShowControlsMenuCore(IntPtr owner, System.Drawing.Point point) {
-        menuOwner = owner;
         RefreshMenu();
-        var items = menu.Items.ToArray();
-        var rows = items.Select(item => {
+        var items = HubMenuModel.Flatten(menu.Items).ToArray();
+        NativeHubMenu.Row ToRow(HubMenuItem item) {
             if (item is HubMenuSeparator) return new NativeHubMenu.Row("", Separator: true);
             var command = (HubMenuItem)item;
             string icon = MenuGlyph(command.Text);
             return new NativeHubMenu.Row(command.Text.Split('\t')[0], command.IsEnabled,
                 command is HubMenuToggleItem toggle && toggle.IsChecked,
-                icon, icon == MirrorGlyph && carView.Mirrored);
-        }).ToArray();
+                icon, icon == MirrorGlyph && carView.Mirrored,
+                Children: item is HubMenuSubmenu submenu ? submenu.Items.Select(ToRow).ToArray() : null);
+        }
+        var rows = menu.Items.Select(ToRow).ToArray();
         using var preferences = Registry.CurrentUser.OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize");
         bool dark = Convert.ToInt32(preferences?.GetValue("AppsUseLightTheme", 1)) == 0;
         using var popup = new NativeHubMenu(rows, NativeHubMenu.DpiAt(point, owner), dark, NativeHubMenu.MaxWidthAt(point));
@@ -428,45 +432,75 @@ public sealed class WindowsHub : IDisposable {
 
     private void Item(string label, Action click) => menu.Items.Add(ActionMenuItem(label, click));
 
-    [DllImport("user32.dll")] private static extern bool GetCursorPos(out System.Drawing.Point point);
-
-    // A small popup in the same style as the tray menu, at the cursor. Returns the chosen index.
-    private int? PickFromMenu(params string[] labels) {
-        if (menuOwner == IntPtr.Zero || !GetCursorPos(out var point)) return null;
-        using var preferences = Registry.CurrentUser.OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize");
-        bool dark = Convert.ToInt32(preferences?.GetValue("AppsUseLightTheme", 1)) == 0;
-        using var popup = new NativeHubMenu(labels.Select(label => new NativeHubMenu.Row(label)).ToArray(),
-            NativeHubMenu.DpiAt(point, menuOwner), dark, NativeHubMenu.MaxWidthAt(point));
-        return popup.Show(menuOwner, point)?.Index;
-    }
-
-    // An installable module: click toggles it; the gear offers its settings or Uninstall.
-    // Uninstall turns it off and removes the row; "Install modules…" brings it back.
-    private void Module(string id, string label, bool value, Action<bool> change, Action open, string openLabel = "Open settings") {
-        if (settings.Uninstalled.Contains(id)) return;
-        var item = new HubMenuToggleItem { Text = label + IconSlot, IsChecked = value };
-        item.Command = new HubMenuCommand(() => {
-            if (ClickedGear()) {
-                try {
-                    switch (PickFromMenu(openLabel, "Uninstall " + id)) {
-                        case 0: open(); break;
-                        case 1:
-                            if (value) change(false);
-                            settings.Uninstalled.Add(id); Save(); RefreshMenu();
-                            break;
-                    }
-                } catch (Exception ex) { Log(ex); MessageBox(IntPtr.Zero, ex.Message, "3£", 0x10); }
-                return;
-            }
-            try { value = !value; item.IsChecked = value; change(value); Save(); } catch (Exception ex) { Log(ex); }
-        });
+    // Gears act directly on configuration; installation lives only in Modules.
+    private void Module(string id, string label, bool value, Action<bool> change, Action open = null, string slot = IconSlot) {
+        if (!modules.IsInstalled(id)) return;
+        var item = ToggleMenuItem(label, value, change, open, slot);
+        item.IsEnabled = !modules.Busy;
         menu.Items.Add(item);
     }
 
-    private void InstallModules() {
-        var names = settings.Uninstalled.ToArray();
-        int? pick = PickFromMenu(names.Select(name => "Install " + name).ToArray());
-        if (pick is int index) { settings.Uninstalled.Remove(names[index]); Save(); RefreshMenu(); }
+    private void ApplyRemovedModuleSettings() {
+        if (!modules.IsInstalled(HubModules.Phone)) settings.PhoneBarAlwaysOn = false;
+        if (!modules.IsInstalled(HubModules.Clicks)) settings.Keyboard = false;
+        if (!modules.IsInstalled(HubModules.Mac)) settings.MacKeyboard = false;
+        if (!modules.IsInstalled(HubModules.PowerToys)) settings.PowerToys = false;
+        if (!modules.IsInstalled(HubModules.Kalista)) settings.LolMacros = false;
+        if (!modules.IsInstalled(HubModules.Mouse)) settings.Mouse = false;
+        if (!modules.IsInstalled(HubModules.Wallpaper)) settings.Wallpaper = false;
+        if (!modules.IsInstalled(HubModules.AutoDark)) { settings.AutoDark = false; settings.SsmsTheme = false; }
+        try {
+            if (!modules.IsInstalled(HubModules.Tab)) SetTrackTab(false);
+            if (!modules.IsInstalled(HubModules.Drag)) SetDrag(false);
+        } catch (Exception ex) { Log(ex); }
+    }
+
+    private void SetTrackTab(bool enabled) {
+        var trackTab = App.Instance.HandlerWindow.TrackTab;
+        if (!trackTab.SetEnabled(enabled)) throw new InvalidOperationException("Track Tab could not " + (enabled ? "start: " : "stop: ") + trackTab.Error);
+        App.SettingsData.TrackTab = enabled;
+        App.SettingsData.save();
+    }
+
+    private static void SetDrag(bool enabled) {
+        App.SettingsData.ThreeFingerDrag = enabled;
+        if (!enabled) App.Instance.HandlerWindow.CancelDrag();
+        App.SettingsData.save();
+    }
+
+    private async Task StopModuleAsync(string id) {
+        switch (id) {
+            case HubModules.Phone: settings.PhoneBarAlwaysOn = false; phoneBar.Stop(); break;
+            case HubModules.Tab: SetTrackTab(false); break;
+            case HubModules.Car: carView.Stop(); break;
+            case HubModules.Drag: SetDrag(false); App.SettingsWindow?.Close(); break;
+            case HubModules.Clicks: settings.Keyboard = false; StopKeyboard(); break;
+            case HubModules.Mac:
+                keyboardChanging = true;
+                settings.MacKeyboard = false;
+                try { await macKeyboard.DisableAsync(); }
+                finally { keyboardChanging = false; }
+                break;
+            case HubModules.PowerToys:
+                settings.PowerToys = false; Stop("PowerToys");
+                // The separately installed Mac layout still needs Keyboard Manager.
+                if (settings.MacKeyboard) await macKeyboard.EnsureAsync();
+                break;
+            case HubModules.Kalista: settings.LolMacros = false; await StopLolAsync(); break;
+            case HubModules.Mouse: settings.Mouse = false; ThreeE.Mouse.MouseWindow.CloseSettings(); break;
+            case HubModules.Wallpaper: settings.Wallpaper = false; Stop("WinDynamicDesktop"); break;
+            case HubModules.AutoDark: settings.AutoDark = false; settings.SsmsTheme = false; lastTheme = -1; break;
+        }
+    }
+
+    private async void ChangeModule(string id, bool install) {
+        if (keyboardChanging || disposed) return;
+        try {
+            await modules.ChangeAsync(id, install, StopModuleAsync, Save);
+        } catch (Exception ex) {
+            Log(ex);
+            MessageBox(IntPtr.Zero, ex.Message, "3£ Modules", 0x10 | ForegroundDialog);
+        } finally { RefreshMenu(); WriteDiagnostics(); }
     }
 
     private void Toggle(string label, bool value, Action<bool> change, Action openSettings = null, string slot = IconSlot) => menu.Items.Add(ToggleMenuItem(label, value, change, openSettings, slot));
@@ -480,7 +514,7 @@ public sealed class WindowsHub : IDisposable {
     private HubMenuItem MacKeyboardToggle() {
         var item = new HubMenuToggleItem {
             Text = macKeyboard.HasLease && !macKeyboard.Active ? "Mac keyboard layout — recovery pending" : "Mac keyboard layout",
-            IsChecked = settings.MacKeyboard || macKeyboard.HasLease, IsEnabled = !keyboardChanging
+            IsChecked = settings.MacKeyboard || macKeyboard.HasLease, IsEnabled = !keyboardChanging && !modules.Busy
         };
         item.Command = new HubMenuCommand(async () => {
             if (keyboardChanging) return;
@@ -506,6 +540,7 @@ public sealed class WindowsHub : IDisposable {
 
     // Restarts the receiver after sleep or a network change so the saved link works.
     private void KeepPhoneBar() {
+        if (!modules.IsInstalled(HubModules.Phone)) { phoneBar.Stop(); return; }
         if (!phoneBar.Available) { if (phoneBar.Running) phoneBar.Stop(); return; }
         if (!settings.PhoneBarAlwaysOn || disposed) return;
         try { phoneBar.EnsureRunning(); } catch (Exception ex) { Log(ex); }
@@ -553,21 +588,20 @@ public sealed class WindowsHub : IDisposable {
         App.Instance.Quit();
     }
 
-    private void NewPhoneLink() {
-        if (ShowPhoneNetworkRestriction()) return;
-        if (MessageBox(IntPtr.Zero, "Make a new Track Phone link?\n\nThe current link stops working. Scan the new QR code on your iPhone (and email it to your Watch) afterwards.", "3£ Track Phone", 0x24 | ForegroundDialog) != 6) return;
-        phoneBar.ResetLink();
-        OpenPhoneTrackpad();
-    }
-
     public void OpenPhoneTrackpad() {
         try {
+            if (!modules.IsInstalled(HubModules.Phone)) {
+                if (GetCursorPosition(out var point)) ShowControlsMenu(WinRT.Interop.WindowNative.GetWindowHandle(App.Instance.HandlerWindow), point);
+                return;
+            }
             if (ShowPhoneNetworkRestriction()) return;
             if (!settings.PhoneBarAlwaysOn) { settings.PhoneBarAlwaysOn = true; Save(); }
             phoneBar.Show();
             WriteDiagnostics();
         } catch (Exception ex) { Log(ex); }
     }
+
+    [DllImport("user32.dll", EntryPoint = "GetCursorPos")] private static extern bool GetCursorPosition(out System.Drawing.Point point);
 
     private bool ShowPhoneNetworkRestriction() {
         if (phoneBar.Available) return false;
@@ -579,54 +613,51 @@ public sealed class WindowsHub : IDisposable {
     private void RefreshMenu() {
         menu.Items.Clear();
         menu.Items.Add(new HubMenuItem { Text = "3£ " + Version, IsEnabled = false });
-        // One Track Phone row: click to turn it on or off; its icon makes a new link.
-        // Left-clicking the tray icon shows the QR.
-        Module("Track Phone", phoneBar.NetworkAllowed ? "Track Phone" : phoneBar.UsbOnly ? "Track Phone — USB cable only" : "Track Phone — network restricted", phoneBar.Running, enabled => {
+        // The saved phone link survives toggles, removal and reinstall. Left-click
+        // the tray icon to show its QR while the module is installed.
+        Module(HubModules.Phone, phoneBar.NetworkAllowed ? "Track Phone" : phoneBar.UsbOnly ? "Track Phone — USB cable only" : "Track Phone — network restricted", settings.PhoneBarAlwaysOn, enabled => {
             if (enabled && ShowPhoneNetworkRestriction()) return;
             settings.PhoneBarAlwaysOn = enabled;
             if (enabled) phoneBar.EnsureRunning(); else phoneBar.Stop();
-        }, NewPhoneLink, "New link…");
-        Module("Track Tab", "Track Tab",App.Instance.HandlerWindow.TrackTab.Enabled,enabled=> {
-            var trackTab=App.Instance.HandlerWindow.TrackTab;
-            if(trackTab.SetEnabled(enabled)){App.SettingsData.TrackTab=enabled;App.SettingsData.save();}
-            else MessageBox(IntPtr.Zero,"Track Tab could not start: "+trackTab.Error,"3£ Track Tab",0x40 | ForegroundDialog);
-        },()=>MessageBox(IntPtr.Zero,"Four fingers:\n• Swipe left/right to switch apps; hold to browse, lift to choose.\n• Pinch in to copy; spread to paste.\n• Tap to cycle windows in the current app.\n• Swipe up for Task View; down for the desktop.\n\nTrack Phone uses the same gestures. Three-finger drag stays separate.","3£ Track Tab",0x40 | ForegroundDialog), "Gestures…");
-        Toggle("Car View",carView.Enabled,enabled=>carView.SetEnabled(enabled),()=>carView.ToggleMirror(),MirrorSlot);
-        Module("Three-finger drag", "Three-finger drag", App.SettingsData.ThreeFingerDrag, enabled => { App.SettingsData.ThreeFingerDrag = enabled; App.SettingsData.save(); },
+        });
+        Module(HubModules.Tab, "Track Tab", App.Instance.HandlerWindow.TrackTab.Enabled, SetTrackTab);
+        Module(HubModules.Car, "Car View",carView.Enabled,enabled=>carView.SetEnabled(enabled),()=>carView.ToggleMirror(),MirrorSlot);
+        Module(HubModules.Drag, "Three-finger drag", App.SettingsData.ThreeFingerDrag, SetDrag,
             () => App.Instance.OpenSettingsWindow());
         // The check mark means the keyboard engine is running; clicking an unchecked row starts it.
-        Toggle(File.Exists(KeyboardPath) ? "Clicks keyboard" : "Clicks keyboard — connect and run setup", settings.Keyboard && IsRunning("3EWindows.Keyboard"), enabled => {
+        Module(HubModules.Clicks, File.Exists(KeyboardPath) ? "Clicks keyboard" : "Clicks keyboard — connect and run setup", settings.Keyboard && IsRunning("3EWindows.Keyboard"), enabled => {
             settings.Keyboard = enabled;
             if (enabled) _ = EnsureComponentsAsync(); else StopKeyboard();
         });
-        menu.Items.Add(MacKeyboardToggle());
-        Module("PowerToys", "PowerToys", settings.PowerToys, enabled => {
+        if (modules.IsInstalled(HubModules.Mac)) menu.Items.Add(MacKeyboardToggle());
+        Module(HubModules.PowerToys, "PowerToys", settings.PowerToys, enabled => {
             settings.PowerToys = enabled;
             if (enabled) _ = EnsureComponentsAsync(); else { Stop("PowerToys"); if (settings.MacKeyboard) _ = macKeyboard.EnsureAsync(); }
         }, OpenPowerToysSettings);
-        // Kalista macros (LoL). The check mark means the script is running; nothing to configure.
-        Toggle(File.Exists(LolScript) ? "Kalista" : "Kalista — script missing", LolRunning(), enabled => {
+        // Kalista macros (LoL), with no configuration accessory.
+        Module(HubModules.Kalista, File.Exists(LolScript) ? "Kalista" : "Kalista — script missing", settings.LolMacros, enabled => {
             settings.LolMacros = enabled;
             if (enabled) StartLol(); else _ = StopLolAsync();
         });
         // Gaming-mouse settings for supported mice (Windows/Mouse/Devices; first: PC205); the gear opens
         // them. Side button → F13 for the Kalista kite.
-        Module("Mouse", "Mouse", settings.Mouse, enabled => {
+        Module(HubModules.Mouse, "Mouse", settings.Mouse, enabled => {
             settings.Mouse = enabled;
-            if (enabled) ThreeE.Mouse.MouseWindow.Show();
+            if (enabled) ThreeE.Mouse.MouseWindow.Show(); else ThreeE.Mouse.MouseWindow.CloseSettings();
         }, ThreeE.Mouse.MouseWindow.Show);
-        menu.Items.Add(new HubMenuSeparator());
-        Module("Dynamic wallpaper", "Dynamic wallpaper", settings.Wallpaper, enabled => {
+        if (modules.IsInstalled(HubModules.Wallpaper) || modules.IsInstalled(HubModules.AutoDark)) menu.Items.Add(new HubMenuSeparator());
+        Module(HubModules.Wallpaper, "Dynamic wallpaper", settings.Wallpaper, enabled => {
             settings.Wallpaper = enabled;
             if (enabled) _ = EnsureComponentsAsync(); else Stop("WinDynamicDesktop");
         }, () => Start(WallpaperPath, "", true));
-        Toggle("Auto dark — light 12 PM–8 PM", settings.AutoDark, enabled => { settings.AutoDark = enabled; lastTheme = -1; ApplyTheme(); });
-        // SSMS and the code editors rotate together; the repeat icon rotates now.
-        Toggle("Rotate themes", settings.SsmsTheme, enabled => { settings.SsmsTheme = enabled; if (enabled) UpdateSsmsTheme(true); },
-            () => { settings.SsmsTheme = true; UpdateSsmsTheme(true); Save(); }, RotateSlot);
-        Item("Use light theme", () => { settings.AutoDark = false; Save(); SetTheme(1); });
-        Item("Use dark theme", () => { settings.AutoDark = false; Save(); SetTheme(0); });
-        if (settings.Uninstalled.Count > 0) Item("Install modules…", InstallModules);
+        if (modules.IsInstalled(HubModules.AutoDark)) {
+            Module(HubModules.AutoDark, "Auto dark — light 12 PM–8 PM", settings.AutoDark, enabled => { settings.AutoDark = enabled; lastTheme = -1; ApplyTheme(); });
+            // Auto dark owns scheduled switching, rotation and manual theme choices.
+            Toggle("Rotate themes", settings.SsmsTheme, enabled => { settings.SsmsTheme = enabled; if (enabled) UpdateSsmsTheme(true); },
+                () => { settings.SsmsTheme = true; UpdateSsmsTheme(true); Save(); }, RotateSlot);
+            Item("Use light theme", () => { settings.AutoDark = false; Save(); SetTheme(1); });
+            Item("Use dark theme", () => { settings.AutoDark = false; Save(); SetTheme(0); });
+        }
         menu.Items.Add(new HubMenuSeparator());
         Item("Restart", Restart);
         // Automatic updates make a manual check redundant; it returns only when they are off.
@@ -634,7 +665,7 @@ public sealed class WindowsHub : IDisposable {
         if (phoneBar.NetworkAllowed)
             Toggle("Install updates automatically", settings.AutoUpdate, enabled => { settings.AutoUpdate = enabled; if (!enabled) pendingUpdate = null; else settings.LastUpdateCheckUtc = default; });
         else menu.Items.Add(new HubMenuItem { Text = "No automatic updates (IT restricted)", IsEnabled = false });
-        Item("Open portable installer", () => Process.Start(new ProcessStartInfo("explorer.exe", "/select,\"" + Path.Combine(root, "3£Windows.ps1") + "\"") { UseShellExecute = true }));
+        menu.Items.Add(modules.CreateMenu(ChangeModule, !keyboardChanging));
         Item("Quit 3£", () => App.Instance.Quit());
     }
 

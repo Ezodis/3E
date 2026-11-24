@@ -2,9 +2,15 @@
 
 One Windows tray app for three-finger dragging, Clicks keyboard mapping, PowerToys shortcuts/Workspaces, auto dark mode and dynamic wallpaper. The drag engine runs inside the app. Kanata and WinDynamicDesktop are managed background dependencies. PowerToys supplies Keyboard Manager; its existing preferences and tray visibility are preserved. Auto dark mode runs directly inside 3£, using light mode from noon until 8 PM and dark mode otherwise.
 
+## Modules
+
+Hover **Modules** near the bottom of the tray menu to install or uninstall any of the eleven modules, including Car View, Clicks keyboard, Mac keyboard layout, Kalista, Mouse and Auto dark. Each entry says **Install** or **Uninstall** according to its saved state. Uninstall stops the module and hides its controls; reinstall restores its row, initially off. Built-in payloads, preferences and the saved Track Phone link remain available for offline reinstall. Third-party applications shared with other modules remain on the computer.
+
+Removing **Auto dark** also stops and hides **Rotate themes**, its rotate-now action, **Use light theme** and **Use dark theme**. Gear icons open configuration directly. Car View retains its mirror action and theme rotation its rotate-now action. Track Phone and Track Tab have no accessory buttons. When Track Phone is removed, left-clicking the tray icon opens the controls menu instead of starting the receiver.
+
 ## Track Tab
 
-**Track Tab** in the tray menu enables Mac-style four-finger gestures on a Windows Precision Touchpad: left/right switch apps, pinch in copies, spread pastes. Hold the swipe to browse and lift to select. A four-finger tap cycles windows of the current application, replacing Mac Force Click on devices without pressure input. Up opens Task View; down shows the desktop. The gear explains the controls. Track Phone uses the same gestures on Windows and Mac, with the appropriate native modifiers.
+**Track Tab** in the tray menu enables Mac-style four-finger gestures on a Windows Precision Touchpad: left/right switch apps, pinch in copies, spread pastes. Hold the swipe to browse and lift to select. A four-finger tap cycles windows of the current application, replacing Mac Force Click on devices without pressure input. Up opens Task View; down shows the desktop. Track Phone uses the same gestures on Windows and Mac, with the appropriate native modifiers.
 
 The Windows toggle remembers its state. While enabled, 3£ temporarily disables Windows’ competing four-finger actions and restores their saved values when turned off or quit. A recovery journal survives interrupted updates. Three-finger dragging and two-finger scrolling/zoom remain separate. Lock, suspend, cancellation and lost contact release the app-switcher modifier.
 

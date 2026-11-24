@@ -1,3 +1,13 @@
+The Windows tray now shows only installed modules.
+
+- Hover **Modules** at the bottom to install or uninstall any module. This replaces **Open portable installer** and the uninstall commands previously hidden behind gears.
+- Car View, Clicks keyboard, Mac keyboard layout, Kalista, Mouse and Auto dark all support removal and offline reinstall. Removal stops the feature and restores its temporary input/display settings before hiding it.
+- Removing Auto dark also removes theme rotation, rotate-now, and the manual light/dark commands.
+- Gears open configuration directly. Car View keeps its flip control. Track Phone keeps its persistent link without a new-link button, and Track Tab has no gesture button.
+- Saved removals survive restarts and updates; removed modules stay off. If cleanup fails, the module stays visible for recovery.
+
+Previous release:
+
 TypeFix: offline AI correction for the Clicks keyboard.
 
 - Double-tap the red Clicks key: what you just typed in that paragraph is fixed by an AI that runs on this PC (Gemma 4, no internet). It understands Spanish (Mexican, Spain, Colombian), French and English mixed in one sentence, and never translates. Up to three readings appear as they are written; press 1–3 to replace your paragraph, Esc to cancel.

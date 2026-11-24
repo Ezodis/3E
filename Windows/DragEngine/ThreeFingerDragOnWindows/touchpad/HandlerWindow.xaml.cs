@@ -63,6 +63,8 @@ public sealed partial class HandlerWindow : Window {
 
     }
 
+    public void CancelDrag() => _threeFingersDrag?.Cancel();
+
     // TaskbarIcon Actions
     [DllImport("user32.dll")] private static extern bool GetCursorPos(out System.Drawing.Point point);
 

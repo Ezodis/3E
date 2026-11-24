@@ -59,6 +59,8 @@ public sealed class MouseWindow : Window {
         open.Activate();
     }
 
+    public static void CloseSettings() => open?.Close();
+
     MouseWindow() {
         Title = "3£ Mouse";
         hwnd = WinRT.Interop.WindowNative.GetWindowHandle(this);
